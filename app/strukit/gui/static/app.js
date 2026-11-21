@@ -202,8 +202,9 @@ function drawProject(main) {
           : el("div", { class: "small" }, "No members yet. Use “Add a member” at the left, or load the example project to see how the screens work."),
         el("h2", {}, "What StruKit covers today"),
         el("ul", { class: "msg small" }, ["Steel beams, columns (braced, with sideways load, cantilevered) and moment frames: AISC 360-22.",
+          "Fillet welds and bolt lines loaded through their centre: AISC 360-22 J2, J3.",
           "Isolated and continuous footings under centred load: ACI 318-19.",
-          "Not yet: wood, load generation (snow, wind, seismic), masonry, retaining walls, connections on these screens, footings with moment.",
+          "Not yet: wood, load generation (snow, wind, seismic), masonry, retaining walls, base plates, footings with moment.",
           "Every blank box is asked for; nothing is assumed."].map(t => el("li", {}, t))))));
 }
 
@@ -258,7 +259,11 @@ function example() {
       { kind: "footing_iso", values: { mark: "F-A", B: "2.5", L: "2.5", h: "10", fc: "3000", fy: "60000", conc_pcf: "145", col_x: "4", col_y: "4", supported: "wood", plate_x: "6", plate_y: "6",
         bar: "5", n_x: "3", n_y: "3", cover: "3", bottom: "x", P_service: "7600", service_combo: "D + L", Pu: "12160", strength_combo: "1.2D + 1.6L", q_allow: "1500", soil_source: "presumptive value (example)" } },
       { kind: "footing_cont", values: { mark: "CF1", W: "2", h: "10", fc: "3000", fy: "60000", conc_pcf: "145", wall: "8", wall_kind: "concrete", stem_h: "36", stem_pcf: "145", bar_t: "5", spacing_t: "12", bar_l: "5", n_l: "2",
-        cover: "3", P_service: "1932", service_combo: "D + L", Pu: "2675", strength_combo: "1.2D + 1.6L", dead_factor: "1.2", q_allow: "1500", soil_source: "presumptive value (example)", soil_depth: "3", soil_pcf: "110" } }] };
+        cover: "3", P_service: "1932", service_combo: "D + L", Pu: "2675", strength_combo: "1.2D + 1.6L", dead_factor: "1.2", q_allow: "1500", soil_source: "presumptive value (example)", soil_depth: "3", soil_pcf: "110" } },
+      { kind: "weld", values: { mark: "W1", size: "0.25", length: "8", n_lines: "2", FEXX: "70", theta: "0", directional: "no", end_loaded: "no", t_thinner: "0.375", t_edge: "0.375",
+        loads: [{ case: "D", P: "12" }, { case: "L", P: "30" }] } },
+      { kind: "bolts", values: { mark: "BG1", d: "0.75", group: "A325", n: "4", spacing: "3", edge: "1.5", threads: "N", planes: "1", deformation: "yes",
+        plies: [{ t: "0.375", Fu: "58", has_edge: "yes" }, { t: "0.355", Fu: "65", has_edge: "no" }], loads: [{ case: "D", P: "10" }, { case: "L", P: "25" }] } }] };
 }
 
 // ---------------------------------------------------------------- start

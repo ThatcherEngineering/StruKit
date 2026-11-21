@@ -77,16 +77,130 @@ def cmd_run(a):
     return EXIT[FAILED]
 
 
+# ---------------------------------------------------------------- StruKit project files
+KIND_OF = {"steel_beam": "MEMBER", "steel_column": "MEMBER", "frame": "MEMBER", "footing_iso": "FTG",
+           "footing_cont": "FTG", "weld": "CONN", "bolts": "CONN"}
+
+
+def _project(path):
+    import json
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"file not found: {path}")
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if data.get("format") != "strukit-project":
+        raise ValueError(f"{os.path.basename(path)} is not a StruKit project file")
+    return data
+
+
+def _solve_project(data):
+    """Every member of a project file through the same calculations as the StruKit window.
+    Returns (problems, results rows, counts, members that calculated)."""
+    from .gui import calc
+    proj, members = data.get("project") or {}, data.get("members") or []
+    problems, rows, good = [], [], []
+    counts = {"members": len(members), "ok": 0, "flagged": 0}
+    if not members:
+        problems.append("the project has no members")
+    seen = set()
+    for n, m in enumerate(members, 1):
+        mark = (m.get("values") or {}).get("mark") or f"(member {n}, no mark)"
+        if mark in seen:
+            problems.append(f"{mark}: two members have this mark")
+        seen.add(mark)
+        if m.get("kind") not in calc.FORMS:
+            problems.append(f"{mark}: unknown member type '{m.get('kind')}'")
+            continue
+        r = calc.results(m["kind"], m.get("values") or {}, proj)
+        if r["state"] != "done":
+            problems += [f"{mark}: {t}" for t in r["messages"]]
+            continue
+        good.append(m)
+        counts["ok" if r["status"] == "OK" else "flagged"] += 1
+        kind = KIND_OF[m["kind"]]
+        for x in r["rows"]:
+            rows.append(dict(KIND=kind, ID=mark, HANDLE="", CHECK=x["check"], COMBO=x["combo"], DEMAND=x["demand"],
+                             CAPACITY=x["capacity"], UNIT=x["unit"], DC=x["dc"], STATUS=x["status"],
+                             SOURCE=x["source"], NOTE=x["note"], MARK=mark))
+        for x in r["members"]:                              # the members of a frame
+            rows.append(dict(KIND="MEMBER", ID=f"{mark}/{x['member']}", HANDLE="", CHECK="axial, bending and shear",
+                             COMBO=x["combo"], DEMAND=x["ratio"], CAPACITY=1.0, UNIT="", DC=x["ratio"],
+                             STATUS=x["status"], SOURCE="AISC 360-22 H1.1, G2.1",
+                             NOTE=f"{x['shape']}; axial {x['axial']:.1f} kip {x['sense']}; moment {x['moment']:.1f} kip-ft; "
+                                  f"shear {x['shear']:.1f} kip", MARK=mark))
+    return problems, rows, counts, good
+
+
+def _project_cmd(a, solve):
+    from .outputs import FLAGS, write_results
+    src = os.path.abspath(a.src)
+    folder, name = os.path.dirname(src), os.path.basename(src)
+    stem = os.path.splitext(src)[0]
+    results = os.path.abspath(a.results) if a.results else stem + "-stresults.csv"
+    counts, pdf = {}, None
+    try:
+        with _Lock(folder):
+            data = _project(src)
+            problems, rows, counts, good = _solve_project(data)
+            if solve and not problems:
+                from .gui import calc
+                pdf = stem + "-calcs.pdf"
+                tmp = pdf + ".tmp"
+                sheets, _ = calc.package_pdf(data.get("project") or {}, good, tmp)
+                os.replace(tmp, pdf)
+                write_results(results, (data.get("project") or {}).get("number") or name, rows)
+                counts["sheets"] = sheets
+    except (OSError, ValueError, RuntimeError) as e:
+        problems = [str(e)]
+    if problems:                                           # a failed run never touches the previous results
+        status = FAILED
+        msgs = [f"{'PREFLIGHT' if not solve else 'RUN'}: {len(problems)} input problem(s)"] + problems
+        write_status(folder, status, name, {"preflight_only": not solve, "problems": len(problems), **counts})
+    elif not solve:
+        status = OK
+        msgs = [f"PREFLIGHT: no input problems; {counts['members']} member(s)"]
+        write_status(folder, status, name, {"preflight_only": True, "problems": 0, **counts})
+    else:
+        status = FLAGS if counts["flagged"] else OK
+        msgs = [f"{counts['members']} member(s): {counts['ok']} pass, {counts['flagged']} with flags",
+                f"results: {results}", f"calc package: {pdf} ({counts['sheets']} sheets)"]
+        msgs += [f"FLAG {r['ID']}: {r['CHECK']} D/C {r['DC']:.2f} ({r['COMBO']})" for r in rows if r["STATUS"] == "FLAG"]
+        write_status(folder, status, name, {**counts, "calc_package": pdf}, results)
+    write_log(folder, status, name, msgs)
+    if not a.quiet:
+        print("\n".join([f"{status} {name}"] + msgs))
+    return EXIT[status]
+
+
+def _dispatch(a, dxf_fn, solve):
+    if a.src and a.src.lower().endswith(".strukit"):
+        return _project_cmd(a, solve)
+    if a.src and not a.from_dxf:
+        folder = os.path.dirname(os.path.abspath(a.src))
+        msg = [f"StruKit {__version__} reads StruKit project files (.strukit) with --from. The drawing "
+               "export format (<name>-struct.csv) is not read yet. No results were written."]
+        write_log(folder, FAILED, os.path.basename(a.src), msg)
+        write_status(folder, FAILED, os.path.basename(a.src), {"problems": 1})
+        if not a.quiet:
+            print("\n".join([f"{FAILED} {os.path.basename(a.src)}"] + msg))
+        return EXIT[FAILED]
+    if not a.from_dxf:
+        print("FAILED give --from <project.strukit> (or --from-dxf <file>)")
+        return EXIT[FAILED]
+    return dxf_fn(a)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="strukit")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for cmd, fn in (("preflight", cmd_preflight), ("run", cmd_run)):
+    for cmd, fn, solve in (("preflight", cmd_preflight, False), ("run", cmd_run, True)):
         s = sub.add_parser(cmd)
-        s.add_argument("--from-dxf", required=True)
+        s.add_argument("--from", dest="src")
+        s.add_argument("--from-dxf")
         s.add_argument("--results")
         s.add_argument("--quiet", action="store_true")
-        s.set_defaults(fn=fn)
+        s.set_defaults(fn=lambda a, fn=fn, solve=solve: _dispatch(a, fn, solve))
     a, _unknown = p.parse_known_args(argv)      # unknown flags are ignored, never fatal
     return a.fn(a)
 

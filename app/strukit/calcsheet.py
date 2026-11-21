@@ -664,6 +664,7 @@ def _moment_on_frame(c, sheet, x0, y0, w, h):
     mmax = max(float(max(abs(v) for v in M)) for _, M in sheet.diagram.values()) or 1.0
     k = 18.0 / mmax
     col = (0.54, 0.35, 0.0)
+    placed = []
     for m in lay.members:
         st, M = sheet.diagram[m.name]
         (x1, y1), (x2, y2) = xy(m.i), xy(m.j)
@@ -679,9 +680,16 @@ def _moment_on_frame(c, sheet, x0, y0, w, h):
         c.drawPath(p, fill=1, stroke=1)
         i = int(max(range(len(M)), key=lambda q: abs(M[q])))
         f = st[i] / (st[-1] or 1.0)
+        lx = x1 + ux * L * f + nx * (k * M[i] + (6 if M[i] >= 0 else -6))
+        ly = y1 + uy * L * f + ny * (k * M[i] + (6 if M[i] >= 0 else -6)) - 2
+        for _ in range(6):                                 # step along the member until the label is clear
+            if all(abs(lx - a) > 13 or abs(ly - b) > 7 for a, b in placed):
+                break
+            step = -1 if f > 0.5 else 1
+            lx += ux * 9 * step; ly += uy * 9 * step
+        placed.append((lx, ly))
         c.setFillColorRGB(*col); c.setFont(FM, 6)
-        c.drawCentredString(x1 + ux * L * f + nx * (k * M[i] + (6 if M[i] >= 0 else -6)),
-                            y1 + uy * L * f + ny * (k * M[i] + (6 if M[i] >= 0 else -6)) - 2, f"{abs(M[i]):.0f}")
+        c.drawCentredString(lx, ly, f"{abs(M[i]):.0f}")
     c.setStrokeColorRGB(*INK)
 
 
@@ -814,7 +822,7 @@ def package_pdf(items, path, job, date, title="Structural Calculations"):
     frame; extra is a dict of that sheet's keyword arguments (combos, method)."""
     import io
     build = {"steel_beam": _steel_beam_pdf, "steel_column": _steel_column_pdf, "footing": _footing_pdf,
-             "frame": _frame_pdf}
+             "frame": _frame_pdf, "conn": _conn_pdf}
     counts = []
     for kind, sheet, code, extra in items:                # first pass: how many sheets each member takes
         counts.append(build[kind](sheet, io.BytesIO(), job, code, date, page=1, pages=1, **extra))
@@ -827,3 +835,74 @@ def package_pdf(items, path, job, date, title="Structural Calculations"):
         page += n
     c.save()
     return total
+
+
+# ------------------------------------------------------------------ connections
+def _yn(v):
+    return "yes" if v else "no"
+
+
+def _conn_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
+    """Calc sheet for a ws_conn.ConnSheet (fillet weld group or line of bolts)."""
+    i = sheet.inp
+    weld = sheet.kind == "weld"
+    p = _Page(path, f"Connection {sheet.mark} - " + ("Fillet Weld" if weld else "Bolt Line"), job, code,
+              sheet.method, page, pages, date)
+    c = p.c
+    top = p.y
+    p.head("Connection")
+    if weld:
+        rows = [("Welds", f"({i['n_lines']:g}) fillet welds, {i['size']:g} in leg, {i['length']:g} in long each"),
+                ("Electrode", f"FEXX = {i['FEXX']:g} ksi"),
+                ("Load Direction", f"{i['theta_deg']:g} degrees to the weld axis"),
+                ("Directional Increase", _yn(i["directional"]) + " (Eq. J2-5)"),
+                ("End Loaded", _yn(i["end_loaded"]) + " (J2.2b(d))"),
+                ("Thinner Part", f"{i['t_thinner']:g} in" if i["t_thinner"] is not None else "not entered"),
+                ("Edge Thickness", f"{i['t_edge']:g} in" if i["t_edge"] is not None else "not entered"),
+                ("Base Metal", f"{i['base_t']:g} in thick, Fu = {i['base_Fu']:g} ksi" if i["base_t"] is not None
+                 else "not entered")]
+    else:
+        rows = [("Bolts", f"({i['n']}) {i['d']:g} in diameter, {i['group']}"),
+                ("Threads", "in the shear plane (N)" if i["threads"] == "N" else "excluded from the shear plane (X)"),
+                ("Shear Planes", f"{i['planes']}"),
+                ("Spacing", f"{i['spacing']:g} in centre to centre"),
+                ("Edge Distance", f"{i['edge']:g} in, bolt centre to the edge the load pushes toward"),
+                ("Holes", "standard (Table J3.3)"),
+                ("Hole Deformation", "a design consideration" if i["deformation"] else "not a design consideration")]
+        for k, ply in enumerate(i["plies"], 1):
+            t, Fu, has_edge = ply[:3]
+            cnt = ply[3] if len(ply) > 3 else 1
+            rows.append((f"Part {k}", f"{'(%d) ' % cnt if cnt > 1 else ''}{t:g} in thick, Fu = {Fu:g} ksi, "
+                                      + ("with an edge in the load direction" if has_edge else "no edge in the load direction")))
+    p.kv(rows, kw=104)
+    bottom_left = p.y
+    _sketch_title(c, 392, top, "SKETCH")
+    if weld:
+        memberart.weld_picture(c, 392, top - 78, 150, 58, i["n_lines"], i["length"], i["size"])
+        _small(c, 467, top - 88, "weld shown hatched; not to scale")
+    else:
+        memberart.bolt_picture(c, 380, top - 78, 180, 58, i["n"], i["spacing"], i["edge"], i["d"])
+        _small(c, 470, top - 88, "to scale along the line; load toward the right edge")
+    p.y = min(bottom_left, top - 96) - 2
+
+    p.head("Loads")
+    for ld in sheet.loads:
+        s = f"{ld['case']:<3} {ld['P']:.2f} kip"
+        if ld.get("label"):
+            s += f"   ({ld['label']})"
+        p.text(s, font=FM, size=8)
+    p.y -= 2
+    p.head("Load Combinations")
+    for cb in combos:
+        mark = "   governs" if cb.name == sheet.governing else ""
+        p.room(24)
+        p.text(f"{cb.name:<18} force = {sheet.totals[cb.name]:.2f} kip{mark}", font=FM, size=8, dy=10)
+        p.text(cb.source, size=7.5, color=GREY, x=LM + 12)
+    p.y -= 4
+    _steps(p, "Strength Calculation (AISC 360-22)", sheet.steps)
+    _summary(p, sheet.rows)
+    return _closing(p, sheet.assumptions, sheet.not_checked)
+
+
+def conn_pdf(sheet, path, job, code, date, page=1, pages=None, combos=()):
+    return _paged(_conn_pdf, sheet, path, job, code, date, page, pages, combos=combos)
