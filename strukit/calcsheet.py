@@ -8,7 +8,7 @@ run IDs or revision logs on the page. The PE stamp goes on the package cover onl
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from . import memberart
+from . import footing, memberart
 
 FIRM = "THATCHER ENGINEERING, LLC"
 FIRM_LINE = "4050 Trail Stone Cir., Castle Rock, CO 80108  |  719.225.0150"
@@ -95,6 +95,90 @@ def _diagram(c, x0, y0, w, h, xs, vals, color, label):
     c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4); c.line(x0, zero, x0 + w, zero)
     c.setFillColorRGB(*color); c.setFont("Courier", 7.5); c.drawString(x0, y0 + h + 3, label)
     c.setStrokeColorRGB(*INK)
+
+
+def _steps(p, title, lines):
+    """The governing calculation, one line per value with its equation reference."""
+    c = p.c
+    p.head(title)
+    c.setStrokeColorRGB(0.79, 0.81, 0.83); c.setLineWidth(0.5)
+    box_top = p.y + 9
+    for ln in lines:
+        val = f"{ln.value:.2f}" if not ln.unit else _fmt(ln.value, ln.unit)
+        c.setFont("Courier", 8); c.setFillColorRGB(*INK)
+        c.drawString(LM + 6, p.y, f"{ln.label} = {val}")
+        c.setFont("Helvetica", 7.5); c.setFillColorRGB(*GREY)
+        c.drawRightString(RM - 6, p.y, ln.source)
+        if ln.note:
+            p.y -= 9
+            c.drawString(LM + 18, p.y, ln.note)
+        p.y -= 10.5
+    c.rect(LM, p.y + 6, RM - LM, box_top - p.y - 6, fill=0, stroke=1)
+    p.y -= 6
+
+
+def _split(s, width):
+    out, line = [], ""
+    for w in s.split():
+        if len(line) + len(w) + 1 > width:
+            out.append(line); line = w
+        else:
+            line = (line + " " + w).strip()
+    return out + ([line] if line else [])
+
+
+def _summary(p, rows):
+    """Check summary table: demand, capacity, D/C and result for every check, the code
+    reference under each, and a boxed FLAG line for every check that fails."""
+    c = p.c
+    p.head("Check Summary")
+    c.setFont("Helvetica-Bold", 8); c.setFillColorRGB(*GREY)
+    for x, t, right in ((LM, "Check", 0), (LM + 150, "Combination", 0), (LM + 318, "Demand", 1),
+                        (LM + 392, "Capacity", 1), (LM + 430, "D/C", 1), (LM + 446, "Result", 0)):
+        (c.drawRightString if right else c.drawString)(x, p.y, t)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8); c.line(LM, p.y - 3, RM, p.y - 3)
+    p.y -= 14
+    flags = []
+    for r in rows:
+        flag = r.status == "FLAG"
+        sub = _split(r.source, 132) + (_split(r.note, 132) if r.note else [])
+        hgt = 15 + 9 * len(sub)
+        if flag:
+            c.setFillColorRGB(0.99, 0.95, 0.91); c.rect(LM, p.y - hgt + 11, RM - LM, hgt, fill=1, stroke=0)
+            flags.append(r)
+        c.setFillColorRGB(*INK); c.setFont("Helvetica", 8.5)
+        c.drawString(LM, p.y, r.check[0].upper() + r.check[1:])
+        c.setFont("Courier", 8); c.drawString(LM + 150, p.y, r.combo)
+        c.drawRightString(LM + 318, p.y, _fmt(r.demand, r.unit))
+        c.drawRightString(LM + 392, p.y, _fmt(r.capacity, r.unit))
+        c.drawRightString(LM + 430, p.y, f"{r.dc:.2f}")
+        c.setFont("Helvetica-Bold", 8.5); c.setFillColorRGB(*(FLAGC if flag else OKC))
+        c.drawString(LM + 446, p.y, r.status)
+        c.setFont("Helvetica", 7.5); c.setFillColorRGB(*GREY)
+        for i, t in enumerate(sub):
+            c.drawString(LM + 8, p.y - 9.5 - 9 * i, t)
+        c.setStrokeColorRGB(0.88, 0.89, 0.91); c.setLineWidth(0.4)
+        c.line(LM, p.y - hgt + 11, RM, p.y - hgt + 11)
+        p.y -= hgt
+    for r in flags:
+        c.setStrokeColorRGB(*FLAGC); c.setLineWidth(1); c.rect(LM, p.y - 6, RM - LM, 18, fill=0, stroke=1)
+        c.setFillColorRGB(*FLAGC); c.setFont("Helvetica-Bold", 8.5)
+        c.drawString(LM + 6, p.y, f"FLAG - {r.check[0].upper() + r.check[1:]}: {_fmt(r.demand, r.unit)} "
+                                  f"exceeds {_fmt(r.capacity, r.unit)} ({r.combo})")
+        p.y -= 24
+    c.setStrokeColorRGB(*INK)
+
+
+def _closing(p, assumptions, not_checked=()):
+    p.head("Assumptions")
+    for s in assumptions:
+        p.wrap("- " + s, width=118, size=8, dy=10)
+    if not_checked:
+        p.y -= 2
+        p.head("Not Checked on This Sheet")
+        p.wrap("; ".join(not_checked) + ".", width=118, size=8, dy=10)
+    p.c.setStrokeColorRGB(*INK)
+    p.c.showPage(); p.c.save()
 
 
 def steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
@@ -184,60 +268,165 @@ def steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
              f"M max = {max(abs(m) for m in M):.1f} kip-ft")
     p.y = dy0 - 12
 
-    # governing strength calculation, line by line
-    p.head("Flexural and Shear Strength (AISC 360-22)")
-    c.setStrokeColorRGB(0.79, 0.81, 0.83); c.setLineWidth(0.5)
-    box_top = p.y + 9
-    for ln in sheet.steps:
-        val = f"{ln.value:.2f}" if not ln.unit else _fmt(ln.value, ln.unit)
-        c.setFont("Courier", 8); c.setFillColorRGB(*INK)
-        c.drawString(LM + 6, p.y, f"{ln.label} = {val}")
-        c.setFont("Helvetica", 7.5); c.setFillColorRGB(*GREY)
-        c.drawRightString(RM - 6, p.y, ln.source)
-        if ln.note:
-            p.y -= 9
-            c.drawString(LM + 18, p.y, ln.note)
-        p.y -= 10.5
-    c.rect(LM, p.y + 6, RM - LM, box_top - p.y - 6, fill=0, stroke=1)
-    p.y -= 6
+    _steps(p, "Flexural and Shear Strength (AISC 360-22)", sheet.steps)
+    _summary(p, sheet.rows)
+    _closing(p, sheet.assumptions)
+    return path
 
-    # check summary
-    p.head("Check Summary")
-    cols = [(LM, "Check"), (LM + 110, "Combination"), (LM + 268, "Demand"), (LM + 340, "Capacity"),
-            (LM + 392, "D/C"), (LM + 424, "Result")]
-    c.setFont("Helvetica-Bold", 8); c.setFillColorRGB(*GREY)
-    for x, t in cols:
-        (c.drawRightString if t in ("Demand", "Capacity", "D/C") else c.drawString)(
-            x + (0 if t not in ("Demand", "Capacity", "D/C") else 0), p.y, t)
-    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8); c.line(LM, p.y - 3, RM, p.y - 3)
-    p.y -= 14
-    flags = []
-    for r in sheet.rows:
-        flag = r.status == "FLAG"
-        if flag:
-            c.setFillColorRGB(0.99, 0.95, 0.91); c.rect(LM, p.y - 13, RM - LM, 24, fill=1, stroke=0)
-            flags.append(r)
-        c.setFillColorRGB(*INK); c.setFont("Helvetica", 8.5); c.drawString(LM, p.y, r.check.title())
-        c.setFont("Courier", 8); c.drawString(LM + 110, p.y, r.combo)
-        c.drawRightString(LM + 268, p.y, _fmt(r.demand, r.unit))
-        c.drawRightString(LM + 340, p.y, _fmt(r.capacity, r.unit))
-        c.drawRightString(LM + 392, p.y, f"{r.dc:.2f}")
-        c.setFont("Helvetica-Bold", 8.5); c.setFillColorRGB(*(FLAGC if flag else OKC))
-        c.drawString(LM + 424, p.y, r.status)
-        c.setFont("Helvetica", 7.5); c.setFillColorRGB(*GREY)
-        c.drawString(LM + 8, p.y - 9.5, (r.source + ("   " + r.note if r.note else ""))[:128])
-        c.setStrokeColorRGB(0.88, 0.89, 0.91); c.setLineWidth(0.4); c.line(LM, p.y - 13, RM, p.y - 13)
-        p.y -= 25
-    for r in flags:
-        c.setStrokeColorRGB(*FLAGC); c.setLineWidth(1); c.rect(LM, p.y - 6, RM - LM, 18, fill=0, stroke=1)
-        c.setFillColorRGB(*FLAGC); c.setFont("Helvetica-Bold", 8.5)
-        c.drawString(LM + 6, p.y, f"FLAG - {r.check.title()}: {_fmt(r.demand, r.unit)} exceeds "
-                                  f"{_fmt(r.capacity, r.unit)} ({r.combo})")
-        p.y -= 24
 
-    p.head("Assumptions")
-    for s in sheet.assumptions:
-        p.wrap("- " + s, width=118, size=8, dy=10)
-    c.setStrokeColorRGB(*INK)
-    c.showPage(); c.save()
+def _sketch_title(c, x, top, text, centred=False):
+    c.setFillColorRGB(*BLUE); c.setFont("Helvetica-Bold", 8)
+    (c.drawCentredString if centred else c.drawString)(x, top - 4, text)
+
+
+def _small(c, x, y, text, size=6):
+    c.setFillColorRGB(*GREY); c.setFont("Helvetica", size); c.drawCentredString(x, y, text)
+
+
+def steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
+    """Write the calc sheet for a ws_steel_column.SteelColumnSheet."""
+    p = _Page(path, f"Column {sheet.mark} - Steel Compression Member", job, code, sheet.method,
+              page, pages, date)
+    c, pr = p.c, sheet.props
+    top = p.y
+    p.head("Member")
+    p.kv([("Section", f"{sheet.shape}  (Fy = {sheet.Fy:g} ksi)"),
+          ("Height", f"{sheet.height_ft:g} ft"),
+          ("Unbraced Length", f"x axis {sheet.Lx_ft:g} ft, y axis {sheet.Ly_ft:g} ft"),
+          ("Effective Length", f"Kx = {sheet.Kx:g}, Ky = {sheet.Ky:g}  ({sheet.k_source})"),
+          ("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"),
+          ("", f"tf = {pr['tf']:g} in, tw = {pr['tw']:g} in"),
+          ("Properties", f"A = {pr['A']:g} in2, rx = {pr['rx']:g} in, ry = {pr['ry']:g} in"),
+          ("Source", "AISC Shapes Database v16.0")])
+    bottom_left = p.y
+    # column standing up, with its load and supports
+    ex, eh = 440, 62
+    ey = top - 88
+    _sketch_title(c, ex, top, "ELEVATION", centred=True)
+    braces = [sheet.Ly_ft * 12 * k for k in range(1, 50) if sheet.Ly_ft * k < sheet.height_ft - 1e-6]
+    w = memberart.steel_column_elevation(c, ex, ey, eh, pr["d"], pr["tf"], sheet.height_ft * 12, braces)
+    c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
+    c.line(ex, ey + eh + 16, ex, ey + eh + 6)
+    t = c.beginPath(); t.moveTo(ex, ey + eh + 1); t.lineTo(ex - 3, ey + eh + 7); t.lineTo(ex + 3, ey + eh + 7); t.close()
+    c.drawPath(t, fill=1, stroke=0)
+    c.setLineWidth(1.2); c.line(ex - 12, ey - 0.6, ex + 12, ey - 0.6)
+    c.setFillColorRGB(*GREY); c.setFont("Courier", 7.5)
+    c.drawString(ex + w / 2 + 6, ey + eh / 2 - 3, f"{sheet.height_ft:g} ft")
+    c.drawRightString(ex - 6, ey + eh + 9, "P")
+    if braces:
+        _small(c, ex, ey - 9, "x = braced against weak-axis buckling")
+    _small(c, ex, ey - (17 if braces else 9), "width enlarged for clarity")
+    sx = 530
+    _sketch_title(c, sx, top, "SECTION", centred=True)
+    memberart.steel_section(c, sx, top - 44, 46, 50, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
+    _small(c, sx, top - 80, "to scale")
+    p.y = min(bottom_left, ey - 22) - 2
+
+    p.head("Loads")
+    for ld in sheet.loads:
+        s = f"{ld['case']:<3} axial  {ld['P']:.2f} kip"
+        if ld.get("label"):
+            s += f"   ({ld['label']})"
+        p.text(s, font="Courier", size=8)
+    p.y -= 2
+    p.head("Load Combinations")
+    for cb in combos:
+        mark = "   governs" if cb.name == sheet.governing else ""
+        p.text(f"{cb.name:<18} P = {sheet.totals[cb.name]:.2f} kip{mark}", font="Courier", size=8, dy=10)
+        p.text(cb.source, size=7.5, color=GREY, x=LM + 12)
+    p.y -= 4
+    _steps(p, "Compressive Strength (AISC 360-22)", sheet.steps)
+    _summary(p, sheet.rows)
+    _closing(p, sheet.assumptions, sheet.not_checked)
+    return path
+
+
+def footing_pdf(sheet, path, job, code, date, method="Strength design (LRFD)", page=1, pages=1):
+    """Write the calc sheet for a ws_footing.FootingSheet (isolated or continuous)."""
+    i, res = sheet.inp, sheet.result
+    iso = sheet.kind == "isolated"
+    p = _Page(path, f"Footing {sheet.mark} - " + ("Isolated Spread Footing" if iso else
+                                                  "Continuous Footing"), job, code, method,
+              page, pages, date)
+    c = p.c
+    top = p.y
+    p.head("Footing")
+    if iso:
+        sup = f"{i['col_x_in']:g} x {i['col_y_in']:g} in {sheet.supported} column"
+        if i.get("plate_x_in"):
+            sup += f" on {i['plate_x_in']:g} x {i['plate_y_in']:g} in base plate"
+        low = i.get("bottom_layer", "x")
+        rows = [("Size", f"{i['B_ft']:g} ft x {i['L_ft']:g} ft x {i['h_in']:g} in thick"),
+                ("Supports", sup),
+                ("Reinforcing", f"({i['n_x']}) #{i['bar']} in x, ({i['n_y']}) #{i['bar']} in y"),
+                ("", f"{i['cover_in']:g} in clear cover, {low}-direction bars lowest")]
+    else:
+        stem = f", {i['stem_h_in']:g} in high" if i.get("stem_h_in") else ""
+        rows = [("Size", f"{i['W_ft']:g} ft wide x {i['h_in']:g} in thick, per foot of length"),
+                ("Supports", f"{i['wall_in']:g} in {i.get('wall_kind', 'concrete')} wall{stem}"),
+                ("Reinforcing", f"#{i['bar_t']} at {i['spacing_t_in']:g} in across, "
+                                f"({i['n_l']}) #{i['bar_l']} lengthwise"),
+                ("", f"{i['cover_in']:g} in clear cover, bars across are lowest")]
+    rows += [("Concrete", f"f'c = {i['fc']:,.0f} psi, {i['conc_pcf']:g} pcf"
+                          + ("" if i.get("lam", 1.0) == 1.0 else f", lambda = {i['lam']:g}")),
+             ("Bars", f"fy = {i['fy']:,.0f} psi"),
+             ("Soil", f"allowable bearing {i['q_allow_psf']:,.0f} psf")]
+    if i.get("soil_depth_ft"):
+        rows.append(("", f"{i['soil_depth_ft']:g} ft of soil over the footing at {i['soil_pcf']:g} pcf"))
+    p.kv(rows, kw=70)
+    p.text("Soil source: " + sheet.soil_source, size=7.5, color=GREY)
+    bottom_left = p.y
+
+    # pictures: section (always) and plan (isolated)
+    sec_cx = 400 if iso else 450
+    _sketch_title(c, sec_cx, top, "SECTION", centred=True)
+    base = top - (92 if iso else 106)
+    D = footing.BAR_DIA
+    if iso:
+        low = i.get("bottom_layer", "x")
+        n_dots = i["n_y"] if low == "x" else i["n_x"]
+        memberart.footing_section(c, sec_cx, base, 110, 76, i["B_ft"] * 12, i["h_in"], i["col_x_in"],
+                                  sheet.supported, i["cover_in"], D[i["bar"]], n_dots, D[i["bar"]],
+                                  plate_w_in=i.get("plate_x_in"),
+                                  soil_depth_in=i.get("soil_depth_ft", 0) * 12)
+        _sketch_title(c, 516, top, "PLAN", centred=True)
+        memberart.footing_plan(c, 516, top - 52, 72, i["B_ft"] * 12, i["L_ft"] * 12, i["col_x_in"],
+                               i["col_y_in"], i["n_x"], i["n_y"], i["cover_in"],
+                               i.get("plate_x_in"), i.get("plate_y_in"))
+        _small(c, 516, base - 9, "to scale")
+    else:
+        memberart.footing_section(c, sec_cx, base, 150, 92, i["W_ft"] * 12, i["h_in"], i["wall_in"],
+                                  "concrete", i["cover_in"], D[i["bar_t"]], i["n_l"], D[i["bar_l"]],
+                                  stem_h_in=i.get("stem_h_in", 0),
+                                  soil_depth_in=i.get("soil_depth_ft", 0) * 12)
+    _small(c, sec_cx, base - 9, "to scale")
+    p.y = min(bottom_left, base - 14) - 2
+
+    p.head("Loads")
+    u = "lb" if iso else "lb/ft"
+    ps, pu = (i["P_service"], i["Pu"]) if iso else (i["P_service_plf"], i["Pu_plf"])
+    what = "column load" if iso else "wall load at the top of the stem wall"
+    p.text(f"Service   {ps:>10,.0f} {u}   {i['service_combo']}   ({what})", font="Courier", size=8)
+    p.text(f"Factored  {pu:>10,.0f} {u}   {i['strength_combo']}", font="Courier", size=8)
+    v = res.values
+    p.y -= 2
+    p.head("Weights and Design Values")
+    lines = [f"footing weight = {v['W_ftg']:,.1f} {u}"]
+    if v.get("W_stem"):
+        lines.append(f"stem wall weight = {v['W_stem']:,.1f} {u} (full weight for soil bearing; "
+                     f"x {i['dead_factor']:g} for strength)")
+    if v.get("W_soil"):
+        lines.append(f"soil over footing = {v['W_soil']:,.1f} {u}")
+    if not iso:
+        lines += [f"factored load with stem wall, Pu = {v['Pu_plf']:,.1f} lb/ft",
+                  f"factored soil pressure, qu = {v['qu_psf']:,.1f} psf",
+                  f"d = {v['d']:.3f} in;  As = {v['As']:.3f} in2/ft"]
+    for s in lines:
+        p.text(s, font="Courier", size=8, dy=10.5)
+    p.y -= 4
+    _summary(p, sheet.rows)
+    notes = ["Load is centred on the footing; soil pressure is uniform.",
+             "Footing weight and soil over the footing count toward soil bearing only. Strength "
+             "checks use the soil pressure caused by the factored loads (ACI 318-19 13.2.6.3)."]
+    _closing(p, notes + list(res.notes), res.not_checked)
     return path
