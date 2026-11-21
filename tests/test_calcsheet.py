@@ -1,5 +1,5 @@
-"""The calc sheet PDF is produced, is one page, and carries the firm name, the checks
-and no program name."""
+"""The calc sheet PDFs are produced with the firm header and footer (matching HydroKit's
+sheets) and carry the checks."""
 import subprocess
 
 from strukit.calcsheet import steel_beam_pdf
@@ -20,9 +20,10 @@ def test_steel_beam_calc_sheet(tmp_path):
                               text=True, timeout=30).stdout
     except FileNotFoundError:
         return                                   # pdftotext not installed: skip the text checks
-    assert "THATCHER ENGINEERING, LLC" in text and "Beam B1" in text
-    assert "FLAG - Flexure" in text and "Eq. F2-4" in text and "Page 1 of 1" in text
-    assert "strukit" not in text.lower()
+    assert "Thatcher Engineering, LLC" in text and "Beam B1" in text
+    assert "FLAG - Flexure" in text and "Eq. F2-4" in text and "Sheet 1 of 1" in text
+    assert "Prepared with StruKit" in text and "office@thatcherengineering.org" in text
+    assert "Nov 21, 2026" in text and "run " not in text and "Trail Stone" not in text
 
 
 def _text(path):
@@ -44,8 +45,8 @@ def test_steel_column_calc_sheet(tmp_path):
     t = _text(out)
     if t is None:
         return
-    assert "Column C1" in t and "Eq. E3-1" in t and "840.0 kip" in t and "Page 1 of 1" in t
-    assert "Not Checked" in t.title() and "strukit" not in t.lower()
+    assert "Column C1" in t and "Eq. E3-1" in t and "840.0 kip" in t and "Sheet 1 of 1" in t
+    assert "Not Checked" in t.title()
 
 
 def test_footing_calc_sheets(tmp_path):
@@ -71,7 +72,7 @@ def test_footing_calc_sheets(tmp_path):
         return
     assert "Footing A" in t and "1,337 psf" in t and "Table 22.6.5.2" in t and "test soils report" in t
     assert "Footing CF1" in t2 and "1,488 psf" in t2 and "stem wall weight = 290.0" in t2
-    assert "strukit" not in (t + t2).lower()
+    assert "ACI 318-19" in t
 
 
 def test_column_with_lateral_load_sheet_runs_to_two_pages(tmp_path):
@@ -86,5 +87,33 @@ def test_column_with_lateral_load_sheet_runs_to_two_pages(tmp_path):
     t = _text(out)
     if t is None:
         return
-    assert calcsheet._paged.last_pages == 2 and "Page 1 of 2" in t and "Page 2 of 2" in t
+    assert calcsheet._paged.last_pages == 2 and "Sheet 1 of 2" in t and "Sheet 2 of 2" in t
     assert "Eq. A-8-3" in t and "H1-1" in t and "Shear, strong direction" in t
+
+
+def test_header_takes_project_name_job_and_site(tmp_path):
+    loads = [dict(case="D", kind="uniform", w=0.45)]
+    asd = [Combo("D", {"D": 1}, "given")]
+    sheet = run("B1", "W18x50", 50, 20, loads, asd, [], "continuous", "ASD", True)
+    out = steel_beam_pdf(sheet, str(tmp_path / "b.pdf"),
+                         dict(name="Test Building", number="2026-000", address="1 Main St, Pueblo, CO"),
+                         "AISC 360-22", "2026-11-21", combos=asd)
+    t = _text(out)
+    if t is None:
+        return
+    assert "Test Building" in t and "Job 2026-000" in t and "1 Main St, Pueblo, CO" in t
+
+
+def test_frame_calc_sheet(tmp_path):
+    from strukit import calcsheet, ws_frame
+    lay = ws_frame.layout([24, 30], [14, 12], "fixed", "W10x49", "W16x40", roof="gable", rise_ft=6,
+                          rafter_shape="W14x30")
+    loads = [dict(case="D", on="level:1", w=0.9), dict(case="S", on="rafters", w=0.75, kind="projected"),
+             dict(case="W", level=2, Fx=3.5)]
+    cb = [Combo("D + S", {"D": 1, "S": 1}, "given"), Combo("D + 0.6W", {"D": 1, "W": 0.6}, "given")]
+    s = ws_frame.run("F2", lay, 50, loads, cb, "ASD", True, {"columns": 12, "beams": 6, "rafters": 5})
+    t = _text(calcsheet.frame_pdf(s, str(tmp_path / "f.pdf"), "0000-000 TEST", "AISC 360-22", "2026-11-21"))
+    if t is None:
+        return
+    assert "Frame F2" in t and "Member Summary" in t.title() and "Drift amplification, story 2" in t
+    assert "B2-1" in t and "R3" in t and "Base Reactions" in t.title()

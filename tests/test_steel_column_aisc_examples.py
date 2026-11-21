@@ -65,7 +65,18 @@ def test_torsional_buckling_by_hand():
 
 
 def test_slender_and_missing_inputs_stop():
-    with pytest.raises(SteelInputError, match="slender element"):
-        check(dict(shapes.get("W14x90"), h_tw=60.0), FY, 120, 120)
+    with pytest.raises(SteelInputError, match="slender-element section needs"):
+        check({k: v for k, v in dict(shapes.get("W14x90"), h_tw=60.0).items() if k != "tw"}, FY, 120, 120)
     with pytest.raises(SteelInputError, match="missing section properties: A"):
         check({k: v for k, v in shapes.get("W14x90").items() if k != "A"}, FY, 120, 120)
+
+
+@pytest.mark.parametrize("Lc_ft,Pn", [(5, 349), (10, 210), (15, 96.8)])
+def test_example_E_1E_W16x31_slender_web(Lc_ft, Pn):
+    # Sect. E7: the web (h/tw = 51.6) is slender. Printed Pn: 349, 210 and 96.8 kips.
+    # At 10 ft the example rounds Lc/r to 103 and Fn to 23.0 ksi (210 kips); unrounded
+    # is 211.5 kips, and Pn/Omega = 126.7 agrees with the Manual Table 6-1 value of 127
+    # that the example also prints. Compared at 1 %.
+    w = shapes.get("W16x31")
+    r = check(w, FY, Lcx=Lc_ft * 12, Lcy=Lc_ft * 12)
+    assert near(r.Pn, Pn, 1e-2)
