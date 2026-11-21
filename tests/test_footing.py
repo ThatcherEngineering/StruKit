@@ -121,3 +121,77 @@ def test_bad_input_stops_with_a_message():
 
 def test_result_lists_what_is_not_checked():
     assert any("development" in s for s in footing_a().not_checked)
+
+
+# ---- continuous footing: 2026-011 "Continuous Footing" page (StruCalc Pro) ----
+
+from strukit.footing import check_continuous  # noqa: E402
+
+D_PLF = 112 + 315 + 315 + 298      # Floor Dead, Wall Dead LL, Wall Dead ML, Roof Dead
+L_PLF = 297 + 595                  # Floor Live, Roof Live (entered in StruCalc as type Live)
+
+
+def cont(dead_factor, **kw):
+    args = dict(W_ft=2, h_in=10, fc=3000, fy=60000, wall_in=8, bar_t=5, spacing_t_in=12,
+                bar_l=5, n_l=2, cover_in=3, P_service_plf=D_PLF + L_PLF, service_combo="D+L",
+                Pu_plf=1.2 * D_PLF + 1.6 * L_PLF, strength_combo="1.2D+1.6L+0.5Lr",
+                dead_factor=dead_factor, q_allow_psf=1500, conc_pcf=145, stem_h_in=36,
+                stem_pcf=145, soil_depth_ft=3.5, soil_pcf=110)
+    args.update(kw)
+    return check_continuous(**args)
+
+
+def test_continuous_soil_bearing_matches_strucalc():
+    r = cont(1.2)
+    assert near(r.get("soil bearing pressure").demand, 1488.5, 1e-4)      # StruCalc 1488.5 / 1500
+    assert near(r.values["W_ftg"], 241.6667, 1e-5)                        # StruCalc footing weight
+    assert near(r.values["W_stem"], 290.0) and near(r.values["W_soil"], 513.33, 1e-4)
+
+
+def test_continuous_moment_matches_strucalc_when_stem_weight_is_left_out():
+    # StruCalc prints Mu = 297.2 lb-ft, which is the factored wall load alone
+    # (2,675.2 lb/ft). It does not add the stem wall's own 290 lb/ft.
+    assert near(cont(0).get("flexure").demand, 297.2, 1e-3)
+
+
+def test_continuous_moment_with_stem_weight_is_higher():
+    # StruKit adds 1.2 x 290 lb/ft: the stem wall bears on the footing, so it is part of
+    # the factored load (ACI 318-19 13.2.6.3). Mu = 3,023.2/2 psf x (8 in)^2 / 2.
+    r = cont(1.2)
+    assert near(r.values["Pu_plf"], 2675.2 + 348.0)
+    assert near(r.get("flexure").demand, (3023.2 / 2) * (8 / 12) ** 2 / 2)
+    assert r.get("flexure").demand > 297.2
+
+
+def test_continuous_moment_capacity_within_one_percent_of_strucalc():
+    # StruCalc 8,816.2 lb-ft (d = 6.625 in back-calculated); d = 10 - 3 - 0.3125 = 6.6875.
+    c = cont(1.2).get("flexure")
+    a = 0.31 * 60000 / (0.85 * 3000 * 12)
+    assert near(c.capacity, 0.9 * 0.31 * 60000 * (6.6875 - a / 2) / 12, 1e-6)
+    assert near(c.capacity, 8816.2, 1.1e-2)
+
+
+def test_continuous_shear_follows_aci_not_strucalc():
+    # StruCalc: demand 519.0 (section at d/2), capacity 15,774.4 = 0.75 x 2 sqrt(fc') x 24 x 8.
+    # By ruling (2026-11-20): ACI 318-19 Table 22.5.5.1(c), section at d.
+    c = cont(0).get("one-way shear")
+    assert near(c.demand, 1337.6 / 144 * 12 * (8 - 6.6875))
+    rho = 0.31 / (12 * 6.6875)
+    assert near(c.capacity, 0.75 * 8 * rho ** (1 / 3) * math.sqrt(3000) * 12 * 6.6875)
+    assert near(0.75 * 2 * math.sqrt(3000) * 24 * 8.0, 15774.4, 1e-4)
+
+
+def test_continuous_minimum_steel_and_masonry_wall():
+    r = cont(1.2)
+    assert near(r.get("minimum reinforcement, transverse").demand, 0.0018 * 12 * 10)
+    assert near(r.get("minimum reinforcement, longitudinal").demand, 0.0018 * 24 * 10)
+    assert r.get("minimum reinforcement, longitudinal").ok
+    m = cont(1.2, wall_kind="masonry")            # critical section at wall_in / 4 from center
+    assert near(m.get("flexure").demand, (3023.2 / 2) * (10 / 12) ** 2 / 2)
+
+
+def test_continuous_requires_the_dead_factor_and_stem_weight():
+    with pytest.raises(FootingInputError, match="dead_factor"):
+        cont(None)
+    with pytest.raises(FootingInputError, match="stem_pcf"):
+        cont(1.2, stem_pcf=None)
