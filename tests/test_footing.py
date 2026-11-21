@@ -4,10 +4,11 @@ Reference job: Thatcher Engineering 2026-011 (Humbargar Residence addition), sea
 package of April 2026, "Footing A" page, produced with StruCalc Pro. The numbers below
 are the values printed on that page.
 
-STATUS: partly validated. Soil pressure, factored moment and bearing match StruCalc
-exactly. The shear checks do NOT match StruCalc and are not expected to: see the two
-tests named "..._differs_from_strucalc". Those differences are waiting on the
-engineer's ruling (recorded in STRUKIT-RULINGS.md when made).
+STATUS: soil pressure, factored moment and bearing match StruCalc exactly. The shear
+checks do NOT match StruCalc and are not meant to: see the two tests named
+"..._differs_from_strucalc".
+RULING (Zach Thatcher, 2026-11-20 18:08): follow ACI 318-19 as written, not StruCalc's
+method, for footing shear. Recorded in STRUKIT-RULINGS.md.
 """
 import math
 
