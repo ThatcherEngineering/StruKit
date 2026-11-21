@@ -1047,8 +1047,9 @@ def _picture(c, top, pic):
             t = c.beginPath(); t.moveTo(rx, py + tp + 21); t.lineTo(rx - 2.5, py + tp + 16); t.lineTo(rx + 2.5, py + tp + 16); t.close()
             c.drawPath(t, fill=1, stroke=0)
             c.setFont(FM, 6); c.drawString(px - 2, py + tp + 24, f"T = {d['T']:.1f} k")
-        _small(c, 475, top - 104, f"dimensions in inches; section shows the bearing block and rod tension for {d['case']}")
-        return top - 108
+        _small(c, 476, top - 104, "dimensions in inches; section shows the bearing block and rod tension")
+        _small(c, 476, top - 111, f"for {d['case']}")
+        return top - 115
     if name == "footing_moment":
         _sketch_title(c, 470, top, "SECTION AND SOIL PRESSURE", centred=True)
         base = top - 74
@@ -1093,8 +1094,82 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
             p.text(src, size=7.5, color=GREY, x=LM + 12)
     p.y -= 4
     _steps(p, sheet.steps_title, sheet.steps)
+    for b in sheet.blocks:
+        if b.get("picture"):
+            p.room(230)
+            p.head(b["title"] + ": Inputs and Layout")
+            for k, v in b.get("info", ()):
+                lines = _split(v, 104)
+                p.kv([(k, lines[0])] + [("", t) for t in lines[1:]], kw=86)
+            p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
+        _steps(p, b["title"], b["steps"])
     _summary(p, sheet.rows)
     return _closing(p, sheet.assumptions, sheet.not_checked)
+
+
+def _block_picture(c, top, pic):
+    """Full-width pictures for the further blocks of a SimpleSheet. Returns the y below."""
+    name, d = pic
+    if name != "anchorage":
+        return top
+    SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
+    g = lambda v: f"{v:.2f}".rstrip("0").rstrip(".")
+    # ---- plan: the moment and the shear act along the page width
+    _sketch_title(c, LM + 6, top - 4, "PLAN")
+    s = min(150 / SN, 92 / SB)
+    x0, y0 = LM + 30, top - 22 - SB * s
+    memberart._concrete(c, x0, y0, SN * s, SB * s, seed=5)
+    px, py = x0 + (SN - N) * s / 2, y0 + (SB - B) * s / 2
+    c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(0.87, 0.90, 0.93)
+    c.rect(px, py, N * s, B * s, fill=1, stroke=1)
+    r = max(d["rod_d"] * s / 2, 1.4)
+    ys = [y0 + (d["c_side"] + k * d["s_row"]) * s for k in range(d["n"])] if d["n"] > 1 else [y0 + SB * s / 2]
+    xs = [x0 + d["c_end"] * s, x0 + (d["c_end"] + d["s_rows"]) * s]
+    c.setFillColorRGB(0.30, 0.34, 0.39)
+    for xx in xs:
+        for yy in ys:
+            c.circle(xx, yy, r, fill=1, stroke=0)
+    yb = y0 - 8
+    memberart._dim_h(c, x0, xs[0], yb, g(d["c_end"]), FR, ext_from=y0)
+    memberart._dim_h(c, xs[0], xs[1], yb, g(d["s_rows"]), FR, ext_from=y0)
+    memberart._dim_h(c, xs[1], x0 + SN * s, yb, g(d["c_end"]), FR, ext_from=y0)
+    memberart._dim_h(c, x0, x0 + SN * s, yb - 14, g(SN) + " concrete", FR)
+    xr = x0 + SN * s + 8
+    memberart._dim_v(c, y0, ys[0], xr, g(d["c_side"]), FR, ext_from=x0 + SN * s)
+    if d["n"] > 1:
+        memberart._dim_v(c, ys[0], ys[-1], xr, (f"{d['n'] - 1} @ " if d["n"] > 2 else "") + g(d["s_row"]), FR, ext_from=x0 + SN * s)
+        memberart._dim_v(c, ys[-1], y0 + SB * s, xr, g(d["c_side"]), FR, ext_from=x0 + SN * s)
+    else:
+        memberart._dim_v(c, ys[0], y0 + SB * s, xr, g(d["c_side"]), FR, ext_from=x0 + SN * s)
+    memberart._dim_v(c, y0, y0 + SB * s, xr + 38, g(SB) + " concrete", FR)
+    low1 = yb - 26
+    # ---- section along the moment
+    sx0 = LM + 300
+    _sketch_title(c, sx0, top - 4, "SECTION")
+    s2 = min(150 / SN, 84 / d["ha"])
+    tp = 3.0
+    cx0, ctop = sx0 + 6, top - 34
+    memberart._concrete(c, cx0, ctop - d["ha"] * s2, SN * s2, d["ha"] * s2, seed=9)
+    c.setLineWidth(0.6); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(*memberart.STEEL_FILL)
+    c.rect(cx0 + (SN - N) * s2 / 2, ctop, N * s2, tp, fill=1, stroke=1)
+    for k in (0, 1):
+        rx = cx0 + (d["c_end"] + k * d["s_rows"]) * s2
+        c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(1.1)
+        c.line(rx, ctop - d["hef"] * s2, rx, ctop + tp + 5)
+        c.setFillColorRGB(0.20, 0.22, 0.25)
+        c.rect(rx - 3, ctop - d["hef"] * s2 - 2.2, 6, 2.2, fill=1, stroke=0)
+        c.rect(rx - 2.4, ctop + tp, 4.8, 2, fill=1, stroke=0)
+    xr = cx0 + SN * s2 + 8
+    memberart._dim_v(c, ctop - d["hef"] * s2, ctop, xr, "hef = " + g(d["hef"]), FR, ext_from=cx0 + SN * s2)
+    memberart._dim_v(c, ctop - d["ha"] * s2, ctop, xr + 44, "ha = " + g(d["ha"]), FR, ext_from=cx0 + SN * s2)
+    yb2 = ctop - d["ha"] * s2 - 8
+    memberart._dim_h(c, cx0, cx0 + d["c_end"] * s2, yb2, g(d["c_end"]), FR, ext_from=ctop - d["ha"] * s2)
+    memberart._dim_h(c, cx0 + d["c_end"] * s2, cx0 + (d["c_end"] + d["s_rows"]) * s2, yb2, g(d["s_rows"]), FR,
+                     ext_from=ctop - d["ha"] * s2)
+    low2 = yb2 - 12
+    low = min(low1, low2)
+    _small(c, (LM + RM) / 2, low - 4, "dimensions in inches; to scale; edge distances are measured from the rod centres")
+    return low - 8
 
 
 def simple_pdf(sheet, path, job, code, date, page=1, pages=None):

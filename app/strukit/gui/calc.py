@@ -147,7 +147,7 @@ FORMS = {
                 F("sup_B", "Support width", unit="in", required=False)],
         tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="kip"), F("label", "Note", "text", required=False)])]),
     "base_plate_moment": dict(
-        title="Base Plate with Moment", code="AISC 360-22", mark="BPM",
+        title="Base Plate with Moment", code="AISC 360-22, ACI 318-19", mark="BPM",
         fields=[F("shape", "Column", "shape"), F("N", "Plate length (direction of the moment)", unit="in"),
                 F("B", "Plate width", unit="in"), F("t", "Plate thickness", unit="in"), F("Fy", "Plate Fy", unit="ksi"),
                 F("fc", "Concrete f'c", unit="psi"),
@@ -159,9 +159,31 @@ FORMS = {
                 F("n_rods", "Rods on each side"), F("rod_edge", "Rods from the plate end", unit="in"),
                 F("rod_side", "Rods from the plate sides", unit="in"),
                 F("n_shear", "Rods counted on for shear", help="0 = the rods do not carry the base shear"),
-                F("loads_from", "Loads come from", "text", required=False, help="printed on the sheet")],
+                F("loads_from", "Loads come from", "text", required=False, help="printed on the sheet"),
+                F("anc_hef", "Anchorage: rod embedment to the head, hef", unit="in", required=False,
+                  help="ACI 318-19 Chapter 17; leave blank to leave the anchorage in the concrete unchecked"),
+                F("anc_h", "Anchorage: concrete thickness at the rods", unit="in", required=False),
+                F("anc_F", "Anchorage: hex head or nut, width across flats", unit="in", required=False,
+                  help="gives the head bearing area; or type the area in the next box"),
+                F("anc_abrg", "Anchorage: head bearing area, if not a hex", unit="in2", required=False),
+                F("anc_tpi", "Anchorage: rod threads per inch", required=False),
+                F("anc_fy", "Anchorage: anchor rod Fy", unit="ksi", required=False),
+                F("anc_ductile", "Anchorage: rod steel is ductile (ACI 318 Ch. 2)", "select", options=["yes", "no"], required=False,
+                  help="elongation at least 14 percent and reduction in area at least 30 percent"),
+                F("anc_cracked", "Anchorage: concrete at the rods at service load", "select", options=["cracked", "uncracked"],
+                  required=False),
+                F("anc_supp", "Anchorage: supplementary reinforcement at the rods", "select", options=["yes", "no"], required=False,
+                  help="ACI 318-19 Table 17.5.3(b)"),
+                F("anc_edge", "Anchorage: bars between the rods and the edge", "select",
+                  options=["none or smaller than No. 4", "No. 4 or larger", "No. 4 or larger in stirrups at 4 in."],
+                  required=False, help="ACI 318-19 Table 17.7.2.5.1"),
+                F("anc_grout", "Anchorage: grout pad under the plate", "select", options=["yes", "no"], required=False),
+                F("anc_sdc", "Anchorage: Seismic Design Category", "select", options=["A or B", "C to F"], required=False)],
         tables=[T("cases", "Load cases at the base (at the project's design method)",
-                  [F("name", "Combination", "text"), F("P", "P", unit="kip"), F("M", "M", unit="kip-ft"), F("V", "V", unit="kip")])]),
+                  [F("name", "Combination", "text"), F("P", "P", unit="kip"), F("M", "M", unit="kip-ft"), F("V", "V", unit="kip")]),
+                T("cases_lrfd", "Factored (LRFD) load cases for the rod anchorage",
+                  [F("name", "Combination", "text"), F("P", "Pu", unit="kip"), F("M", "Mu", unit="kip-ft"), F("V", "Vu", unit="kip")],
+                  help="needed only when the anchorage is checked and the project's design method is ASD")]),
     "footing_moment": dict(
         title="Footing with Moment", code="ACI 318-19", mark="FM",
         fields=[F("B", "Width, in the direction of the moment", unit="ft"), F("L", "Length", unit="ft"), F("h", "Thickness", unit="in"),
@@ -511,9 +533,39 @@ def build(kind, values, project):
         cases = r.rows("cases")
         if not cases:
             r.miss.append("No load case is entered")
+        anc, fact = None, None
+        if r.num("anc_hef", False) is not None:
+            from .. import anchorage as _an
+            lab = lambda k: r.labels[k].replace("Anchorage: ", "Anchorage, ")
+            pick = lambda k, opts: (opts.index(r.text(k, False)) if r.text(k, False) in opts else
+                                    r.miss.append(lab(k) + " is blank"))
+            F_, ab = r.num("anc_F", False), r.num("anc_abrg", False)
+            if (F_ is None) == (ab is None):
+                r.miss.append("Anchorage: give the hex width across flats or the head bearing area (one of the two)")
+            anc = dict(hef=r.num("anc_hef"), ha=r.num("anc_h", label=lab("anc_h")), nt=r.num("anc_tpi", label=lab("anc_tpi")),
+                       fya=r.num("anc_fy", label=lab("anc_fy")))
+            d_, c_, s_, e_, g_ = (pick("anc_ductile", ["yes", "no"]), pick("anc_cracked", ["cracked", "uncracked"]),
+                                  pick("anc_supp", ["yes", "no"]),
+                                  pick("anc_edge", ["none or smaller than No. 4", "No. 4 or larger",
+                                                    "No. 4 or larger in stirrups at 4 in."]),
+                                  pick("anc_grout", ["yes", "no"]))
+            sdc = r.text("anc_sdc", False)
+            if not sdc:
+                r.miss.append(lab("anc_sdc") + " is blank")
+            if None not in (d_, c_, s_, e_, g_):
+                anc.update(ductile=d_ == 0, cracked=c_ == 0, supplementary=s_ == 0, edge_reinf=e_, grout=g_ == 0, sdc=sdc)
+            if F_ is not None and ab is None and rod[0]:
+                anc.update(Abrg=_an.hex_bearing_area(F_, rod[0]), head=f"hex head or nut, {F_:g} in across flats")
+                if anc["Abrg"] <= 0:
+                    r.miss.append("Anchorage: the hex width across flats is not larger than the rod")
+            elif ab is not None:
+                anc.update(Abrg=ab, head="head bearing area typed in")
+            fact = r.rows("cases_lrfd")
+            if m == "ASD" and not fact:
+                r.miss.append("Anchorage: enter the factored (LRFD) load cases; ACI 318-19 Chapter 17 is strength design")
         r.done()
         ss = ws_more.base_plate_moment_sheet(mark, shape, N, B, t, Fy, fc, sup, rod[0], rod[1], rod[2], int(rod[3]),
-                                             rod[4], rod[5], int(rod[6]), cases, m)
+                                             rod[4], rod[5], int(rod[6]), cases, m, anchorage=anc, cases_factored=fact)
         if r.text("loads_from", False):
             ss.assumptions.insert(0, "Loads: " + r.text("loads_from", False) + ".")
         return ss, "simple", {}
