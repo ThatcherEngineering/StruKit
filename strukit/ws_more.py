@@ -6,7 +6,7 @@ calculations and their sources.
 """
 from dataclasses import dataclass, field
 
-from . import base_plate, footing, footing_moment, shapes
+from . import anchorage as anch, base_plate, footing, footing_moment, shapes
 from .ws_steel_beam import Row, WorksheetError
 
 
@@ -26,6 +26,7 @@ class SimpleSheet:
     not_checked: list
     picture: tuple = ()          # (name, data) drawn by the calc sheet
     governing: str = ""
+    blocks: list = field(default_factory=list)   # further calculation blocks: dict(title, steps, picture, lead)
 
     @property
     def ok(self):
@@ -140,7 +141,8 @@ def footing_line(label, value, unit, source, note=""):
 
 
 def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod_d, rod_Fu, rod_source,
-                            n_rods, rod_edge, rod_side_edge, n_shear, cases, method):
+                            n_rods, rod_edge, rod_side_edge, n_shear, cases, method, anchorage=None,
+                            cases_factored=None):
     """A column base that carries moment about the column's strong axis.
 
     N: plate length in the direction of the moment (parallel to the column depth); B: width.
@@ -150,7 +152,10 @@ def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod
     n_shear: how many rods are counted on to carry the base shear (0 = the rods do not
     carry shear; shear transfer is then not checked here).
     cases: dict(name, P, M, V) for each load combination at the level of `method`:
-    P kips (compression positive), M kip-ft, V kips."""
+    P kips (compression positive), M kip-ft, V kips.
+    anchorage: None to leave the rods' anchorage in the concrete unchecked, or the inputs
+    of _anchorage below. cases_factored: the same load cases under the LRFD combinations
+    (ACI 318-19 Chapter 17 is strength design); not needed when method is LRFD."""
     from . import bolts
     if method not in ("ASD", "LRFD"):
         raise WorksheetError("method must be ASD or LRFD")
@@ -237,12 +242,20 @@ def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod
             ("Shear", f"{n_shear} rod(s) counted on for shear" if n_shear else "not carried by the rods"),
             ("Concrete", f"f'c = {fc_psi:,.0f} psi; " + ("plate covers the full support" if support == "full" else
                                                          f"support {support[0]:g} in x {support[1]:g} in, plate centred"))]
-    not_checked = ["anchorage of the rods in the concrete: breakout, pullout, side blowout, pryout (ACI 318-19 Chapter 17)",
+    not_checked = ["anchorage of the rods in the concrete: breakout, pullout, side blowout, pryout (ACI 318-19 Chapter 17)"
+                   if anchorage is None else None,
                    "weld of the column to the plate", "the column flange and web at the base",
                    "moment about the column's weak axis", "all rods in tension (net uplift with little moment)"]
+    not_checked = [x for x in not_checked if x]
     if not n_shear:
         not_checked.insert(1, "transfer of the base shear (friction, shear lug or rods)")
-    return SimpleSheet(
+    extra = None
+    if anchorage is not None:
+        extra = _anchorage(mark, p, N, B, support, fc_psi, rod_d, rod_Fu, n_rods, rod_edge, rod_side_edge, n_shear,
+                           cases if method == "LRFD" else cases_factored, Fy_plate, anchorage)
+        rows += extra["rows"]
+        not_checked += extra["not_checked"]
+    sheet = SimpleSheet(
         mark, "Column Base Plate with Moment", "Base Plate", method, info,
         [f"{c['name']:<26} P = {c['P']:>8.2f} kip   M = {c['M']:>8.2f} kip-ft   V = {c['V']:>7.2f} kip" for c in cases], [],
         f"Bearing, Rod Tension and Plate Thickness ({gov['c']['name']})", steps, rows,
@@ -258,3 +271,102 @@ def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod
                                            edge=rod_edge, side=rod_side_edge, rod_d=rod_d, Y=g.Y, T=g.T,
                                            t=t, case=g.name)),
         governing=gov["c"]["name"])
+    if extra:
+        sheet.load_lines += extra["load_lines"]
+        sheet.assumptions += extra["assumptions"]
+        sheet.blocks.append(extra["block"])
+    return sheet
+
+
+def _anchorage(mark, p, N, B, support, fc_psi, rod_d, rod_Fu, n_rods, rod_edge, rod_side, n_shear, cases, Fy_plate, a):
+    """Anchorage of the rods of a base plate with moment in the concrete, ACI 318-19
+    Chapter 17 (see anchorage.py). a: dict with hef, ha, nt (threads per inch), fya, ductile,
+    Abrg, head (text describing the head), cracked, supplementary, edge_reinf (0, 1, 2),
+    grout, sdc (text). cases: the factored (LRFD) load cases."""
+    need = ("hef", "ha", "nt", "fya", "ductile", "Abrg", "head", "cracked", "supplementary", "edge_reinf", "grout", "sdc")
+    gone = [k for k in need if a.get(k) is None]
+    if gone:
+        raise WorksheetError(f"{mark}: rod anchorage is missing: " + ", ".join(gone))
+    if str(a["sdc"]).strip().upper() not in ("A", "B", "A OR B"):
+        raise WorksheetError(f"{mark}: rod anchorage in Seismic Design Category C to F needs ACI 318-19 Sect. 17.10, "
+                             "which is not built")
+    if not cases:
+        raise WorksheetError(f"{mark}: rod anchorage needs the load cases under the LRFD combinations "
+                             "(ACI 318-19 Chapter 17 is strength design, Sect. 17.4)")
+    if n_shear not in (0, n_rods, 2 * n_rods):
+        raise WorksheetError(f"{mark}: for the anchorage check the rods counted on for shear must be 0, {n_rods} (one row) "
+                             f"or {2 * n_rods} (both rows)")
+    sup = (N, B) if support == "full" else support
+    c_end = (sup[0] - N) / 2 + rod_edge
+    c_side = (sup[1] - B) / 2 + rod_side
+    s_rows = N - 2 * rod_edge
+    s_row = (B - 2 * rod_side) / (n_rods - 1) if n_rods > 1 else 0.0
+    try:
+        res = anch.check(rod_d, a["nt"], rod_Fu, a["fya"], a["ductile"], a["hef"], a["Abrg"], fc_psi, a["ha"], n_rods,
+                         s_row, s_rows, c_end, c_side, a["cracked"], a["supplementary"], a["edge_reinf"], a["grout"],
+                         n_shear // n_rods)
+    except anch.AnchorageError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    A1 = N * B
+    A2 = A1 if support == "full" else base_plate.similar_area(N, B, support[0], support[1])
+    fp = 0.65 * 0.85 * fc_psi / 1000.0 * min((A2 / A1) ** 0.5, 2.0)
+    f_rod = N / 2 - rod_edge
+    runs, loads = [], []
+    for c in cases:
+        for key in ("name", "P", "M", "V"):
+            if c.get(key) is None:
+                raise WorksheetError(f"{mark}: a factored load case is missing '{key}'")
+        mc = base_plate.moment_case(c["name"], c["P"], c["M"] * 12, p["d"], p["bf"], N, B, f_rod, fp, Fy_plate, "LRFD", n_rods)
+        dem, inter, rt, rv = anch.demands(res, mc.T, c["V"])
+        runs.append(dict(c=c, T=mc.T, dem=dem, inter=inter, rt=rt, rv=rv))
+        loads.append(f"{c['name']:<26} Pu = {c['P']:>7.2f} kip   Mu = {c['M']:>7.2f} kip-ft   Vu = {c['V']:>6.2f} kip   "
+                     f"row tension = {mc.T:>6.2f} kip")
+    rows = []
+    for i, m in enumerate(res.modes):
+        r = max(runs, key=lambda r: r["dem"][i][2])
+        d = r["dem"][i][1]
+        if d <= 0:
+            continue
+        rows.append(Row("ACI " + m.label, r["c"]["name"], d, m.design, "kip", m.source,
+                        f"phi = {m.phi:g}, nominal {m.Rn:.2f} kip; {m.note}"))
+    both = [r for r in runs if r["inter"] is not None]
+    if both:
+        r = max(both, key=lambda r: r["inter"])
+        rows.append(Row("ACI tension + shear", r["c"]["name"], r["inter"], 1.2, "", "ACI 318-19 Eq. 17.8.3",
+                        f"tension ratio {r['rt']:.2f} + shear ratio {r['rv']:.2f}, each for its governing strength"))
+    spc = [x for x in (s_row if n_rods > 1 else None, s_rows) if x]
+    rows.append(Row("ACI rod spacing, minimum", "all", 4 * rod_d, min(spc), "in",
+                    "ACI 318-19 Table 17.9.2(a), cast-in anchors not torqued",
+                    "demand is the minimum spacing 4 da; capacity is the least spacing provided"))
+    steps = list(res.lines)
+    g = max(runs, key=lambda r: max(r["rt"], r["rv"]))
+    steps.append(footing_line(f"row tension, {g['c']['name']}", g["T"], "kip", "statics at the factored loads",
+                              "same bearing-block model, bearing at phi 0.65 x 0.85 f'c sqrt(A2/A1)"))
+    crk = "cracked at service load" if a["cracked"] else "uncracked at service load"
+    er = ("no edge reinforcement counted", "No. 4 or larger between the rods and the edge",
+          "No. 4 or larger between the rods and the edge, in stirrups at 4 in. or less")[a["edge_reinf"]]
+    info = [("Rod Anchorage", f"cast-in, embedment hef = {a['hef']:g} in to the head; {a['head']} (Abrg = {a['Abrg']:.3f} in2); "
+                              f"{a['nt']:g} threads per inch; Fy = {a['fya']:g} ksi; "
+                              f"{'ductile' if a['ductile'] else 'brittle'} steel element (ACI 318-19 Ch. 2)"),
+            ("Concrete at Rods", f"{a['ha']:g} in thick; {crk}; supplementary reinforcement "
+                                 f"{'present' if a['supplementary'] else 'not present'}; {er}; "
+                                 f"{'grout pad under the plate' if a['grout'] else 'no grout pad'}; Seismic Design Category {a['sdc']}")]
+    assumptions = [
+        "Rod anchorage is checked for the factored (LRFD) load cases; ACI 318-19 Chapter 17 is strength design. The row "
+        "tension for each case comes from the same bearing-block model as the plate, with bearing at the LRFD stress.",
+        "Anchorage: normalweight concrete (lambda_a = 1.0, Table 17.2.4.1); rods cast in with a head or nut, not torqued; "
+        "the plate is centred on the concrete; anchor reinforcement is not counted; the moment and the shear act toward "
+        "the end of the concrete.",
+        "Shear breakout follows the load-distribution cases of ACI 318-19 Fig. R17.7.2.1b for rods not welded to the plate."]
+    if not both:
+        assumptions.append("Anchorage: tension and shear interaction is neglected under ACI 318-19 17.8.2; the tension "
+                           "ratio or the shear ratio is 0.2 or less in every load case.")
+    assumptions += ["Anchorage: " + n for n in res.notes]
+    return dict(rows=rows, load_lines=["Factored load cases for the rod anchorage:"] + loads,
+                assumptions=assumptions,
+                not_checked=["edge cover of the rods (ACI 318-19 17.9.2 refers to 20.5.1.3)",
+                             "anchor reinforcement (17.5.2.1)", "hooked rods"],
+                block=dict(title="Rod Anchorage in the Concrete (ACI 318-19 Chapter 17)", steps=steps, info=info,
+                           picture=("anchorage", dict(N=N, B=B, sup_N=sup[0], sup_B=sup[1], n=n_rods, edge=rod_edge,
+                                                      side=rod_side, rod_d=rod_d, hef=a["hef"], ha=a["ha"],
+                                                      c_end=c_end, c_side=c_side, s_row=s_row, s_rows=s_rows))))
