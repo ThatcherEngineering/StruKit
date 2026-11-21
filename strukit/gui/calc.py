@@ -7,7 +7,7 @@ naming the box, and all such messages come back together.
 """
 import re
 
-from .. import calcsheet, shapes, ws_footing, ws_frame, ws_steel_beam, ws_steel_column
+from .. import calcsheet, shapes, ws_conn, ws_footing, ws_frame, ws_steel_beam, ws_steel_column
 from ..footing import FootingInputError
 from ..steel_beam import SteelInputError
 from ..ws_steel_beam import Combo, DeflCheck, WorksheetError
@@ -112,6 +112,30 @@ FORMS = {
                 T("leaning", "Loads on columns outside the frame", [CASE, F("level", "Level"), F("P", "P", unit="kip")]),
                 T("drift", "Story drift limits", [F("label", "Name", "text"), F("expr", "Loads", "text"),
                                                   F("ratio", "Story height /"), F("source", "Source", "text")])]),
+    "weld": dict(
+        title="Fillet Weld", code="AISC 360-22", mark="W",
+        fields=[F("size", "Weld size (leg)", unit="in"), F("length", "Length of each weld", unit="in"),
+                F("n_lines", "Number of welds"), F("FEXX", "Electrode FEXX", unit="ksi"),
+                F("theta", "Angle of load to weld axis", unit="deg", help="0 = load along the weld, 90 = across it"),
+                F("directional", "Use the directional increase", "select", options=["yes", "no"], help="Eq. J2-5"),
+                F("end_loaded", "End loaded", "select", options=["yes", "no"], help="J2.2b(d): long welds loaded from one end"),
+                F("t_thinner", "Thinner part joined", unit="in", required=False, help="turns on the minimum size check"),
+                F("t_edge", "Thickness at the welded edge", unit="in", required=False, help="turns on the maximum size check"),
+                F("base_t", "Base metal thickness", unit="in", required=False),
+                F("base_Fu", "Base metal Fu", unit="ksi", required=False)],
+        tables=[T("loads", "Force on the weld group", [CASE, F("P", "Force", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "bolts": dict(
+        title="Bolt Line", code="AISC 360-22", mark="BG",
+        fields=[F("d", "Bolt diameter", unit="in"), F("group", "Bolt type", "select", options=["A325", "A490", "A307", "F3148"]),
+                F("n", "Number of bolts"), F("spacing", "Spacing", unit="in"),
+                F("edge", "Edge distance", unit="in", help="bolt centre to the edge the load pushes toward"),
+                F("threads", "Threads", "select", options=["N", "X"], help="N = in the shear plane, X = excluded"),
+                F("planes", "Shear planes"),
+                F("deformation", "Hole deformation is a design consideration", "select", options=["yes", "no"])],
+        tables=[T("plies", "Connected parts", [F("t", "Thickness", unit="in"), F("Fu", "Fu", unit="ksi"),
+                                               F("has_edge", "Edge in load direction", "select", options=["yes", "no"]),
+                                               F("count", "How many", required=False, help="2 for a pair of angles")]),
+                T("loads", "Force along the bolt line", [CASE, F("P", "Force", unit="kip"), F("label", "Note", "text", required=False)])]),
 }
 
 
@@ -378,6 +402,31 @@ def build(kind, values, project):
         lay = ws_frame.layout(bays, stories, base, cs, bs, roof=roof, rise_ft=rise or 0.0, rafter_shape=rs, shape_of=over)
         s = ws_frame.run(mark, lay, Fy, loads, cb, m, sw, ub, leaning=lean, drift_checks=dc)
         return s, "frame", {}
+    if kind in ("weld", "bolts"):
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No force is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        if kind == "weld":
+            a = dict(size=r.num("size"), length=r.num("length"), n_lines=r.num("n_lines"), FEXX=r.num("FEXX"),
+                     theta_deg=r.num("theta"), directional=yes(r.text("directional")), end_loaded=yes(r.text("end_loaded")),
+                     t_thinner=r.num("t_thinner", False), t_edge=r.num("t_edge", False),
+                     base_t=r.num("base_t", False), base_Fu=r.num("base_Fu", False))
+            if (a["base_t"] is None) != (a["base_Fu"] is None):
+                r.miss.append("Base metal: give both the thickness and Fu, or neither")
+            r.done()
+            return ws_conn.fillet_weld(mark, loads, cb, m, **a), "conn", dict(combos=cb)
+        plies = []
+        for x in r.rows("plies"):
+            ply = (x["t"], x["Fu"], yes(x["has_edge"]))
+            plies.append(ply + ((int(x["count"]),) if x["count"] else ()))
+        if not plies:
+            r.miss.append("No connected parts are entered")
+        a = dict(d=r.num("d"), group=r.text("group"), n=r.num("n"), spacing=r.num("spacing"), edge=r.num("edge"),
+                 threads=r.text("threads"), planes=r.num("planes"), deformation=yes(r.text("deformation")))
+        r.done()
+        return ws_conn.bolt_line(mark, loads, cb, m, plies=plies, **a), "conn", dict(combos=cb)
     raise WorksheetError(f"unknown worksheet '{kind}'")
 
 
@@ -428,7 +477,7 @@ def results(kind, values, project):
 def sheet_pdf(kind, values, project, path):
     sheet, pk, kw = build(kind, values, project)
     fn = {"steel_beam": calcsheet.steel_beam_pdf, "steel_column": calcsheet.steel_column_pdf,
-          "footing": calcsheet.footing_pdf, "frame": calcsheet.frame_pdf}[pk]
+          "footing": calcsheet.footing_pdf, "frame": calcsheet.frame_pdf, "conn": calcsheet.conn_pdf}[pk]
     fn(sheet, path, job_of(project), FORMS[kind]["code"], project.get("date") or "", **kw)
     return path
 

@@ -218,3 +218,40 @@ def steel_column_elevation(c, cx, y, h, d_in, tf_in, height_in, braces=()):
         m = y + h * b / height_in
         c.line(cx - 2.5, m - 2.5, cx + 2.5, m + 2.5); c.line(cx - 2.5, m + 2.5, cx + 2.5, m - 2.5)
     return w
+
+
+def weld_picture(c, x, y, w, h, n_lines, length_in, size_in):
+    """A plate lapped on a wider plate with its fillet welds shown as hatched bands along
+    the edges that are welded (one or both long edges, more lines stacked as extra plates
+    is not drawn: the count is in the caption)."""
+    c.setLineWidth(0.6); c.setStrokeColorRGB(*STEEL_LINE)
+    c.setFillColorRGB(0.87, 0.90, 0.93); c.rect(x, y, w, h, fill=1, stroke=1)                 # back plate
+    px, pw, ph = x + w * 0.22, w * 0.56, h * 0.44
+    py = y + (h - ph) / 2
+    c.setFillColorRGB(*STEEL_FILL); c.rect(px - w * 0.30, py, pw + w * 0.30, ph, fill=1, stroke=1)   # lapped plate
+    band = max(2.2, min(4.0, size_in * 10))
+    c.setFillColorRGB(0.35, 0.38, 0.42); c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(0.3)
+    edges = [py + ph] + ([py - band] if n_lines >= 2 else [])
+    for ey in edges:
+        c.rect(px, ey, pw, band, fill=1, stroke=0)
+        k = px
+        while k < px + pw - 1:
+            c.line(k, ey, k + band * 0.7, ey + band); k += 3.0
+    return px, pw
+
+
+def bolt_picture(c, x, y, w, h, n, spacing_in, edge_in, d_in):
+    """A plate with its line of bolts, to scale along the line: holes, bolt heads, the
+    edge the load pushes toward at the right."""
+    total = edge_in + (n - 1) * spacing_in + max(edge_in, 1.5 * d_in)
+    s = min(w / total, h / (6 * d_in))
+    pw, ph = total * s, min(h, max(6 * d_in * s, 14))
+    px, py = x + (w - pw) / 2, y + (h - ph) / 2
+    c.setLineWidth(0.6); c.setStrokeColorRGB(*STEEL_LINE); c.setFillColorRGB(*STEEL_FILL)
+    c.rect(px, py, pw, ph, fill=1, stroke=1)
+    r = max(d_in * s / 2, 1.6)
+    for i in range(n):
+        cx = px + pw - (edge_in + i * spacing_in) * s
+        c.setFillColorRGB(1, 1, 1); c.circle(cx, py + ph / 2, r * 1.12, fill=1, stroke=1)
+        c.setFillColorRGB(0.30, 0.34, 0.39); c.circle(cx, py + ph / 2, r * 0.82, fill=1, stroke=0)
+    return px, py, pw, ph, s
