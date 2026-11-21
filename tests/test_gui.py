@@ -80,7 +80,7 @@ def test_server_requests_save_open_and_print(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "APP_DIR", tmp_path / "app")
     monkeypatch.setattr(server, "SETTINGS", tmp_path / "app" / "settings.json")
     info = server.api("/api/info", {})
-    assert set(info["forms"]) == {"steel_beam", "steel_column", "footing_iso", "footing_cont", "frame", "weld", "bolts", "base_plate", "footing_moment"} and "W18X50" in info["shapes"]
+    assert set(info["forms"]) == {"steel_beam", "steel_column", "footing_iso", "footing_cont", "frame", "weld", "bolts", "base_plate", "base_plate_moment", "footing_moment"} and "W18X50" in info["shapes"]
     data = dict(format="strukit-project", version=1, project=PROJ, members=[dict(kind="steel_beam", values=BEAM)])
     p = str(tmp_path / "job.strukit")
     assert server.api("/api/save", dict(path=p, data=data))["path"] == p
@@ -153,3 +153,17 @@ def test_package_has_a_cover_with_contents(tmp_path):
     assert "Structural Calculations" in t and "Engineer's seal" in t and "Sheet 1 of" in t
     assert "Members Not Included" in t.title() and "B9" in t and "D + L" in t
     assert "Flagged Checks" in t.title() or "No check in this package is flagged" in t
+
+
+def test_base_plate_with_moment_on_the_screen():
+    v = dict(mark="BP2", shape="W8X31", N="20", B="12", t="1.5", Fy="36", fc="3000", full="no", sup_N="30", sup_B="30",
+             rod_d="1", rod_Fu="58", rod_source="ASTM F1554 Grade 36 (typed)", n_rods="2", rod_edge="2", rod_side="1.5",
+             n_shear="2", cases=[dict(name="D + S", P="13.43", M="0.41", V="0.03"), dict(name="D + 0.6W", P="4.43", M="34.51", V="2.40")])
+    r = calc.results("base_plate_moment", v, PROJ)
+    assert r["state"] == "done" and r["status"] == "OK"
+    assert {x["check"] for x in r["rows"]} >= {"plate thickness", "anchor rod tension", "anchor rod shear", "bearing block length"}
+    assert any("Chapter 17" in n for n in r["not_checked"])
+    assert calc.results("base_plate_moment", dict(v, t="1.25"), PROJ)["status"] == "FLAG"
+    assert any("Anchor rod material" in m for m in calc.results("base_plate_moment", dict(v, rod_source=""), PROJ)["messages"])
+    stop = calc.results("base_plate_moment", dict(v, cases=[dict(name="U", P="-50", M="1", V="0")]), PROJ)
+    assert stop["state"] == "stopped" and "uplift" in stop["messages"][0]

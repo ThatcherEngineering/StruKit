@@ -167,7 +167,7 @@ function drawResults(m) {
 
 // ---------------------------------------------------------------- loads from another member
 function fillBar(m, changed) {
-  if (m.kind !== "footing_moment" && m.kind !== "footing_iso") return null;
+  if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");
   if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame once the project has one.");
   const pick = el("select", {}, el("option", { value: "" }, "choose a column or frame"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
@@ -187,6 +187,14 @@ function fillBar(m, changed) {
     if (!got) return toast("Choose the column or frame first.");
     const s = S.members[+pick.value], b = got.bases.length > 1 ? base.value : got.bases[0];
     const sv = got.service.filter(r => r.base === b), st = got.strength.filter(r => r.base === b);
+    if (m.kind === "base_plate_moment") {
+      const use = S.project.method === "LRFD" ? st : sv;
+      if (!use.length) return toast("Choose the design method and enter its load combinations on the Project page first.", 10000);
+      const f = x => (x / 1000).toFixed(2);
+      m.values.cases = use.map(r => ({ name: r.name, P: f(r.P), M: f(r.M), V: f(r.V) }));
+      m.values.loads_from = "base reactions of " + (s.values.mark || "member") + (got.bases.length > 1 ? " at " + b : "") + (s.kind === "frame" || (s.values.ends || "").startsWith("free") ? ", second-order analysis" : "");
+      changed(); drawMain(); return;
+    }
     if (!sv.length || !st.length) return toast("Both ASD and LRFD load combinations are needed on the Project page: service loads size the footing on the soil, factored loads design the concrete.", 12000);
     const n = x => String(Math.round(x));
     if (m.kind === "footing_moment") {
@@ -243,9 +251,9 @@ function drawProject(main) {
           : el("div", { class: "small" }, "No members yet. Use “Add a member” at the left, or load the example project to see how the screens work."),
         el("h2", {}, "What StruKit covers today"),
         el("ul", { class: "msg small" }, ["Steel beams, columns (braced, with sideways load, cantilevered) and moment frames: AISC 360-22.",
-          "Fillet welds, bolt lines and base plates under centred load: AISC 360-22 J2, J3, J8.",
+          "Fillet welds and bolt lines loaded through their centre; base plates under centred load or with moment, with anchor rod steel strength: AISC 360-22 J2, J3, J8, J9.",
           "Isolated and continuous footings, and isolated footings with moment about one axis: ACI 318-19.",
-          "Not yet: wood, load generation (snow, wind, seismic), masonry, retaining walls, anchor rods, base plates with moment.",
+          "Not yet: wood, load generation (snow, wind, seismic), masonry, retaining walls, anchorage of rods in concrete (ACI 318 Chapter 17).",
           "Every blank box is asked for; nothing is assumed."].map(t => el("li", {}, t))))));
 }
 
@@ -314,6 +322,9 @@ function example() {
         plies: [{ t: "0.375", Fu: "58", has_edge: "yes" }, { t: "0.355", Fu: "65", has_edge: "no" }], loads: [{ case: "D", P: "10" }, { case: "L", P: "25" }] } },
       { kind: "base_plate", values: { mark: "BP1", shape: "W10X33", N: "14", B: "12", t: "1", Fy: "36", fc: "3000", full: "no", sup_N: "24", sup_B: "24",
         loads: [{ case: "D", P: "12" }, { case: "L", P: "30" }] } },
+      { kind: "base_plate_moment", values: { mark: "BP2", shape: "W8X31", N: "20", B: "12", t: "1.5", Fy: "36", fc: "3000", full: "no", sup_N: "30", sup_B: "30",
+        rod_d: "1", rod_Fu: "58", rod_source: "ASTM F1554 Grade 36 (typed in for the example)", n_rods: "2", rod_edge: "2", rod_side: "1.5", n_shear: "2", loads_from: "base reactions of C2, second-order analysis",
+        cases: [{ name: "D + S", P: "13.43", M: "0.41", V: "0.03" }, { name: "D + 0.6W", P: "4.43", M: "34.51", V: "2.40" }, { name: "D + 0.75L + 0.75S + 0.45W", P: "11.18", M: "26.00", V: "1.80" }] } },
       { kind: "footing_moment", values: { mark: "FM1", B: "9", L: "6", h: "24", fc: "3000", fy: "60000", conc_pcf: "150", col_x: "14", col_y: "12", supported: "steel", plate_x: "14", plate_y: "12",
         bar: "6", n_x: "8", n_y: "11", cover: "3", bottom: "x", q_allow: "2000", soil_source: "presumptive value (example)", ot_required: "1.5", slide_mu: "0.35", slide_required: "1.5", limits_source: "typed in for the example", loads_from: "base reactions of C2, second-order analysis",
         service: [{ name: "D + S", P: "13434", M: "409", V: "27" }, { name: "D + 0.6W", P: "4434", M: "34508", V: "2400" }],
