@@ -8,6 +8,8 @@ run IDs or revision logs on the page. The PE stamp goes on the package cover onl
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
+from . import memberart
+
 FIRM = "THATCHER ENGINEERING, LLC"
 FIRM_LINE = "4050 Trail Stone Cir., Castle Rock, CO 80108  |  719.225.0150"
 INK, GREY, BLUE, FLAGC, OKC = (0.10, 0.11, 0.13), (0.29, 0.31, 0.35), (0.12, 0.31, 0.47), \
@@ -108,39 +110,51 @@ def steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     p.kv([("Section", f"{sheet.shape}  (Fy = {sheet.Fy:g} ksi)"),
           ("Span", f"{sheet.span_ft:g} ft, simply supported"),
           ("Bracing", sheet.bracing_text),
+          ("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"),
+          ("", f"tf = {pr['tf']:g} in, tw = {pr['tw']:g} in"),
           ("Properties", f"Zx = {pr['Zx']:g} in3, Sx = {pr['Sx']:g} in3"),
           ("", f"Ix = {pr['Ix']:g} in4, ry = {pr['ry']:g} in"),
           ("", f"rts = {pr['rts']:g} in, J = {pr['J']:g} in4, ho = {pr['ho']:g} in"),
           ("Source", "AISC Shapes Database v16.0")])
     bottom_left = p.y
-    x0, w = 338, 212
+    x0, w = 338, 166
     c.setFillColorRGB(*BLUE); c.setFont("Helvetica-Bold", 8); c.drawString(x0, top - 4, "LOADING SKETCH")
-    by = top - 52
+    by = top - 64                                    # underside of the beam
+    hb, true_scale = memberart.elev_depth(sheet.span_ft * 12, pr["d"], w)
+    memberart.steel_elevation(c, x0, by, w, hb, pr["d"], pr["tf"])
     c.setStrokeColorRGB(*BLUE); c.setFillColorRGB(0.91, 0.93, 0.96); c.setLineWidth(0.6)
-    c.rect(x0, by + 6, w, 12, fill=1, stroke=1)
-    c.setStrokeColorRGB(*INK); c.setLineWidth(2); c.line(x0, by, x0 + w, by)
-    c.setLineWidth(0.9)
-    for xx in (x0, x0 + w):
+    if any(ld["kind"] == "uniform" for ld in sheet.loads):
+        c.rect(x0, by + hb + 4, w, 10, fill=1, stroke=1)
+    c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
+    for xx in (x0 + 3, x0 + w - 3):
         t = c.beginPath(); t.moveTo(xx, by - 1); t.lineTo(xx - 6, by - 12); t.lineTo(xx + 6, by - 12); t.close()
         c.drawPath(t, fill=0, stroke=1)
     for ld in sheet.loads:
         if ld["kind"] == "point":
             xx = x0 + w * ld["x_ft"] / sheet.span_ft
-            c.line(xx, by + 34, xx, by + 19)
-            t = c.beginPath(); t.moveTo(xx, by + 18); t.lineTo(xx - 3, by + 24); t.lineTo(xx + 3, by + 24); t.close()
+            c.line(xx, by + hb + 30, xx, by + hb + 7)
+            t = c.beginPath(); t.moveTo(xx, by + hb + 1); t.lineTo(xx - 3, by + hb + 8); t.lineTo(xx + 3, by + hb + 8); t.close()
             c.drawPath(t, fill=1, stroke=0)
     c.setFillColorRGB(*GREY); c.setFont("Courier", 7.5)
     c.drawCentredString(x0 + w / 2, by - 22, f"L = {sheet.span_ft:g} ft")
+    if not true_scale:
+        c.setFont("Helvetica", 6); c.drawCentredString(x0 + w / 2, by - 30, "side view: depth enlarged for clarity")
     uni = [f"{ld['case']} {ld['w']:.3f}" for ld in sheet.loads if ld["kind"] == "uniform"]
     if uni:
-        c.setFillColorRGB(*BLUE)
-        c.drawCentredString(x0 + w / 2, by + 38, "w = " + " + ".join(uni) + " kip/ft")
+        c.setFillColorRGB(*BLUE); c.setFont("Courier", 7.5)
+        c.drawCentredString(x0 + w / 2, by + hb + 34, "w = " + " + ".join(uni) + " kip/ft")
     for bx in getattr(sheet, "brace_points", []):
         xx = x0 + w * bx / sheet.span_ft
         c.setStrokeColorRGB(*FLAGC); c.setLineWidth(0.9)
-        c.line(xx - 3, by - 5, xx + 3, by + 1); c.line(xx - 3, by + 1, xx + 3, by - 5)
+        xx = min(max(xx, x0 + 4), x0 + w - 4); m = by + hb / 2
+        c.line(xx - 2.5, m - 2.5, xx + 2.5, m + 2.5); c.line(xx - 2.5, m + 2.5, xx + 2.5, m - 2.5)
+    # cut section, to scale
+    sx = 536
+    c.setFillColorRGB(*BLUE); c.setFont("Helvetica-Bold", 8); c.drawCentredString(sx, top - 4, "SECTION")
+    memberart.steel_section(c, sx, top - 38, 40, 46, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
+    c.setFillColorRGB(*GREY); c.setFont("Helvetica", 6); c.drawCentredString(sx, top - 72, "to scale")
     c.setStrokeColorRGB(*INK)
-    p.y = min(bottom_left, by - 30) - 2
+    p.y = min(bottom_left, by - 34) - 2
 
     p.head("Loads")
     for ld in sheet.loads:
