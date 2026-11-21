@@ -7,7 +7,7 @@ naming the box, and all such messages come back together.
 """
 import re
 
-from .. import calcsheet, shapes, ws_conn, ws_footing, ws_frame, ws_steel_beam, ws_steel_column
+from .. import calcsheet, shapes, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column
 from ..footing import FootingInputError
 from ..steel_beam import SteelInputError
 from ..ws_steel_beam import Combo, DeflCheck, WorksheetError
@@ -136,6 +136,35 @@ FORMS = {
                                                F("has_edge", "Edge in load direction", "select", options=["yes", "no"]),
                                                F("count", "How many", required=False, help="2 for a pair of angles")]),
                 T("loads", "Force along the bolt line", [CASE, F("P", "Force", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "base_plate": dict(
+        title="Base Plate", code="AISC 360-22", mark="BP",
+        fields=[F("shape", "Column", "shape"), F("N", "Plate length (along column depth)", unit="in"),
+                F("B", "Plate width", unit="in"), F("t", "Plate thickness", unit="in"), F("Fy", "Plate Fy", unit="ksi"),
+                F("fc", "Concrete f'c", unit="psi"),
+                F("full", "Plate covers the whole support", "select", options=["yes", "no"]),
+                F("sup_N", "Support length (parallel to plate length)", unit="in", required=False),
+                F("sup_B", "Support width", unit="in", required=False)],
+        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "footing_moment": dict(
+        title="Footing with Moment", code="ACI 318-19", mark="FM",
+        fields=[F("B", "Width, in the direction of the moment", unit="ft"), F("L", "Length", unit="ft"), F("h", "Thickness", unit="in"),
+                F("fc", "f'c", unit="psi"), F("fy", "fy", unit="psi"), F("conc_pcf", "Concrete weight", unit="pcf"),
+                F("col_x", "Column, in the direction of the moment", unit="in"), F("col_y", "Column, other way", unit="in"),
+                F("supported", "Column is", "select", options=["steel", "wood", "concrete"]),
+                F("plate_x", "Base plate, x", unit="in", required=False), F("plate_y", "Base plate, y", unit="in", required=False),
+                F("bar", "Bar size #"), F("n_x", "Bars in x"), F("n_y", "Bars in y"), F("cover", "Clear cover", unit="in"),
+                F("bottom", "Lowest bars run in", "select", options=["x", "y"]),
+                F("q_allow", "Allowable soil bearing", unit="psf"), F("soil_source", "Soil bearing source", "text"),
+                F("soil_depth", "Soil over footing", unit="ft", required=False), F("soil_pcf", "Soil weight", unit="pcf", required=False),
+                F("ot_required", "Required safety factor, overturning", required=False),
+                F("slide_mu", "Friction coefficient, footing on soil", required=False),
+                F("slide_required", "Required safety factor, sliding", required=False),
+                F("limits_source", "Source of those limits", "text", required=False)],
+        tables=[T("service", "Service load cases (at the top of the footing)",
+                  [F("name", "Combination", "text"), F("P", "P", unit="lb"), F("M", "M", unit="lb-ft"), F("V", "V", unit="lb")]),
+                T("strength", "Factored load cases",
+                  [F("name", "Combination", "text"), F("P", "Pu", unit="lb"), F("M", "Mu", unit="lb-ft"), F("V", "Vu", unit="lb"),
+                   F("wt_factor", "Dead-load factor", help="applied to the footing and soil weight")])]),
 }
 
 
@@ -427,6 +456,43 @@ def build(kind, values, project):
                  threads=r.text("threads"), planes=r.num("planes"), deformation=yes(r.text("deformation")))
         r.done()
         return ws_conn.bolt_line(mark, loads, cb, m, plies=plies, **a), "conn", dict(combos=cb)
+    if kind == "base_plate":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        shape, N, B, t, Fy, fc = r.text("shape"), r.num("N"), r.num("B"), r.num("t"), r.num("Fy"), r.num("fc")
+        full = yes(r.text("full"))
+        sup = "full"
+        if full is False:
+            sup = (r.num("sup_N", label="Support length"), r.num("sup_B", label="Support width"))
+        r.done()
+        return ws_more.base_plate_sheet(mark, shape, N, B, t, Fy, fc, sup, loads, cb, m), "simple", {}
+    if kind == "footing_moment":
+        a = dict(B_ft=r.num("B"), L_ft=r.num("L"), h_in=r.num("h"), fc=r.num("fc"), fy=r.num("fy"),
+                 col_x_in=r.num("col_x"), col_y_in=r.num("col_y"), bar=r.num("bar"), n_x=r.num("n_x"), n_y=r.num("n_y"),
+                 cover_in=r.num("cover"), q_allow_psf=r.num("q_allow"), conc_pcf=r.num("conc_pcf"),
+                 plate_x_in=r.num("plate_x", False), plate_y_in=r.num("plate_y", False), bottom_layer=r.text("bottom"),
+                 soil_depth_ft=r.num("soil_depth", False) or 0.0, soil_pcf=r.num("soil_pcf", False) or 0.0,
+                 ot_required=r.num("ot_required", False), slide_mu=r.num("slide_mu", False),
+                 slide_required=r.num("slide_required", False))
+        src, sup, lim = r.text("soil_source"), r.text("supported"), r.text("limits_source", False)
+        a["service"], a["strength"] = r.rows("service"), r.rows("strength")
+        if not a["service"]:
+            r.miss.append("No service load case is entered")
+        if not a["strength"]:
+            r.miss.append("No factored load case is entered")
+        if a["soil_depth_ft"] and not a["soil_pcf"]:
+            r.miss.append("Soil weight is blank (soil over the footing was entered)")
+        if (a["slide_mu"] is None) != (a["slide_required"] is None):
+            r.miss.append("Sliding needs both the friction coefficient and the required safety factor")
+        if any(a[k] is not None for k in ("ot_required", "slide_mu", "slide_required")) and not lim:
+            r.miss.append("Source of those limits is blank (a stability limit was entered)")
+        r.done()
+        for k in ("bar", "n_x", "n_y"):
+            a[k] = int(a[k])
+        return ws_more.footing_moment_sheet(mark, src, sup, lim or "", **a), "simple", {}
     raise WorksheetError(f"unknown worksheet '{kind}'")
 
 
@@ -477,7 +543,8 @@ def results(kind, values, project):
 def sheet_pdf(kind, values, project, path):
     sheet, pk, kw = build(kind, values, project)
     fn = {"steel_beam": calcsheet.steel_beam_pdf, "steel_column": calcsheet.steel_column_pdf,
-          "footing": calcsheet.footing_pdf, "frame": calcsheet.frame_pdf, "conn": calcsheet.conn_pdf}[pk]
+          "footing": calcsheet.footing_pdf, "frame": calcsheet.frame_pdf, "conn": calcsheet.conn_pdf,
+          "simple": calcsheet.simple_pdf}[pk]
     fn(sheet, path, job_of(project), FORMS[kind]["code"], project.get("date") or "", **kw)
     return path
 

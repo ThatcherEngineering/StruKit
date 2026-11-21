@@ -202,9 +202,9 @@ function drawProject(main) {
           : el("div", { class: "small" }, "No members yet. Use “Add a member” at the left, or load the example project to see how the screens work."),
         el("h2", {}, "What StruKit covers today"),
         el("ul", { class: "msg small" }, ["Steel beams, columns (braced, with sideways load, cantilevered) and moment frames: AISC 360-22.",
-          "Fillet welds and bolt lines loaded through their centre: AISC 360-22 J2, J3.",
-          "Isolated and continuous footings under centred load: ACI 318-19.",
-          "Not yet: wood, load generation (snow, wind, seismic), masonry, retaining walls, base plates, footings with moment.",
+          "Fillet welds, bolt lines and base plates under centred load: AISC 360-22 J2, J3, J8.",
+          "Isolated and continuous footings, and isolated footings with moment about one axis: ACI 318-19.",
+          "Not yet: wood, load generation (snow, wind, seismic), masonry, retaining walls, anchor rods, base plates with moment.",
           "Every blank box is asked for; nothing is assumed."].map(t => el("li", {}, t))))));
 }
 
@@ -263,7 +263,13 @@ function example() {
       { kind: "weld", values: { mark: "W1", size: "0.25", length: "8", n_lines: "2", FEXX: "70", theta: "0", directional: "no", end_loaded: "no", t_thinner: "0.375", t_edge: "0.375",
         loads: [{ case: "D", P: "12" }, { case: "L", P: "30" }] } },
       { kind: "bolts", values: { mark: "BG1", d: "0.75", group: "A325", n: "4", spacing: "3", edge: "1.5", threads: "N", planes: "1", deformation: "yes",
-        plies: [{ t: "0.375", Fu: "58", has_edge: "yes" }, { t: "0.355", Fu: "65", has_edge: "no" }], loads: [{ case: "D", P: "10" }, { case: "L", P: "25" }] } }] };
+        plies: [{ t: "0.375", Fu: "58", has_edge: "yes" }, { t: "0.355", Fu: "65", has_edge: "no" }], loads: [{ case: "D", P: "10" }, { case: "L", P: "25" }] } },
+      { kind: "base_plate", values: { mark: "BP1", shape: "W10X33", N: "14", B: "12", t: "1", Fy: "36", fc: "3000", full: "no", sup_N: "24", sup_B: "24",
+        loads: [{ case: "D", P: "12" }, { case: "L", P: "30" }] } },
+      { kind: "footing_moment", values: { mark: "FM1", B: "9", L: "6", h: "24", fc: "3000", fy: "60000", conc_pcf: "150", col_x: "14", col_y: "12", supported: "steel", plate_x: "14", plate_y: "12",
+        bar: "6", n_x: "8", n_y: "11", cover: "3", bottom: "x", q_allow: "2000", soil_source: "presumptive value (example)", ot_required: "1.5", slide_mu: "0.35", slide_required: "1.5", limits_source: "typed in for the example",
+        service: [{ name: "D + S", P: "13400", M: "0", V: "0" }, { name: "D + 0.6W", P: "4400", M: "33600", V: "2400" }],
+        strength: [{ name: "1.2D + 1.6S", P: "19200", M: "0", V: "0", wt_factor: "1.2" }, { name: "0.9D + 1.0W", P: "3600", M: "56000", V: "4000", wt_factor: "0.9" }] } }] };
 }
 
 // ---------------------------------------------------------------- start
