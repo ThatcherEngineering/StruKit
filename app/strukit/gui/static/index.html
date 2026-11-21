@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StruKit</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 1200 1200" role="img" aria-label="Thatcher Engineering">
+        <polygon points="60,1140 1140,60 1140,1140" fill="#fff"></polygon>
+        <rect x="600" y="492" width="396" height="108" fill="#213651"></rect>
+        <rect x="708" y="600" width="108" height="444" fill="#213651"></rect></svg>
+      <div><div class="name">StruKit</div><div class="build" id="build"></div></div>
+    </div>
+    <div class="file" id="file">Not saved yet</div>
+    <nav id="nav"></nav>
+    <div class="add">
+      <div class="lbl">Add a member</div>
+      <div id="addbtns"></div>
+    </div>
+    <div class="foot">
+      <button id="bOpen">Open</button><button id="bSave">Save</button><button id="bSaveAs">Save As</button>
+      <button id="bPackage" class="wide">Print Calc Package</button>
+      <button id="bExample" class="wide ghost">Load the Example Project</button>
+    </div>
+  </aside>
+  <main id="main"></main>
+</div>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
