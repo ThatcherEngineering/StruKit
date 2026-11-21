@@ -233,6 +233,42 @@ def _dim_h(c, x1, x2, y, text, font, ext_from=None):
     c.drawCentredString((x1 + x2) / 2, y - 7.5, text)
 
 
+def _dim_v(c, y1, y2, x, text, font, ext_from=None):
+    """Vertical dimension line from y1 to y2 at x, with ticks and the text to its right."""
+    c.setStrokeColorRGB(0.23, 0.28, 0.34); c.setFillColorRGB(0.23, 0.28, 0.34); c.setLineWidth(0.4)
+    c.line(x, y1, x, y2)
+    for q in (y1, y2):
+        if ext_from is not None:
+            c.line(ext_from, q, x + 2.5 if x > ext_from else x - 2.5, q)
+        c.line(x - 1.6, q - 1.6, x + 1.6, q + 1.6)
+    c.setFont(font, 6)
+    c.drawString(x + 3, (y1 + y2) / 2 - 2, text)
+
+
+def base_plate_plan(c, cx, cy, box_w, box_h, d, bf, tf, tw, N, B, support=None, font="Helvetica"):
+    """Plan of a base plate, to scale: the column section on the plate, the concrete
+    support dashed when it is larger than the plate, and dimension lines for the plate and
+    the support (plate length N is drawn up the page, parallel to the column depth)."""
+    sup = support or (N, B)
+    rows = 2 if support else 1
+    s = min((box_w - 18 * rows) / sup[1], (box_h - 10 * rows) / sup[0])
+    cx -= 9 * rows; cy += 5 * rows                         # leave room right and below for the dimensions
+    if support:
+        c.setDash(3, 2); c.setLineWidth(0.6); c.setStrokeColorRGB(*CONC_LINE); c.setFillColorRGB(*CONC_FILL)
+        c.rect(cx - sup[1] * s / 2, cy - sup[0] * s / 2, sup[1] * s, sup[0] * s, fill=1, stroke=1)
+        c.setDash()
+    c.setLineWidth(0.7); c.setStrokeColorRGB(*STEEL_LINE); c.setFillColorRGB(0.87, 0.90, 0.93)
+    c.rect(cx - B * s / 2, cy - N * s / 2, B * s, N * s, fill=1, stroke=1)
+    steel_section(c, cx, cy, bf * s, d * s, d, bf, tf, tw)
+    bottom, right = cy - sup[0] * s / 2, cx + sup[1] * s / 2
+    _dim_h(c, cx - B * s / 2, cx + B * s / 2, bottom - 5, f"{B:g}", font, ext_from=cy - N * s / 2)
+    _dim_v(c, cy - N * s / 2, cy + N * s / 2, right + 6, f"{N:g}", font, ext_from=cx + B * s / 2)
+    if support:
+        _dim_h(c, cx - sup[1] * s / 2, cx + sup[1] * s / 2, bottom - 15, f"{sup[1]:g}", font, ext_from=bottom)
+        _dim_v(c, cy - sup[0] * s / 2, cy + sup[0] * s / 2, right + 22, f"{sup[0]:g}", font, ext_from=right)
+    return s
+
+
 def weld_plan(c, x, y, w, h, n_lines, length_in, size_in, font="Helvetica"):
     """Plan of a plate lapped on a wider plate, the fillet welds along its long edges shown
     hatched, with the weld length dimensioned. One weld is drawn on one edge; two or more on

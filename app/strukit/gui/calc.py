@@ -74,7 +74,8 @@ FORMS = {
                 F("P_service", "Service load", unit="lb"), F("service_combo", "Service combination", "text"),
                 F("Pu", "Factored load", unit="lb"), F("strength_combo", "Strength combination", "text"),
                 F("q_allow", "Allowable soil bearing", unit="psf"), F("soil_source", "Soil bearing source", "text"),
-                F("soil_depth", "Soil over footing", unit="ft", required=False), F("soil_pcf", "Soil weight", unit="pcf", required=False)],
+                F("soil_depth", "Soil over footing", unit="ft", required=False), F("soil_pcf", "Soil weight", unit="pcf", required=False),
+                F("loads_from", "Loads come from", "text", required=False, help="printed on the sheet")],
         tables=[]),
     "footing_cont": dict(
         title="Continuous Footing", code="ACI 318-19", mark="CF",
@@ -159,7 +160,8 @@ FORMS = {
                 F("ot_required", "Required safety factor, overturning", required=False),
                 F("slide_mu", "Friction coefficient, footing on soil", required=False),
                 F("slide_required", "Required safety factor, sliding", required=False),
-                F("limits_source", "Source of those limits", "text", required=False)],
+                F("limits_source", "Source of those limits", "text", required=False),
+                F("loads_from", "Loads come from", "text", required=False, help="printed on the sheet")],
         tables=[T("service", "Service load cases (at the top of the footing)",
                   [F("name", "Combination", "text"), F("P", "P", unit="lb"), F("M", "M", unit="lb-ft"), F("V", "V", unit="lb")]),
                 T("strength", "Factored load cases",
@@ -249,22 +251,31 @@ class Reader:
             raise Missing(self.miss)
 
 
-def combos(project, miss):
+def combos(project, miss, which=None):
+    """The project's load combinations for a design method. A project carries two lists,
+    ASD (also the service combinations for soil bearing) and LRFD (also the factored
+    combinations for concrete). An older project file has one list, for its own method."""
+    which = which or project.get("method")
+    if which not in ("ASD", "LRFD"):
+        return []                                           # the method message covers this
+    rows = project.get("combos_asd" if which == "ASD" else "combos_lrfd")
+    if rows is None and (project.get("_file_method") or project.get("method")) == which:
+        rows = project.get("combos")                        # older file: one list, for the method it was saved with
     out = []
-    for n, c in enumerate(project.get("combos") or [], 1):
+    for n, c in enumerate(rows or [], 1):
         if not (c.get("expr") or "").strip():
             continue
         try:
             fac = parse_expr(c["expr"])
         except ValueError as e:
-            miss.append(f"Load combinations, row {n}: {e}")
+            miss.append(f"{which} load combinations, row {n}: {e}")
             continue
         if not (c.get("source") or "").strip():
-            miss.append(f"Load combinations, row {n}: the source is blank")
+            miss.append(f"{which} load combinations, row {n}: the source is blank")
             continue
         out.append(Combo(c["expr"].strip(), fac, c["source"].strip()))
     if not out:
-        miss.append("No load combinations are entered for the project (Project page)")
+        miss.append(f"No {which} load combinations are entered for the project (Project page)")
     return out
 
 
@@ -373,7 +384,10 @@ def build(kind, values, project):
         r.done()
         for k in ("bar", "n_x", "n_y"):
             a[k] = int(a[k])
-        return ws_footing.isolated(mark, src, sup, **a), "footing", {}
+        fs = ws_footing.isolated(mark, src, sup, **a)
+        if r.text("loads_from", False):
+            fs.result.notes.append("Loads: " + r.text("loads_from", False) + ".")
+        return fs, "footing", {}
     if kind == "footing_cont":
         a = dict(W_ft=r.num("W"), h_in=r.num("h"), fc=r.num("fc"), fy=r.num("fy"), wall_in=r.num("wall"),
                  bar_t=r.num("bar_t"), spacing_t_in=r.num("spacing_t"), bar_l=r.num("bar_l"), n_l=r.num("n_l"),
@@ -492,8 +506,53 @@ def build(kind, values, project):
         r.done()
         for k in ("bar", "n_x", "n_y"):
             a[k] = int(a[k])
-        return ws_more.footing_moment_sheet(mark, src, sup, lim or "", **a), "simple", {}
+        ss = ws_more.footing_moment_sheet(mark, src, sup, lim or "", **a)
+        if r.text("loads_from", False):
+            ss.assumptions.insert(0, "Loads: " + r.text("loads_from", False) + ".")
+        return ss, "simple", {}
     raise WorksheetError(f"unknown worksheet '{kind}'")
+
+
+def reactions(kind, values, project):
+    """Base reactions of a steel column or a frame for every ASD combination (service) and
+    every LRFD combination (factored), so a footing or base plate can take them without
+    retyping. Each list is the member run with that list of combinations; for a cantilevered
+    column or a frame that is a second-order analysis at that load level. Units: lb, lb-ft."""
+    if kind not in ("steel_column", "frame"):
+        return dict(error="Loads can be taken from a steel column or a moment frame.")
+    out = dict(bases=[], service=[], strength=[], messages=[])
+    for which, key in (("ASD", "service"), ("LRFD", "strength")):
+        try:
+            sheet, pk, kw = build(kind, values, dict(project, method=which, _file_method=project.get("method")))
+        except Missing as e:
+            out["messages"].append(f"{which} combinations: " + "; ".join(e.items))
+            continue
+        except (WorksheetError, SteelInputError, ValueError, KeyError) as e:
+            out["messages"].append(f"{which} combinations: {e}")
+            continue
+        fac = {c.name: c.factors for c in (kw.get("combos") or getattr(sheet, "combos", []))}
+        if pk == "frame":
+            best = {}
+            for label, per_node in sheet.reactions.items():
+                name = label.split(" (")[0]
+                for node, (rx, ry, mz) in per_node.items():
+                    cur = best.get((name, node))
+                    if cur is None or abs(mz) > abs(cur[2]) or (abs(mz) == abs(cur[2]) and abs(rx) > abs(cur[0])):
+                        best[(name, node)] = (rx, ry, mz)
+            for (name, node), (rx, ry, mz) in best.items():
+                out[key].append(dict(base=node, name=name, P=ry * 1000, M=abs(mz) / 12 * 1000, V=abs(rx) * 1000,
+                                     wt_factor=fac.get(name, {}).get("D")))
+            out["bases"] = sorted({r["base"] for r in out[key]} | set(out["bases"]))
+        else:
+            for name, b in sheet.base.items():
+                if b["Mx"] and b["My"]:
+                    out["messages"].append(f"{name}: the column has moment about both axes; a footing with moment "
+                                           "about one axis cannot take it")
+                ax = "y" if b["My"] > b["Mx"] else "x"
+                out[key].append(dict(base="base", name=name, P=b["P"] * 1000, M=b["M" + ax] * 1000,
+                                     V=max(b["Vx"], b["Vy"]) * 1000, wt_factor=fac.get(name, {}).get("D")))
+            out["bases"] = ["base"]
+    return out
 
 
 def job_of(project):
@@ -549,17 +608,50 @@ def sheet_pdf(kind, values, project, path):
     return path
 
 
-def package_pdf(project, members, path):
-    """Every member that calculates, in the order listed. Returns (sheets, skipped marks)."""
-    items, skipped = [], []
+def package_pdf(project, members, path, cover=True):
+    """Every member that calculates, in the order listed, behind a cover sheet.
+    Returns (sheets, skipped marks)."""
+    items, skipped, contents, flag_lines, codes = [], [], [], [], []
     for m in members:
         try:
             sheet, pk, kw = build(m["kind"], m["values"], project)
         except Exception:
             skipped.append((m["values"].get("mark") or "(no mark)"))
             continue
-        items.append((pk, sheet, FORMS[m["kind"]]["code"], kw))
+        code = FORMS[m["kind"]]["code"]
+        items.append((pk, sheet, code, kw))
+        if code not in codes:
+            codes.append(code)
+        mark = m["values"].get("mark")
+        flags = 0
+        for r in getattr(sheet, "rows", []):
+            if r.status == "FLAG":
+                flags += 1
+                flag_lines.append(f"{mark}: {r.check}, D/C {r.dc:.2f} ({r.combo})")
+        for r in getattr(sheet, "member_rows", []):
+            if r["status"] == "FLAG":
+                flags += 1
+                flag_lines.append(f"{mark}: member {r['member']} ({r['shape']}), ratio {r['ratio']:.2f} ({r['combo']})")
+        contents.append(dict(mark=mark, title=FORMS[m["kind"]]["title"], code=code, flags=flags))
     if not items:
         raise WorksheetError("no member is complete yet, so there is nothing to print")
-    n = calcsheet.package_pdf(items, path, job_of(project), project.get("date") or "")
+    cov = None
+    if cover:
+        def lst(key):
+            return [(c["expr"].strip(), (c.get("source") or "").strip()) for c in project.get(key) or []
+                    if (c.get("expr") or "").strip()]
+        asd, lrfd = lst("combos_asd"), lst("combos_lrfd")
+        if not asd and not lrfd and project.get("combos"):
+            (asd if project.get("method") == "ASD" else lrfd).extend(lst("combos"))
+        names = {"AISC 360-22": "ANSI/AISC 360-22, Specification for Structural Steel Buildings",
+                 "ACI 318-19": "ACI 318-19, Building Code Requirements for Structural Concrete"}
+        basis = [names.get(c, c) for c in codes]
+        if "AISC 360-22" in codes:
+            basis.append(f"Steel is designed by {project.get('method')}. Section properties are from the AISC Shapes "
+                         "Database v16.0.")
+        basis.append("Load combinations are entered by the engineer with their source and are listed below. "
+                     "Loads on each member are entered by the engineer; each sheet lists them.")
+        basis.append("Each sheet states its own assumptions and what it does not check.")
+        cov = dict(basis=basis, asd=asd, lrfd=lrfd, contents=contents, flag_lines=flag_lines, skipped=skipped)
+    n = calcsheet.package_pdf(items, path, job_of(project), project.get("date") or "", cover=cov)
     return n, skipped
