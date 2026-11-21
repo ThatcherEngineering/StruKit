@@ -107,3 +107,83 @@ def test_unstable_column_stops():
     with pytest.raises(SteelInputError):
         run("C4", "W10x33", 50, 14, [dict(case="L", P=400.0)], ASD, 1.0, 1.0, "pinned", "ASD", False,
             lateral=[dict(case="L", bending="y", kind="uniform", w=0.1)])
+
+
+# ---- cantilevered (sway) columns: direct analysis method ----
+# Independent references:
+#  (1) the second-order solver is checked against the AISC 360-22 Commentary benchmark
+#      problems in tests/test_beam.py (Figs. C-C2.2 and C-C2.3, within 1 %);
+#  (2) here, the closed-form elastic solution for a fixed-base cantilever with tip load
+#      H and axial load P: M_base = H L tan(u)/u, u = L sqrt(P / EI)  (Timoshenko and
+#      Gere, Theory of Elastic Stability), evaluated with the reduced stiffness
+#      0.8 tau_b EI that AISC 360-22 C2.3 requires.
+import math
+
+from strukit.ws_steel_beam import DeflCheck
+
+W = [dict(case="W", bending="x", kind="point", P=1.0, x_ft=28)]
+DW = [Combo("D + W", {"D": 1, "W": 1}, "given")]
+
+
+def _closed_form(P, Hk, L_in, EI):
+    u = L_in * math.sqrt(P / EI)
+    return Hk * L_in * math.tan(u) / u / 12              # kip-ft
+
+
+def test_cantilever_matches_closed_form_with_reduced_stiffness():
+    s = run("C5", "W14x48", 50, 28, [dict(case="D", P=100.0)], DW, 1.0, 1.0, "direct analysis",
+            "LRFD", False, lateral=W, sway=("x",))
+    m = _row(s, "bending about x")
+    assert m.demand == pytest.approx(_closed_form(100, 1.0, 336, 0.8 * 29000 * 484), rel=2e-3)
+    assert _row(s, "drift amplification").demand < 1.7
+    assert not any("notional" in ln.label and ln.value for ln in s.steps)   # C2.2b(d): not required
+
+
+def test_asd_runs_at_1p6_times_the_loads():
+    # ASD loads of P = 100, H = 1 analysed at 1.6x must give exactly the LRFD result for
+    # P = 160, H = 1.6 divided by 1.6 (C2.1(d))
+    a = run("C5", "W14x48", 50, 28, [dict(case="D", P=62.5)], DW, 1.0, 1.0, "direct analysis", "ASD",
+            False, lateral=W, sway=("x",))
+    b = run("C5", "W14x48", 50, 28, [dict(case="D", P=100.0)], DW, 1.0, 1.0, "direct analysis", "LRFD",
+            False, lateral=[dict(case="W", bending="x", kind="point", P=1.6, x_ft=28)], sway=("x",))
+    assert _row(a, "bending about x").demand == pytest.approx(_row(b, "bending about x").demand / 1.6, rel=1e-9)
+
+
+def test_gravity_only_combination_gets_the_notional_load():
+    s = run("C5", "W14x48", 50, 28, [dict(case="D", P=50.0)], [Combo("D", {"D": 1}, "given")], 1.0, 1.0,
+            "direct analysis", "LRFD", False, sway=("x",))
+    m = _row(s, "bending about x")
+    assert m.demand == pytest.approx(_closed_form(50, 0.002 * 50, 336, 0.8 * 29000 * 484), rel=2e-3)
+
+
+def test_drift_ratio_over_1p7_adds_the_notional_load_to_lateral_combinations():
+    s = run("C5", "W14x48", 50, 28, [dict(case="D", P=110.0)], DW, 1.0, 1.0, "direct analysis", "LRFD",
+            False, lateral=W, sway=("x",))
+    assert _row(s, "drift amplification").demand > 1.7
+    assert _row(s, "bending about x").demand == pytest.approx(
+        _closed_form(110, 1.0 + 0.002 * 110, 336, 0.8 * 29000 * 484), rel=2e-3)
+
+
+def test_leaning_load_reduces_stability():
+    base = run("C5", "W14x48", 50, 28, [dict(case="D", P=50.0)], DW, 1.0, 1.0, "direct analysis", "LRFD",
+               False, lateral=W, sway=("x",))
+    lean = run("C5", "W14x48", 50, 28, [dict(case="D", P=50.0)], DW, 1.0, 1.0, "direct analysis", "LRFD",
+               False, lateral=W, sway=("x",), leaning=[dict(case="D", P=50.0)])
+    assert _row(lean, "bending about x").demand > _row(base, "bending about x").demand
+    # a leaning load is a little less severe than the same load on the column itself
+    own = run("C5", "W14x48", 50, 28, [dict(case="D", P=100.0)], DW, 1.0, 1.0, "direct analysis", "LRFD",
+              False, lateral=W, sway=("x",))
+    assert _row(lean, "bending about x").demand < _row(own, "bending about x").demand
+
+
+def test_sway_column_rules():
+    with pytest.raises(WorksheetError):                  # K must be 1.0 (C3)
+        run("C5", "W14x48", 50, 28, [dict(case="D", P=50.0)], DW, 2.1, 1.0, "chart", "LRFD", False,
+            lateral=W, sway=("x",))
+    with pytest.raises(WorksheetError):                  # unstable
+        run("C5", "W14x48", 50, 28, [dict(case="D", P=400.0)], DW, 1.0, 1.0, "direct analysis", "LRFD",
+            False, lateral=W, sway=("x",))
+    s = run("C5", "W14x48", 50, 28, [dict(case="D", P=50.0)], DW, 1.0, 1.0, "direct analysis", "LRFD",
+            False, lateral=W, sway=("x",), drift_checks=[DeflCheck("wind", {"W": 1}, 100, "given")])
+    d = _row(s, "drift at top")
+    assert d.demand == pytest.approx(0.901, rel=5e-3) and d.capacity == pytest.approx(3.36)   # AISC Fig. C-C2.3, P = 0

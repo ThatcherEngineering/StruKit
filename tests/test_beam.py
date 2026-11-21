@@ -102,3 +102,42 @@ def test_bad_input_is_refused_with_a_plain_message():
         solve(L, [0], EI)
     with pytest.raises(ValueError, match="off the beam"):
         solve(L, [0, L], EI, point_loads=[PointLoad(25, P)])
+
+
+# ---- second-order analysis: AISC 360-22 Commentary benchmark problems ----
+# Figures C-C2.2 and C-C2.3 (W14x48, major axis, Ix = 484 in^4, E = 29,000 ksi, 28 ft).
+# Bracketed values (shear deformation excluded) are used, since this solver is an
+# Euler-Bernoulli beam. The Commentary asks for agreement within 3 % on moment and
+# 5 % on deflection.
+import numpy as np
+import pytest as _pt
+
+_EI = 29000.0 * 484.0            # kip-in^2
+_L = 28 * 12.0
+
+
+@_pt.mark.parametrize("P,M,D", [(0, 235, 0.197), (150, 269, 0.224), (300, 313, 0.261), (450, 375, 0.311)])
+def test_aisc_benchmark_case_1_simply_supported(P, M, D):
+    r = solve(_L, [0.0, _L], _EI, dist_loads=[DistLoad(0, _L, 0.2 / 12, 0.2 / 12)], axial=P)
+    mid = int(np.argmin(np.abs(r.x - _L / 2)))
+    assert r.M[mid] == _pt.approx(M, rel=0.01) and r.defl[mid] == _pt.approx(D, rel=0.01)
+
+
+@_pt.mark.parametrize("P,M,D", [(0, 336, 0.901), (100, 469, 1.33), (150, 598, 1.75), (200, 848, 2.56)])
+def test_aisc_benchmark_case_2_cantilever(P, M, D):
+    r = solve(_L, [], _EI, point_loads=[PointLoad(_L, 1.0)], fixed=[0.0], axial=P)
+    assert abs(r.M[0]) == _pt.approx(M, rel=0.01) and abs(r.defl[-1]) == _pt.approx(D, rel=0.01)
+
+
+def test_buckling_load_stops_the_analysis():
+    Pe = np.pi ** 2 * _EI / (2 * _L) ** 2                 # cantilever Euler load
+    solve(_L, [], _EI, point_loads=[PointLoad(_L, 1.0)], fixed=[0.0], axial=0.98 * Pe)
+    with _pt.raises(ValueError):
+        solve(_L, [], _EI, point_loads=[PointLoad(_L, 1.0)], fixed=[0.0], axial=1.02 * Pe)
+
+
+def test_leaning_load_equals_axial_on_a_rigid_link():
+    # a load leaning on the tip through a pinned link adds P_lean x (tip drift) / L of
+    # sideways push; closed form for tip load H: drift = H / (3EI/L^3 - P_lean/L)
+    r = solve(_L, [], _EI, point_loads=[PointLoad(_L, 1.0)], fixed=[0.0], springs=[(_L, -100.0 / _L)])
+    assert abs(r.defl[-1]) == _pt.approx(1.0 / (3 * _EI / _L ** 3 - 100.0 / _L), rel=1e-6)

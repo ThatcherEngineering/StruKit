@@ -49,6 +49,8 @@ class SteelColumnSheet:
     lateral: list = field(default_factory=list)        # dicts: case, bending, kind, w / P, x_ft
     combined: dict = field(default_factory=dict)       # combo name -> H1-1 value
     diagram: dict = field(default_factory=dict)        # x, Mx, My of the governing combo
+    sway: tuple = ()                                   # bending axes in which the top is free
+    leaning: list = field(default_factory=list)        # dicts: case, P (load stabilised by this column)
 
     @property
     def ok(self):
@@ -76,7 +78,8 @@ def _statics(height, brace, EI, lateral, axis, factors):
 
 
 def run(mark, shape, Fy, height_ft, loads, combos, Kx, Ky, k_source, method,
-        include_self_weight, Lx_ft=None, Ly_ft=None, self_weight_case="D", lateral=()):
+        include_self_weight, Lx_ft=None, Ly_ft=None, self_weight_case="D", lateral=(),
+        sway=(), leaning=(), drift_checks=()):
     """Lx_ft and Ly_ft are the unbraced lengths for buckling about the x (strong) and
     y (weak) axes; left as None they are the full height. k_source says where Kx and Ky
     come from (for example "pinned top and bottom, braced frame")."""
@@ -127,7 +130,11 @@ def run(mark, shape, Fy, height_ft, loads, combos, Kx, Ky, k_source, method,
                           "AISC 360-22 Sect. E2 User Note (recommended limit, not a requirement)",
                           "governing Lc / r"))
     sheet.steps = list(chk.lines)
-    if lateral:
+    if sway:
+        _sway(sheet, chk, list(lateral), combos, tuple(sway), list(leaning), list(drift_checks))
+    elif leaning or drift_checks:
+        raise WorksheetError(f"{mark}: leaning loads and drift checks apply only to a sway column")
+    elif lateral:
         _lateral(sheet, chk, list(lateral), combos)
     else:
         sheet.assumptions.insert(0, "No sideways load is applied to the column.")
@@ -247,3 +254,239 @@ def _lateral(sheet, chk, lateral, combos):
                              Mx=list(map(float, o.get("mx", zeros))),
                              My=list(map(float, o.get("my", zeros))))
     sheet.not_checked.append("sideways deflection of the column (no limit entered)")
+
+
+def _check_lateral_inputs(mark, lateral):
+    for ld in lateral:
+        for k in ("case", "bending", "kind"):
+            if k not in ld:
+                raise WorksheetError(f"{mark}: a lateral load is missing '{k}'")
+        if ld["bending"] not in ("x", "y"):
+            raise WorksheetError(f"{mark}: lateral load 'bending' must be x (strong axis) or y (weak axis)")
+        if ld["kind"] not in ("uniform", "point"):
+            raise WorksheetError(f"{mark}: lateral load kind must be uniform or point")
+
+
+def _sway(sheet, chk, lateral, combos, sway, leaning, drift_checks):
+    """A column whose top is free to move sideways in one or both directions: fixed
+    base, free top (cantilevered column, flagpole column).
+
+    Stability by the direct analysis method, AISC 360-22 Chapter C:
+      C2.1   second-order analysis including P-Delta and P-delta, done here with the
+             geometric stiffness method (beam.solve), checked against the Commentary
+             benchmark problems (Figs. C-C2.2, C-C2.3);
+      C2.1(d) for ASD the analysis runs at 1.6 times the loads and results are divided
+             by 1.6;
+      C2.2b  notional load 0.002 alpha Y at the top, in gravity-only combinations, and in
+             every combination when second-order drift exceeds 1.7 times first-order;
+      C2.3   stiffness 0.8 tau_b EI;
+      C3     effective length = unbraced length (K = 1).
+    """
+    mark, pr, Fy, method, H = sheet.mark, sheet.props, sheet.Fy, sheet.method, sheet.height_ft
+    _check_lateral_inputs(mark, lateral)
+    if not set(sway) <= {"x", "y"} or not sway:
+        raise WorksheetError(f"{mark}: sway must name the bending axes (x, y) in which the top is free")
+    if sheet.Kx != 1.0 or sheet.Ky != 1.0:
+        raise WorksheetError(f"{mark}: a sway column is designed by the direct analysis method, which "
+                             "uses K = 1.0 (AISC 360-22 C3). Enter Kx = Ky = 1.0.")
+    for ld in leaning:
+        if "case" not in ld or "P" not in ld:
+            raise WorksheetError(f"{mark}: a leaning load needs 'case' and 'P'")
+    for ax, L in (("x", sheet.Lx_ft), ("y", sheet.Ly_ft)):
+        if ax in sway and abs(L - H) > 1e-9:
+            raise WorksheetError(f"{mark}: the column is free at the top for bending about {ax}, so its "
+                                 f"unbraced length for that axis must be the full height")
+    sheet.lateral, sheet.sway, sheet.leaning = lateral, tuple(sway), leaning
+    alpha = 1.0 if method == "LRFD" else 1.6
+    Pns = Fy * pr["A"]
+    I = {"x": pr["Ix"], "y": pr["Iy"]}
+    brace = {"x": sheet.Lx_ft, "y": sheet.Ly_ft}
+    wy = steel_beamcol.weak_axis_flexure(pr, Fy, method)
+    vy = steel_beamcol.weak_axis_shear(pr, Fy, method)
+    vx_avail = steel_beam.check(pr, Fy, sheet.Ly_ft * 12, 1.0, method).V_avail
+
+    def loads_for(axis, factors, scale):
+        pts, dists = [], []
+        for ld in lateral:
+            f = factors.get(ld["case"], 0.0) * scale
+            if ld["bending"] != axis or f == 0:
+                continue
+            if ld["kind"] == "uniform":
+                dists.append(beam.DistLoad(ld.get("x1_ft", 0.0), ld.get("x2_ft", H), f * ld["w"], f * ld["w"]))
+            else:
+                pts.append(beam.PointLoad(ld["x_ft"], f * ld["P"]))
+        return pts, dists
+
+    def supports(axis):
+        if axis in sway:
+            return [], [0.0]
+        n = max(1, int(round(H / brace[axis])))
+        return sorted({0.0, float(H)} | {brace[axis] * k for k in range(1, n)
+                                         if brace[axis] * k < H - 1e-6}), []
+
+    outs = []
+    for cb in combos:
+        P = sheet.totals[cb.name]
+        if P < 0:
+            raise WorksheetError(f"{mark}: combination {cb.name} puts the column in tension; not covered")
+        Pl = sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in leaning)
+        r = alpha * P / Pns
+        tau = 1.0 if r <= 0.5 else 4 * r * (1 - r)
+        o = dict(P=P, Pl=Pl, tau=tau, M={"x": 0.0, "y": 0.0}, M1={"x": 0.0, "y": 0.0},
+                 V={"x": 0.0, "y": 0.0}, N={}, ratio={}, res={}, Cb=1.0)
+        for ax in ("x", "y"):
+            pts, dists = loads_for(ax, cb.factors, alpha)
+            sup, fix = supports(ax)
+            EIr = 0.8 * tau * E * I[ax] / 144.0
+            spr = [(float(H), -alpha * Pl / H)] if (ax in sway and Pl) else []
+            N, why = 0.0, "not required: lateral load present and drift ratio <= 1.7 (C2.2b(d))"
+            if ax in sway and not pts and not dists:
+                N = 0.002 * alpha * (P + Pl)                       # C2.2b, gravity-only combination
+                why = "0.002 Y; this combination has no lateral load in this direction (C2.2b)"
+            elif not pts and not dists:
+                continue
+
+            def analyse(extra):
+                p2 = pts + ([beam.PointLoad(float(H), extra)] if extra else [])
+                first = beam.solve(H, sup, EIr, point_loads=p2, dist_loads=dists, fixed=fix)
+                try:
+                    second = beam.solve(H, sup, EIr, point_loads=p2, dist_loads=dists, fixed=fix,
+                                        axial=alpha * P, springs=spr)
+                except ValueError:
+                    raise WorksheetError(
+                        f"{mark}: combination {cb.name}: the column is unstable for bending about "
+                        f"{ax} (the load reaches its buckling load with the reduced stiffness of "
+                        "AISC 360-22 C2.3). Use a stiffer section.")
+                return first, second
+
+            first, second = analyse(N)
+            if ax in sway:
+                d1, d2 = float(first.defl[-1]), float(second.defl[-1])
+                ratio = abs(d2 / d1) if d1 else 1.0
+                if ratio > 1.7 and N == 0.0:                     # C2.2b(d): notional load in every combination
+                    N = math.copysign(0.002 * alpha * (P + Pl), d1 or 1.0)
+                    why = "0.002 Y; added to the lateral load because the drift ratio exceeds 1.7 (C2.2b(d))"
+                    first, second = analyse(N)
+                    d1, d2 = float(first.defl[-1]), float(second.defl[-1])
+                    ratio = abs(d2 / d1) if d1 else 1.0
+                o["ratio"][ax], o["N"][ax] = ratio, abs(N) / alpha
+                o.setdefault("Nwhy", {})[ax] = why
+            o["M"][ax] = float(np.max(np.abs(second.M))) / alpha
+            o["M1"][ax] = float(np.max(np.abs(first.M))) / alpha
+            o["V"][ax] = float(np.max(np.abs(second.V))) / alpha
+            o["res"][ax] = second
+        # strong-axis flexural strength: lateral-torsional buckling
+        if "y" in sway or o["res"].get("x") is None:
+            Cb, Lb = 1.0, sheet.Ly_ft                              # F1: free end unbraced, Cb = 1.0
+            fx = steel_beam.check(pr, Fy, Lb * 12, Cb, method)
+        else:
+            res = o["res"]["x"]
+            n = max(1, int(round(H / sheet.Ly_ft)))
+            segs = sorted({0.0, float(H)} | {sheet.Ly_ft * k for k in range(1, n) if sheet.Ly_ft * k < H - 1e-6})
+            cand = []
+            for a, b in zip(segs[:-1], segs[1:]):
+                Cbs, Mseg = _cb(res, a, b)
+                c = steel_beam.check(pr, Fy, (b - a) * 12, Cbs, method)
+                cand.append((Mseg / c.M_avail, c, Cbs, b - a))
+            _, fx, Cb, Lb = max(cand, key=lambda t: t[0])
+        o.update(fx=fx, Cb=Cb, Lb=Lb)
+        o["val"], o["eq"] = steel_beamcol.interaction(P, chk.P_avail, o["M"]["x"] * 12, fx.M_avail,
+                                                      o["M"]["y"] * 12, wy.available)
+        sheet.combined[cb.name] = o["val"]
+        outs.append((cb.name, o))
+
+    name, o = max(outs, key=lambda t: t[1]["val"])
+    fx = o["fx"]
+    sheet.governing = name
+    rows = [sheet.rows[0]]
+
+    def worst(key):
+        return max(outs, key=lambda t: key(t[1]))
+
+    def amp(q, ax):
+        return f"second-order {q['M'][ax]:.2f} kip-ft (first-order {q['M1'][ax]:.2f} kip-ft)"
+
+    if any(t[1]["M"]["x"] for t in outs):
+        n1, q = worst(lambda t: t["M"]["x"] * 12 / t["fx"].M_avail)
+        rows.append(Row("bending about x (strong axis)", n1, q["M"]["x"], q["fx"].M_avail / 12, "kip-ft",
+                        "AISC 360-22 Ch. F: " + q["fx"].governs,
+                        amp(q, "x") + f"; Lb = {q['Lb']:g} ft, Cb = {q['Cb']:.2f}"))
+        n1, q = worst(lambda t: t["V"]["x"])
+        rows.append(Row("shear, strong direction", n1, q["V"]["x"], vx_avail, "kip",
+                        "AISC 360-22 Sect. G2.1", "shear carried by the web"))
+    if any(t[1]["M"]["y"] for t in outs):
+        n1, q = worst(lambda t: t["M"]["y"])
+        rows.append(Row("bending about y (weak axis)", n1, q["M"]["y"], wy.available / 12, "kip-ft",
+                        "AISC 360-22 Sect. F6: " + wy.governs, amp(q, "y")))
+        n1, q = worst(lambda t: t["V"]["y"])
+        rows.append(Row("shear, weak direction", n1, q["V"]["y"], vy.available, "kip",
+                        "AISC 360-22 Sect. G6", "shear carried by the two flanges"))
+    rows.append(Row("combined compression and bending", name, o["val"], 1.0, "",
+                    f"AISC 360-22 Sect. H1.1, {o['eq']}",
+                    f"Pr/Pc = {o['P'] / chk.P_avail:.3f}; Mrx/Mcx = {o['M']['x'] * 12 / fx.M_avail:.3f}; "
+                    f"Mry/Mcy = {o['M']['y'] * 12 / wy.available:.3f}"))
+    for ax in sway:
+        n1, q = worst(lambda t: t["ratio"].get(ax, 0.0))
+        rows.append(Row(f"drift amplification, about {ax}", n1, q["ratio"][ax], 2.5, "",
+                        "AISC 360-22 Commentary C1 (recommended limit, not a requirement)",
+                        "sideways movement at the top with the axial load acting, divided by the "
+                        "movement without it; stiffness 0.8 tau_b EI, loads x " + f"{alpha:g}"))
+    # service drift at the top, when a limit is entered
+    for dc in drift_checks:
+        for ax in sway:
+            pts, dists = loads_for(ax, dc.factors, 1.0)
+            if not pts and not dists:
+                continue
+            d = beam.solve(H, [], E * I[ax] / 144.0, point_loads=pts, dist_loads=dists, fixed=[0.0])
+            rows.append(Row(f"drift at top, {dc.label}, about {ax}", "+".join(
+                (f"{f:g}" if f != 1 else "") + c for c, f in dc.factors.items()),
+                abs(float(d.defl[-1])) * 12, H * 12 / dc.ratio, "in", dc.source,
+                f"limit H/{dc.ratio:g}; first-order, full stiffness E I"))
+    sheet.rows = rows + sheet.rows[1:]
+
+    L = sheet.steps
+    L.append(Line("Pr, axial load", o["P"], "kip", "combination " + name))
+    if o["Pl"]:
+        L.append(Line("load leaning on this column", o["Pl"], "kip", "combination " + name,
+                      "carried by other columns; this column keeps them from moving sideways"))
+    L.append(Line("alpha Pr / Pns", alpha * o["P"] / Pns, "", "Sect. C2.3(b)", f"Pns = Fy Ag = {Pns:.0f} kip"))
+    L.append(Line("tau_b", o["tau"], "", "Eq. C2-2a" if o["tau"] == 1.0 else "Eq. C2-2b",
+                  "analysis stiffness = 0.8 tau_b E I (Sect. C2.3)"))
+    for ax in ("x", "y"):
+        if not o["M"][ax]:
+            continue
+        if ax in sway:
+            L.append(Line(f"notional load at top, bending about {ax}", o["N"][ax], "kip", "Eq. C2-1",
+                          o["Nwhy"][ax]))
+            L.append(Line(f"drift ratio, bending about {ax}", o["ratio"][ax], "", "Sect. C2.1(b)",
+                          "second-order / first-order movement at the top"))
+        L.append(Line(f"M{ax}, first-order", o["M1"][ax], "kip-ft", "statics"))
+        L.append(Line(f"Mr{ax}, second-order", o["M"][ax], "kip-ft", "Sect. C2.1(b), C2.1(d)",
+                      f"increase x {o['M'][ax] / o['M1'][ax]:.3f}" if o["M1"][ax] else ""))
+    if o["M"]["x"]:
+        L += [ln for ln in fx.lines if ln.label[:2] in ("Mp", "Lp", "Lr", "Mn")]
+    if o["M"]["y"]:
+        L += wy.lines + vy.lines
+    L.append(Line("combined ratio", o["val"], "", o["eq"], "limit 1.0"))
+    x = next((r.x for r in o["res"].values()), None)
+    if x is not None:
+        zeros = np.zeros(len(x))
+        sheet.diagram = dict(x=list(map(float, x)),
+                             Mx=list(map(float, (o["res"]["x"].M if "x" in o["res"] else zeros) / alpha)),
+                             My=list(map(float, (o["res"]["y"].M if "y" in o["res"] else zeros) / alpha)))
+    free = " and ".join("x (strong axis)" if a == "x" else "y (weak axis)" for a in sway)
+    sheet.assumptions[0] = ("Axial load is applied along the centre of the column. The base is fixed "
+                            f"against rotation and the top is free to move sideways for bending about {free}. "
+                            "The base connection and footing must be designed for the base moment; "
+                            "they are not designed here.")
+    sheet.assumptions.append(
+        "Stability by the direct analysis method (AISC 360-22 Chapter C): second-order analysis "
+        "including P-Delta and P-delta effects; stiffness 0.8 tau_b EI (C2.3); notional load "
+        "0.002 Y at the top (C2.2b); K = 1.0 (C3)."
+        + (" For ASD the analysis is run at 1.6 times the loads and the results divided by 1.6 "
+           "(C2.1(d))." if method == "ASD" else ""))
+    sheet.not_checked = [n for n in sheet.not_checked if "sideways" not in n and "move" not in n]
+    sheet.not_checked += ["base plate, anchor rods and footing for the base moment",
+                          "a top that moves sideways but is held against rotation (moment-frame column)"]
+    if not drift_checks:
+        sheet.not_checked.append("sideways drift at the top under service load (no limit entered)")

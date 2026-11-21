@@ -115,13 +115,24 @@ def _diagram(c, x0, y0, w, h, xs, vals, color, label):
 
 
 def _steps(p, title, lines):
-    """The governing calculation, one line per value with its equation reference."""
+    """The governing calculation, one line per value with its equation reference. The
+    box carries on to the next page when it does not fit."""
     c = p.c
-    p.room(22 + sum(10.5 + (9 if ln.note else 0) for ln in lines))
+    p.room(60)
     p.head(title)
-    c.setStrokeColorRGB(0.79, 0.81, 0.83); c.setLineWidth(0.5)
     box_top = p.y + 9
+
+    def close():
+        c.setStrokeColorRGB(0.79, 0.81, 0.83); c.setLineWidth(0.5)
+        c.rect(LM, p.y + 6, RM - LM, box_top - p.y - 6, fill=0, stroke=1)
+
     for ln in lines:
+        need = 10.5 + (9 if ln.note else 0)
+        if p.y - need < 58:
+            close()
+            p.room(1000)
+            p.head(title + ", Continued")
+            box_top = p.y + 9
         val = f"{ln.value:.2f}" if not ln.unit else _fmt(ln.value, ln.unit)
         c.setFont("Courier", 8); c.setFillColorRGB(*INK)
         c.drawString(LM + 6, p.y, f"{ln.label} = {val}")
@@ -131,7 +142,7 @@ def _steps(p, title, lines):
             p.y -= 9
             c.drawString(LM + 18, p.y, ln.note)
         p.y -= 10.5
-    c.rect(LM, p.y + 6, RM - LM, box_top - p.y - 6, fill=0, stroke=1)
+    close()
     p.y -= 6
 
 
@@ -310,8 +321,9 @@ def _small(c, x, y, text, size=6):
 
 def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     """Write the calc sheet for a ws_steel_column.SteelColumnSheet."""
-    p = _Page(path, f"Column {sheet.mark} - Steel " + ("Column with Lateral Load" if sheet.lateral
-                                                        else "Compression Member"), job, code, sheet.method,
+    kind = ("Cantilevered Steel Column" if sheet.sway else
+            "Steel Column with Lateral Load" if sheet.lateral else "Steel Compression Member")
+    p = _Page(path, f"Column {sheet.mark} - {kind}", job, code, sheet.method,
               page, pages, date)
     c, pr = p.c, sheet.props
     top = p.y
@@ -320,6 +332,8 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
           ("Height", f"{sheet.height_ft:g} ft"),
           ("Unbraced Length", f"x axis {sheet.Lx_ft:g} ft, y axis {sheet.Ly_ft:g} ft"),
           ("Effective Length", f"Kx = {sheet.Kx:g}, Ky = {sheet.Ky:g}  ({sheet.k_source})"),
+          ("Ends", ("fixed base; top free to move for bending about " + " and ".join(sheet.sway))
+           if sheet.sway else "held against sideways movement top and bottom"),
           ("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"),
           ("", f"tf = {pr['tf']:g} in, tw = {pr['tw']:g} in"),
           ("Properties", f"A = {pr['A']:g} in2, rx = {pr['rx']:g} in, ry = {pr['ry']:g} in"),
@@ -337,17 +351,22 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     t = c.beginPath(); t.moveTo(ex, ey + eh + 1); t.lineTo(ex - 3, ey + eh + 7); t.lineTo(ex + 3, ey + eh + 7); t.close()
     c.drawPath(t, fill=1, stroke=0)
     c.setLineWidth(1.2); c.line(ex - 12, ey - 0.6, ex + 12, ey - 0.6)
+    if sheet.sway:                                        # fixed base: ground hatch under the line
+        c.setLineWidth(0.4)
+        for k in range(7):
+            c.line(ex - 12 + 4 * k, ey - 0.6, ex - 15 + 4 * k, ey - 4.5)
     c.setFillColorRGB(*GREY); c.setFont("Courier", 7.5)
     c.drawString(ex + w / 2 + 6, ey + eh / 2 - 3, f"{sheet.height_ft:g} ft")
     c.drawRightString(ex - 6, ey + eh + 9, "P")
     if braces:
-        _small(c, ex, ey - 9, "x = braced against weak-axis buckling")
-    _small(c, ex, ey - (17 if braces else 9), "width enlarged for clarity")
+        _small(c, ex, ey - 11, "x = braced against weak-axis buckling")
+    _small(c, ex, ey - (19 if braces else 11), ("fixed base, free top; " if sheet.sway else "")
+           + "width enlarged for clarity")
     sx = 530
     _sketch_title(c, sx, top, "SECTION", centred=True)
     memberart.steel_section(c, sx, top - 44, 46, 50, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
     _small(c, sx, top - 80, "to scale")
-    p.y = min(bottom_left, ey - 22) - 2
+    p.y = min(bottom_left, ey - 24) - 2
 
     if sheet.lateral:                                     # sideways load arrows on the picture
         c.setStrokeColorRGB(*BLUE); c.setFillColorRGB(*BLUE); c.setLineWidth(0.7)
@@ -379,6 +398,11 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
         if ld.get("label"):
             s += f"   ({ld['label']})"
         p.text(s, font="Courier", size=8)
+    for ld in sheet.leaning:
+        s = f"{ld['case']:<3} leaning  {ld['P']:.2f} kip on other columns that this column holds up sideways"
+        if ld.get("label"):
+            s += f"   ({ld['label']})"
+        p.text(s, font="Courier", size=8)
     p.y -= 2
     p.head("Load Combinations")
     for cb in combos:
@@ -394,10 +418,12 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
         for key, lab in (("Mx", "Mx"), ("My", "My")):
             if any(abs(v) > 1e-9 for v in d[key]):
                 _diagram(c, LM + 269 * k, dy0, 235, 32, d["x"], [-m for m in d[key]], (0.54, 0.35, 0.0),
-                         f"{lab} max = {max(abs(m) for m in d[key]):.2f} kip-ft (before B1)")
+                         f"{lab} max = {max(abs(m) for m in d[key]):.2f} kip-ft "
+                         + ("(second-order)" if sheet.sway else "(before B1)"))
                 k += 1
         p.y = dy0 - 12
-    _steps(p, "Compressive Strength (AISC 360-22)", sheet.steps)
+    _steps(p, "Strength Calculation (AISC 360-22)" if sheet.lateral or sheet.sway
+           else "Compressive Strength (AISC 360-22)", sheet.steps)
     _summary(p, sheet.rows)
     return _closing(p, sheet.assumptions, sheet.not_checked)
 

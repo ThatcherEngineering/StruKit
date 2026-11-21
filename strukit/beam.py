@@ -65,10 +65,20 @@ def _w_at(load, x):
     return load.w1 + (load.w2 - load.w1) * (x - load.x1) / (load.x2 - load.x1)
 
 
-def solve(length, supports, EI, point_loads=(), dist_loads=(), fixed=(), n=400):
+def solve(length, supports, EI, point_loads=(), dist_loads=(), fixed=(), n=400,
+          axial=0.0, springs=()):
     """Solve a beam of `length` with pin/roller `supports` (list of x) and optional
     `fixed` supports (list of x, rotation also restrained). A cantilever is
     supports=[], fixed=[0.0]. Overhangs are allowed. `n` = target element count.
+
+    axial: a constant compression force along the member (positive = compression).
+    When given, the solution is second-order: the axial force acts on the deflected
+    shape, both between the ends (P-delta) and through any movement of one end
+    relative to the other (P-Delta), by the geometric stiffness method with the
+    member divided into many elements. Moments returned are the true internal
+    bending moments. Raises ValueError when the axial force reaches the buckling load.
+    springs: (x, k) pairs, a transverse spring of stiffness k at x. A negative k
+    models load that leans on the member for stability (k = -P_leaning / height).
     """
     if length <= 0 or EI <= 0:
         raise ValueError("beam: length and EI must be positive")
@@ -109,6 +119,12 @@ def solve(length, supports, EI, point_loads=(), dist_loads=(), fixed=(), n=400):
                            [6 * h, 2 * h * h, -6 * h, 4 * h * h]])
         idx = [2 * e, 2 * e + 1, 2 * e + 2, 2 * e + 3]
         K[np.ix_(idx, idx)] += ke
+        if axial:
+            kg = axial / (30 * h) * np.array([[36, 3 * h, -36, 3 * h],
+                                              [3 * h, 4 * h * h, -3 * h, -h * h],
+                                              [-36, -3 * h, 36, -3 * h],
+                                              [3 * h, -h * h, -3 * h, 4 * h * h]])
+            K[np.ix_(idx, idx)] -= kg
         # consistent nodal loads for a linearly varying load qa..qb (down = +deflection)
         mid = 0.5 * (xs[e] + xs[e + 1])
         qa = sum(_w_at(d, xs[e]) for d in dist_loads if d.x1 <= mid <= d.x2)
@@ -122,10 +138,15 @@ def solve(length, supports, EI, point_loads=(), dist_loads=(), fixed=(), n=400):
         F[2 * int(np.argmin(np.abs(xs - p.x)))] += p.P
 
     node = lambda s: int(np.argmin(np.abs(xs - s)))
+    for sx, k in springs:
+        K[2 * node(sx), 2 * node(sx)] += k
     restrained = sorted({2 * node(s) for s in list(supports) + list(fixed)}
                         | {2 * node(s) + 1 for s in fixed})
     free = [i for i in range(2 * nn) if i not in restrained]
     u = np.zeros(2 * nn)
+    if axial or springs:
+        if np.linalg.eigvalsh(K[np.ix_(free, free)])[0] <= 0:
+            raise ValueError("beam: the axial load reaches or exceeds the buckling load (unstable)")
     try:
         u[free] = np.linalg.solve(K[np.ix_(free, free)], F[free])
     except np.linalg.LinAlgError:
