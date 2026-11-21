@@ -156,7 +156,8 @@ def test_continuous_moment_matches_strucalc_when_stem_weight_is_left_out():
 
 def test_continuous_moment_with_stem_weight_is_higher():
     # StruKit adds 1.2 x 290 lb/ft: the stem wall bears on the footing, so it is part of
-    # the factored load (ACI 318-19 13.2.6.3). Mu = 3,023.2/2 psf x (8 in)^2 / 2.
+    # the factored load (ACI 318-19 13.2.6.3).
+    # RULING (Zach Thatcher, 2026-11-21): include the stem wall weight. Mu = 3,023.2/2 psf x (8 in)^2 / 2.
     r = cont(1.2)
     assert near(r.values["Pu_plf"], 2675.2 + 348.0)
     assert near(r.get("flexure").demand, (3023.2 / 2) * (8 / 12) ** 2 / 2)
