@@ -1,0 +1,30 @@
+StruKit - Thatcher Engineering's in-house structural calculation program
+========================================================================
+Steel beams, columns and moment frames (AISC 360-22), isolated and continuous footings
+(ACI 318-19), with printable calc sheets.
+
+INSTALL (once per computer)
+---------------------------
+Double-click Install-StruKit.bat. It puts StruKit in Documents\strukit, downloads Python and
+the libraries StruKit needs (about 35 MB, from python.org and pypi.org) into a "runtime"
+folder there, puts a StruKit icon on the Desktop and opens StruKit.
+Nothing is installed into Windows: delete Documents\strukit and it is gone.
+
+USING IT
+--------
+Double-click the StruKit icon. The StruKit window opens (it runs inside Edge, offline).
+  - Project: job name, number, site, design method and the load combinations.
+  - Add a member at the left; type its values; results show beside the form as you type.
+  - Print Calc Sheet prints one member; Print Calc Package prints every complete member.
+  - Projects save as .strukit files wherever you like (Ctrl+S).
+Every blank box is asked for. Nothing is assumed.
+
+UPDATING
+--------
+Automatic, every 2 hours, from GitHub (ThatcherEngineering/StruKit, branch "release").
+StruKit-Get-Latest.bat in C:\ZET-G\StruKit does it by hand.
+
+WHICH BUILD IS THIS
+-------------------
+The build shows under the name in the StruKit window and in the footer of every calc sheet
+("Prepared with StruKit <build>"). app\VERSION.txt says the same.

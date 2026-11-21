@@ -68,9 +68,11 @@ class _Page:
     job number and site address in the header."""
 
     def __init__(self, path, title, job, code, method, page, pages, date):
-        self.c = canvas.Canvas(path, pagesize=letter)
-        self.c.setTitle(title)
-        self.c.setAuthor(FIRM)
+        self.owns = not isinstance(path, canvas.Canvas)      # a package passes its own canvas
+        self.c = canvas.Canvas(path, pagesize=letter) if self.owns else path
+        if self.owns:
+            self.c.setTitle(title)
+            self.c.setAuthor(FIRM)
         self.args = (title, job, code, method, date)
         self.page, self.pages, self.used = page, pages, 1
         self._frame(title)
@@ -280,7 +282,9 @@ def _closing(p, assumptions, not_checked=()):
         p.head("Not Checked on This Sheet")
         p.wrap("; ".join(not_checked) + ".", width=118, size=8, dy=10)
     p.c.setStrokeColorRGB(*INK)
-    p.c.showPage(); p.c.save()
+    p.c.showPage()
+    if p.owns:
+        p.c.save()
     return p.used
 
 
@@ -802,3 +806,24 @@ def shapes_normalize(name):
 
 def frame_pdf(sheet, path, job, code, date, page=1, pages=None):
     return _paged(_frame_pdf, sheet, path, job, code, date, page, pages)
+
+
+def package_pdf(items, path, job, date, title="Structural Calculations"):
+    """One PDF of several members, sheets numbered through the whole package.
+    items: (kind, sheet, code, extra) with kind one of steel_beam, steel_column, footing,
+    frame; extra is a dict of that sheet's keyword arguments (combos, method)."""
+    import io
+    build = {"steel_beam": _steel_beam_pdf, "steel_column": _steel_column_pdf, "footing": _footing_pdf,
+             "frame": _frame_pdf}
+    counts = []
+    for kind, sheet, code, extra in items:                # first pass: how many sheets each member takes
+        counts.append(build[kind](sheet, io.BytesIO(), job, code, date, page=1, pages=1, **extra))
+    total = sum(counts)
+    c = canvas.Canvas(path, pagesize=letter)
+    c.setTitle(title); c.setAuthor(FIRM)
+    page = 1
+    for (kind, sheet, code, extra), n in zip(items, counts):
+        build[kind](sheet, c, job, code, date, page=page, pages=total, **extra)
+        page += n
+    c.save()
+    return total

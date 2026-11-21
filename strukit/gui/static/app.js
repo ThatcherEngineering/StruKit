@@ -1,0 +1,283 @@
+// StruKit window. Everything is calculated by the program on this computer; this page
+// only draws the forms and shows what comes back.
+"use strict";
+const $ = (s, e = document) => e.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) n.setAttribute(k, v);
+  }
+  for (const k of kids.flat(Infinity)) if (k !== null && k !== undefined && k !== false) n.append(k.nodeType ? k : document.createTextNode(k));
+  return n;
+};
+const post = async (path, body = {}) => {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+  return j;
+};
+const fmt = (v, unit = "") => {
+  if (v === null || v === undefined || Number.isNaN(v)) return "";
+  const a = Math.abs(v);
+  const s = a >= 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 0 }) : a >= 100 ? v.toFixed(1) : a >= 1 ? v.toFixed(2) : v.toFixed(3);
+  return unit ? s + " " + unit : s;
+};
+const toast = (t, ms = 3500) => { const x = $("#toast"); x.textContent = t; x.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => x.classList.remove("on"), ms); };
+
+let INFO = null;
+let S = null;            // the open project
+let path = null, dirty = false, sel = "project";
+const R = new Map();     // member object -> last result
+
+const blank = () => ({ format: "strukit-project", version: 1,
+  project: { name: "", number: "", address: "", date: INFO.today, method: "", combos: [{ expr: "", source: "" }] }, members: [] });
+
+function setDirty(d = true) { dirty = d; drawFile(); }
+function drawFile() { $("#file").textContent = (path || "Not saved yet") + (dirty ? "  (changes not saved)" : ""); document.title = "StruKit" + (S.project.name ? " - " + S.project.name : ""); }
+
+// ---------------------------------------------------------------- side bar
+function drawNav() {
+  const nav = $("#nav"); nav.textContent = "";
+  nav.append(el("div", { class: "item" + (sel === "project" ? " sel" : ""), onclick: () => select("project") }, "Project"));
+  if (S.members.length) nav.append(el("div", { class: "grp" }, "Members"));
+  S.members.forEach((m, i) => {
+    const r = R.get(m) || {};
+    const st = r.state === "done" ? r.status : r.state === "stopped" ? "stopped" : "";
+    nav.append(el("div", { class: "item" + (sel === i ? " sel" : ""), onclick: () => select(i) },
+      el("span", { class: "dot " + st }), m.values.mark || "(no mark)", el("span", { class: "kind" }, INFO.forms[m.kind].title)));
+  });
+}
+function select(i) { sel = i; drawNav(); drawMain(); }
+
+// ---------------------------------------------------------------- inputs
+function field(f, obj, onchange, inTable = false) {
+  let input;
+  const val = obj[f.key] ?? "";
+  if (f.type === "select") {
+    input = el("select", { class: f.required ? "req" + (val === "" ? " blank" : "") : "" }, el("option", { value: "" }, ""), f.options.map(o => el("option", { value: o }, o)));
+    input.value = val;
+  } else {
+    input = el("input", { type: "text", class: (f.type === "number" ? "n " : "") + (f.required ? "req" : ""), placeholder: " ", value: val,
+      list: f.type === "shape" ? "shapes" : null, spellcheck: "false", autocomplete: "off" });
+  }
+  const set = () => { obj[f.key] = input.value; if (f.type === "select") input.classList.toggle("blank", input.value === ""); onchange(); };
+  input.addEventListener(f.type === "select" ? "change" : "input", set);
+  if (inTable) return input;
+  return el("label", { class: "f" }, el("span", { class: "l" }, el("span", {}, f.label + (f.required ? "" : " (optional)")), el("span", { class: "u" }, f.unit || "")), input,
+    f.help ? el("div", { class: "help" }, f.help) : null);
+}
+function table(t, rows, onchange) {
+  const body = el("tbody");
+  const draw = () => {
+    body.textContent = "";
+    rows.forEach((row, i) => body.append(el("tr", {}, t.columns.map(c => el("td", {}, field(c, row, onchange, true))),
+      el("td", { class: "x" }, el("button", { title: "Remove this row", onclick: () => { rows.splice(i, 1); draw(); onchange(); } }, "✕")))));
+  };
+  draw();
+  return el("div", {}, el("h2", {}, t.label),
+    el("table", { class: "t" }, el("thead", {}, el("tr", {}, t.columns.map(c => el("th", {}, c.label + (c.unit ? ", " + c.unit : ""))), el("th"))), body),
+    el("button", { class: "addrow", onclick: () => { rows.push({}); draw(); } }, "+ Add a row"),
+    t.help ? el("div", { class: "help" }, t.help) : null);
+}
+
+// ---------------------------------------------------------------- results
+let timer = null;
+function recalc(m, now = false) {
+  clearTimeout(timer);
+  timer = setTimeout(async () => {
+    try {
+      const r = await post("/api/calc", { kind: m.kind, values: m.values, project: S.project });
+      R.set(m, r); drawNav();
+      if (S.members[sel] === m) drawResults(m);
+    } catch (e) { toast("The calculation could not run: " + e.message, 8000); }
+  }, now ? 0 : 280);
+}
+async function recalcAll() {
+  if (!S.members.length) return;
+  const r = await post("/api/calc_all", { project: S.project, members: S.members });
+  S.members.forEach((m, i) => R.set(m, r.results[i]));
+  drawNav(); if (typeof sel === "number") drawResults(S.members[sel]);
+}
+function frameSvg(fr) {
+  const xs = Object.values(fr.nodes).map(p => p[0]), ys = Object.values(fr.nodes).map(p => p[1]);
+  const w = Math.max(...xs) - Math.min(...xs) || 1, h = Math.max(...ys) - Math.min(...ys) || 1, pad = Math.max(w, h) * 0.09;
+  const X = x => x - Math.min(...xs) + pad, Y = y => h - (y - Math.min(...ys)) + pad;
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${w + 2 * pad} ${h + 2.2 * pad}`); svg.setAttribute("class", "frame");
+  const add = (tag, a, text) => { const n = document.createElementNS(ns, tag); for (const k in a) n.setAttribute(k, a[k]); if (text) n.textContent = text; svg.append(n); };
+  const fs = Math.max(w, h) * 0.035;
+  for (const m of fr.members) {
+    const a = fr.nodes[m.i], b = fr.nodes[m.j];
+    add("line", { x1: X(a[0]), y1: Y(a[1]), x2: X(b[0]), y2: Y(b[1]), stroke: "#2C3847", "stroke-width": fs * 0.42, "stroke-linecap": "round" });
+    add("text", { x: (X(a[0]) + X(b[0])) / 2 + (m.role === "column" ? fs * 0.5 : 0), y: (Y(a[1]) + Y(b[1])) / 2 - (m.role === "column" ? 0 : fs * 0.5),
+      "font-size": fs, fill: "#3A4756", "text-anchor": m.role === "column" ? "start" : "middle" }, m.name);
+  }
+  for (const [n, kind] of Object.entries(fr.supports)) {
+    const p = fr.nodes[n], x = X(p[0]), y = Y(p[1]), s = fs * 0.9;
+    if (kind === "pin") add("polygon", { points: `${x},${y} ${x - s},${y + 1.6 * s} ${x + s},${y + 1.6 * s}`, fill: "none", stroke: "#1B2430", "stroke-width": fs * 0.12 });
+    else add("line", { x1: x - 1.6 * s, y1: y + fs * 0.1, x2: x + 1.6 * s, y2: y + fs * 0.1, stroke: "#1B2430", "stroke-width": fs * 0.3 });
+  }
+  return svg;
+}
+function drawResults(m) {
+  const box = $("#res"); if (!box) return;
+  const r = R.get(m); box.textContent = "";
+  if (!r) { box.append(el("div", { class: "banner wait" }, "Calculating...")); return; }
+  if (r.state === "incomplete") {
+    box.append(el("div", { class: "banner wait" }, "Not calculated yet", el("small", {}, r.messages.length + " thing" + (r.messages.length > 1 ? "s" : "") + " still needed")),
+      el("ul", { class: "msg" }, r.messages.map(t => el("li", {}, t))));
+    return;
+  }
+  if (r.state === "stopped") {
+    box.append(el("div", { class: "banner stopped" }, "Stopped"), el("ul", { class: "msg" }, r.messages.map(t => el("li", {}, t))));
+    return;
+  }
+  const flags = r.rows.filter(x => x.status === "FLAG").length + r.members.filter(x => x.status === "FLAG").length;
+  box.append(el("div", { class: "banner " + r.status }, r.status === "OK" ? "All checks pass" : flags + " check" + (flags > 1 ? "s" : "") + " flagged"));
+  if (r.frame) box.append(frameSvg(r.frame));
+  if (r.members.length) {
+    box.append(el("h2", {}, "Members (worst combination for each)"),
+      el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Member", "Section", "Combination"].map(t => el("th", {}, t)),
+        ["Axial, kip", "Moment, kip-ft", "Shear, kip", "Ratio"].map(t => el("th", { class: "n" }, t)), el("th", {}, ""))),
+        el("tbody", {}, r.members.map(x => el("tr", { class: x.status }, el("td", {}, x.member), el("td", { class: "mono" }, x.shape), el("td", { class: "mono" }, x.combo),
+          el("td", { class: "n" }, x.axial.toFixed(1) + " " + x.sense), el("td", { class: "n" }, x.moment.toFixed(1)), el("td", { class: "n" }, x.shear.toFixed(1)),
+          el("td", { class: "n" }, x.ratio.toFixed(2), el("div", { class: "bar" }, el("i", { class: x.status, style: `width:${Math.min(100, x.ratio * 100)}%` }))),
+          el("td", { class: "st " + x.status }, x.status))))),
+      el("div", { class: "small" }, "C = compression, T = tension. * = with notional load. Governing member: " + r.governing.member + "."));
+  }
+  if (r.rows.length) {
+    const body = el("tbody");
+    for (const x of r.rows) {
+      body.append(el("tr", { class: x.status }, el("td", {}, x.check.charAt(0).toUpperCase() + x.check.slice(1)), el("td", { class: "mono" }, x.combo),
+        el("td", { class: "n" }, fmt(x.demand, x.unit)), el("td", { class: "n" }, fmt(x.capacity, x.unit)),
+        el("td", { class: "n" }, x.dc.toFixed(2), el("div", { class: "bar" }, el("i", { class: x.status, style: `width:${Math.min(100, x.dc * 100)}%` }))),
+        el("td", { class: "st " + x.status }, x.status)),
+        el("tr", { class: "sub " + x.status }, el("td", { colspan: 6 }, x.source + (x.note ? "  ·  " + x.note : ""))));
+    }
+    box.append(el("h2", {}, "Checks"), el("table", { class: "r" }, el("thead", {}, el("tr", {}, el("th", {}, "Check"), el("th", {}, "Combination"),
+      el("th", { class: "n" }, "Demand"), el("th", { class: "n" }, "Capacity"), el("th", { class: "n" }, "D/C"), el("th", {}, ""))), body));
+  }
+  if (r.steps.length) box.append(el("details", { open: "" }, el("summary", {}, "Calculation"), el("div", { class: "steps mono" },
+    r.steps.map(s => [el("div", { class: "s" }, el("span", {}, s.label + " = " + (s.unit ? fmt(s.value, s.unit) : s.value.toFixed(2))), el("span", {}, s.source)),
+      s.note ? el("div", { class: "note" }, s.note) : null]))));
+  if (r.assumptions.length) box.append(el("details", {}, el("summary", {}, "Assumptions"), el("ul", { class: "msg small" }, r.assumptions.map(t => el("li", {}, t)))));
+  if (r.not_checked.length) box.append(el("details", {}, el("summary", {}, "Not checked on this sheet"), el("ul", { class: "msg small" }, r.not_checked.map(t => el("li", {}, t)))));
+}
+
+// ---------------------------------------------------------------- pages
+function drawMain() {
+  const main = $("#main"); main.textContent = "";
+  if (sel === "project") return drawProject(main);
+  const m = S.members[sel], form = INFO.forms[m.kind];
+  const changed = () => { setDirty(); recalc(m); };
+  const markF = { key: "mark", label: "Mark", type: "text", required: true };
+  const left = el("div", { class: "card" }, el("h2", {}, form.title),
+    el("div", { class: "grid" }, field(markF, m.values, () => { changed(); drawNav(); }), form.fields.map(f => field(f, m.values, changed))),
+    form.tables.map(t => { m.values[t.key] = m.values[t.key] || []; return table(t, m.values[t.key], changed); }));
+  main.append(el("div", { class: "head" }, el("h1", {}, (m.values.mark || "New member") + " · " + form.title), el("span", { class: "small" }, form.code), el("span", { class: "sp" }),
+    el("button", { class: "btn pri", onclick: () => printSheet(m) }, "Print Calc Sheet"),
+    el("button", { class: "btn", onclick: () => { const c = JSON.parse(JSON.stringify(m)); c.values.mark = ""; S.members.splice(sel + 1, 0, c); setDirty(); select(sel + 1); } }, "Duplicate"),
+    el("button", { class: "btn danger", onclick: () => { if (confirm("Remove " + (m.values.mark || "this member") + " from the project?")) { S.members.splice(sel, 1); setDirty(); select("project"); } } }, "Remove")),
+    el("div", { class: "cols" }, left, el("div", { class: "card", id: "res" })));
+  drawResults(m); if (!R.get(m)) recalc(m, true);
+}
+function drawProject(main) {
+  const p = S.project;
+  const changed = () => { setDirty(); clearTimeout(drawProject.t); drawProject.t = setTimeout(recalcAll, 400); };
+  const fs = [{ key: "name", label: "Project name", type: "text", required: true }, { key: "number", label: "Job number", type: "text", required: true },
+    { key: "address", label: "Site address", type: "text", required: false }, { key: "date", label: "Date on the sheets", type: "text", required: true, help: "year-month-day, for example 2026-11-21" },
+    { key: "method", label: "Design method (steel)", type: "select", options: ["ASD", "LRFD"], required: true }];
+  const combo = { key: "combos", label: "Load combinations (used by steel beams, columns and frames)",
+    columns: [{ key: "expr", label: "Combination", type: "text", required: true }, { key: "source", label: "Source", type: "text", required: true }],
+    help: "Type each combination the way it is written, for example D + 0.75L + 0.45W. Give where it comes from; StruKit does not have ASCE 7 on file, so it does not make these up." };
+  main.append(el("div", { class: "head" }, el("h1", {}, "Project")),
+    el("div", { class: "cols" }, el("div", { class: "card" }, el("h2", {}, "Job"), el("div", { class: "grid" }, fs.map(f => field(f, p, () => { changed(); drawFile(); }))),
+      table(combo, p.combos, changed)),
+      el("div", { class: "card" }, el("h2", {}, "Members"),
+        S.members.length ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Mark", "Type", "Result"].map(t => el("th", {}, t)))),
+          el("tbody", {}, S.members.map((m, i) => { const r = R.get(m) || {}; const st = r.state === "done" ? r.status : r.state === "stopped" ? "Stopped" : "Not complete";
+            return el("tr", { style: "cursor:pointer", onclick: () => select(i) }, el("td", {}, m.values.mark || "(no mark)"), el("td", {}, INFO.forms[m.kind].title),
+              el("td", { class: "st " + (r.status || "") }, st)); })))
+          : el("div", { class: "small" }, "No members yet. Use “Add a member” at the left, or load the example project to see how the screens work."),
+        el("h2", {}, "What StruKit covers today"),
+        el("ul", { class: "msg small" }, ["Steel beams, columns (braced, with sideways load, cantilevered) and moment frames: AISC 360-22.",
+          "Isolated and continuous footings under centred load: ACI 318-19.",
+          "Not yet: wood, load generation (snow, wind, seismic), masonry, retaining walls, connections on these screens, footings with moment.",
+          "Every blank box is asked for; nothing is assumed."].map(t => el("li", {}, t))))));
+}
+
+// ---------------------------------------------------------------- files and printing
+async function printSheet(m) {
+  try { const r = await post("/api/pdf", { kind: m.kind, values: m.values, project: S.project }); window.open(r.url, "_blank"); }
+  catch (e) { toast("This member cannot be printed yet: " + e.message, 9000); }
+}
+async function printPackage() {
+  try {
+    const r = await post("/api/package", { project: S.project, members: S.members });
+    window.open(r.url, "_blank");
+    toast(r.sheets + " sheets." + (r.skipped.length ? " Left out because not complete: " + r.skipped.join(", ") + "." : ""), 8000);
+  } catch (e) { toast(e.message, 8000); }
+}
+async function save(as = false) {
+  try {
+    const r = await post("/api/save", { path, as, data: S, suggest: (S.project.number || "project") + ".strukit" });
+    if (r.cancelled) return;
+    path = r.path; setDirty(false); toast("Saved.");
+  } catch (e) { toast("Could not save: " + e.message, 9000); }
+}
+async function open(p = null) {
+  if (dirty && !confirm("Changes to this project are not saved. Open another project anyway?")) return;
+  try {
+    const r = await post("/api/open", { path: p });
+    if (r.cancelled) return;
+    load(r.data, r.path);
+  } catch (e) { toast("Could not open: " + e.message, 9000); }
+}
+function load(data, p) { S = data; path = p; R.clear(); sel = "project"; setDirty(false); drawNav(); drawMain(); recalcAll().then(() => { if (sel === "project") drawMain(); }); }
+
+function example() {
+  const src = "ASCE/SEI 7 Section 2.4 (typed in)";
+  return { format: "strukit-project", version: 1,
+    project: { name: "Example Project", number: "0000-000", address: "", date: INFO.today, method: "ASD",
+      combos: [{ expr: "D + L", source: src }, { expr: "D + S", source: src }, { expr: "D + 0.6W", source: src }, { expr: "D + 0.75L + 0.75S + 0.45W", source: src }] },
+    members: [
+      { kind: "steel_beam", values: { mark: "B1", shape: "W18X50", Fy: "50", span: "35", bracing: "at points", brace_pts: "11.67, 23.33", self_weight: "yes",
+        loads: [{ case: "D", kind: "uniform", mag: "0.45" }, { case: "L", kind: "uniform", mag: "0.75" }], defl: [{ label: "live", expr: "L", ratio: "360", source: "limit typed in" }] } },
+      { kind: "steel_column", values: { mark: "C1", shape: "W10X33", Fy: "50", height: "16", ends: "held sideways (braced)", Kx: "1", Ky: "1", k_source: "pinned top and bottom", self_weight: "yes",
+        loads: [{ case: "D", P: "12" }, { case: "L", P: "30" }], lateral: [{ case: "W", bending: "x", kind: "uniform", mag: "1.5", label: "wind on wall" }], leaning: [], drift: [] } },
+      { kind: "steel_column", values: { mark: "C2", shape: "W8X31", Fy: "50", height: "14", ends: "free about x (cantilever, strong axis)", Kx: "1", Ky: "1", k_source: "direct analysis method", self_weight: "yes",
+        loads: [{ case: "D", P: "4" }, { case: "S", P: "9" }], lateral: [{ case: "W", bending: "x", kind: "point", mag: "4", x: "14", label: "wind at roof" }],
+        leaning: [{ case: "D", P: "4" }, { case: "S", P: "9" }], drift: [{ label: "wind", expr: "0.6W", ratio: "100", source: "limit typed in" }] } },
+      { kind: "frame", values: { mark: "F1", bays: "24, 30", stories: "14, 12", base: "fixed", roof: "gable", rise: "6", col_shape: "W10X49", beam_shape: "W16X40", rafter_shape: "W14X30", Fy: "50",
+        lb_col: "12", lb_beam: "6", lb_rafter: "5", self_weight: "yes", shape_of: [],
+        loads: [{ case: "D", where: "level:1", kind: "gravity per ft of member", mag: "0.9", label: "floor dead" }, { case: "L", where: "level:1", kind: "gravity per ft of member", mag: "1.2", label: "floor live" },
+          { case: "D", where: "rafters", kind: "gravity per ft of member", mag: "0.35", label: "roof dead" }, { case: "S", where: "rafters", kind: "gravity per ft horizontal", mag: "0.75", label: "roof snow" },
+          { case: "W", where: "level:1", kind: "lateral at level", mag: "5" }, { case: "W", where: "level:2", kind: "lateral at level", mag: "3.5" }],
+        leaning: [], drift: [{ label: "wind", expr: "0.6W", ratio: "400", source: "limit typed in" }] } },
+      { kind: "footing_iso", values: { mark: "F-A", B: "2.5", L: "2.5", h: "10", fc: "3000", fy: "60000", conc_pcf: "145", col_x: "4", col_y: "4", supported: "wood", plate_x: "6", plate_y: "6",
+        bar: "5", n_x: "3", n_y: "3", cover: "3", bottom: "x", P_service: "7600", service_combo: "D + L", Pu: "12160", strength_combo: "1.2D + 1.6L", q_allow: "1500", soil_source: "presumptive value (example)" } },
+      { kind: "footing_cont", values: { mark: "CF1", W: "2", h: "10", fc: "3000", fy: "60000", conc_pcf: "145", wall: "8", wall_kind: "concrete", stem_h: "36", stem_pcf: "145", bar_t: "5", spacing_t: "12", bar_l: "5", n_l: "2",
+        cover: "3", P_service: "1932", service_combo: "D + L", Pu: "2675", strength_combo: "1.2D + 1.6L", dead_factor: "1.2", q_allow: "1500", soil_source: "presumptive value (example)", soil_depth: "3", soil_pcf: "110" } }] };
+}
+
+// ---------------------------------------------------------------- start
+(async function start() {
+  window.addEventListener("error", e => toast("Screen error: " + e.message, 12000));
+  INFO = await post("/api/info");
+  $("#build").textContent = "build " + INFO.version;
+  document.body.append(el("datalist", { id: "shapes" }, INFO.shapes.map(s => el("option", { value: s }))));
+  for (const [k, f] of Object.entries(INFO.forms))
+    $("#addbtns").append(el("button", { onclick: () => { S.members.push({ kind: k, values: { mark: "" } }); setDirty(); select(S.members.length - 1); } }, f.title));
+  $("#bOpen").onclick = () => open(); $("#bSave").onclick = () => save(false); $("#bSaveAs").onclick = () => save(true);
+  $("#bPackage").onclick = printPackage;
+  $("#bExample").onclick = () => { if (!dirty || confirm("Replace what is on the screen with the example project?")) { load(example(), null); setDirty(true); } };
+  window.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(false); } });
+  window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+  setInterval(() => post("/api/ping").catch(() => {}), 5000); post("/api/ping").catch(() => {});
+  S = blank();
+  const q = new URLSearchParams(location.search);
+  if (q.get("open")) await open(q.get("open"));
+  else if (q.get("demo")) { load(example(), null); await recalcAll(); if (q.get("sel")) select(+q.get("sel")); }
+  else { drawNav(); drawMain(); drawFile(); }
+})();
