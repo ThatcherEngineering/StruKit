@@ -28,22 +28,39 @@ class _Page:
         self.c = canvas.Canvas(path, pagesize=letter)
         self.c.setTitle(title)
         self.c.setAuthor("Thatcher Engineering, LLC")
+        self.args = (title, job, code, method, date)
+        self.page, self.pages, self.used = page, pages, 1
+        self._frame(title)
+
+    def _frame(self, title):
         c = self.c
+        _, job, code, method, date = self.args
         c.setFillColorRGB(*GREY); c.setFont("Helvetica-Bold", 8)
         c.drawString(LM, 742, FIRM)
-        c.setFillColorRGB(*INK); c.setFont("Helvetica-Bold", 16)
+        size = 16.0
+        while c.stringWidth(title, "Helvetica-Bold", size) > 318 and size > 9:
+            size -= 0.5
+        c.setFillColorRGB(*INK); c.setFont("Helvetica-Bold", size)
         c.drawString(LM, 722, title)
         c.setFont("Helvetica", 8)
         for i, (k, v) in enumerate((("Job", job), ("Code", code), ("Method", method))):
             c.setFillColorRGB(*GREY); c.drawRightString(410, 744 - 11 * i, k)
             c.setFillColorRGB(*INK); c.drawString(416, 744 - 11 * i, v)
+        c.setStrokeColorRGB(*INK)
         c.setLineWidth(1.5); c.line(LM, 714, RM, 714)
         c.setLineWidth(0.6); c.line(LM, 50, RM, 50)
         c.setFillColorRGB(*GREY); c.setFont("Helvetica", 7.5)
         c.drawString(LM, 40, FIRM_LINE)
         c.drawCentredString(306, 40, date)
-        c.drawRightString(RM, 40, f"Page {page} of {pages}")
+        c.drawRightString(RM, 40, f"Page {self.page + self.used - 1} of {self.pages}")
         self.y = 698
+
+    def room(self, h):
+        """Start a new page (same header, title marked Continued) if h points do not fit."""
+        if self.y - h < 54:
+            self.c.showPage()
+            self.used += 1
+            self._frame(self.args[0] + " (Continued)")
 
     def head(self, text):
         c = self.c
@@ -100,6 +117,7 @@ def _diagram(c, x0, y0, w, h, xs, vals, color, label):
 def _steps(p, title, lines):
     """The governing calculation, one line per value with its equation reference."""
     c = p.c
+    p.room(22 + sum(10.5 + (9 if ln.note else 0) for ln in lines))
     p.head(title)
     c.setStrokeColorRGB(0.79, 0.81, 0.83); c.setLineWidth(0.5)
     box_top = p.y + 9
@@ -131,6 +149,7 @@ def _summary(p, rows):
     """Check summary table: demand, capacity, D/C and result for every check, the code
     reference under each, and a boxed FLAG line for every check that fails."""
     c = p.c
+    p.room(70)
     p.head("Check Summary")
     c.setFont("Helvetica-Bold", 8); c.setFillColorRGB(*GREY)
     for x, t, right in ((LM, "Check", 0), (LM + 150, "Combination", 0), (LM + 318, "Demand", 1),
@@ -143,6 +162,7 @@ def _summary(p, rows):
         flag = r.status == "FLAG"
         sub = _split(r.source, 132) + (_split(r.note, 132) if r.note else [])
         hgt = 15 + 9 * len(sub)
+        p.room(hgt - 8)
         if flag:
             c.setFillColorRGB(0.99, 0.95, 0.91); c.rect(LM, p.y - hgt + 11, RM - LM, hgt, fill=1, stroke=0)
             flags.append(r)
@@ -161,6 +181,7 @@ def _summary(p, rows):
         c.line(LM, p.y - hgt + 11, RM, p.y - hgt + 11)
         p.y -= hgt
     for r in flags:
+        p.room(8)
         c.setStrokeColorRGB(*FLAGC); c.setLineWidth(1); c.rect(LM, p.y - 6, RM - LM, 18, fill=0, stroke=1)
         c.setFillColorRGB(*FLAGC); c.setFont("Helvetica-Bold", 8.5)
         c.drawString(LM + 6, p.y, f"FLAG - {r.check[0].upper() + r.check[1:]}: {_fmt(r.demand, r.unit)} "
@@ -170,6 +191,10 @@ def _summary(p, rows):
 
 
 def _closing(p, assumptions, not_checked=()):
+    need = 16 + 10 * sum(len(_split("- " + a, 118)) for a in assumptions)
+    if not_checked:
+        need += 18 + 10 * len(_split("; ".join(not_checked) + ".", 118))
+    p.room(need - 8)
     p.head("Assumptions")
     for s in assumptions:
         p.wrap("- " + s, width=118, size=8, dy=10)
@@ -179,9 +204,10 @@ def _closing(p, assumptions, not_checked=()):
         p.wrap("; ".join(not_checked) + ".", width=118, size=8, dy=10)
     p.c.setStrokeColorRGB(*INK)
     p.c.showPage(); p.c.save()
+    return p.used
 
 
-def steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
+def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     """Write the calc sheet for a ws_steel_beam.SteelBeamSheet. `combos` are the Combo
     objects that were run, printed with their sources."""
     p = _Page(path, f"Beam {sheet.mark} - Steel Bending Member", job, code, sheet.method,
@@ -270,8 +296,7 @@ def steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
 
     _steps(p, "Flexural and Shear Strength (AISC 360-22)", sheet.steps)
     _summary(p, sheet.rows)
-    _closing(p, sheet.assumptions)
-    return path
+    return _closing(p, sheet.assumptions)
 
 
 def _sketch_title(c, x, top, text, centred=False):
@@ -283,9 +308,10 @@ def _small(c, x, y, text, size=6):
     c.setFillColorRGB(*GREY); c.setFont("Helvetica", size); c.drawCentredString(x, y, text)
 
 
-def steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
+def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     """Write the calc sheet for a ws_steel_column.SteelColumnSheet."""
-    p = _Page(path, f"Column {sheet.mark} - Steel Compression Member", job, code, sheet.method,
+    p = _Page(path, f"Column {sheet.mark} - Steel " + ("Column with Lateral Load" if sheet.lateral
+                                                        else "Compression Member"), job, code, sheet.method,
               page, pages, date)
     c, pr = p.c, sheet.props
     top = p.y
@@ -297,6 +323,7 @@ def steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
           ("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"),
           ("", f"tf = {pr['tf']:g} in, tw = {pr['tw']:g} in"),
           ("Properties", f"A = {pr['A']:g} in2, rx = {pr['rx']:g} in, ry = {pr['ry']:g} in"),
+          ("", f"Ix = {pr['Ix']:g} in4, Iy = {pr['Iy']:g} in4, Zx = {pr['Zx']:g} in3, Zy = {pr['Zy']:g} in3"),
           ("Source", "AISC Shapes Database v16.0")])
     bottom_left = p.y
     # column standing up, with its load and supports
@@ -322,9 +349,33 @@ def steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     _small(c, sx, top - 80, "to scale")
     p.y = min(bottom_left, ey - 22) - 2
 
+    if sheet.lateral:                                     # sideways load arrows on the picture
+        c.setStrokeColorRGB(*BLUE); c.setFillColorRGB(*BLUE); c.setLineWidth(0.7)
+        xl = ex - w / 2
+        def arrow(yy, length=14):
+            c.line(xl - length - 2, yy, xl - 5, yy)
+            t = c.beginPath(); t.moveTo(xl - 1, yy); t.lineTo(xl - 6, yy + 2); t.lineTo(xl - 6, yy - 2); t.close()
+            c.drawPath(t, fill=1, stroke=0)
+        if any(ld["kind"] == "uniform" for ld in sheet.lateral):
+            for k in range(6):
+                arrow(ey + eh * (0.05 + 0.18 * k))
+            c.line(xl - 16, ey + eh * 0.05, xl - 16, ey + eh * 0.95)
+        for ld in sheet.lateral:
+            if ld["kind"] == "point":
+                arrow(ey + eh * ld["x_ft"] / sheet.height_ft, 24)
+        c.setStrokeColorRGB(*INK)
     p.head("Loads")
     for ld in sheet.loads:
-        s = f"{ld['case']:<3} axial  {ld['P']:.2f} kip"
+        s = f"{ld['case']:<3} axial    {ld['P']:.2f} kip"
+        if ld.get("label"):
+            s += f"   ({ld['label']})"
+        p.text(s, font="Courier", size=8)
+    for ld in sheet.lateral:
+        ax = "bending about x (strong axis)" if ld["bending"] == "x" else "bending about y (weak axis)"
+        if ld["kind"] == "uniform":
+            s = f"{ld['case']:<3} sideways {ld['w']:.3f} kip/ft over the height, {ax}"
+        else:
+            s = f"{ld['case']:<3} sideways {ld['P']:.2f} kip at {ld['x_ft']:g} ft above the base, {ax}"
         if ld.get("label"):
             s += f"   ({ld['label']})"
         p.text(s, font="Courier", size=8)
@@ -332,16 +383,26 @@ def steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     p.head("Load Combinations")
     for cb in combos:
         mark = "   governs" if cb.name == sheet.governing else ""
-        p.text(f"{cb.name:<18} P = {sheet.totals[cb.name]:.2f} kip{mark}", font="Courier", size=8, dy=10)
+        comb = f"   combined ratio {sheet.combined[cb.name]:.2f}" if cb.name in sheet.combined else ""
+        p.text(f"{cb.name:<18} P = {sheet.totals[cb.name]:.2f} kip{comb}{mark}", font="Courier", size=8, dy=10)
         p.text(cb.source, size=7.5, color=GREY, x=LM + 12)
     p.y -= 4
+    if sheet.diagram:
+        p.head(f"Bending Moment Along the Column (Base at Left), {sheet.governing}")
+        d = sheet.diagram
+        dy0, k = p.y - 40, 0
+        for key, lab in (("Mx", "Mx"), ("My", "My")):
+            if any(abs(v) > 1e-9 for v in d[key]):
+                _diagram(c, LM + 269 * k, dy0, 235, 32, d["x"], [-m for m in d[key]], (0.54, 0.35, 0.0),
+                         f"{lab} max = {max(abs(m) for m in d[key]):.2f} kip-ft (before B1)")
+                k += 1
+        p.y = dy0 - 12
     _steps(p, "Compressive Strength (AISC 360-22)", sheet.steps)
     _summary(p, sheet.rows)
-    _closing(p, sheet.assumptions, sheet.not_checked)
-    return path
+    return _closing(p, sheet.assumptions, sheet.not_checked)
 
 
-def footing_pdf(sheet, path, job, code, date, method="Strength design (LRFD)", page=1, pages=1):
+def _footing_pdf(sheet, path, job, code, date, method="Strength design (LRFD)", page=1, pages=1):
     """Write the calc sheet for a ws_footing.FootingSheet (isolated or continuous)."""
     i, res = sheet.inp, sheet.result
     iso = sheet.kind == "isolated"
@@ -428,5 +489,28 @@ def footing_pdf(sheet, path, job, code, date, method="Strength design (LRFD)", p
     notes = ["Load is centred on the footing; soil pressure is uniform.",
              "Footing weight and soil over the footing count toward soil bearing only. Strength "
              "checks use the soil pressure caused by the factored loads (ACI 318-19 13.2.6.3)."]
-    _closing(p, notes + list(res.notes), res.not_checked)
+    return _closing(p, notes + list(res.notes), res.not_checked)
+
+
+def _paged(build, sheet, path, job, code, date, page=1, pages=None, **kw):
+    """Write a member's sheet. When the member runs past one page and the caller did
+    not give the package's page count, the sheet is written again so every page reads
+    "Page n of N" correctly. Returns the path; the page count is on the function as
+    .last_pages."""
+    used = build(sheet, path, job, code, date, page=page, pages=pages or 1, **kw)
+    if pages is None and used != 1:
+        used = build(sheet, path, job, code, date, page=page, pages=used, **kw)
+    _paged.last_pages = used
     return path
+
+
+def steel_beam_pdf(sheet, path, job, code, date, page=1, pages=None, combos=()):
+    return _paged(_steel_beam_pdf, sheet, path, job, code, date, page, pages, combos=combos)
+
+
+def steel_column_pdf(sheet, path, job, code, date, page=1, pages=None, combos=()):
+    return _paged(_steel_column_pdf, sheet, path, job, code, date, page, pages, combos=combos)
+
+
+def footing_pdf(sheet, path, job, code, date, method="Strength design (LRFD)", page=1, pages=None):
+    return _paged(_footing_pdf, sheet, path, job, code, date, page, pages, method=method)

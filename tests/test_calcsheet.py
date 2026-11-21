@@ -72,3 +72,19 @@ def test_footing_calc_sheets(tmp_path):
     assert "Footing A" in t and "1,337 psf" in t and "Table 22.6.5.2" in t and "test soils report" in t
     assert "Footing CF1" in t2 and "1,488 psf" in t2 and "stem wall weight = 290.0" in t2
     assert "strukit" not in (t + t2).lower()
+
+
+def test_column_with_lateral_load_sheet_runs_to_two_pages(tmp_path):
+    from strukit import calcsheet
+    from strukit.ws_steel_column import run as col
+    cb = [Combo("D + L", {"D": 1, "L": 1}, "given"), Combo("D + 0.6W", {"D": 1, "W": 0.6}, "given")]
+    s = col("C2", "W10x33", 50, 16, [dict(case="D", P=12.0), dict(case="L", P=30.0)], cb, 1.0, 1.0,
+            "pinned top and bottom", "ASD", True,
+            lateral=[dict(case="W", bending="x", kind="uniform", w=1.5)])
+    out = calcsheet.steel_column_pdf(s, str(tmp_path / "c2.pdf"), "0000-000 TEST", "AISC 360-22",
+                                     "2026-11-21", combos=cb)
+    t = _text(out)
+    if t is None:
+        return
+    assert calcsheet._paged.last_pages == 2 and "Page 1 of 2" in t and "Page 2 of 2" in t
+    assert "Eq. A-8-3" in t and "H1-1" in t and "Shear, strong direction" in t
