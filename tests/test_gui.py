@@ -35,8 +35,13 @@ def test_blank_boxes_are_all_listed_and_nothing_is_assumed():
     assert r["state"] == "incomplete"
     for need in ("Section is blank", "Fy is blank", "Span is blank", "Add self-weight is blank"):
         assert need in r["messages"]
-    r = calc.results("steel_beam", BEAM, dict(PROJ, method="", combos=[]))
-    assert any("Design method" in m for m in r["messages"]) and any("No load combinations" in m for m in r["messages"])
+    r = calc.results("steel_beam", BEAM, dict(PROJ, method=""))
+    assert any("Design method" in m for m in r["messages"])
+    r = calc.results("steel_beam", BEAM, dict(PROJ, combos=[]))
+    assert any("No ASD load combinations" in m for m in r["messages"])
+    new = dict(name="T", number="1", method="LRFD", date="2026-11-21", combos_asd=PROJ["combos"], combos_lrfd=[])
+    r = calc.results("steel_beam", BEAM, new)                                    # ASD list only, LRFD asked for
+    assert any("No LRFD load combinations" in m for m in r["messages"])
 
 
 def test_a_load_case_missing_from_every_combination_is_reported():
@@ -112,3 +117,39 @@ def test_base_plate_and_footing_with_moment_on_the_screen(tmp_path):
     n, skipped = calc.package_pdf(PROJ, [dict(kind="base_plate", values=bp), dict(kind="footing_moment", values=fm)],
                                   str(tmp_path / "p.pdf"))
     assert n >= 2 and not skipped
+
+
+def test_base_reactions_for_footings():
+    P = dict(name="T", number="1", method="ASD", date="2026-11-21",
+             combos_asd=[dict(expr="D + S", source="t"), dict(expr="D + 0.6W", source="t")],
+             combos_lrfd=[dict(expr="1.2D + 1.6S", source="t"), dict(expr="0.9D + 1.0W", source="t")])
+    col = dict(mark="C2", shape="W8X31", Fy="50", height="14", ends="free about x (cantilever, strong axis)", Kx="1", Ky="1",
+               k_source="direct analysis", self_weight="no", loads=[dict(case="D", P="4"), dict(case="S", P="9")],
+               lateral=[dict(case="W", bending="x", kind="point", mag="4", x="14")], leaning=[], drift=[])
+    r = calc.reactions("steel_column", col, P)
+    sv = {x["name"]: x for x in r["service"]}
+    st = {x["name"]: x for x in r["strength"]}
+    assert sv["D + S"]["P"] == pytest.approx(13000) and sv["D + 0.6W"]["V"] == pytest.approx(2400)
+    assert sv["D + 0.6W"]["M"] > 2400 * 14                    # second-order: more than V x height
+    assert sv["D + 0.6W"]["M"] < 2400 * 14 * 1.1
+    assert sv["D + S"]["M"] > 0                               # the notional load of a gravity-only combination
+    assert st["0.9D + 1.0W"]["wt_factor"] == 0.9 and st["1.2D + 1.6S"]["P"] == pytest.approx(1.2 * 4000 + 1.6 * 9000)
+    assert "Loads can be taken" in calc.reactions("steel_beam", {}, P)["error"]
+    only_asd = dict(P, combos_lrfd=[])
+    r = calc.reactions("steel_column", col, only_asd)
+    assert r["service"] and not r["strength"] and any("LRFD" in m for m in r["messages"])
+
+
+def test_package_has_a_cover_with_contents(tmp_path):
+    import subprocess
+    members = [dict(kind="steel_beam", values=BEAM), dict(kind="steel_beam", values=dict(mark="B9"))]
+    p = str(tmp_path / "pkg.pdf")
+    n, skipped = calc.package_pdf(PROJ, members, p)
+    assert n >= 2 and skipped == ["B9"]
+    try:
+        t = subprocess.run(["pdftotext", "-layout", "-l", "1", p, "-"], capture_output=True, text=True, timeout=30).stdout
+    except FileNotFoundError:
+        return
+    assert "Structural Calculations" in t and "Engineer's seal" in t and "Sheet 1 of" in t
+    assert "Members Not Included" in t.title() and "B9" in t and "D + L" in t
+    assert "Flagged Checks" in t.title() or "No check in this package is flagged" in t

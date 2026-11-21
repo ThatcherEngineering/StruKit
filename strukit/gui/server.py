@@ -127,6 +127,8 @@ def api(path, body):
         return {}
     if path == "/api/calc":
         return calc.results(body["kind"], body.get("values") or {}, body.get("project") or {})
+    if path == "/api/reactions":
+        return calc.reactions(body["kind"], body.get("values") or {}, body.get("project") or {})
     if path == "/api/calc_all":
         proj = body.get("project") or {}
         return dict(results=[calc.results(m["kind"], m.get("values") or {}, proj) for m in body.get("members") or []])

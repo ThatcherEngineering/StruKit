@@ -816,20 +816,97 @@ def frame_pdf(sheet, path, job, code, date, page=1, pages=None):
     return _paged(_frame_pdf, sheet, path, job, code, date, page, pages)
 
 
-def package_pdf(items, path, job, date, title="Structural Calculations"):
+def _cover_pdf(cover, path, job, code, date, page=1, pages=1):
+    """Cover sheet of a calc package: the job, the engineer's seal box, the basis of design,
+    the load combinations with their sources, the contents with each member's result, the
+    flagged checks and anything left out."""
+    p = _Page(path, "Structural Calculations", job, "Cover sheet", "", page, pages, date)
+    c = p.c
+    top = p.y
+    name = job.get("name") if isinstance(job, dict) else ""
+    p.head("Project")
+    rows = [("Project", name or "-"), ("Job Number", (job.get("number") if isinstance(job, dict) else str(job)) or "-"),
+            ("Site", (job.get("address") if isinstance(job, dict) else "") or "-"), ("Date", _date(date)),
+            ("Prepared By", FIRM), ("Sheets", f"{pages}, including this cover")]
+    p.kv(rows, kw=86)
+    # seal box
+    c.setStrokeColorRGB(*RULE); c.setLineWidth(0.8); c.rect(RM - 150, top - 96, 150, 96, fill=0, stroke=1)
+    c.setFillColorRGB(*GREY); c.setFont(FR, 7); c.drawCentredString(RM - 75, top - 104, "Engineer's seal and signature")
+    p.y = min(p.y, top - 110) - 2
+    p.head("Basis of Design")
+    for t in cover["basis"]:
+        for k, ln in enumerate(_split(t, 118)):
+            p.room(12); p.text(("- " if k == 0 else "  ") + ln, size=8, dy=10.5)
+    for title, rows_ in (("ASD Load Combinations", cover["asd"]), ("LRFD Load Combinations", cover["lrfd"])):
+        if not rows_:
+            continue
+        p.y -= 2; p.room(40); p.head(title)
+        for expr, src in rows_:
+            p.room(12)
+            c.setFont(FM, 8); c.setFillColorRGB(*INK); c.drawString(LM, p.y, expr)
+            c.setFont(FR, 7.5); c.setFillColorRGB(*GREY); c.drawString(LM + 200, p.y, src)
+            p.y -= 10.5
+    p.y -= 2; p.room(50); p.head("Contents")
+    def header():
+        c.setFont(FB, 7.5); c.setFillColorRGB(*GREY)
+        for x, t in ((LM, "Mark"), (LM + 70, "Member"), (LM + 290, "Code"), (LM + 400, "Sheet"), (LM + 446, "Result")):
+            c.drawString(x, p.y, t)
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.8); c.line(LM, p.y - 3, RM, p.y - 3)
+        p.y -= 13
+    header()
+    for it in cover["contents"]:
+        if p.y - 12 < 64:
+            p.room(1000); p.head("Contents, Continued"); header()
+        ok = it["flags"] == 0
+        c.setFont(FR, 8.5); c.setFillColorRGB(*INK)
+        c.drawString(LM, p.y, it["mark"]); c.drawString(LM + 70, p.y, it["title"]); c.drawString(LM + 290, p.y, it["code"])
+        c.setFont(FM, 8); c.drawString(LM + 400, p.y, str(it["sheet"]))
+        c.setFont(FB, 8.5); c.setFillColorRGB(*(OKC if ok else FLAGC))
+        c.drawString(LM + 446, p.y, "OK" if ok else f"{it['flags']} FLAG" + ("S" if it["flags"] > 1 else ""))
+        p.y -= 11.5
+    if cover["flag_lines"]:
+        p.y -= 4; p.room(40); p.head("Flagged Checks")
+        for t in cover["flag_lines"]:
+            p.room(12); p.text(t, size=8, color=FLAGC, dy=10.5)
+    else:
+        p.y -= 4; p.room(24); p.text("No check in this package is flagged.", size=8.5, color=OKC)
+    if cover["skipped"]:
+        p.y -= 4; p.room(40); p.head("Members Not Included")
+        p.wrap("These members are in the project but are not complete, so they are not in this package: "
+               + ", ".join(cover["skipped"]) + ".", width=118, size=8, dy=10.5)
+    c.showPage()
+    if p.owns:
+        c.save()
+    return p.used
+
+
+def package_pdf(items, path, job, date, title="Structural Calculations", cover=None):
     """One PDF of several members, sheets numbered through the whole package.
     items: (kind, sheet, code, extra) with kind one of steel_beam, steel_column, footing,
-    frame; extra is a dict of that sheet's keyword arguments (combos, method)."""
+    frame, conn, simple; extra is a dict of that sheet's keyword arguments.
+    cover: None for no cover, or dict(basis, asd, lrfd, contents=[dict(mark, title, code,
+    flags)], flag_lines, skipped); the contents get their sheet numbers here."""
     import io
     build = {"steel_beam": _steel_beam_pdf, "steel_column": _steel_column_pdf, "footing": _footing_pdf,
              "frame": _frame_pdf, "conn": _conn_pdf, "simple": _simple_pdf}
     counts = []
     for kind, sheet, code, extra in items:                # first pass: how many sheets each member takes
         counts.append(build[kind](sheet, io.BytesIO(), job, code, date, page=1, pages=1, **extra))
-    total = sum(counts)
+    n_cover = 0
+    if cover is not None:
+        for it in cover["contents"]:
+            it["sheet"] = 0
+        n_cover = _cover_pdf(cover, io.BytesIO(), job, "", date, 1, 1)
+        first = n_cover + 1
+        for it, n in zip(cover["contents"], counts):
+            it["sheet"] = first
+            first += n
+    total = sum(counts) + n_cover
     c = canvas.Canvas(path, pagesize=letter)
     c.setTitle(title); c.setAuthor(FIRM)
-    page = 1
+    if cover is not None:
+        _cover_pdf(cover, c, job, "", date, 1, total)
+    page = n_cover + 1
     for (kind, sheet, code, extra), n in zip(items, counts):
         build[kind](sheet, c, job, code, date, page=page, pages=total, **extra)
         page += n
@@ -917,20 +994,10 @@ def _picture(c, top, pic):
     name, d = pic
     if name == "base_plate":
         _sketch_title(c, 470, top, "PLAN", centred=True)
-        sup = d["support"] or (d["N"], d["B"])
-        s = min(150 / sup[1], 78 / sup[0])
-        cx, cy = 470, top - 52
-        if d["support"]:
-            c.setDash(3, 2); c.setLineWidth(0.6); c.setStrokeColorRGB(*memberart.CONC_LINE)
-            c.setFillColorRGB(*memberart.CONC_FILL)
-            c.rect(cx - sup[1] * s / 2, cy - sup[0] * s / 2, sup[1] * s, sup[0] * s, fill=1, stroke=1)
-            c.setDash()
-        c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(0.87, 0.90, 0.93)
-        c.rect(cx - d["B"] * s / 2, cy - d["N"] * s / 2, d["B"] * s, d["N"] * s, fill=1, stroke=1)
-        memberart.steel_section(c, cx, cy, d["bf"] * s, d["d"] * s, d["d"], d["bf"], d["tf"], d["tw"])
-        _small(c, cx, top - 100, f"to scale; plate {d['N']:g} x {d['B']:g} in"
-               + (f", support {sup[0]:g} x {sup[1]:g} in (dashed)" if d["support"] else ""))
-        return top - 104
+        memberart.base_plate_plan(c, 470, top - 52, 170, 82, d["d"], d["bf"], d["tf"], d["tw"], d["N"], d["B"],
+                                  d["support"], font=FR)
+        _small(c, 470, top - 102, "dimensions in inches; to scale" + ("; concrete support dashed" if d["support"] else ""))
+        return top - 106
     if name == "footing_moment":
         _sketch_title(c, 470, top, "SECTION AND SOIL PRESSURE", centred=True)
         base = top - 74

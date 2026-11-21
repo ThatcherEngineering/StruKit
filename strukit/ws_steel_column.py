@@ -49,6 +49,7 @@ class SteelColumnSheet:
     lateral: list = field(default_factory=list)        # dicts: case, bending, kind, w / P, x_ft
     combined: dict = field(default_factory=dict)       # combo name -> H1-1 value
     diagram: dict = field(default_factory=dict)        # x, Mx, My of the governing combo
+    base: dict = field(default_factory=dict)           # combo -> P, Mx, My, Vx, Vy at the base (kips, kip-ft)
     sway: tuple = ()                                   # bending axes in which the top is free
     leaning: list = field(default_factory=list)        # dicts: case, P (load stabilised by this column)
 
@@ -118,6 +119,8 @@ def run(mark, shape, Fy, height_ft, loads, combos, Kx, Ky, k_source, method,
                              all_loads, Lx, Ly, Kx, Ky, k_source, assumptions=assumptions)
     for cb in combos:
         sheet.totals[cb.name] = sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in all_loads)
+    for cb in combos:
+        sheet.base[cb.name] = dict(P=sheet.totals[cb.name], Mx=0.0, My=0.0, Vx=0.0, Vy=0.0)
     worst = max(sheet.totals, key=lambda k: sheet.totals[k])
     if sheet.totals[worst] <= 0:
         raise WorksheetError(f"{mark}: no combination puts the column in compression; "
@@ -187,10 +190,12 @@ def _lateral(sheet, chk, lateral, combos):
                 cand.append((Mseg / (c.M_avail / 12) if c.M_avail else 0, Mseg, c, Cb, b - a))
             _, Mseg, fx, Cb, Lb = max(cand, key=lambda t: t[0])
             out.update(Mx=Mseg, Vx=res.V_abs_max()[0], Cb=Cb, Lb=Lb, x=res.x, mx=res.M)
+            sheet.base[cb.name]["Vx"] = abs(float(res.reactions[0.0]))       # pinned base: shear only
             out["B1x"], out["Pe1x"] = steel_beamcol.b1(P, pr["Ix"], sheet.Lx_ft * 12, method)
         if sy:
             res = sy[0]
             out.update(My=float(np.max(np.abs(res.M))), Vy=res.V_abs_max()[0], x=res.x, my=res.M)
+            sheet.base[cb.name]["Vy"] = abs(float(res.reactions[0.0]))
             out["B1y"], out["Pe1y"] = steel_beamcol.b1(P, pr["Iy"], sheet.Ly_ft * 12, method)
         out["fx"] = fx or steel_beam.check(pr, Fy, sheet.Ly_ft * 12, 1.0, method)
         out["Mrx"], out["Mry"] = out["B1x"] * out["Mx"], out["B1y"] * out["My"]
@@ -375,6 +380,11 @@ def _sway(sheet, chk, lateral, combos, sway, leaning, drift_checks):
             o["M1"][ax] = float(np.max(np.abs(first.M))) / alpha
             o["V"][ax] = float(np.max(np.abs(second.V))) / alpha
             o["res"][ax] = second
+            if ax in sway:                                         # fixed base: moment and shear, second-order
+                sheet.base[cb.name]["M" + ax] = abs(float(second.fixed_moments[0.0])) / alpha
+                sheet.base[cb.name]["V" + ax] = abs(float(first.reactions[0.0])) / alpha
+            else:
+                sheet.base[cb.name]["V" + ax] = abs(float(first.reactions[0.0])) / alpha
         # strong-axis flexural strength: lateral-torsional buckling
         if "y" in sway or o["res"].get("x") is None:
             Cb, Lb = 1.0, sheet.Ly_ft                              # F1: free end unbraced, Cb = 1.0

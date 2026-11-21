@@ -31,7 +31,7 @@ let path = null, dirty = false, sel = "project";
 const R = new Map();     // member object -> last result
 
 const blank = () => ({ format: "strukit-project", version: 1,
-  project: { name: "", number: "", address: "", date: INFO.today, method: "", combos: [{ expr: "", source: "" }] }, members: [] });
+  project: { name: "", number: "", address: "", date: INFO.today, method: "", combos_asd: [{ expr: "", source: "" }], combos_lrfd: [{ expr: "", source: "" }] }, members: [] });
 
 function setDirty(d = true) { dirty = d; drawFile(); }
 function drawFile() { $("#file").textContent = (path || "Not saved yet") + (dirty ? "  (changes not saved)" : ""); document.title = "StruKit" + (S.project.name ? " - " + S.project.name : ""); }
@@ -165,6 +165,45 @@ function drawResults(m) {
   if (r.not_checked.length) box.append(el("details", {}, el("summary", {}, "Not checked on this sheet"), el("ul", { class: "msg small" }, r.not_checked.map(t => el("li", {}, t)))));
 }
 
+// ---------------------------------------------------------------- loads from another member
+function fillBar(m, changed) {
+  if (m.kind !== "footing_moment" && m.kind !== "footing_iso") return null;
+  const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");
+  if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame once the project has one.");
+  const pick = el("select", {}, el("option", { value: "" }, "choose a column or frame"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
+  const base = el("select", { style: "display:none" });
+  let got = null;
+  pick.addEventListener("change", async () => {
+    got = null; base.style.display = "none"; base.textContent = "";
+    if (pick.value === "") return;
+    const s = S.members[+pick.value];
+    try {
+      got = await post("/api/reactions", { kind: s.kind, values: s.values, project: S.project });
+      if (got.bases.length > 1) { got.bases.forEach(b => base.append(el("option", { value: b }, "base " + b))); base.style.display = ""; }
+      if (got.messages.length) toast(got.messages.join("  "), 12000);
+    } catch (e) { toast(e.message, 9000); }
+  });
+  const go = el("button", { class: "btn", onclick: () => {
+    if (!got) return toast("Choose the column or frame first.");
+    const s = S.members[+pick.value], b = got.bases.length > 1 ? base.value : got.bases[0];
+    const sv = got.service.filter(r => r.base === b), st = got.strength.filter(r => r.base === b);
+    if (!sv.length || !st.length) return toast("Both ASD and LRFD load combinations are needed on the Project page: service loads size the footing on the soil, factored loads design the concrete.", 12000);
+    const n = x => String(Math.round(x));
+    if (m.kind === "footing_moment") {
+      m.values.service = sv.map(r => ({ name: r.name, P: n(r.P), M: n(r.M), V: n(r.V) }));
+      m.values.strength = st.map(r => ({ name: r.name, P: n(r.P), M: n(r.M), V: n(r.V), wt_factor: r.wt_factor == null ? "" : String(r.wt_factor) }));
+    } else {
+      const big = Math.max(...sv.concat(st).map(r => Math.abs(r.M)));
+      if (big > 50) toast("This base carries moment (up to " + n(big) + " lb-ft). An Isolated Footing ignores it; use Footing with Moment instead.", 14000);
+      const a = sv.reduce((p, r) => r.P > p.P ? r : p), u = st.reduce((p, r) => r.P > p.P ? r : p);
+      Object.assign(m.values, { P_service: n(a.P), service_combo: a.name, Pu: n(u.P), strength_combo: u.name });
+    }
+    m.values.loads_from = "base reactions of " + (s.values.mark || "member") + (got.bases.length > 1 ? " at " + b : "") + (s.kind === "frame" || (s.values.ends || "").startsWith("free") ? ", second-order analysis" : "");
+    changed(); drawMain();
+  } }, "Fill Loads");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the loads from"), pick, base, go);
+}
+
 // ---------------------------------------------------------------- pages
 function drawMain() {
   const main = $("#main"); main.textContent = "";
@@ -172,7 +211,7 @@ function drawMain() {
   const m = S.members[sel], form = INFO.forms[m.kind];
   const changed = () => { setDirty(); recalc(m); };
   const markF = { key: "mark", label: "Mark", type: "text", required: true };
-  const left = el("div", { class: "card" }, el("h2", {}, form.title),
+  const left = el("div", { class: "card" }, fillBar(m, changed), el("h2", {}, form.title),
     el("div", { class: "grid" }, field(markF, m.values, () => { changed(); drawNav(); }), form.fields.map(f => field(f, m.values, changed))),
     form.tables.map(t => { m.values[t.key] = m.values[t.key] || []; return table(t, m.values[t.key], changed); }));
   main.append(el("div", { class: "head" }, el("h1", {}, (m.values.mark || "New member") + " · " + form.title), el("span", { class: "small" }, form.code), el("span", { class: "sp" }),
@@ -188,12 +227,14 @@ function drawProject(main) {
   const fs = [{ key: "name", label: "Project name", type: "text", required: true }, { key: "number", label: "Job number", type: "text", required: true },
     { key: "address", label: "Site address", type: "text", required: false }, { key: "date", label: "Date on the sheets", type: "text", required: true, help: "year-month-day, for example 2026-11-21" },
     { key: "method", label: "Design method (steel)", type: "select", options: ["ASD", "LRFD"], required: true }];
-  const combo = { key: "combos", label: "Load combinations (used by steel beams, columns and frames)",
-    columns: [{ key: "expr", label: "Combination", type: "text", required: true }, { key: "source", label: "Source", type: "text", required: true }],
-    help: "Type each combination the way it is written, for example D + 0.75L + 0.45W. Give where it comes from; StruKit does not have ASCE 7 on file, so it does not make these up." };
+  const cols = [{ key: "expr", label: "Combination", type: "text", required: true }, { key: "source", label: "Source", type: "text", required: true }];
+  const asd = { key: "combos_asd", label: "ASD load combinations", columns: cols,
+    help: "Used for steel designed by ASD, and as the service combinations when a footing takes its loads from a column or frame." };
+  const lrfd = { key: "combos_lrfd", label: "LRFD load combinations", columns: cols,
+    help: "Used for steel designed by LRFD, and as the factored combinations for concrete. Type each combination the way it is written, for example 1.2D + 1.6S + 0.5W, and give where it comes from; StruKit does not have ASCE 7 on file, so it does not make these up." };
   main.append(el("div", { class: "head" }, el("h1", {}, "Project")),
     el("div", { class: "cols" }, el("div", { class: "card" }, el("h2", {}, "Job"), el("div", { class: "grid" }, fs.map(f => field(f, p, () => { changed(); drawFile(); }))),
-      table(combo, p.combos, changed)),
+      table(asd, p.combos_asd, changed), table(lrfd, p.combos_lrfd, changed)),
       el("div", { class: "card" }, el("h2", {}, "Members"),
         S.members.length ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Mark", "Type", "Result"].map(t => el("th", {}, t)))),
           el("tbody", {}, S.members.map((m, i) => { const r = R.get(m) || {}; const st = r.state === "done" ? r.status : r.state === "stopped" ? "Stopped" : "Not complete";
@@ -235,13 +276,20 @@ async function open(p = null) {
     load(r.data, r.path);
   } catch (e) { toast("Could not open: " + e.message, 9000); }
 }
-function load(data, p) { S = data; path = p; R.clear(); sel = "project"; setDirty(false); drawNav(); drawMain(); recalcAll().then(() => { if (sel === "project") drawMain(); }); }
+function migrate(d) {      // an older project file has one list of combinations, for its own method
+  const p = d.project;
+  if (p.combos && !p.combos_asd && !p.combos_lrfd) { p[p.method === "LRFD" ? "combos_lrfd" : "combos_asd"] = p.combos; delete p.combos; }
+  p.combos_asd = p.combos_asd || []; p.combos_lrfd = p.combos_lrfd || [];
+  return d;
+}
+function load(data, p) { S = migrate(data); path = p; R.clear(); sel = "project"; setDirty(false); drawNav(); drawMain(); recalcAll().then(() => { if (sel === "project") drawMain(); }); }
 
 function example() {
-  const src = "ASCE/SEI 7 Section 2.4 (typed in)";
+  const src = "ASCE/SEI 7 Section 2.4 (typed in)", src2 = "ASCE/SEI 7 Section 2.3 (typed in)";
   return { format: "strukit-project", version: 1,
     project: { name: "Example Project", number: "0000-000", address: "", date: INFO.today, method: "ASD",
-      combos: [{ expr: "D + L", source: src }, { expr: "D + S", source: src }, { expr: "D + 0.6W", source: src }, { expr: "D + 0.75L + 0.75S + 0.45W", source: src }] },
+      combos_asd: [{ expr: "D + L", source: src }, { expr: "D + S", source: src }, { expr: "D + 0.6W", source: src }, { expr: "D + 0.75L + 0.75S + 0.45W", source: src }],
+      combos_lrfd: [{ expr: "1.2D + 1.6L + 0.5S", source: src2 }, { expr: "1.2D + 1.6S + 0.5W", source: src2 }, { expr: "1.2D + 1.0W + 1.0L + 0.5S", source: src2 }, { expr: "0.9D + 1.0W", source: src2 }] },
     members: [
       { kind: "steel_beam", values: { mark: "B1", shape: "W18X50", Fy: "50", span: "35", bracing: "at points", brace_pts: "11.67, 23.33", self_weight: "yes",
         loads: [{ case: "D", kind: "uniform", mag: "0.45" }, { case: "L", kind: "uniform", mag: "0.75" }], defl: [{ label: "live", expr: "L", ratio: "360", source: "limit typed in" }] } },
@@ -267,9 +315,9 @@ function example() {
       { kind: "base_plate", values: { mark: "BP1", shape: "W10X33", N: "14", B: "12", t: "1", Fy: "36", fc: "3000", full: "no", sup_N: "24", sup_B: "24",
         loads: [{ case: "D", P: "12" }, { case: "L", P: "30" }] } },
       { kind: "footing_moment", values: { mark: "FM1", B: "9", L: "6", h: "24", fc: "3000", fy: "60000", conc_pcf: "150", col_x: "14", col_y: "12", supported: "steel", plate_x: "14", plate_y: "12",
-        bar: "6", n_x: "8", n_y: "11", cover: "3", bottom: "x", q_allow: "2000", soil_source: "presumptive value (example)", ot_required: "1.5", slide_mu: "0.35", slide_required: "1.5", limits_source: "typed in for the example",
-        service: [{ name: "D + S", P: "13400", M: "0", V: "0" }, { name: "D + 0.6W", P: "4400", M: "33600", V: "2400" }],
-        strength: [{ name: "1.2D + 1.6S", P: "19200", M: "0", V: "0", wt_factor: "1.2" }, { name: "0.9D + 1.0W", P: "3600", M: "56000", V: "4000", wt_factor: "0.9" }] } }] };
+        bar: "6", n_x: "8", n_y: "11", cover: "3", bottom: "x", q_allow: "2000", soil_source: "presumptive value (example)", ot_required: "1.5", slide_mu: "0.35", slide_required: "1.5", limits_source: "typed in for the example", loads_from: "base reactions of C2, second-order analysis",
+        service: [{ name: "D + S", P: "13434", M: "409", V: "27" }, { name: "D + 0.6W", P: "4434", M: "34508", V: "2400" }],
+        strength: [{ name: "1.2D + 1.6S + 0.5W", P: "19721", M: "29000", V: "2000", wt_factor: "1.2" }, { name: "0.9D + 1.0W", P: "3991", M: "56839", V: "4000", wt_factor: "0.9" }] } }] };
 }
 
 // ---------------------------------------------------------------- start
