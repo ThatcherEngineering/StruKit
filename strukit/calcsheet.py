@@ -822,7 +822,7 @@ def package_pdf(items, path, job, date, title="Structural Calculations"):
     frame; extra is a dict of that sheet's keyword arguments (combos, method)."""
     import io
     build = {"steel_beam": _steel_beam_pdf, "steel_column": _steel_column_pdf, "footing": _footing_pdf,
-             "frame": _frame_pdf, "conn": _conn_pdf}
+             "frame": _frame_pdf, "conn": _conn_pdf, "simple": _simple_pdf}
     counts = []
     for kind, sheet, code, extra in items:                # first pass: how many sheets each member takes
         counts.append(build[kind](sheet, io.BytesIO(), job, code, date, page=1, pages=1, **extra))
@@ -876,14 +876,17 @@ def _conn_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
                                       + ("with an edge in the load direction" if has_edge else "no edge in the load direction")))
     p.kv(rows, kw=104)
     bottom_left = p.y
-    _sketch_title(c, 392, top, "SKETCH")
     if weld:
-        memberart.weld_picture(c, 392, top - 78, 150, 58, i["n_lines"], i["length"], i["size"])
-        _small(c, 467, top - 88, "weld shown hatched; not to scale")
+        _sketch_title(c, 388, top, "PLAN")
+        cut = memberart.weld_plan(c, 388, top - 84, 96, 66, i["n_lines"], i["length"], i["size"], font=FR)
+        _sketch_title(c, 500, top, "SECTION")
+        memberart.weld_section(c, 500, top - 84, 56, 66, i["n_lines"], i["size"], i["t_edge"] or i["t_thinner"], font=FR)
+        _small(c, 478, top - 93, "dimensions in inches; welds shown dark; section across the welds, not to scale")
     else:
-        memberart.bolt_picture(c, 380, top - 78, 180, 58, i["n"], i["spacing"], i["edge"], i["d"])
-        _small(c, 470, top - 88, "to scale along the line; load toward the right edge")
-    p.y = min(bottom_left, top - 96) - 2
+        _sketch_title(c, 404, top, "SKETCH")
+        memberart.bolt_picture(c, 404, top - 84, 160, 66, i["n"], i["spacing"], i["edge"], i["d"], font=FR)
+        _small(c, 484, top - 93, "dimensions in inches; load toward the right edge")
+    p.y = min(bottom_left, top - 100) - 2
 
     p.head("Loads")
     for ld in sheet.loads:
@@ -906,3 +909,75 @@ def _conn_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
 
 def conn_pdf(sheet, path, job, code, date, page=1, pages=None, combos=()):
     return _paged(_conn_pdf, sheet, path, job, code, date, page, pages, combos=combos)
+
+
+# ------------------------------------------------------------------ simple sheets
+def _picture(c, top, pic):
+    """Pictures for SimpleSheet members (base plate, footing with moment)."""
+    name, d = pic
+    if name == "base_plate":
+        _sketch_title(c, 470, top, "PLAN", centred=True)
+        sup = d["support"] or (d["N"], d["B"])
+        s = min(150 / sup[1], 78 / sup[0])
+        cx, cy = 470, top - 52
+        if d["support"]:
+            c.setDash(3, 2); c.setLineWidth(0.6); c.setStrokeColorRGB(*memberart.CONC_LINE)
+            c.setFillColorRGB(*memberart.CONC_FILL)
+            c.rect(cx - sup[1] * s / 2, cy - sup[0] * s / 2, sup[1] * s, sup[0] * s, fill=1, stroke=1)
+            c.setDash()
+        c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(0.87, 0.90, 0.93)
+        c.rect(cx - d["B"] * s / 2, cy - d["N"] * s / 2, d["B"] * s, d["N"] * s, fill=1, stroke=1)
+        memberart.steel_section(c, cx, cy, d["bf"] * s, d["d"] * s, d["d"], d["bf"], d["tf"], d["tw"])
+        _small(c, cx, top - 100, f"to scale; plate {d['N']:g} x {d['B']:g} in"
+               + (f", support {sup[0]:g} x {sup[1]:g} in (dashed)" if d["support"] else ""))
+        return top - 104
+    if name == "footing_moment":
+        _sketch_title(c, 470, top, "SECTION AND SOIL PRESSURE", centred=True)
+        base = top - 74
+        s = memberart.footing_section(c, 470, base, 150, 52, d["B"], d["h"], d["col"], d["supported"], d["cover"],
+                                      d["db"], d["n"], d["db"], plate_w_in=d["plate"], soil_depth_in=d["soil"])
+        x0, W = 470 - d["B"] * s / 2, d["B"] * s
+        k = 20.0 / (d["qmax"] or 1.0)
+        a = d["bearing"] * s
+        p = c.beginPath()                                    # pressure pushes up on the underside; drawn below it
+        p.moveTo(x0 + W, base - 2); p.lineTo(x0 + W, base - 2 - k * d["qmax"])
+        p.lineTo(x0 + W - a, base - 2 - k * d["qmin"]); p.lineTo(x0 + W - a, base - 2); p.close()
+        c.setFillColorRGB(0.86, 0.90, 0.95); c.setStrokeColorRGB(*BLUE); c.setLineWidth(0.6)
+        c.drawPath(p, fill=1, stroke=1)
+        c.setFillColorRGB(*BLUE); c.setFont(FM, 6.5)
+        c.drawString(x0 + W + 3, base - 2 - k * d["qmax"], f"{d['qmax']:,.0f} psf")
+        c.drawRightString(x0 + W - a - 3, base - 9, f"{d['qmin']:,.0f} psf")
+        _small(c, 470, base - 32, "section to scale; soil pressure for the governing service case")
+        return base - 36
+    return top
+
+
+def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
+    p = _Page(path, f"{sheet.mark} - {sheet.title}", job, code, sheet.method, page, pages, date)
+    top = p.y
+    p.head(sheet.section)
+    for k, v in sheet.info:
+        lines = _split(v, 62)
+        p.kv([(k, lines[0])] + [("", t) for t in lines[1:]], kw=86)
+    bottom_left = p.y
+    low = _picture(p.c, top, sheet.picture) if sheet.picture else top
+    p.y = min(bottom_left, low) - 2
+    if sheet.load_lines:
+        p.head("Loads")
+        for s in sheet.load_lines:
+            p.room(12); p.text(s, font=FM, size=7.5 if len(s) > 105 else 8)
+        p.y -= 2
+    if sheet.combo_lines:
+        p.head("Load Combinations")
+        for t, src in sheet.combo_lines:
+            p.room(24)
+            p.text(t, font=FM, size=8, dy=10)
+            p.text(src, size=7.5, color=GREY, x=LM + 12)
+    p.y -= 4
+    _steps(p, sheet.steps_title, sheet.steps)
+    _summary(p, sheet.rows)
+    return _closing(p, sheet.assumptions, sheet.not_checked)
+
+
+def simple_pdf(sheet, path, job, code, date, page=1, pages=None):
+    return _paged(_simple_pdf, sheet, path, job, code, date, page, pages)

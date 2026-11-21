@@ -75,7 +75,7 @@ def test_server_requests_save_open_and_print(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "APP_DIR", tmp_path / "app")
     monkeypatch.setattr(server, "SETTINGS", tmp_path / "app" / "settings.json")
     info = server.api("/api/info", {})
-    assert set(info["forms"]) == {"steel_beam", "steel_column", "footing_iso", "footing_cont", "frame", "weld", "bolts"} and "W18X50" in info["shapes"]
+    assert set(info["forms"]) == {"steel_beam", "steel_column", "footing_iso", "footing_cont", "frame", "weld", "bolts", "base_plate", "footing_moment"} and "W18X50" in info["shapes"]
     data = dict(format="strukit-project", version=1, project=PROJ, members=[dict(kind="steel_beam", values=BEAM)])
     p = str(tmp_path / "job.strukit")
     assert server.api("/api/save", dict(path=p, data=data))["path"] == p
@@ -89,3 +89,26 @@ def test_server_requests_save_open_and_print(tmp_path, monkeypatch):
     assert open(f, "rb").read(5) == b"%PDF-"
     r = server.api("/api/package", dict(project=PROJ, members=data["members"] + [dict(kind="steel_beam", values=dict(mark="B9"))]))
     assert r["sheets"] >= 1 and r["skipped"] == ["B9"]
+
+
+def test_base_plate_and_footing_with_moment_on_the_screen(tmp_path):
+    bp = dict(mark="BP1", shape="W12X96", N="22", B="22", t="1.75", Fy="50", fc="3000", full="no", sup_N="24", sup_B="24",
+              loads=[dict(case="D", P="115"), dict(case="L", P="345")])
+    r = calc.results("base_plate", bp, PROJ)                    # AISC Example J.6, ASD: 583 kips, t min 1.54 in
+    assert r["state"] == "done" and r["status"] == "OK"
+    assert r["rows"][0]["capacity"] == pytest.approx(583, rel=5e-3) and r["rows"][1]["demand"] == pytest.approx(1.54, abs=0.006)
+    assert calc.results("base_plate", dict(bp, t="1.5"), PROJ)["status"] == "FLAG"
+    assert any("Support length" in m for m in calc.results("base_plate", dict(bp, sup_N=""), PROJ)["messages"])
+    fm = dict(mark="FM1", B="9", L="6", h="24", fc="3000", fy="60000", conc_pcf="150", col_x="14", col_y="12", supported="steel",
+              bar="6", n_x="8", n_y="11", cover="3", bottom="x", q_allow="2000", soil_source="test report",
+              ot_required="1.5", limits_source="test",
+              service=[dict(name="D + 0.6W", P="4400", M="33600", V="2400")],
+              strength=[dict(name="0.9D + 1.0W", P="3600", M="56000", V="4000", wt_factor="0.9")])
+    r = calc.results("footing_moment", fm, PROJ)
+    assert r["state"] == "done" and any(x["check"] == "overturning" for x in r["rows"])
+    assert any("sliding" in n for n in r["not_checked"])
+    assert any("Source of those limits" in m for m in calc.results("footing_moment", dict(fm, limits_source=""), PROJ)["messages"])
+    assert any("No factored load case" in m for m in calc.results("footing_moment", dict(fm, strength=[]), PROJ)["messages"])
+    n, skipped = calc.package_pdf(PROJ, [dict(kind="base_plate", values=bp), dict(kind="footing_moment", values=fm)],
+                                  str(tmp_path / "p.pdf"))
+    assert n >= 2 and not skipped
