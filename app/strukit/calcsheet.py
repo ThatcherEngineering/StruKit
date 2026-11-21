@@ -998,6 +998,57 @@ def _picture(c, top, pic):
                                   d["support"], font=FR)
         _small(c, 470, top - 102, "dimensions in inches; to scale" + ("; concrete support dashed" if d["support"] else ""))
         return top - 106
+    if name == "base_plate_moment":
+        N, B = d["N"], d["B"]
+        # plan: the moment acts along the page width
+        _sketch_title(c, 384, top, "PLAN")
+        s = min(74 / N, 50 / B)
+        cx, cy = 384 + 37, top - 44
+        c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(0.87, 0.90, 0.93)
+        c.rect(cx - N * s / 2, cy - B * s / 2, N * s, B * s, fill=1, stroke=1)
+        c.saveState(); c.translate(cx, cy); c.rotate(90)
+        memberart.steel_section(c, 0, 0, d["bf"] * s, d["d"] * s, d["d"], d["bf"], d["tf"], d["tw"])
+        c.restoreState()
+        r = max(d["rod_d"] * s / 2, 1.3)
+        for sx in (-1, 1):
+            for k in range(d["n"]):
+                yy = cy - B * s / 2 + (d["side"] + (B - 2 * d["side"]) * (k / (d["n"] - 1) if d["n"] > 1 else 0.5 * 0 + 0.5)) * s \
+                    if d["n"] > 1 else cy
+                c.setFillColorRGB(0.30, 0.34, 0.39); c.circle(cx + sx * (N / 2 - d["edge"]) * s, yy, r, fill=1, stroke=0)
+        memberart._dim_h(c, cx - N * s / 2, cx + N * s / 2, cy - B * s / 2 - 15, f"{N:g}", FR, ext_from=cy - B * s / 2)
+        memberart._dim_h(c, cx - N * s / 2, cx - (N / 2 - d["edge"]) * s, cy - B * s / 2 - 5, f"{d['edge']:g}", FR,
+                         ext_from=cy - B * s / 2)
+        memberart._dim_v(c, cy - B * s / 2, cy + B * s / 2, cx + N * s / 2 + 6, f"{B:g}", FR, ext_from=cx + N * s / 2)
+        # section along the moment: bearing block and rod tension for the governing case
+        x0 = 486
+        _sketch_title(c, x0, top, "SECTION")
+        s2 = 70 / N
+        px, py, tp = x0 + 4, top - 52, max(d["t"] * s2, 2.0)
+        memberart._concrete(c, px - 4, py - 22, N * s2 + 8, 22)
+        c.setLineWidth(0.6); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(*memberart.STEEL_FILL)
+        c.rect(px, py, N * s2, tp, fill=1, stroke=1)
+        cw = d["d"] * s2
+        c.rect(px + N * s2 / 2 - cw / 2, py + tp, cw, 22, fill=1, stroke=1)
+        c.setFillColorRGB(*memberart.STEEL_LINE)
+        tfp = max(d["tf"] * s2, 1.2)
+        c.rect(px + N * s2 / 2 - cw / 2, py + tp, tfp, 22, fill=1, stroke=0)
+        c.rect(px + N * s2 / 2 + cw / 2 - tfp, py + tp, tfp, 22, fill=1, stroke=0)
+        for sx in (0, 1):                                   # rods
+            rx = px + (d["edge"] if sx == 0 else N - d["edge"]) * s2
+            c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(1.1); c.line(rx, py - 16, rx, py + tp + 5)
+        Y = d["Y"] * s2                                     # bearing block at the right (compression) edge
+        c.setFillColorRGB(0.86, 0.90, 0.95); c.setStrokeColorRGB(*BLUE); c.setLineWidth(0.6)
+        c.rect(px + N * s2 - Y, py - 9, Y, 9, fill=1, stroke=1)
+        memberart._dim_h(c, px + N * s2 - Y, px + N * s2, py - 27, f"Y = {d['Y']:.2f}", FR, ext_from=py - 9)
+        if d["T"] > 0:
+            rx = px + d["edge"] * s2
+            c.setStrokeColorRGB(*FLAGC); c.setFillColorRGB(*FLAGC); c.setLineWidth(0.9)
+            c.line(rx, py + tp + 6, rx, py + tp + 18)
+            t = c.beginPath(); t.moveTo(rx, py + tp + 21); t.lineTo(rx - 2.5, py + tp + 16); t.lineTo(rx + 2.5, py + tp + 16); t.close()
+            c.drawPath(t, fill=1, stroke=0)
+            c.setFont(FM, 6); c.drawString(px - 2, py + tp + 24, f"T = {d['T']:.1f} k")
+        _small(c, 475, top - 104, f"dimensions in inches; section shows the bearing block and rod tension for {d['case']}")
+        return top - 108
     if name == "footing_moment":
         _sketch_title(c, 470, top, "SECTION AND SOIL PRESSURE", centred=True)
         base = top - 74

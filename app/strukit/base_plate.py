@@ -79,3 +79,72 @@ def check(d, bf, N, B, Fy_plate, fc, A2, Pr, method="ASD"):
           Line("fp = Pr / (B N)", fp, "ksi", "bearing stress under the plate"),
           Line("t min", t_min, "in", "Manual Eq. 14-7a" if method == "LRFD" else "Manual Eq. 14-7b")]
     return BasePlateResult(Pp, Pc, t_min, L)
+
+
+# ---------------------------------------------------------------- base plate with moment
+@dataclass
+class MomentCase:
+    name: str
+    e: float                     # eccentricity M / P, in (inf for no axial load)
+    Y: float                     # bearing length, in
+    f_bearing: float             # bearing stress used, ksi
+    T: float                     # total tension in the rods on the tension side, kips
+    t_req: float                 # plate thickness required, in
+    t_govern: str
+    uplift: bool
+
+
+def moment_case(name, P, M, d, bf, N, B, f_rod, fp_avail, Fy_plate, method, n_rods, rod_gauge_ok=True):
+    """One load case on a base plate with moment, by equilibrium.
+
+    Model (the rectangular-bearing-block model used in practice; AISC Design Guide 1,
+    which describes it, is not on file, so it is built here from statics and stated on the
+    sheet): the concrete bears on the plate at a uniform stress over a length Y from the
+    compression edge. While the load stays inside the plate enough for bearing alone to
+    balance it, Y = N - 2e and the stress is P / (B Y). Beyond that the stress is the
+    available bearing stress fp_avail (AISC 360-22 J8) and the rods on the far side, at
+    f_rod from the plate centre, take tension T:
+        sum of moments about the rod line:  q Y (f + N/2 - Y/2) = M + P f,  q = fp B
+        sum of vertical forces:             T = q Y - P
+    P is compression positive (kips), M in kip-in. Plate bending: cantilever strips at
+    0.95 d and 0.8 bf (Manual Eq. 14-2, 14-3 as printed in Design Example J.6) under the
+    bearing stress, and the strip between the tension rods and the column flange under
+    the rod tension, with Mn = Fy Z, Z = t^2/4 per unit width (AISC 360-22 Eq. F11-1, as
+    used in Design Example K.9)."""
+    M = abs(M)
+    q = fp_avail * B                                    # kip/in at the available bearing stress
+    arm = f_rod + N / 2
+    drive = M + P * f_rod                               # moment of the loads about the rod line
+    if drive <= 0:
+        raise SteelInputError(f"base plate: case {name}: the base is in net uplift with too little moment to "
+                              "bear on the concrete; all rods in tension is not covered")
+    uplift = False
+    if P > 0 and M / P <= N / 2 - P / (2 * q):          # bearing alone balances the load
+        e = M / P
+        Y = N - 2 * e
+        fb, T = P / (B * Y), 0.0
+    else:
+        disc = arm ** 2 - 2 * drive / q
+        if disc < 0:
+            raise SteelInputError(f"base plate: case {name}: the plate is too small; the concrete cannot "
+                                  "balance the moment even with the rods in tension")
+        Y = arm - math.sqrt(disc)
+        fb, T = fp_avail, q * Y - P
+        e = M / P if P > 0 else float("inf")
+        uplift = True
+    # plate bending, per inch of width
+    m, n = (N - 0.95 * d) / 2, (B - 0.8 * bf) / 2
+    cands = []
+    if m > 0:
+        Mb = fb * m * m / 2 if Y >= m else fb * Y * (m - Y / 2)
+        cands.append((Mb, "bearing side, cantilever m"))
+    if n > 0:
+        cands.append((fb * n * n / 2, "bearing side, cantilever n"))
+    x = f_rod - 0.95 * d / 2                              # rod line to the bending line at the flange
+    if T > 0 and x > 0:
+        width = min(B, n_rods * 2 * x)                    # each rod spreads at 45 degrees to the flange
+        cands.append((T * x / width, "tension side, rods to column flange"))
+    Mpl, gov = max(cands) if cands else (0.0, "none")
+    k = 0.90 if method == "LRFD" else 1 / 1.67
+    t_req = math.sqrt(4 * Mpl / (k * Fy_plate))
+    return MomentCase(name, e, Y, fb, T, t_req, gov, uplift)

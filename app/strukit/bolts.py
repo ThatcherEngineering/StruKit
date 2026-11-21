@@ -36,7 +36,15 @@ class BoltResult:
 
 
 def _group(name):
-    key = name.upper().strip()
+    key = str(name).upper().strip()
+    if key.startswith("FU="):                       # threaded part (anchor rod) of the given Fu, Table J3.2 last row
+        try:
+            Fu = float(key[3:])
+        except ValueError:
+            raise SteelInputError(f"bolt: cannot read the tensile strength in '{name}'")
+        if Fu <= 0:
+            raise SteelInputError("bolt: the tensile strength Fu must be positive")
+        return f"threaded part, Fu = {Fu:g} ksi", (0.75 * Fu, 0.450 * Fu, 0.563 * Fu)
     key = ALIASES.get(key, key)
     if key not in TABLE_J3_2:
         raise SteelInputError(f"bolt: '{name}' is not in Table J3.2 as loaded "

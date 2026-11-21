@@ -146,6 +146,22 @@ FORMS = {
                 F("sup_N", "Support length (parallel to plate length)", unit="in", required=False),
                 F("sup_B", "Support width", unit="in", required=False)],
         tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "base_plate_moment": dict(
+        title="Base Plate with Moment", code="AISC 360-22", mark="BPM",
+        fields=[F("shape", "Column", "shape"), F("N", "Plate length (direction of the moment)", unit="in"),
+                F("B", "Plate width", unit="in"), F("t", "Plate thickness", unit="in"), F("Fy", "Plate Fy", unit="ksi"),
+                F("fc", "Concrete f'c", unit="psi"),
+                F("full", "Plate covers the whole support", "select", options=["yes", "no"]),
+                F("sup_N", "Support length (direction of the moment)", unit="in", required=False),
+                F("sup_B", "Support width", unit="in", required=False),
+                F("rod_d", "Anchor rod diameter", unit="in"), F("rod_Fu", "Anchor rod Fu", unit="ksi"),
+                F("rod_source", "Anchor rod material", "text", help="for example ASTM F1554 Grade 36; where Fu comes from"),
+                F("n_rods", "Rods on each side"), F("rod_edge", "Rods from the plate end", unit="in"),
+                F("rod_side", "Rods from the plate sides", unit="in"),
+                F("n_shear", "Rods counted on for shear", help="0 = the rods do not carry the base shear"),
+                F("loads_from", "Loads come from", "text", required=False, help="printed on the sheet")],
+        tables=[T("cases", "Load cases at the base (at the project's design method)",
+                  [F("name", "Combination", "text"), F("P", "P", unit="kip"), F("M", "M", unit="kip-ft"), F("V", "V", unit="kip")])]),
     "footing_moment": dict(
         title="Footing with Moment", code="ACI 318-19", mark="FM",
         fields=[F("B", "Width, in the direction of the moment", unit="ft"), F("L", "Length", unit="ft"), F("h", "Thickness", unit="in"),
@@ -483,6 +499,24 @@ def build(kind, values, project):
             sup = (r.num("sup_N", label="Support length"), r.num("sup_B", label="Support width"))
         r.done()
         return ws_more.base_plate_sheet(mark, shape, N, B, t, Fy, fc, sup, loads, cb, m), "simple", {}
+    if kind == "base_plate_moment":
+        m = method(project, r.miss)
+        shape, N, B, t, Fy, fc = r.text("shape"), r.num("N"), r.num("B"), r.num("t"), r.num("Fy"), r.num("fc")
+        full = yes(r.text("full"))
+        sup = "full"
+        if full is False:
+            sup = (r.num("sup_N", label="Support length"), r.num("sup_B", label="Support width"))
+        rod = [r.num("rod_d"), r.num("rod_Fu"), r.text("rod_source"), r.num("n_rods"), r.num("rod_edge"),
+               r.num("rod_side"), r.num("n_shear")]
+        cases = r.rows("cases")
+        if not cases:
+            r.miss.append("No load case is entered")
+        r.done()
+        ss = ws_more.base_plate_moment_sheet(mark, shape, N, B, t, Fy, fc, sup, rod[0], rod[1], rod[2], int(rod[3]),
+                                             rod[4], rod[5], int(rod[6]), cases, m)
+        if r.text("loads_from", False):
+            ss.assumptions.insert(0, "Loads: " + r.text("loads_from", False) + ".")
+        return ss, "simple", {}
     if kind == "footing_moment":
         a = dict(B_ft=r.num("B"), L_ft=r.num("L"), h_in=r.num("h"), fc=r.num("fc"), fy=r.num("fy"),
                  col_x_in=r.num("col_x"), col_y_in=r.num("col_y"), bar=r.num("bar"), n_x=r.num("n_x"), n_y=r.num("n_y"),
