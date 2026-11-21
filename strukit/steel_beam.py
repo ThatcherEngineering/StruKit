@@ -75,7 +75,8 @@ def check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
     rt = math.sqrt(E / Fy)
 
     # --- element slenderness, Table B4.1b ---
-    lam_f = p["bf"] / (2 * p["tf"])
+    # the tabulated bf/2tf is used when the Shapes Database supplies it
+    lam_f = p["bf_2tf"] if p.get("bf_2tf") else p["bf"] / (2 * p["tf"])
     lam_pf, lam_rf = 0.38 * rt, 1.0 * rt
     lam_w = p["h_tw"]
     lam_pw = 3.76 * rt
