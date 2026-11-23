@@ -125,10 +125,12 @@ def api(path, body):
     if path == "/api/seismic_combos":
         try:
             sds, rho = float(str(body.get("sds", "")).strip()), float(str(body.get("rho", "") or "1.0").strip())
-            return loadcombos.seismic(sds, rho, ev=not body.get("no_ev"))
+            om = str(body.get("omega0", "") or "").strip()
+            return loadcombos.seismic(sds, rho, ev=not body.get("no_ev"), omega0=float(om) if om else None)
         except ValueError as e:
             msg = str(e)
-            return dict(error=msg if msg.startswith(("SDS", "the redundancy")) else "Type SDS as a number, and the redundancy factor as 1.0 or 1.3.")
+            return dict(error=msg if msg.startswith(("SDS", "the redundancy", "the overstrength")) else
+                        "Type SDS as a number, the redundancy factor as 1.0 or 1.3, and the overstrength factor as a number or leave it blank.")
     if path == "/api/wall_lines":
         try:
             sheet, _, _ = calc.build("seismic_elf", body.get("values") or {}, body.get("project") or {})

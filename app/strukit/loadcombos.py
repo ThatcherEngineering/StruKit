@@ -68,18 +68,35 @@ def _n(x):
     return t + "0" if t.endswith(".") else t
 
 
-def seismic(SDS, rho=1.0, ev=True):
+def seismic(SDS, rho=1.0, ev=True, omega0=None):
     """The seismic load combinations for a project: dict(ASD=[...], LRFD=[...]) of
-    dict(expr, source), with Ev and the redundancy factor written into the factors."""
+    dict(expr, source), with Ev and the redundancy factor written into the factors.
+    omega0: the overstrength factor; when given, the combinations with overstrength of
+    Sect. 2.3.6 and 2.4.5 are added, with Emh = omega0 QE (Sect. 12.4.3) written into the
+    factors on a separate load case, Em. A member designed for overstrength carries its
+    horizontal seismic effect QE under load case Em in place of E. The 1.2 allowable stress
+    increase permitted by Sect. 2.4.5 is not taken."""
     if SDS is None or SDS < 0:
         raise ValueError("SDS must be zero or more")
     if rho not in (1.0, 1.3):
         raise ValueError("the redundancy factor is 1.0 or 1.3 (Sect. 12.3.4)")
+    if omega0 is not None and not 1.0 <= omega0 <= 3.5:
+        raise ValueError("the overstrength factor is from 1 to 3.5 (Table 12.2-1)")
     v = 0.2 * SDS if ev else 0.0
     tail = f"; Ev = {'0.2 SDS D' if ev else '0'}, SDS = {_n(SDS)}; Eh = rho QE, rho = {_n(rho)} (Sect. 12.4.2)"
     lrfd = [("6", f"{_n(1.2 + v)}D + {_n(rho)}E + 1.0L + 0.15S"), ("7", f"{_n(0.9 - v)}D + {_n(rho)}E")]
     asd = [("8", f"{_n(1.0 + 0.7 * v)}D + {_n(0.7 * rho)}E"),
            ("9", f"{_n(1.0 + 0.525 * v)}D + {_n(0.525 * rho)}E + 0.75L + 0.1S"),
            ("10", f"{_n(0.6 - 0.7 * v)}D + {_n(0.7 * rho)}E")]
-    return dict(LRFD=[dict(expr=e, source=_src("2.3.6", no) + tail) for no, e in lrfd],
-                ASD=[dict(expr=e, source=_src("2.4.5", no) + tail) for no, e in asd])
+    out = dict(LRFD=[dict(expr=e, source=_src("2.3.6", no) + tail) for no, e in lrfd],
+               ASD=[dict(expr=e, source=_src("2.4.5", no) + tail) for no, e in asd])
+    if omega0 is not None:
+        o = omega0
+        tail_o = (f" with overstrength; Ev = {'0.2 SDS D' if ev else '0'}, SDS = {_n(SDS)}; Emh = Omega0 QE, Omega0 = {_n(o)} (Sect. 12.4.3); "
+                  "load case Em is QE")
+        out["LRFD"] += [dict(expr=e, source=_src("2.3.6", no) + tail_o) for no, e in
+                        (("6", f"{_n(1.2 + v)}D + {_n(o)}Em + 1.0L + 0.15S"), ("7", f"{_n(0.9 - v)}D + {_n(o)}Em"))]
+        out["ASD"] += [dict(expr=e, source=_src("2.4.5", no) + tail_o) for no, e in
+                       (("8", f"{_n(1.0 + 0.7 * v)}D + {_n(0.7 * o)}Em"), ("9", f"{_n(1.0 + 0.525 * v)}D + {_n(0.525 * o)}Em + 0.75L + 0.1S"),
+                        ("10", f"{_n(0.6 - 0.7 * v)}D + {_n(0.7 * o)}Em"))]
+    return out
