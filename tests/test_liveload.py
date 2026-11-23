@@ -50,3 +50,15 @@ def test_live_load_sheet(tmp_path):
         calc.build("live_load", dict(mark="LL1"), dict(job="2026-000", name="Test", method="ASD"))
     with pytest.raises(calc.Missing):
         calc.build("live_load", dict(mark="LL1", floors=[dict(name="C1", element="interior column", Lo="50", AT="900", floors="1")]), dict(job="2026-000", name="Test", method="ASD"))
+
+
+def test_live_loads_api_for_member_screens():
+    """Beam and joist screens take a member's reduced live load from a live load sheet. Interior beam, 50 psf, AT 600 ft2, one floor:
+    KLL AT = 1,200 ft2; L = 50(0.25 + 15/sqrt(1200)) = 34.15 psf. Roof member, 20 psf, AT 300 ft2, flat: R1 = 1.2 - 0.001(300) = 0.9: 18 psf."""
+    from strukit.gui import server
+    v = dict(mark="LL1", floors=[dict(name="B3", element="interior beam", Lo="50", source="Table 4.3-1", AT="600", floors="1", occupancy="")],
+             roofs=[dict(name="R1", Lo="20", source="Table 4.3-1", AT="300", F="0.25")])
+    got = server.api("/api/live_loads", dict(values=v, project={}))
+    assert [(m["name"], m["case"]) for m in got["members"]] == [("B3", "L"), ("R1", "Lr")]
+    assert got["members"][0]["psf"] == pytest.approx(34.15, abs=0.01) and got["members"][1]["psf"] == pytest.approx(18.0)
+    assert "error" in server.api("/api/live_loads", dict(values=dict(mark="LL1"), project={}))

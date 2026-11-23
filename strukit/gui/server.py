@@ -178,6 +178,18 @@ def api(path, body):
         r = sheet.snow
         return dict(pf=r.pf, ps=r.ps, balanced=r.balanced, pm=r.pm, uniform_design=r.uniform_design, unbalanced=bool(r.unbalanced),
                     governs=("minimum snow load pm" if r.pm > r.balanced else "balanced snow load ps" + (" plus rain-on-snow" if r.rain_on_snow else "")))
+    if path == "/api/live_loads":
+        vals = body.get("values") or {}
+        try:
+            sheet, _, _ = calc.build("live_load", vals, body.get("project") or {})
+        except calc.Missing as e:
+            return dict(error="The live load sheet is not complete: " + "; ".join(e.items))
+        except Exception as e:
+            return dict(error=f"The live load sheet stopped: {e}")
+        fl = [x for x in (vals.get("floors") or []) if str(x.get("name") or "").strip()]
+        rf = [x for x in (vals.get("roofs") or []) if str(x.get("name") or "").strip()]
+        return dict(members=[dict(name=str(x["name"]).strip(), case="L", psf=r["L"]) for x, r in zip(fl, sheet.live["floors"])]
+                    + [dict(name=str(x["name"]).strip(), case="Lr", psf=r["Lr"]) for x, r in zip(rf, sheet.live["roofs"])])
     if path == "/api/wall_deflection":
         vals, kind = body.get("values") or {}, body.get("kind") or "shear_wall"
         if kind not in ("shear_wall", "perforated_wall"):

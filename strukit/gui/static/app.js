@@ -234,6 +234,37 @@ function fillSnowBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the uniform snow load from"), pick, go);
 }
 
+function fillLiveBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "live_load");
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose a live load sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 live load reduction")));
+  const row = el("select", { style: "display:none" });
+  let got = null;
+  pick.addEventListener("change", async () => {
+    got = null; row.style.display = "none"; row.textContent = "";
+    if (pick.value === "") return;
+    try {
+      got = await post("/api/live_loads", { values: S.members[+pick.value].values, project: S.project });
+      got.members.forEach((r, i) => row.append(el("option", { value: i }, r.name + ": " + r.case + " " + r.psf.toFixed(1) + " psf")));
+      row.style.display = "";
+    } catch (e) { toast(e.message, 12000); }
+  });
+  const go = el("button", { class: "btn", onclick: () => {
+    if (!got || !got.members.length) return toast("Choose the live load sheet first.");
+    const s = S.members[+pick.value], r = got.members[+row.value], tag = "sheet " + (s.values.mark || "live load") + ", member " + r.name + ":";
+    m.values.loads = (m.values.loads || []).filter(x => !(String(x.label || "").startsWith("sheet " + (s.values.mark || "live load") + ", member ")) && (x.case || x.mag));
+    m.values.loads.push({ case: r.case, kind: "area", mag: String(Math.round(r.psf * 10) / 10), mag2: "", x1: "", x2: "", label: tag + " reduced " + (r.case === "L" ? "live load" : "roof live load") });
+    changed(); drawMain();
+    toast((r.case === "L" ? "Live load " : "Roof live load ") + r.psf.toFixed(1) + " psf added as an area load. It needs the member spacing.", 10000);
+  } }, "Add Live Load");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take a reduced live load from"), pick, row, go);
+}
+
+function fillLoadsBar(m, changed) {
+  const a = fillSnowBar(m, changed), b = fillLiveBar(m, changed);
+  return (a || b) ? el("div", {}, a, b) : null;
+}
+
 function fillCollectorBar(m, changed) {
   const src = S.members.filter(x => x.kind === "diaphragm");
   if (!src.length) return el("div", { class: "fill small" }, "The force and the line length can be filled in from a Wood Diaphragm sheet once the project has one.");
@@ -344,7 +375,7 @@ function fillBar(m, changed) {
   if (m.kind === "diaphragm") return fillDiaphragmBar(m, changed);
   if (m.kind === "collector") return fillCollectorBar(m, changed);
   if (m.kind === "seismic_elf") return fillDriftBar(m, changed);
-  if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) return fillSnowBar(m, changed);
+  if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) return fillLoadsBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");
   if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame once the project has one.");
