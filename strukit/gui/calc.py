@@ -318,6 +318,10 @@ FORMS = {
         fields=[F("panel", "Sheathing and nails", "select", options=list(shearwall.PANELS), help="SDPWS Table 4.3A; blocked, one side"),
                 F("spacing", "Edge nail spacing", "select", options=["6", "4", "3", "2"], unit="in"),
                 F("panel_type", "Panel", "select", options=["OSB", "plywood"], help="for the shear stiffness Ga"),
+                F("sides", "Panels on", "select", options=["one side", "both sides (same panels and nailing)"]),
+                F("blocking", "Panel edges", "select", options=["blocked", "unblocked"], help="unblocked: edge nails at 6 in., wall to 16 ft, h/b to 2"),
+                F("stud_spacing", "Unblocked: stud spacing", "select", options=["12", "16", "20", "24"], unit="in", required=False),
+                F("field_nails", "Unblocked: nail spacing at intermediate framing", "select", options=["6", "12"], unit="in", required=False),
                 F("G", "Framing specific gravity, G", help="0.50 for Douglas Fir-Larch; NDS Table 12.3.3A"),
                 F("G_source", "Where G comes from", "text", help="species and the table"),
                 F("h", "Wall height", unit="ft"),
@@ -329,6 +333,9 @@ FORMS = {
                   help="Table 4.3A note 10"),
                 F("arm_offset", "Overturning arm: reduce the segment length by", unit="in", required=False,
                   help="distance from the segment ends to the hold-down and to the centre of bearing, added together; blank = 0"),
+                F("dead", "Uplift: dead load on the wall", unit="plf", required=False, help="blank = dead load not counted against uplift"),
+                F("dead_factor", "Uplift: dead load factor", required=False, help="0.6 for ASD (0.6D + 0.6W); 0.9 for LRFD"),
+                F("dead_source", "Uplift: source of the dead load and factor", "text", required=False),
                 F("chord_A", "Deflection: end post area", unit="in2", required=False),
                 F("chord_E", "Deflection: end post E", unit="psi", required=False),
                 F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
@@ -861,10 +868,20 @@ def build(kind, values, project):
         lengths = r.nums("lengths")
         if not lengths:
             r.miss.append("Full-height segment lengths is blank")
+        sides = 2 if (r.text("sides") or "").startswith("both") else 1
+        blocked = r.text("blocking") != "unblocked"
+        ss_, fn_ = r.text("stud_spacing", False), r.text("field_nails", False)
+        if not blocked and (not ss_ or not fn_):
+            r.miss.append("Unblocked wall: stud spacing and nail spacing at intermediate framing are needed")
+        dead = r.num("dead", False)
+        if dead and r.num("dead_factor", False) is None:
+            r.miss.append("Uplift: dead load factor is blank")
         r.done()
         return ws_more.shear_wall_sheet(mark, panel, int(sp), pt, G, gs, h, lengths, V, load, m, vs, yes(r.text("holddown", False)),
                                         r.num("arm_offset", False) or 0.0, r.num("chord_E", False), r.num("chord_A", False),
-                                        r.num("slip", False)), "simple", {}
+                                        r.num("slip", False), sides=sides, blocked=blocked, stud_spacing=int(ss_) if ss_ else None,
+                                        field_nails=int(fn_) if fn_ else None, dead_plf=dead or 0.0,
+                                        dead_factor=r.num("dead_factor", False), dead_source=r.text("dead_source", False) or ""), "simple", {}
     if kind == "snow":
         pg, src, risk = r.num("pg"), r.text("pg_source"), r.text("risk")
         rough, expo, therm = r.text("roughness"), r.text("exposure"), r.text("thermal")

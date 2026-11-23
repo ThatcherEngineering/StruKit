@@ -78,3 +78,39 @@ def test_ten_penny_nail_note():
         sw.line(p, 6, "OSB", 0.5, 8, [8], 1000, "wind", "ASD")
     assert sw.line(p, 6, "OSB", 0.5, 8, [8], 1000, "wind", "ASD", holddown_inside=True).capacity == pytest.approx(870 * 0.92 * 8 / 2)
     assert sw.line(p, 6, "OSB", 0.5, 8, [8], 1000, "wind", "ASD", holddown_inside=False).capacity == pytest.approx(870 * 8 / 2)
+
+
+def test_two_sided_wall_is_twice_one_side():
+    one = sw.line(P, 4, "OSB", 0.5, 9, [8], 4000, "wind", "ASD", chord_E=1.6e6, chord_A=16.5, anchor_slip_in=0.1)
+    two = sw.line(P, 4, "OSB", 0.5, 9, [8], 4000, "wind", "ASD", chord_E=1.6e6, chord_A=16.5, anchor_slip_in=0.1, sides=2)
+    assert two.capacity == pytest.approx(2 * one.capacity) and two.Ga == 2 * one.Ga
+    # deflection: only the sheathing term halves: 8vh^3/(EAb) + vh/(1000 x 38) + h da / b
+    v = 500.0
+    assert two.segments[0].defl == pytest.approx(8 * v * 729 / (1.6e6 * 16.5 * 8) + v * 9 / 38000 + 9 * 0.1 / 8, abs=1e-4)
+
+
+def test_unblocked_wall_by_hand():
+    # 15/32 sheathing 8d at 6 in: vn(b) = 730; studs at 16, intermediate nails at 12: C(ub) = 0.6; wind ASD: 730 x 0.6 / 2 = 219 plf
+    w = sw.line(P, 6, "OSB", 0.5, 8, [8, 4], 2000, "wind", "ASD", blocked=False, stud_spacing=16, field_nails=12,
+                chord_E=1.6e6, chord_A=16.5, anchor_slip_in=0.1)
+    assert w.cub == 0.6 and w.capacity == pytest.approx(219 * 12)
+    # equal unit shear 166.7 plf; deflection of the 8 ft segment uses v / C(ub) = 277.8 plf and Ga = 13
+    vd = 2000 / 12 / 0.6
+    assert w.segments[0].defl == pytest.approx(8 * vd * 512 / (1.6e6 * 16.5 * 8) + vd * 8 / 13000 + 8 * 0.1 / 8, abs=1e-4)
+    assert sw.line(P, 6, "OSB", 0.5, 8, [8], 500, "wind", "ASD", blocked=False, stud_spacing=24, field_nails=6).cub == 0.5
+    for kw, msg in ((dict(spacing=4), "6 in"), (dict(h=17), "16 ft"), (dict(lengths=[3.5]), "2 limit")):
+        a = dict(spacing=6, h=8, lengths=[8]); a.update(kw)
+        with pytest.raises(sw.ShearWallError, match=msg):
+            sw.line(P, a["spacing"], "OSB", 0.5, a["h"], a["lengths"], 500, "wind", "ASD", blocked=False, stud_spacing=16, field_nails=12)
+
+
+def test_dead_load_reduces_uplift():
+    # 8 ft segment, 9 ft high, V = 3,200 lb, b_eff = 7.5 ft: V h / b_eff = 3,840 lb
+    # dead 250 plf x 0.6 x 8 / 2 = 600 lb -> T = 3,240 lb; compression stays 3,840 lb
+    w = sw.line(P, 4, "OSB", 0.5, 9, [8], 3200, "wind", "ASD", arm_offset_in=6, dead_plf=250, dead_factor=0.6)
+    s = w.segments[0]
+    assert s.C == pytest.approx(3840) and s.T_dead == pytest.approx(600) and s.T == pytest.approx(3240)
+    big = sw.line(P, 4, "OSB", 0.5, 9, [8], 400, "wind", "ASD", dead_plf=1000, dead_factor=0.6)
+    assert big.segments[0].T == 0.0
+    with pytest.raises(sw.ShearWallError, match="factor"):
+        sw.line(P, 4, "OSB", 0.5, 9, [8], 400, "wind", "ASD", dead_plf=100)

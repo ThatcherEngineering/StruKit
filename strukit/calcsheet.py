@@ -1380,7 +1380,7 @@ def _shear_wall_picture(c, top, d):
         c.line(x + 2, y0 + hh + 5, x + w - 2, y0 + hh + 5); c.line(x + w - 2, y0 + hh + 5, x + w - 6, y0 + hh + 7)
         c.line(x + w - 2, y0 + hh + 5, x + w - 6, y0 + hh + 3)
         c.setFont(FR, 6); c.setFillColorRGB(*GREY)
-        c.drawCentredString(x, y0 - 22, f"T {s['T']:,.0f}"); c.drawCentredString(x + w, y0 - 22, f"C {s['T']:,.0f}")
+        c.drawCentredString(x, y0 - 22, f"T {s['T']:,.0f}"); c.drawCentredString(x + w, y0 - 22, f"C {s.get('C', s['T']):,.0f}")
         memberart._dim_h(c, x, x + w, y0 - 9, f"{s['b']:g} ft", FR, ext_from=y0)
         x += w + gap
     memberart._dim_v(c, y0, y0 + d["h"] * sc, x - gap + 8, f"{d['h']:g} ft", FR, ext_from=x - gap)
