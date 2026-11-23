@@ -197,7 +197,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
              L("Ci", f.Ci_b, "", "NDS Table 4.3.8", "incised" if incised else "not incised"),
              L("Cr", f.Cr, "", "NDS 4.3.9", "repetitive member" if repetitive else "not a repetitive member")]
     if flat:
-        steps.append(L("Cfu", Cfu, "", "Table 4A adjustment factors", f"{size} loaded on the wide face"))
+        steps.append(L("Cfu", Cfu, "", table + " adjustment factors", f"{size} loaded on the wide face"))
     if "RB" in st:
         steps += [L("le", st["le"], "in", "NDS Table 3.3.3, note 1", f"lu = {gb['lu_used'] * 12:g} in"),
                   L("RB = sqrt(le d / b^2)", st["RB"], "", "NDS Eq. 3.3-5"),
@@ -309,7 +309,7 @@ def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_sourc
             raise WorksheetError(f"{mark}: the incising factor of NDS 4.3.8 is for dimension lumber, not timbers")
         CM_c, CM_E, Ci_c, Ci_E = (0.91 if wet else 1.0), 1.0, 1.0, 1.0
     else:
-        CM_c = (1.0 if ref["Fc"] * CF <= 750 else 0.8) if wet else 1.0
+        CM_c = (1.0 if ref["Fc"] * (1.0 if table == "Table 4B" else CF) <= 750 else 0.8) if wet else 1.0    # Table 4B: Fc alone
         CM_E, Ci_c, Ci_E = (0.9 if wet else 1.0), (0.80 if incised else 1.0), (0.95 if incised else 1.0)
     Emin_adj = ref["Emin"] * CM_E * Ci_E
     lu1 = (lu1_ft if lu1_ft else height_ft) * 12.0
@@ -423,8 +423,8 @@ def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_sourc
     steps = [L("b x d", bb, "in", SUPP_T1B, f"{bb:g} in x {dd:g} in dressed"), L("A", A, "in2", "geometry"),
              L("Fc", ref["Fc"], "psi", src_t), L("Emin", ref["Emin"], "psi", src_t),
              L("CD", g["CD"], "", "NDS Table 2.3.2", f"{g['cd_case']}, {g['cd_dur']}"),
-             L("CM", CM_c, "", ("Table 4D" if timber else "Table 4A") + " adjustment factors", "wet service" if wet else "dry service"),
-             L("CF", CF, "", ("Table 4D" if timber else "Table 4A") + " adjustment factors"),
+             L("CM", CM_c, "", table[:8] + " adjustment factors", "wet service" if wet else "dry service"),
+             L("CF", CF, "", table[:8] + " adjustment factors"),
              L("Ci", Ci_c, "", "NDS Table 4.3.8", "incised" if incised else "not incised"),
              L("Fc* = Fc CD CM CF Ci", g["Fc_star"], "psi", "NDS 3.7.1.5"),
              L("le1 / d1", Ke1 * lu1 / d1, "", "NDS 3.7.1.3", f"Ke = {Ke1:g}, l = {lu1:g} in, d1 = {d1:g} in"),
@@ -435,7 +435,7 @@ def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_sourc
              L("Fc' = Fc* CP", g["Fc_adj"], "psi", "NDS Table 4.3.1"),
              L("fc = P / A", g["fc"], "psi", "NDS 3.6.3", f"P = {g['P']:,.0f} lb, {g['cb'].name}")]
     if gb:
-        tb = "Table 4D" if timber else "Table 4A"
+        tb = table[:8]
         steps += [L("S1 = d2 d1^2 / 6", S1, "in3", "NDS Eq. 3.3-4", f"bending about the strong axis, {gb['cb'].name}"),
                   L("Fb", Fb_ref, "psi", f"2018 NDS Supplement {tb}"), L("CF for Fb", CF_b, "", tb + " adjustment factors"),
                   L("Fb1' = Fb CD CM CL CF Ci", gb["Fb_adj"], "psi", "NDS Table 4.3.1",
@@ -1136,7 +1136,7 @@ def builtup_post(mark, species, grade, size, plies, fastening, height_ft, loads,
         raise WorksheetError(f"{mark}: {e}")
     stack = plies * t
     A = stack * d
-    CM_c = (1.0 if ref["Fc"] * CF <= 750 else 0.8) if wet else 1.0
+    CM_c = (1.0 if ref["Fc"] * (1.0 if table == "Table 4B" else CF) <= 750 else 0.8) if wet else 1.0
     CM_E, Ci_c, Ci_E = (0.9 if wet else 1.0), (0.80 if incised else 1.0), (0.95 if incised else 1.0)
     Emin = ref["Emin"] * CM_E * Ci_E
     le_d = Ke_d * (lu_d_ft if lu_d_ft else height_ft) * 12.0
@@ -1192,8 +1192,8 @@ def builtup_post(mark, species, grade, size, plies, fastening, height_ft, loads,
              L("stack = n t", stack, "in", "geometry", f"{plies} laminations"), L("A", A, "in2", "geometry"),
              L("Fc", ref["Fc"], "psi", f"2018 NDS Supplement {table}"), L("Emin'", Emin, "psi", "NDS Table 4.3.1"),
              L("CD", g["CD"], "", "NDS Table 2.3.2", f"{g['cd_case']}, {g['cd_dur']}"),
-             L("CM", CM_c, "", "Table 4A adjustment factors", "wet service" if wet else "dry service"),
-             L("CF", CF, "", "Table 4A adjustment factors"), L("Ci", Ci_c, "", "NDS Table 4.3.8", "incised" if incised else "not incised"),
+             L("CM", CM_c, "", table + " adjustment factors", "wet service" if wet else "dry service"),
+             L("CF", CF, "", table + " adjustment factors"), L("Ci", Ci_c, "", "NDS Table 4.3.8", "incised" if incised else "not incised"),
              L("Fc* = Fc CD CM CF Ci", g["Fcs"], "psi", "NDS 15.3.2.4"),
              L("le1 / d1", le_d / d, "", "NDS 15.3.2.2", f"across the face width, d1 = {d:g} in, le = {le_d:g} in"),
              L("FcE1", g["FcE_d"], "psi", "NDS 15.3.2.4"),

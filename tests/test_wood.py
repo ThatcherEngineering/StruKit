@@ -393,3 +393,32 @@ def test_southern_pine_table_4b(tmp_path):
     assert bend.capacity == pytest.approx(920.0) and bend.demand == pytest.approx((50 * 16 / 12) * 144 / 8 * 12 / (1.5 * 9.25 ** 2 / 6), abs=0.5)
     assert "Table 4B" in " ".join(str(getattr(x, "source", "")) for x in s.steps) and "Table 4B values for 10 in. wide" in dict(s.info)["Member"]
     calcsheet.simple_pdf(s, str(tmp_path / "sp.pdf"), "Job", "2018 NDS", "Nov 23, 2026")
+
+
+def test_southern_pine_post_by_hand(tmp_path):
+    """4x4 Southern Pine No. 2, 8 ft, pinned, dead load only (CD 0.9): Table 4B, 2 to 4 in. wide: Fc 1,450 psi, Emin 510,000 psi; CF 1.0.
+    le/d = 96/3.5 = 27.43; FcE = 0.822(510,000)/27.43^2 = 557.2 psi; Fc* = 1,450(0.9) = 1,305 psi; FcE/Fc* = 0.4270;
+    CP = 0.8919 - sqrt(0.8919^2 - 0.4270/0.8) = 0.3803; Fc' = 496.3 psi. Wet: Fc over 750 psi, CM 0.8. 4x14: Fc CF 0.9."""
+    from strukit import calcsheet, wood
+    from strukit.gui import calc
+    s = ws_wood.post("P", "SOUTHERN PINE", "No. 2", "4x4", 8, [dict(case="D", P=2000)], [Combo("D", {"D": 1}, "x")], 1, 1, "pinned", False, False)
+    comp = next(x for x in s.rows if x.check == "compression")
+    assert comp.capacity == pytest.approx(496.3, abs=0.5) and "Table 4B" in dict(s.info)["Member"]
+    assert "Table 4B" in next(l for l in s.steps if l.label == "CF").source
+    w = ws_wood.post("P", "SOUTHERN PINE", "No. 2", "4x4", 8, [dict(case="D", P=2000)], [Combo("D", {"D": 1}, "x")], 1, 1, "pinned", True, False)
+    assert next(l for l in w.steps if l.label == "CM").value == 0.8
+    assert wood.post_values("SOUTHERN PINE", "No. 2", "4x14")[1] == 0.9 and wood.post_values("SOUTHERN PINE", "No. 2", "4x6")[0]["Fc"] == 1400
+    proj = dict(method="ASD", combos_asd=[dict(expr="D + L", source="typed in")], combos_lrfd=[])
+    v = dict(mark="WP7", species="SOUTHERN PINE", grade="No. 1", size="4x6", height="9", lu1="", lu2="", Ke1="1", Ke2="1", k_source="pinned top and bottom",
+             service="dry service", incised="no", unit_weight="", loads=[dict(case="L", P="3000", label=""), dict(case="D", P="1000", label="")])
+    sh, _, _ = calc.build("wood_post", v, proj)
+    calcsheet.simple_pdf(sh, str(tmp_path / "p.pdf"), "Job", "2018 NDS", "Nov 23, 2026")
+    assert calc.results("wood_post", v, proj)["state"] == "done"
+
+
+def test_southern_pine_builtup_column():
+    """3 - 2x6 Southern Pine No. 2: Table 4B, 5 to 6 in. wide: Fc 1,400 psi, CF 1.0."""
+    loads = [dict(case="D", P=2000), dict(case="L", P=4000)]
+    s = ws_wood.builtup_post("BC2", "SOUTHERN PINE", "No. 2", "2x6", 3, "nailed", 10, loads, [Combo("D + L", {"D": 1, "L": 1}, "x")], 1.0, 1.0, "pinned", False, False)
+    assert next(l for l in s.steps if l.label == "CF").value == 1.0 and "Table 4B" in next(l for l in s.steps if l.label == "CF").source
+    assert any(getattr(l, "value", None) == 1400 for l in s.steps)
