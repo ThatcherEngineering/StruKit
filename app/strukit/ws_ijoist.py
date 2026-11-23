@@ -35,6 +35,8 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
             if not spacing_in or spacing_in <= 0:
                 raise WorksheetError(f"{mark}: an area load needs the joist spacing")
             ld.update(kind="uniform", w=ld["q"] * spacing_in / 12.0, area=ld["q"])
+            if ld.get("q2") is not None:
+                ld.update(w2=ld["q2"] * spacing_in / 12.0, area2=ld["q2"])
     loads.append(dict(case="D", kind="uniform", w=j["weight"], label="joist weight"))
     by_case = {}
     for ld in loads:
@@ -116,9 +118,13 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
         if ld["kind"] == "uniform":
             where = f"{ld.get('x1_ft', 0):g} to {ld.get('x2_ft', span_ft):g} ft"
             if "area" in ld:
-                load_lines.append(f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                                  if "w2" not in ld else
+                                  (f"{ld['case']:<3} area    {ld['area']:.1f} to {ld['area2']:.1f} psf x {spacing_in:g} in = {ld['w']:.1f} to {ld['w2']:.1f} plf   "
+                                   f"{where:<14} {ld.get('label', '')}"))
             else:
-                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}")
+                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w2" not in ld else
+                                  f"{ld['case']:<3} tapered {ld['w']:.1f} to {ld['w2']:.1f} plf   {where:<16} {ld.get('label', '')}")
         else:
             load_lines.append(f"{ld['case']:<3} point   {ld['P']:>9.0f} lb    at {ld['x_ft']:g} ft{'':<8} {ld.get('label', '')}")
     sheet = SimpleSheet(
@@ -130,7 +136,7 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
          f"Joist weight {j['weight']:g} plf added to load case D."],
         ["web holes; concentrated loads on the flange and web stiffeners under them", "bearing on the supporting member",
          "hangers and connections", "blocking, rim and lateral restraint at supports", "floor vibration"],
-        picture=("ijoist", dict(supports=lay.supports, d=j["depth"], span=span_ft, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gm["cb"].name)
+        picture=("ijoist", dict(supports=lay.supports, d=j["depth"], span=span_ft, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), w2=x.get("w2"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gm["cb"].name)
     from .ws_wood import _diagram_data
     sheet.diagram = _diagram_data(gm)
     if not lay.simple:

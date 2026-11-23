@@ -170,6 +170,7 @@ FORMS = {
                 F("unit_weight", "Wood unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
         tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point", "area"]),
                                      F("mag", "Load", unit="plf, lb or psf"),
+                                     F("mag2", "Load at the To end (tapered load)", unit="plf or psf", required=False),
                                      F("x1", "From / at", unit="ft", required=False),
                                      F("x2", "To", unit="ft", required=False),
                                      F("label", "Note", "text", required=False)]),
@@ -203,6 +204,7 @@ FORMS = {
                 F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
         tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point", "area"]),
                                      F("mag", "Load", unit="plf, lb or psf"),
+                                     F("mag2", "Load at the To end (tapered load)", unit="plf or psf", required=False),
                                      F("x1", "From / at", unit="ft", required=False),
                                      F("x2", "To", unit="ft", required=False),
                                      F("label", "Note", "text", required=False)]),
@@ -236,6 +238,7 @@ FORMS = {
                 F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
         tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point", "area"]),
                                      F("mag", "Load", unit="plf, lb or psf"),
+                                     F("mag2", "Load at the To end (tapered load)", unit="plf or psf", required=False),
                                      F("x1", "From / at", unit="ft", required=False),
                                      F("x2", "To", unit="ft", required=False),
                                      F("label", "Note", "text", required=False)]),
@@ -290,6 +293,7 @@ FORMS = {
                 F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
         tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point", "area"]),
                                      F("mag", "Load", unit="plf, lb or psf"),
+                                     F("mag2", "Load at the To end (tapered load)", unit="plf or psf", required=False),
                                      F("x1", "From / at", unit="ft", required=False),
                                      F("x2", "To", unit="ft", required=False),
                                      F("label", "Note", "text", required=False)]),
@@ -334,6 +338,7 @@ FORMS = {
                 F("flange", "Compression flange supported throughout (sheathing)", "select", options=["yes", "no"], help="NDS 7.3.5")],
         tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["area", "uniform", "point"]),
                                      F("mag", "Load", unit="psf, plf or lb"),
+                                     F("mag2", "Load at the To end (tapered load)", unit="psf or plf", required=False),
                                      F("x1", "From / at", unit="ft", required=False),
                                      F("x2", "To", unit="ft", required=False),
                                      F("label", "Note", "text", required=False)]),
@@ -890,6 +895,8 @@ def build(kind, values, project):
         for ld in r.rows("loads"):
             if ld["kind"] in ("uniform", "area"):
                 d = dict(case=ld["case"], kind="uniform", w=ld["mag"]) if ld["kind"] == "uniform" else dict(case=ld["case"], kind="area", q=ld["mag"])
+                if ld.get("mag2") is not None:
+                    d.update({"w2" if ld["kind"] == "uniform" else "q2": ld["mag2"]})
                 if ld["x1"] is not None or ld["x2"] is not None:
                     d.update(x1_ft=ld["x1"] or 0.0, **({"x2_ft": ld["x2"]} if ld["x2"] is not None else {}))
             else:
@@ -963,6 +970,8 @@ def build(kind, values, project):
             if ld["kind"] in ("uniform", "area"):
                 d = dict(case=ld["case"], kind="uniform", w=ld["mag"]) if ld["kind"] == "uniform" else \
                     dict(case=ld["case"], kind="area", q=ld["mag"])
+                if ld.get("mag2") is not None:
+                    d.update({"w2" if ld["kind"] == "uniform" else "q2": ld["mag2"]})
                 if ld["x1"] is not None or ld["x2"] is not None:
                     d.update(x1_ft=ld["x1"] or 0.0, **({"x2_ft": ld["x2"]} if ld["x2"] is not None else {}))
             else:
