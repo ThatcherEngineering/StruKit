@@ -639,9 +639,13 @@ FORMS = {
                   help="Optional.")]),
     "nailed_connection": dict(
         title="Nailed Connection (lateral)", code="NDS 2018", mark="NC",
-        fields=[F("nail", "Nail", "text", help="for example: 16d common"),
-                F("D", "Nail diameter", unit="in", help="NDS Appendix Table L4: common 8d 0.131, 10d 0.148, 16d 0.162; box and sinker differ"),
-                F("length", "Nail length", unit="in", help="NDS Appendix Table L4: common 8d 2.5, 10d 3, 16d 3.5"),
+        fields=[F("nail", "Nail", "select", options=["6d common", "7d common", "8d common", "10d common", "12d common", "16d common", "20d common", "30d common",
+                  "40d common", "50d common", "60d common", "6d box", "7d box", "8d box", "10d box", "12d box", "16d box", "20d box", "30d box", "40d box",
+                  "6d sinker", "7d sinker", "8d sinker", "10d sinker", "12d sinker", "16d sinker", "20d sinker", "30d sinker", "40d sinker", "60d sinker",
+                  "other (type the size)"], help="NDS Appendix Table L4"),
+                F("nail_name", "Other nail: description", "text", required=False),
+                F("D", "Other nail: diameter", unit="in", required=False),
+                F("length", "Other nail: length", unit="in", required=False),
                 F("n", "Number of nails"),
                 F("side_t", "Side member thickness", unit="in", help="the piece the nail head is in"),
                 F("G_side", "Side member specific gravity, G", help="NDS Table 12.3.3A"), F("G_side_source", "Where that G comes from", "text"),
@@ -1360,7 +1364,13 @@ def build(kind, values, project):
                                        spacing=({"2-1/2": 2.5}.get(spc) or float(spc)) if blk else None), "simple", {}
     if kind == "nailed_connection":
         cb = combos(project, r.miss, "ASD")
-        nm, D, Lg, n_ = r.text("nail"), r.num("D"), r.num("length"), r.num("n")
+        from .. import dowel as _dowel
+        nm, n_ = r.text("nail"), r.num("n")
+        if nm in _dowel.NAILS:
+            Lg, D = _dowel.NAILS[nm]
+        else:
+            nm = r.text("nail_name", bool(nm), ) if nm else None
+            D, Lg = r.num("D", True, label="Other nail: diameter"), r.num("length", True, label="Other nail: length")
         ts, Gs, Gss, tm, Gm, Gms, sv = r.num("side_t"), r.num("G_side"), r.text("G_side_source"), r.num("main_t"), r.num("G_main"), r.text("G_main_source"), r.text("service")
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
         if not loads:
