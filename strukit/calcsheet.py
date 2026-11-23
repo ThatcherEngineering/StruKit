@@ -201,7 +201,7 @@ def _steps(p, title, lines):
             p.room(1000)
             p.head(title + ", Continued")
             box_top = p.y + 9
-        val = f"{ln.value:.2f}" if not ln.unit else _fmt(ln.value, ln.unit)
+        val = ln.value if isinstance(ln.value, str) else f"{ln.value:.2f}" if not ln.unit else _fmt(ln.value, ln.unit)
         c.setFont(FM, 8); c.setFillColorRGB(*INK)
         c.drawString(LM + 6, p.y, f"{ln.label} = {val}")
         c.setFont(FR, 7.5); c.setFillColorRGB(*GREY)
@@ -1225,7 +1225,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
                    230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
-            if b["picture"][0] in ("wind_mwfrs", "wind_zones"):
+            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
             p.head(b.get("head") or b["title"] + ": Inputs and Layout")
@@ -1339,6 +1339,8 @@ def _block_picture(c, top, pic):
         return _wind_mwfrs_picture(c, top, d)
     if name == "wind_zones":
         return _wind_zones_picture(c, top, d)
+    if name == "seismic_forces":
+        return _seismic_forces_picture(c, top, d)
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
@@ -1490,6 +1492,41 @@ def _wind_mwfrs_picture(c, top, d):
     ybase = y - 112
     _small(c, (LM + RM) / 2, ybase - 30, "sections to scale; external pressure q Kd G Cp in psf, + toward the surface, - away from it; windward wall value at its top")
     return ybase - 36
+
+
+def _seismic_forces_picture(c, top, d):
+    """Elevation of the building as a stack of levels, heights to scale: the force at each
+    level as an arrow with its value, the story shear beside each story, the base shear."""
+    rows = d["rows"]
+    H = 104.0
+    sc = H / d["hn"]
+    xl = (LM + RM) / 2 - 60
+    xr = xl + 120
+    yb = top - 20 - H
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4); c.line(xl - 90, yb, xr + 110, yb)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+    ytop = yb + rows[0]["h"] * sc
+    c.line(xl, yb, xl, ytop); c.line(xr, yb, xr, ytop)
+    fmax = max(r["F"] for r in rows) or 1.0
+    prev = None
+    for r in rows:
+        y = yb + r["h"] * sc
+        c.setStrokeColorRGB(*INK); c.setLineWidth(1.4); c.line(xl, y, xr, y)
+        c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+        ln = 18 + 44 * r["F"] / fmax
+        _arrow(c, xl - 4 - ln, y, xl - 4, y, head=4)
+        c.setFont(FR, 6.5); c.drawRightString(xl - 8 - ln, y - 2, f"{r['name']}: {r['F']:.2f} {d['unit']}")
+        c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawString(xr + 6, y - 2, f"{r['h']:g} ft")
+        prev = y
+    ys = [yb + r["h"] * sc for r in rows] + [yb]
+    for r, ya, yb_ in zip(rows, ys[:-1], ys[1:]):
+        if ya - yb_ >= 8:
+            c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawCentredString((xl + xr) / 2, (ya + yb_) / 2 - 2, f"V = {r['V']:.2f} {d['unit']}")
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow(c, xr + 60, yb - 7, xr + 20, yb - 7, head=4)
+    c.setFont(FR, 6.5); c.drawString(xr + 64, yb - 9, f"base shear {d['V']:.2f} {d['unit']}")
+    _small(c, (LM + RM) / 2, yb - 22, "elevation; heights to scale")
+    return yb - 28
 
 
 def _wind_zones_picture(c, top, d):

@@ -972,3 +972,63 @@ def wind_cc_parapet_sheet(mark, V, V_source, exposure, exposure_basis, hp_top, h
     sheet.blocks.append(dict(title="Net Design Pressure on the Parapet by Effective Wind Area", lines=lines))
     sheet.wind = dict(r)
     return sheet
+
+
+def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie_source, structure, hn, levels, T_analysis=None,
+                      T_source="", unit="kips"):
+    """Seismic base shear and story forces, ASCE/SEI 7-22 Sect. 12.8 (see seismic.py).
+    levels: [(name, weight, height above the base ft)]."""
+    from . import seismic
+    for nm, v in (("the source of the ground motion values", ground_source), ("the source of R", R_source), ("the source of Ie", Ie_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if T_analysis is not None and not (T_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the period from analysis is blank")
+    L = footing_line
+    try:
+        r = seismic.elf(SDS, SD1, S1, TL, R, Ie, structure, hn, levels, T_analysis)
+    except seismic.SeismicError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    T = r["T"]
+    steps = [L("SDS", SDS, "g", "ASCE/SEI 7-22 Sect. 11.4", ground_source.strip()),
+             L("SD1", SD1, "g", "Sect. 11.4", ""), L("S1", S1, "g", "Sect. 11.4", ""), L("TL", TL, "s", "Sect. 11.4.6", ""),
+             L("R", R, "", "Table 12.2-1", R_source.strip()),
+             L("Ie", Ie, "", "Sect. 11.5.1", Ie_source.strip()),
+             L(f"Ta = Ct hn^x = {r['Ct']:g} x {hn:g}^{r['x']:g}", r["Ta"], "s", "Eq. 12.8-8, Table 12.8-2", structure)]
+    if T_analysis is not None:
+        steps += [L("T from analysis", T_analysis, "s", "Sect. 12.8.2", T_source.strip()),
+                  L("Cu", f"{r['Cu']:.1f}", "", "Table 12.8-1", f"upper limit Cu Ta = {r['Cu'] * r['Ta']:.3f} s"),
+                  L("T", T, "s", "Sect. 12.8.2", r["T_note"])]
+    else:
+        steps += [L("T", T, "s", "Sect. 12.8.2", "taken as Ta")]
+    steps += [L("Cs = SDS / (R/Ie)", f"{r['Cs_123']:.4f}", "", "Eq. 12.8-3"),
+              L("Cs need not exceed " + ("SD1 / [T (R/Ie)]" if r["cap_eq"] == "Eq. 12.8-4" else "SD1 TL / [T^2 (R/Ie)]"), f"{r['Cs_cap']:.4f}", "", r["cap_eq"]),
+              L("Cs not less than 0.044 SDS Ie, 0.01", f"{r['Cs_min']:.4f}", "", "Eq. 12.8-6")]
+    if r["Cs_s1"] is not None:
+        steps += [L("Cs not less than 0.5 S1 / (R/Ie)", f"{r['Cs_s1']:.4f}", "", "Eq. 12.8-7", "S1 is 0.6 or more")]
+    steps += [L("Cs", f"{r['Cs']:.4f}", "", r["governs"]),
+              L("W", r["W"], unit, "Sect. 12.7.2", "the sum of the level weights entered"),
+              L("V = Cs W", r["V"], unit, "Eq. 12.8-1"),
+              L("k", r["k"], "", "Sect. 12.8.3", f"T = {T:.3f} s")]
+    lines = [f"{'level':<16}{'wx ' + unit:>11}{'hx ft':>9}{'wx hx^k':>13}{'Cvx':>8}{'Fx ' + unit:>11}{'Vx ' + unit:>11}{'Mx ' + unit[:-1] + '-ft':>13}"]
+    for x in r["rows"]:
+        lines.append(f"{str(x['name'])[:15]:<16}{x['w']:>11,.1f}{x['h']:>9.2f}{x['whk']:>13,.0f}{x['Cvx']:>8.3f}{x['F']:>11.2f}{x['V']:>11.2f}{x['M']:>13,.1f}")
+    lines.append(f"{'base':<16}{r['W']:>11,.1f}{'':>9}{'':>13}{1.0:>8.3f}{r['V']:>11.2f}{r['V']:>11.2f}{r['M_base']:>13,.1f}")
+    info = [("Ground Motion", f"SDS = {SDS:g}, SD1 = {SD1:g}, S1 = {S1:g}, TL = {TL:g} s ({ground_source.strip()})"),
+            ("System", f"R = {R:g} ({R_source.strip()})"),
+            ("Importance", f"Ie = {Ie:g} ({Ie_source.strip()})"),
+            ("Structure", f"structural height hn = {hn:g} ft; period type: {structure}; {len(levels)} level" + ("s" if len(levels) != 1 else ""))]
+    sheet = SimpleSheet(
+        mark, "Seismic Base Shear and Story Forces", "Site and Building", "Sect. 12.8", info, [], [],
+        "Base Shear", steps, [],
+        ["Forces are strength-level seismic forces QE, before the redundancy factor.",
+         "Fx = Cvx V, Cvx = wx hx^k / sum(wi hi^k), Eq. 12.8-12 and 12.8-13. Vx: story shear below the level, Eq. 12.8-14. "
+         "Mx: overturning moment at the level, from the forces above it.",
+         "Level weights are the effective seismic weights of Sect. 12.7.2, as entered."],
+        ["whether the equivalent lateral force procedure is permitted (Table 12.6-1)", "the Seismic Design Category (Sect. 11.6) and system height limits (Table 12.2-1)",
+         "the redundancy factor (Sect. 12.3.4) and the vertical seismic load effect (Sect. 12.4.2.2)", "structural irregularities (Sect. 12.3.2)",
+         "torsion (Sect. 12.8.4), story drift (Sect. 12.8.6) and P-delta effects (Sect. 12.8.7)", "diaphragm forces (Sect. 12.10)"])
+    sheet.blocks.append(dict(title="Story Forces", picture=("seismic_forces", dict(rows=r["rows"], V=r["V"], unit=unit, hn=hn))))
+    sheet.blocks.append(dict(title="Vertical Distribution", lines=lines))
+    sheet.seismic = r
+    return sheet
