@@ -2016,3 +2016,104 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
         sheet.connection_lag = dict(th, p=p_lag, comb=comb)
     sheet.connection = dict(r, Zp=base * worst["CD"], n=n, Cg=Cg, Cdelta=cdel, CM=CM, capacity=worst["cap"], demand=worst["P"], edge_min=e_min)
     return sheet
+
+
+def rain_load_sheet(mark, risk, i, i_source, A, ds, ds_source, head, D=None, D_source="", bay=None, dp=None, dp_source=""):
+    """Design rain load on a roof, ASCE/SEI 7-22 Chapter 8 (see rain.py). i: 15 minute rainfall
+    intensity, in./hr; A: roof area draining to one secondary drain or scupper, ft2; ds: static
+    head, in.; head: dict(dh, source) typed in, or dict(scupper=width in.); ponding head either
+    typed (dp, dp_source) or from the bay: D psf and bay = dict(Lp, Ls, S, Ip, Is, primary,
+    secondary, Ep, Es) with primary/secondary a key of rain.STIFFNESS or "other material" (E in psi)."""
+    from . import rain
+    if risk not in rain.RETURN_PERIOD:
+        raise WorksheetError(f"{mark}: the risk category is I, II, III or IV")
+    for nm, v in (("where the rainfall intensity comes from", i_source), ("where the static head comes from", ds_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: say {nm}")
+    if (bay is None) == (dp is None):
+        raise WorksheetError(f"{mark}: give the ponding head either typed in or from the bay stiffness")
+    Ln = footing_line
+    T = rain.RETURN_PERIOD[risk]
+    try:
+        Q = rain.flow(A, i)
+        steps = [Ln("design storm", f"{T} year, 15 minute", "", "ASCE/SEI 7-22 Table 8.2-1", f"Risk Category {risk}"),
+                 Ln("i", f"{i:g} in./hr", "", "", i_source.strip()),
+                 Ln("Q = 0.0104 A i", f"{Q:,.0f} gal/min", "", "ASCE/SEI 7-22 Eq. C8.2-1", f"A = {A:,.0f} ft2 to each secondary drain or scupper"),
+                 Ln("ds", f"{ds:.2f} in", "", "", ds_source.strip())]
+        if head.get("scupper") is not None:
+            dh = rain.scupper_head(Q, head["scupper"])
+            steps.append(Ln("dh = [3.85 Q / ((2/3) cd Ws (2g)^0.5)]^(2/3)", f"{dh:.2f} in", "", "AISC Design Guide 40 Eq. 1-7",
+                            f"channel scupper, Ws = {head['scupper']:g} in, cd = {rain.CD_SCUPPER:g}, g = {rain.G_IN:g} in/s2"))
+            head_txt = f"channel scupper {head['scupper']:g} in. wide"
+        else:
+            dh = head["dh"]
+            if not (head.get("source") or "").strip():
+                raise WorksheetError(f"{mark}: say where the hydraulic head comes from")
+            steps.append(Ln("dh", f"{dh:.2f} in", "", "", head["source"].strip()))
+            head_txt = f"hydraulic head {dh:g} in. ({head['source'].strip()})"
+        R0 = rain.rain_load(ds, dh)
+        steps.append(Ln("5.2 (ds + dh)", R0, "psf", "ASCE/SEI 7-22 Eq. 8.2-1", "rain load before the ponding head"))
+        rows, assume, pond = [], [], None
+        if bay is not None:
+            if not (D_source or "").strip():
+                raise WorksheetError(f"{mark}: say where the dead load comes from")
+            use = {}
+            for k, key, I, E in (("p", "primary", bay["Ip"], bay.get("Ep")), ("s", "secondary", bay["Is"], bay.get("Es"))):
+                kind = bay[key]
+                if kind in rain.STIFFNESS:
+                    f_, note = rain.STIFFNESS[kind]
+                    use[k] = (I * f_ if I else I, None, f"{kind}; {note}")
+                elif kind == "other material":
+                    if E is None or E <= 0:
+                        raise WorksheetError(f"{mark}: the {key} member modulus of elasticity is needed for a material other than steel")
+                    use[k] = (I, E, f"E = {E:,.0f} psi; I as entered")
+                else:
+                    raise WorksheetError(f"{mark}: the {key} member type is one of: " + "; ".join(list(rain.STIFFNESS) + ["other material"]))
+            Cp, Cs = rain.flexibility(bay["Lp"], bay["Ls"], bay["S"], use["p"][0], use["s"][0], use["p"][1], use["s"][1])
+            eq_p = "32 Ls Lp^4 / (10^7 Ip)" if use["p"][1] is None else "62.4 Ls Lp^4 / (pi^4 E Ip)"
+            eq_s = "32 S Ls^4 / (10^7 Is)" if use["s"][1] is None else "62.4 S Ls^4 / (pi^4 E Is)"
+            steps += [Ln("Ip used", f"{use['p'][0]:,.0f} in4", "", "", use["p"][2]),
+                      Ln("Is used", f"{use['s'][0]:,.0f} in4", "", "", use["s"][2]),
+                      Ln(f"Cp = {eq_p}", f"{Cp:.3f}", "", "AISC Design Guide 40 Eq. " + ("3-4" if use["p"][1] is None else "3-2"),
+                         f"Lp = {bay['Lp']:g} ft, Ls = {bay['Ls']:g} ft"),
+                      Ln(f"Cs = {eq_s}", f"{Cs:.3f}", "", "AISC Design Guide 40 Eq. " + ("3-5" if use["s"][1] is None else "3-3"), f"S = {bay['S']:g} ft")]
+            stab = 1.15 * Cp + Cs
+            rows.append(Row("Ponding stability, 1.15 Cp + Cs", "D + R", stab, 1.0, "", "AISC Design Guide 40 Eq. 3-1", "less than 1.0"))
+            if stab < 1.0:
+                pond = rain.ponded(D, ds, dh, Cp, Cs)
+                steps += [Ln("Bp = 1 / (1 - 1.15 Cp - Cs)", f"{pond['Bp']:.2f}", "", "AISC Design Guide 40 Eq. 3-1", ""),
+                          Ln("D + 5.2 (ds + dh)", pond["w0"], "psf", "", f"D = {D:g} psf ({D_source.strip()})"),
+                          Ln("Bp [D + 5.2 (ds + dh)]", pond["total"], "psf", "AISC Design Guide 40 Sect. 3.2", "dead load and rain load with ponding"),
+                          Ln("R = Bp [D + 5.2 (ds + dh)] - D", pond["R"], "psf", "", ""),
+                          Ln("dp = R / 5.2 - ds - dh", f"{pond['dp']:.2f} in", "", "ASCE/SEI 7-22 Eq. 8.2-1", "ponding head")]
+                R, dpv = pond["R"], pond["dp"]
+            else:
+                R, dpv = None, None
+            assume += ["Ponding head by amplified first-order analysis (AISC Design Guide 40 Sect. 3.2) of a rectangular bay with the whole bay "
+                       "below the water level, under unfactored dead load and unfactored rain load (ASCE/SEI 7-22 Sect. 8.2).",
+                       "The rain load is taken as uniform over the bay."]
+        else:
+            if not (dp_source or "").strip():
+                raise WorksheetError(f"{mark}: say where the ponding head comes from")
+            dpv = dp
+            R = rain.rain_load(ds, dh, dp)
+            steps += [Ln("dp", f"{dp:.2f} in", "", "", dp_source.strip()),
+                      Ln("R = 5.2 (ds + dh + dp)", R, "psf", "ASCE/SEI 7-22 Eq. 8.2-1", "")]
+    except rain.RainError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    info = [("Storm", f"Risk Category {risk}: {T} year, 15 minute; i = {i:g} in./hr"),
+            ("Drainage", f"{A:,.0f} ft2 to each secondary drain or scupper; {head_txt}; static head {ds:g} in."),
+            ("Ponding", (f"bay {bay['Lp']:g} ft by {bay['Ls']:g} ft, secondary members at {bay['S']:g} ft" if bay is not None else f"ponding head {dp:g} in. typed in")),
+            ("Rain load", f"R = {R:,.1f} psf" if R is not None else "not found: the bay is unstable under ponding")]
+    assume = ["The primary drainage system is blocked; water stands to the inlet of the secondary drainage system (static head) and above it by the "
+              "hydraulic head needed to pass the design flow (ASCE/SEI 7-22 Sect. 8.2).",
+              "The secondary drainage system has its inlet 2 in. or more above the primary inlet, its own drain lines and no controlled flow drains "
+              "(ASCE/SEI 7-22 Sect. 8.2 (b) to (d))."] + assume
+    sheet = SimpleSheet(mark, "Rain Load", "Roof Drainage", "Chapter 8", info, [], [], "Rain Load", steps, rows, assume,
+                        ["the roof members under the rain load", "bays with low slope not subjected to accumulated rain (ASCE/SEI 7-22 Sect. 8.3)",
+                         "rain load that varies over the roof with its slope", "the size of the drains, scuppers and drain lines (plumbing code)",
+                         "snow or rain-on-snow acting with ponding"])
+    if R is not None:
+        sheet.blocks.append(dict(title="Water on the Roof", head="Water on the Roof", picture=("rain", dict(ds=ds, dh=dh, dp=dpv, R=R))))
+    sheet.rain = dict(Q=Q, dh=dh, R0=R0, R=R, dp=dpv, pond=pond)
+    return sheet

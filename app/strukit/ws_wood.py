@@ -1464,6 +1464,9 @@ def decking(mark, species, grade, thickness, span_ft, layout, repetitive, wet, l
           "and from each other load on one span alone, 0.0092 w L^4 / (E I)." if two else
           "Simple span: M = w L^2 / 8; deflection 5 w L^4 / (384 E I).")],
         ["shear (Table 4E lists no shear design value)", "bearing on the supports", "other layups (controlled random, cantilevered pieces)",
-         "fastening of the decking and its use as a diaphragm", "concentrated loads"])
+         "fastening of the decking and its use as a diaphragm", "concentrated loads"],
+        picture=("wood_beam", dict(supports=[0.0, span_ft, 2 * span_ft] if two else [0.0, span_ft], b=b, d=t, plies=1,
+                                   span=(2 if two else 1) * span_ft, size=f"{thickness:g} in. decking", caption="12 in. strip, section to scale, dimensions in inches; loads in plf on the strip",
+                                   loads=[dict(case=ld["case"], kind="uniform", w=ld["q"]) for ld in loads])))
     sheet.decking = dict(S=S, I=I, Fb_adj=g["Fb_adj"], fb=g["fb"], w=g["w"])
     return sheet

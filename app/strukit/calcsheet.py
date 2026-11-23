@@ -6,6 +6,7 @@ the governing equations with intermediate values, assumptions stated. No revisio
 on the page. The PE stamp goes on the package cover only.
 """
 import datetime
+import math
 import os
 
 from reportlab.lib.pagesizes import letter
@@ -1197,7 +1198,7 @@ def _picture(c, top, pic):
                          ext_from=top - 46 - d["d"] * s_ / 2)
         memberart._dim_v(c, top - 46 - d["d"] * s_ / 2, top - 46 + d["d"] * s_ / 2, 540 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,
                          ext_from=540 + d["b"] * s_ / 2)
-        _small(c, 476, min(top - 98, y - 34), "section to scale, dimensions in inches" + ("; loads in plf and lb" if lh else ""))
+        _small(c, 476, min(top - 98, y - 34), d.get("caption") or ("section to scale, dimensions in inches" + ("; loads in plf and lb" if lh else "")))
         return min(top - 102, y - 38)
     if name == "base_plate":
         _sketch_title(c, 470, top, "PLAN", centred=True)
@@ -1455,6 +1456,8 @@ def _block_picture(c, top, pic):
         return _diaphragm_picture(c, top, d)
     if name == "collector":
         return _collector_picture(c, top - 6, d)
+    if name == "rain":
+        return _rain_picture(c, top - 6, d)
     if name == "nailed":
         return _nailed_picture(c, top, d)
     if name == "lag":
@@ -1841,6 +1844,52 @@ def _toe_nail_picture(c, top, d):
     off = 24 if d.get("withdrawal") else 0
     _small(c, xc, y_bot - 12 - off, f"section through one toe-nail, to scale; main member {tm:g} in thick" + (", not shown full depth" if tmd < tm else ""))
     return y_bot - 18 - off
+
+
+def _rain_picture(c, top, d):
+    """Section through the bay, not to scale: the undeflected roof (dashed), the deflected roof,
+    the inlet of the secondary drainage at the edge, and the water over it, with the static,
+    hydraulic and ponding heads dimensioned."""
+    ds, dh, dp = d["ds"], d["dh"], d.get("dp") or 0.0
+    tot = max(ds + dh + dp, 1e-6)
+    k = 46.0 / tot                                         # points per inch of water
+    x0, x1 = LM + 150, LM + 390
+    y_roof = top - 20 - (ds + dh) * k                      # undeflected roof surface
+    y_inlet, y_water = y_roof + ds * k, y_roof + (ds + dh) * k
+    sag = dp * k
+    n = 40
+    pts = [(x0 + (x1 - x0) * j / n, y_roof - sag * math.sin(math.pi * j / n)) for j in range(n + 1)]
+    pth = c.beginPath(); pth.moveTo(x0, y_water); pth.lineTo(x0, y_roof)
+    for x, y in pts:
+        pth.lineTo(x, y)
+    pth.lineTo(x1, y_water); pth.close()
+    c.setFillColorRGB(0.84, 0.91, 0.98); c.drawPath(pth, fill=1, stroke=0)
+    c.setStrokeColorRGB(*LOADC); c.setLineWidth(0.7); c.line(x0, y_water, x1, y_water)
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5); c.setDash(3, 2); c.line(x0, y_roof, x1, y_roof); c.setDash()
+    c.setStrokeColorRGB(*INK); c.setLineWidth(1.4)
+    pth = c.beginPath(); pth.moveTo(*pts[0])
+    for x, y in pts[1:]:
+        pth.lineTo(x, y)
+    c.drawPath(pth, fill=0, stroke=1)
+    c.setLineWidth(1.0)                                    # parapet each side; inlet of the secondary drainage on the left
+    c.line(x1, y_roof, x1, y_water + 10)
+    c.line(x0, y_roof, x0, y_inlet); c.line(x0, y_water + 3, x0, y_water + 10)
+    c.line(x0 - 9, y_inlet, x0, y_inlet)
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+    c.drawRightString(x0 - 12, y_inlet - 2, "inlet of the secondary drainage")
+    c.drawString(x1 + 6, y_roof - 2, "undeflected roof")
+    c.drawString(x1 + 6, y_water - 2, "water surface")
+    xm = (x0 + x1) / 2
+    if ds * k > 5:
+        memberart._dim_v(c, y_roof, y_inlet, x0 + 28, f"ds {ds:.2f}", FR)
+    if dh * k > 5:
+        memberart._dim_v(c, y_inlet, y_water, x0 + 28, f"dh {dh:.2f}", FR)
+    if sag > 5:
+        memberart._dim_v(c, y_roof - sag, y_roof, xm, f"dp {dp:.2f}", FR)
+    y_b = y_roof - sag - 12
+    _small(c, (LM + RM) / 2, y_b, "section through the bay, not to scale; heads in inches"
+           + (f"; R = {d['R']:,.1f} psf" if d.get("R") is not None else ""))
+    return y_b - 6
 
 
 def _collector_picture(c, top, d):
