@@ -365,3 +365,40 @@ def test_wind_load_cases_by_hand():
     lc = sheet.wind["load_cases"]
     assert lc[0][1] == pytest.approx(sheet.wind["normal"]["F_walls"]) and lc[2][3] == pytest.approx(0.75 * lc[0][1] * 0.15 * 60)
     assert sheet.blocks[-1]["title"].startswith("Design Wind Load Cases") and len(sheet.blocks[-1]["lines"]) == 7
+
+
+def test_wind_line_load_to_a_diaphragm_by_hand():
+    """Gable building of the tests above, wind normal to the ridge (B = 60 ft, eave 16 ft, Ke = 1): windward 16.63 psf to 15 ft and
+    16.83 psf from 15 to 16 ft; leeward 11.01 psf. Roof diaphragm taking the wall from 8 ft to the eave:
+    windward 16.63(7) + 16.83(1) = 133.3 plf; leeward 11.01(8) = 88.1 plf; roof horizontal 7,758/60 = 129.3 plf; total 350.7 plf.
+    Minimum 16(8) + 8(8.333) = 194.7 plf. Floor diaphragm from 0 to 8 ft: (16.63 + 11.01)(8) = 221.1 plf, no roof term.
+    Wind parallel to the ridge (B = 40 ft), 8 ft to the ridge at 24.33 ft: wall area 40(8) + 40(8.333)/2 = 486.7 ft2, 12.17 ft average."""
+    import math
+    th = math.degrees(math.atan(5 / 12))
+    r = wind.mwfrs(115, "C", 20, 16, 60, 40, "enclosed", "normal", th)
+    a = wind.line_load(r, 8, 16)
+    assert a["windward"] == pytest.approx(133.3, abs=0.1) and a["leeward"] == pytest.approx(88.1, abs=0.1) and a["roof"] == pytest.approx(129.3, abs=0.1)
+    assert a["w"] == pytest.approx(350.7, abs=0.2) and a["w_min"] == pytest.approx(194.7, abs=0.1) and a["at_top"]
+    f = wind.line_load(r, 0, 8)
+    assert f["w"] == pytest.approx(221.1, abs=0.1) and f["roof"] == 0.0 and not f["at_top"]
+    assert a["w_pressures"] * 60 + f["w_pressures"] * 60 == pytest.approx(r["F_walls"] + max(r["F_roof"]), rel=1e-9)     # the two diaphragms take the whole force
+    p = wind.mwfrs(115, "C", 20, 16, 40, 60, "enclosed", "parallel", th)
+    g = wind.line_load(p, 8, 16 + 20 * math.tan(math.radians(th)))
+    assert g["w_min"] == pytest.approx(16 * 486.67 / 40, abs=0.1) and g["leeward"] == pytest.approx(-p["leeward"].external * 486.67 / 40, abs=0.1)
+    low = wind.mwfrs(60, "B", 20, 16, 60, 40, "enclosed", "normal", th)
+    assert wind.line_load(low, 8, 16)["governs"] == "the minimum of Sect. 27.1.5"
+    with pytest.raises(wind.WindError):
+        wind.line_load(r, 8, 30)
+
+
+def test_wind_line_api():
+    from strukit.gui import server
+    v = dict(mark="WM5", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed", enclosure_basis="Sect. 26.12",
+             across="40", along="60", eave="16", h="20", theta="22.62", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    got = server.api("/api/wind_line", dict(values=v, project={}, z1="8", z2="16"))
+    d = got["directions"]
+    assert [x["title"] for x in d] == ["Wind Normal to the Ridge", "Wind Parallel to the Ridge"] and d[0]["w"] == pytest.approx(350.7, abs=0.3) and d[0]["B"] == 60
+    assert "error" in server.api("/api/wind_line", dict(values=v, project={}, z1="", z2="16"))
+    assert d[1]["to"] == pytest.approx(24.33, abs=0.01) and d[0]["to"] == 16 and d[1]["w"] > 0
+    assert "error" in server.api("/api/wind_line", dict(values=v, project={}, z1="20", z2="12"))
+    assert "error" in server.api("/api/wind_line", dict(values=dict(v, V=""), project={}, z1="8", z2="16"))

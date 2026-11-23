@@ -629,6 +629,8 @@ FORMS = {
                 F("load", "Load", "select", options=["wind", "seismic"]),
                 F("w", "Uniform load on the diaphragm", unit="plf", help="at the project's design method (ASD or LRFD)"),
                 F("w_source", "Where the load comes from", "text"),
+                F("trib_low", "Wind fill: tributary wall from height", unit="ft", required=False, help="above ground; used only by Take the wind load from"),
+                F("trib_high", "Wind fill: tributary wall to height", unit="ft", required=False, help="the eave height for a roof diaphragm (the fill then runs to the top of the walls for each wind direction)"),
                 F("chord_A", "Deflection: chord area", unit="in2", required=False),
                 F("chord_E", "Deflection: chord E", unit="psi", required=False),
                 F("defl_limit", "Deflection: limit", unit="in", required=False),
