@@ -41,3 +41,11 @@ def test_velocity_pressure_by_hand():
     assert q2 == pytest.approx(33.18 * math.exp(-0.0000362 * 6200), abs=0.01) and q2 == pytest.approx(26.51, abs=0.02)
     with pytest.raises(wind.WindError):
         wind.velocity_pressure(115, "C", 30, Kzt=0.9)
+
+
+def test_figure_27_3_1_data_as_read():
+    assert wind.wall_cp_leeward(0.5) == -0.5 and wind.wall_cp_leeward(2) == -0.3 and wind.wall_cp_leeward(6) == -0.2
+    assert wind.wall_cp_leeward(1.5) == pytest.approx(-0.4) and wind.wall_cp_leeward(3) == pytest.approx(-0.25)
+    assert wind.ROOF_WINDWARD[0.5][20] == (-0.4, 0.0) and wind.ROOF_WINDWARD[1.0][10] == (-1.3, -0.18) and wind.ROOF_WINDWARD[0.25][35] == (0.0, 0.4)
+    assert wind.ROOF_LEEWARD[0.25][10] == -0.3 and wind.ROOF_LEEWARD[1.0][15] == -0.6 and wind.GCPI["partially enclosed"] == 0.55
+    assert wind.ROOF_PARALLEL[0.5][2] == ("h to 2h", -0.5)
