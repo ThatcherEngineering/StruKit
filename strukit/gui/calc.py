@@ -1465,6 +1465,8 @@ def results(kind, values, project):
         out["rows"] = [_row(r) for r in sheet.rows]
     steps = getattr(sheet, "steps", None) or []
     out["steps"] = [dict(label=s.label, value=s.value, unit=s.unit, source=s.source, note=s.note) for s in steps]
+    out["tables"] = [dict(title=b["title"], lines=list(b["lines"]), after=list(b.get("after") or []))
+                     for b in (getattr(sheet, "blocks", None) or []) if b.get("lines")]
     out["assumptions"] = list(getattr(sheet, "assumptions", None) or [])
     res = getattr(sheet, "result", None)
     if res is not None:
