@@ -1174,3 +1174,58 @@ def live_load_sheet(mark, floors, roofs):
         sheet.blocks.append(dict(title="Roof Members", lines=t, after=["Unreduced roof loads Lo: " + "; ".join(sorted({f"{x['Lo']:g} psf ({x['source'].strip()})" for x, r in rf})) + "."]))
     sheet.live = dict(floors=[r for x, r in fl], roofs=[r for x, r in rf])
     return sheet
+
+
+def diaphragm_sheet(mark, panel, face_in, case, panel_type, G, G_source, L, W, w, w_source, load, method, chord_E=None, chord_A=None,
+                    splice=(), defl_limit=None, defl_limit_source=""):
+    """Unblocked wood structural panel diaphragm, single span between two lines of resistance,
+    uniformly loaded, SDPWS-2021 Sect. 4.2 (see diaphragm.py). w is at the level of `method`."""
+    from . import diaphragm as dp
+    for nm, v in (("the source of the framing specific gravity", G_source), ("the source of the load", w_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if defl_limit is not None and not (defl_limit_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the deflection limit is blank")
+    try:
+        r = dp.unblocked(panel, face_in, case, panel_type, G, L, W, w, load, method, chord_E, chord_A, splice)
+    except dp.DiaphragmError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    Ln = footing_line
+    cname = "Case 1" if case == 1 else "Cases 2 to 6"
+    steps = [Ln("vn, table", r["vn_table"], "plf", "SDPWS-2021 Table 4.2C", f"{panel}; {face_in} in. nominal nailed face; {cname}; nails at 6 in. at boundaries and supported edges"),
+             Ln("specific gravity factor, 1 - (0.5 - G)", r["sg"], "", "Table 4.2C note 2", f"G = {G:g} ({G_source.strip()})"),
+             Ln("vn", r["vn"], "plf", "Table 4.2C"),
+             Ln(f"capacity = vn {r['factor_text']}", r["capacity"], "plf", "Sect. 4.1.4", f"{load}, {method}"),
+             Ln("v = w L / (2 W)", r["v"], "plf", "statics", f"w = {w:g} plf ({w_source.strip()})"),
+             Ln("reaction at each line = w L / 2", r["reaction"], "lb", "statics"),
+             Ln("chord force T = C = w L^2 / (8 W)", r["chord"], "lb", "statics"),
+             Ln("L / W", r["ratio"], "", "Table 4.2.2", "unblocked wood structural panel diaphragm: 3 maximum")]
+    rows = [Row("Unit shear", load, r["v"], r["capacity"], "plf", "SDPWS-2021 Sect. 4.2.4, Table 4.2C", ""),
+            Row("Aspect ratio L/W", "", r["ratio"], r["ratio_max"], "", "Table 4.2.2", "")]
+    not_checked = ["the chords, their splices and connections for the chord force", "the transfer of the reactions to the walls or frames below (collectors, Sect. 4.1.9)",
+                   "openings in the diaphragm", "torsion and open front conditions (Sect. 4.2.5, 4.2.6)", "the panel layout against the case selected (Table 4.2C figure)"]
+    if r["defl"] is not None:
+        steps += [Ln("Ga", r["Ga"], "kips/in", "Table 4.2C", panel_type),
+                  Ln("bending: 5 v L^3 / (8 E A W)", f"{r['defl_bending']:.3f} in", "", "Eq. 4.2-1", f"chord E = {chord_E:,.0f} psi, A = {chord_A:g} in2"),
+                  Ln("shear and nail slip: 0.25 v L / (1000 Ga)", f"{r['defl_shear']:.3f} in", "", "Eq. 4.2-1"),
+                  Ln("chord splice slip: sum(x Dc) / (2 W)", f"{r['defl_splice']:.3f} in", "", "Eq. 4.2-1",
+                     "; ".join(f"{d:g} in. at {x:g} ft" for x, d in splice) if splice else "no splice slip entered"),
+                  Ln("mid-span deflection", f"{r['defl']:.3f} in", "", "Eq. 4.2-1", "at the load level of the design method")]
+        if defl_limit is not None:
+            rows.append(Row("Mid-span deflection", load, r["defl"], defl_limit, "in", "SDPWS-2021 Eq. 4.2-1; limit: " + defl_limit_source.strip(), ""))
+        else:
+            not_checked.append("the deflection against a limit (Sect. 4.2.1)")
+    else:
+        not_checked.append("diaphragm deflection (Sect. 4.2.3)")
+    info = [("Sheathing", f"{panel}, {panel_type}, unblocked, {cname}"), ("Framing", f"{face_in} in. nominal nailed face; G = {G:g} ({G_source.strip()})"),
+            ("Diaphragm", f"span L = {L:g} ft between lines of resistance; width W = {W:g} ft"),
+            ("Load", f"{load}, w = {w:g} plf at {method} level ({w_source.strip()})")]
+    sheet = SimpleSheet(
+        mark, "Wood Diaphragm", "Diaphragm", method, info, [], [], "Unit Shear and Chord Force", steps, rows,
+        ["Single span, simply supported between two lines of resistance, uniform load over the full span.",
+         "Unblocked wood structural panel diaphragm with common nails at 6 in. on centre at diaphragm boundaries and supported panel edges (Sect. 4.2.8.1.3).",
+         "The load w is entered at the level of the design method."],
+        not_checked, picture=None)
+    sheet.blocks.append(dict(title="Plan", picture=("diaphragm", dict(L=L, W=W, w=w, v=r["v"], R=r["reaction"], T=r["chord"]))))
+    sheet.diaphragm = r
+    return sheet

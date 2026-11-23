@@ -1226,7 +1226,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
                    230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
-            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces"):
+            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
             p.head(b.get("head") or b["title"] + ": Inputs and Layout")
@@ -1342,6 +1342,8 @@ def _block_picture(c, top, pic):
         return _wind_zones_picture(c, top, d)
     if name == "seismic_forces":
         return _seismic_forces_picture(c, top, d)
+    if name == "diaphragm":
+        return _diaphragm_picture(c, top, d)
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
@@ -1493,6 +1495,39 @@ def _wind_mwfrs_picture(c, top, d):
     ybase = y - 112
     _small(c, (LM + RM) / 2, ybase - 30, "sections to scale; external pressure q Kd G Cp in psf, + toward the surface, - away from it; windward wall value at its top")
     return ybase - 36
+
+
+def _diaphragm_picture(c, top, d):
+    """Plan of the diaphragm to scale: the uniform load along one long edge, the reaction and
+    unit shear at each line of resistance, the chords with their force, L and W dimensioned."""
+    L, W = d["L"], d["W"]
+    s = min(300.0 / L, 80.0 / W)
+    w_, h_ = L * s, W * s
+    x0 = (LM + RM) / 2 - w_ / 2
+    y1 = top - 34
+    y0 = y1 - h_
+    x1 = x0 + w_
+    c.setFillColorRGB(0.96, 0.97, 0.99); c.setStrokeColorRGB(*INK); c.setLineWidth(0.6); c.rect(x0, y0, w_, h_, fill=1, stroke=1)
+    c.setLineWidth(1.8); c.line(x0, y0, x1, y0); c.line(x0, y1, x1, y1)                     # chords
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(2.4); c.line(x0, y0 - 3, x0, y1 + 3); c.line(x1, y0 - 3, x1, y1 + 3)   # lines of resistance
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.6)
+    n = max(6, int(w_ / 16))
+    for k in range(n + 1):
+        _arrow_down(c, x0 + w_ * k / n, y1 + 16, y1 + 3)
+    c.line(x0, y1 + 16, x1, y1 + 16)
+    c.setFont(FR, 6.5); c.drawCentredString((x0 + x1) / 2, y1 + 19, f"w = {d['w']:,.0f} plf")
+    for x, al in ((x0, "right"), (x1, "left")):
+        _arrow(c, x + (-7 if al == "right" else 7), y0 + h_ * 0.35, x + (-7 if al == "right" else 7), y0 + h_ * 0.65, head=3.5)
+        t = [f"R = {d['R']:,.0f} lb", f"v = {d['v']:,.0f} plf"]
+        for j, tt in enumerate(t):
+            (c.drawRightString if al == "right" else c.drawString)(x + (-12 if al == "right" else 12), y0 + h_ * 0.55 - j * 8, tt)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6)
+    c.drawCentredString((x0 + x1) / 2, y1 - 9, f"chord, C = {d['T']:,.0f} lb")
+    c.drawCentredString((x0 + x1) / 2, y0 + 4, f"chord, T = {d['T']:,.0f} lb")
+    memberart._dim_h(c, x0, x1, y0 - 10, f"L = {L:g} ft", FR, ext_from=y0)
+    memberart._dim_v(c, y0, y1, x1 + 62, f"W = {W:g} ft", FR, ext_from=x1 + 4)
+    _small(c, (LM + RM) / 2, y0 - 28, "plan, to scale; heavy lines at the ends are the lines of resistance")
+    return y0 - 34
 
 
 def _seismic_forces_picture(c, top, d):
