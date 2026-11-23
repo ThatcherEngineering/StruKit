@@ -196,8 +196,39 @@ function fillWallBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the seismic shear from"), pick, line, go);
 }
 
+function fillDiaphragmBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "seismic_elf");
+  if (!src.length) return el("div", { class: "fill small" }, "A seismic diaphragm load can be filled in from a Seismic Base Shear sheet once the project has one.");
+  const pick = el("select", {}, el("option", { value: "" }, "choose a seismic sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
+  const lvl = el("select", { style: "display:none" });
+  let got = null;
+  pick.addEventListener("change", async () => {
+    got = null; lvl.style.display = "none"; lvl.textContent = "";
+    if (pick.value === "") return;
+    const s = S.members[+pick.value];
+    try {
+      got = await post("/api/wall_lines", { values: s.values, project: S.project });
+      got.levels.forEach((r, i) => lvl.append(el("option", { value: i }, "diaphragm at " + r.level)));
+      lvl.style.display = "";
+    } catch (e) { toast(e.message, 12000); }
+  });
+  const go = el("button", { class: "btn", onclick: () => {
+    if (!got || !got.levels.length) return toast("Choose the seismic sheet first.");
+    if (S.project.method !== "ASD" && S.project.method !== "LRFD") return toast("Choose the design method on the Project page first.", 9000);
+    const L = parseFloat(String(m.values.L || "").replace(/,/g, ""));
+    if (!(L > 0)) return toast("Type the span between the lines of resistance, L, first: the diaphragm force is spread along it.", 10000);
+    const s = S.members[+pick.value], r = got.levels[+lvl.value], asd = S.project.method === "ASD";
+    const w = r.Fpx * 1000 * (asd ? 0.7 : 1.0) / L;
+    Object.assign(m.values, { w: w.toFixed(1), load: "seismic",
+      w_source: "sheet " + (s.values.mark || "seismic") + ", Fpx at " + r.level + " = " + r.Fpx.toFixed(2) + " kips (" + r.by + ")" + (asd ? " x 0.7" : "") + " over L = " + L + " ft; rho = 1.0, ASCE/SEI 7-22 Sect. 12.3.4.1" });
+    changed(); drawMain();
+  } }, "Fill Load");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the seismic load from"), pick, lvl, go);
+}
+
 function fillBar(m, changed) {
   if (m.kind === "shear_wall" || m.kind === "perforated_wall") return fillWallBar(m, changed);
+  if (m.kind === "diaphragm") return fillDiaphragmBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");
   if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame once the project has one.");

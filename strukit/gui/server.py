@@ -136,7 +136,8 @@ def api(path, body):
             return dict(error="The seismic sheet is not complete: " + "; ".join(e.items))
         except Exception as e:                              # a stopped sheet: say why
             return dict(error=f"The seismic sheet stopped: {e}")
-        return dict(lines=sheet.seismic.get("lines") or [])
+        return dict(lines=sheet.seismic.get("lines") or [],
+                    levels=[dict(level=str(x["name"]), Fpx=x["Fpx"], by=x["Fpx_by"]) for x in sheet.seismic["rows"]])
     if path == "/api/ping":
         _last_ping[0] = time.time(); _pinged[0] = True
         return {}

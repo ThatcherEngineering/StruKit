@@ -1213,8 +1213,8 @@ def build(kind, values, project):
         panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")
         G, gs, h, load, V, vs = r.num("G"), r.text("G_source"), r.num("h"), r.text("load"), r.num("V"), r.text("v_source")
         lengths = r.nums("lengths")
-        if not lengths:
-            r.miss.append("Full-height segment lengths is blank")
+        if lengths is not None and not lengths:             # typed, but no number in it (a blank box is already listed)
+            r.miss.append("Full-height segment lengths holds no number")
         sides = 2 if (r.text("sides") or "").startswith("both") else 1
         blocked = r.text("blocking") != "unblocked"
         ss_, fn_ = r.text("stud_spacing", False), r.text("field_nails", False)

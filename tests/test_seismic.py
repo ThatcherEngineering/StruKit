@@ -168,6 +168,7 @@ def test_wall_line_shears(tmp_path):
     got = server.api("/api/wall_lines", dict(values=v, project=dict(method="ASD")))
     assert [x["line"] for x in got["lines"]] == ["A", "B", "A"] and got["lines"][2]["asd"] == pytest.approx(4.20, abs=0.01)
     assert "error" in server.api("/api/wall_lines", dict(values=dict(v, R=""), project={}))
+    assert [x["level"] for x in got["levels"]] == ["Roof", "Floor"] and got["levels"][1]["Fpx"] == pytest.approx(7.2) and got["levels"][1]["by"] == "Eq. 12.10-2"
     with pytest.raises(WorksheetError):
         calc.build("seismic_elf", dict(v, lines=[dict(name="A", level="Attic", share="50")]), dict(job="2026-000", name="Test", method="ASD"))
     with pytest.raises(calc.Missing):
