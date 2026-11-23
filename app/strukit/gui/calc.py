@@ -801,7 +801,12 @@ FORMS = {
                 F("end", "End distance", unit="in", required=False, help="4 D minimum"),
                 F("spacing", "Spacing", unit="in", required=False, help="4 D minimum"),
                 F("steel", "Allowable tension of one screw", unit="lb", required=False, help="the steel at the root diameter; NDS 12.2.1.4"),
-                F("steel_source", "Where that allowable tension comes from", "text", required=False)],
+                F("steel_source", "Where that allowable tension comes from", "text", required=False),
+                F("washer_od", "Washer bearing: washer outside diameter", unit="in", required=False, help="round washer on a wood side member; fill these to check bearing under the washer"),
+                F("washer_hole", "Washer bearing: hole in the side member", unit="in", required=False, help="blank = screw diameter + 1/16 in."),
+                F("Fc_perp", "Washer bearing: side member Fc_perp", unit="psi", required=False, help="with the wet service and other factors that apply"),
+                F("Fc_perp_source", "Washer bearing: where Fc_perp comes from", "text", required=False),
+                F("washer_away", "Washer bearing: 3 in. or more from the member end", "select", options=["no", "yes"], required=False, help="yes: the bearing area factor Cb is taken; NDS 3.10.4")],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Force pulling the lag screws out, on the group, by load case; the project's ASD combinations are applied.")]),
     "snow_drift": dict(
@@ -1591,6 +1596,13 @@ def build(kind, values, project):
         st_ = r.num("steel", False)
         if st_ is not None and not r.text("steel_source", False):
             r.miss.append("Where the allowable tension of the screw comes from is blank")
+        brg = None
+        if r.num("washer_od", False) is not None or r.num("Fc_perp", False) is not None:
+            brg = dict(od=r.num("washer_od", True, label="Washer bearing: washer outside diameter"), hole=r.num("washer_hole", False),
+                       Fc_perp=r.num("Fc_perp", True, label="Washer bearing: side member Fc_perp"), source=r.text("Fc_perp_source", False) or "",
+                       away=bool(yes(r.text("washer_away", False))))
+            if not brg["source"]:
+                r.miss.append("Washer bearing: where Fc_perp comes from is blank")
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
         if not loads:
             r.miss.append("No load is entered")
@@ -1599,7 +1611,7 @@ def build(kind, values, project):
         return ws_more.lag_withdrawal_sheet(mark, D, Lg, n_, ts, tm, Gm, Gms, sv, loads, cb, washer=r.num("washer", False) or 0.0,
                                             end_grain=bool(yes(r.text("end_grain", False))), edge=r.num("edge", False), end=r.num("end", False),
                                             spacing=r.num("spacing", False), steel=st_, steel_source=r.text("steel_source", False) or "",
-                                            steel_side=r.text("side_kind", False) == "steel"), "simple", {}
+                                            steel_side=r.text("side_kind", False) == "steel", bearing=brg), "simple", {}
     if kind in ("bolted_connection", "lag_connection"):
         cb = combos(project, r.miss, "ASD")
         Dt = r.text("D")
