@@ -525,7 +525,7 @@ def perforated_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, leng
     return sheet
 
 
-def snow_drift_sheet(mark, pg, pg_source, W2, W2_source, ps_lower, ps_source, lu_upper, lu_lower, step_ft, sliding=None, parapet=False):
+def snow_drift_sheet(mark, pg, pg_source, W2, W2_source, ps_lower, ps_source, lu_upper, lu_lower, step_ft, sliding=None, parapet=False, separation=None):
     """Drift on a lower roof at a roof step and sliding snow from the upper roof,
     ASCE/SEI 7-22 Sect. 7.7.1 and 7.9 (see snow.lower_roof). sliding: None or
     dict(pf, pf_source, W, rise_on_12, slippery) for the upper roof."""
@@ -536,30 +536,34 @@ def snow_drift_sheet(mark, pg, pg_source, W2, W2_source, ps_lower, ps_source, lu
     if sliding and not (sliding.get("pf_source") or "").strip():
         raise WorksheetError(f"{mark}: the source of the upper roof's flat roof snow load is blank")
     try:
-        r = snow.lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding, parapet)
+        r = snow.lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding, parapet, separation=separation)
     except snow.SnowError as e:
         raise WorksheetError(f"{mark}: {e}")
+    sep = separation if (separation and separation > 0) else None
     L = footing_line
     steps = [L("gamma = 0.13 pg + 14", r.gamma, "pcf", "ASCE/SEI 7-22 Eq. 7.7-1", "not more than 30 pcf"),
              L("hb = ps / gamma", r.hb, "ft", "Sect. 7.7.1", f"ps = {ps_lower:g} psf"),
              L("hc = height - hb", r.hc, "ft", "Sect. 7.7.1", f"{'parapet' if parapet else 'step'} {step_ft:g} ft"),
-             L("hc / hb", r.hc / r.hb if r.hb else 0.0, "", "Sect. 7.7.1", "drift loads are not required below 0.2")]
+             *([L("gap s; 6 h", f"{sep:g} ft; {6 * step_ft:g} ft", "", "Sect. 7.7.2", "drift on the lower structure where s is under 20 ft and under 6 h")] if sep else
+               [L("hc / hb", r.hc / r.hb if r.hb else 0.0, "", "Sect. 7.7.1", "drift loads are not required below 0.2")])]
     loads = [f"Balanced snow on the {'roof' if parapet else 'lower roof'}: {ps_lower:.1f} psf"]
     if r.required:
         for d in [x for x in (r.leeward, r.windward) if x]:
             lu = lu_upper if d.kind == "leeward" else lu_lower
             nm = "drift" if parapet else d.kind
             steps += [L(f"{nm}: hd" + (" = 0.75 x Eq. 7.6-1" if d.kind == "windward" else ""), d.hd_eq, "ft", "Eq. 7.6-1, Sect. 7.8, 7.7.1" if parapet else "Eq. 7.6-1, Sect. 7.7.1",
-                        f"lu = {lu:g} ft, W2 = {W2:g}" + ("; not more than 0.6 x the lower roof length" if d.kind == "leeward" else "")),
-                      L(f"{nm}: height", d.height, "ft", "Sect. 7.7.1", "not more than hc"),
-                      L(f"{nm}: width w", d.width, "ft", "Sect. 7.7.1",
-                        ("4 hd, or 4 hd^2 / hc where hd exceeds hc; not more than 8 hc" if d.kind == "leeward" else "8 x 0.75 hd")),
+                        f"lu = {lu:g} ft, W2 = {W2:g}" + ("; not more than 0.6 x the lower roof length" if (d.kind == "leeward" and not sep) else "")),
+                      L(f"{nm}: height", d.height, "ft", "Sect. 7.7.2" if (sep and d.kind == "leeward") else "Sect. 7.7.1",
+                        f"the smaller of hd and (6 h - s) / 6 = {(6 * step_ft - sep) / 6:.2f} ft" if (sep and d.kind == "leeward") else "not more than hc"),
+                      L(f"{nm}: width w", d.width, "ft", "Sect. 7.7.2" if (sep and d.kind == "leeward") else "Sect. 7.7.1",
+                        (f"the smaller of 6 x the drift height and 6 h - s = {6 * step_ft - sep:g} ft" if sep else
+                         "4 hd, or 4 hd^2 / hc where hd exceeds hc; not more than 8 hc") if d.kind == "leeward" else "8 x 0.75 hd"),
                       L(f"{nm}: pd = height x gamma", d.pd, "psf", "Sect. 7.7.1")]
             loads.append(("Drift surcharge: " if parapet else f"{d.kind.capitalize()} drift surcharge: ")
-                         + f"{d.pd:.1f} psf at the {'parapet' if parapet else 'step'}, to "
+                         + f"{d.pd:.1f} psf at the {'parapet' if parapet else 'edge nearest the higher structure' if sep else 'step'}, to "
                          + (f"{d.at_far_end:.1f} psf at the far edge of the roof, {d.extent:g} ft" if d.at_far_end else f"zero at {d.width:.1f} ft"))
         g = r.governing
-        loads.append((f"Peak load at the parapet: " if parapet else f"Peak load at the step, {g.kind} drift: ")
+        loads.append((f"Peak load at the parapet: " if parapet else f"Peak load at the edge, {g.kind} drift: " if sep else f"Peak load at the step, {g.kind} drift: ")
                      + f"{ps_lower + g.pd:.1f} psf (balanced plus surcharge)")
     else:
         loads.append(f"Drift surcharge: not required ({r.why})")
@@ -578,6 +582,8 @@ def snow_drift_sheet(mark, pg, pg_source, W2, W2_source, ps_lower, ps_source, lu
     else:
         info += [("Lower Roof", f"balanced snow load ps = {ps_lower:g} psf ({ps_source.strip()}); {lu_lower:g} ft long perpendicular to the step"),
                  ("Upper Roof", f"{lu_upper:g} ft long perpendicular to the step; {step_ft:g} ft above the lower roof at the step")]
+        if sep:
+            info.append(("Separation", f"{sep:g} ft clear between the two structures"))
     if sliding:
         info.append(("Sliding", f"upper roof pf = {sliding['pf']:g} psf ({sliding['pf_source'].strip()}); eave to ridge W = {sliding['W']:g} ft; "
                      f"{sliding['rise_on_12']:g} on 12; " + ("slippery surface" if sliding["slippery"] else "not a slippery surface")))
@@ -589,14 +595,15 @@ def snow_drift_sheet(mark, pg, pg_source, W2, W2_source, ps_lower, ps_source, lu
           "15 ft or longer (Sect. 7.8)."] if parapet else
          ["Drift and sliding snow surcharges are added to the balanced snow load on the lower roof (Sect. 7.7.1, 7.9). Leeward and "
           "windward drifts are separate load cases; drift and sliding surcharges are not added to each other.",
-          "The upper and lower roofs are parts of one structure with no gap between them."]),
+          ("The two roofs are on adjacent structures; the drifts are on the lower structure, measured from its edge nearest the higher one. "
+           "The windward drift is not truncated." if sep else "The upper and lower roofs are parts of one structure with no gap between them.")]),
         (["intersecting drifts at parapet corners (Sect. 7.7.3)", "unbalanced and partial loading of the roof"] if parapet else
-         ["structures separated by a gap (Sect. 7.7.2, 7.9)", "intersecting drifts at corners (Sect. 7.7.3)",
+         [("sliding snow across the gap (Sect. 7.9)" if sep else "structures separated by a gap (Sect. 7.7.2, 7.9)"), "intersecting drifts at corners (Sect. 7.7.3)",
           "drifts at roof projections and parapets (Sect. 7.8)", "unbalanced and partial loading of the lower roof"]
-         + ([] if sliding else ["sliding snow (Sect. 7.9)"])))
+         + ([] if (sliding or sep) else ["sliding snow (Sect. 7.9)"])))
     sheet.blocks.append(dict(title="Design Loads on the Roof" if parapet else "Design Loads on the Lower Roof",
                              head="Design Loads on the Roof" if parapet else "Design Loads on the Lower Roof", steps=[], text=loads,
-                             picture=("snow_drift", dict(ps=ps_lower, step=step_ft, lu=lu_lower, hb=r.hb,
+                             picture=("snow_drift", dict(ps=ps_lower, step=step_ft, lu=lu_lower, hb=r.hb, gap=sep,
                                                          drifts=[dict(kind=("" if parapet else d.kind), h=d.height, w=d.extent, pd=d.pd, far=d.at_far_end)
                                                                  for d in ((r.leeward, r.windward) if r.required else ()) if d],
                                                          sliding=dict(psf=r.sliding_psf, ext=r.sliding_extent) if r.sliding_psf else None))))
