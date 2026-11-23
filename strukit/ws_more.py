@@ -1523,7 +1523,7 @@ def nail_withdrawal_sheet(mark, nail_name, D, length, head, side_t, G_side, G_si
 
 
 def lag_withdrawal_sheet(mark, D, length, n, side_t, main_t, G_main, G_main_source, service, loads, combos, washer=0.0, end_grain=False,
-                         edge=None, end=None, spacing=None, steel=None, steel_source="", steel_side=False):
+                         edge=None, end=None, spacing=None, steel=None, steel_source="", steel_side=False, bearing=None):
     """Lag screws loaded in withdrawal, 2018 NDS 12.2.1 (see dowel.py). side_t: thickness of
     the part the screw passes through (wood or steel). loads: [dict(case, P lb)], P pulling
     the screw out; combos: ASD combinations. service: "dry" or "wet in service". steel:
@@ -1588,6 +1588,25 @@ def lag_withdrawal_sheet(mark, D, length, n, side_t, main_t, G_main, G_main_sour
         rows.append(Row("Tension in the lag screws", worst["name"], worst["P"], n * steel, "lb", "NDS 12.2.1.4, 11.2.3", f"{steel:,.0f} lb per screw ({steel_source.strip()})"))
     else:
         not_checked.insert(0, "the tensile strength of the lag screw at the root diameter (NDS 12.2.1.4)")
+    if bearing:
+        # bearing: dict(od, hole, Fc_perp, source, away): round washer on a wood side member; Fc_perp with every factor that applies, as entered
+        import math as _m
+        od, hole = bearing.get("od"), bearing.get("hole") or (D + 1.0 / 16.0)
+        if steel_side:
+            raise WorksheetError(f"{mark}: washer bearing is checked on a wood side member")
+        if od is None or od <= hole or bearing.get("Fc_perp") is None or bearing["Fc_perp"] <= 0:
+            raise WorksheetError(f"{mark}: washer bearing needs the washer outside diameter (larger than the hole) and Fc_perp of the side member")
+        if not (bearing.get("source") or "").strip():
+            raise WorksheetError(f"{mark}: the source of Fc_perp for the side member is blank")
+        Ab = _m.pi / 4.0 * (od ** 2 - hole ** 2)
+        Cb = (od + 0.375) / od if (bearing.get("away") and od < 6.0) else 1.0
+        steps += [Ln("washer bearing area = pi/4 (OD^2 - hole^2)", Ab, "in2", "", f"OD = {od:g} in., hole = {hole:g} in."),
+                  Ln("Cb" + (" = (lb + 0.375) / lb" if Cb > 1 else ""), Cb, "", "NDS 3.10.4, Eq. 3.10-2",
+                     f"lb = {od:g} in., the washer diameter; not nearer than 3 in. to the member end" if Cb > 1 else "taken as 1.0"),
+                  Ln("Fc_perp' Cb", bearing["Fc_perp"] * Cb, "psi", "NDS 3.10.2, Table 4.3.1", f"Fc_perp' = {bearing['Fc_perp']:g} psi ({bearing['source'].strip()})")]
+        rows.append(Row("Bearing under the washers", worst["name"], worst["P"] / (n * Ab), bearing["Fc_perp"] * Cb, "psi", "NDS 3.10.2, 3.10.4",
+                        f"{worst['P'] / n:,.0f} lb per screw on {Ab:.2f} in2"))
+        not_checked[:] = [x.replace("bearing of the washer or head on the side member, and the side member itself", "the side member itself") for x in not_checked]
     given = [(nm, v, k) for nm, v, k in (("Edge distance", edge, 1.5), ("End distance", end, 4.0), ("Spacing", spacing, 4.0)) if v is not None]
     for nm, v, k in given:
         rows.append(Row(nm, "", k * D, v, "in", "NDS Table 12.5.1E", f"{k:g} D minimum against the distance provided"))

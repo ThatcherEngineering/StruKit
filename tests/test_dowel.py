@@ -469,3 +469,23 @@ def test_steel_side_plate_main_member_perpendicular(tmp_path):
         calc.build("bolted_connection", dict(v, spacing="2"), proj)              # under 3 D
     with pytest.raises(calc.Missing):
         calc.build("bolted_connection", dict(v, side_steel="wood", G_side="0.5", E_side="1600000", side_source="DF-L"), proj)   # wood side: end distance needed
+
+
+def test_lag_withdrawal_washer_bearing_by_hand(tmp_path):
+    """2 - 1/2 x 6 in. lags with 2 in. round washers on a 2x side member, 3,000 lb wind, 0.6D + 0.6W: 900 lb per screw.
+    Bearing area pi/4 (2^2 - 0.5625^2) = 2.893 in2; fc_perp = 900/2.893 = 311.1 psi. Cb = (2 + 0.375)/2 = 1.1875 (NDS Eq. 3.10-2, lb = the
+    washer diameter); Fc_perp' Cb = 625(1.1875) = 742.2 psi. Without the 3 in. end condition Cb = 1.0: 625 psi."""
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="0.6D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 7")])
+    v = dict(mark="LW2", D="1/2", L="6", n="2", side_t="1.5", main_t="7.25", G_main="0.50", G_main_source="DF-L", service="dry", washer="0.125",
+             washer_od="2", Fc_perp="625", Fc_perp_source="NDS Supplement Table 4A", washer_away="yes", loads=[dict(case="W", P="3000")])
+    sheet, _, _ = calc.build("lag_withdrawal", v, proj)
+    b = next(x for x in sheet.rows if x.check == "Bearing under the washers")
+    assert b.demand == pytest.approx(311.1, abs=0.1) and b.capacity == pytest.approx(742.2, abs=0.1) and "the side member itself" in sheet.not_checked
+    calcsheet._simple_pdf(sheet, str(tmp_path / "b.pdf"), "2026-000", "2018 NDS", "2026-11-23")
+    near, _, _ = calc.build("lag_withdrawal", dict(v, washer_away="no"), proj)
+    assert next(x for x in near.rows if x.check == "Bearing under the washers").capacity == 625
+    for bad in (dict(Fc_perp_source=""), dict(washer_od=""), dict(washer_od="0.5"), dict(side_kind="steel")):
+        with pytest.raises(Exception):
+            calc.build("lag_withdrawal", dict(v, **bad), proj)
