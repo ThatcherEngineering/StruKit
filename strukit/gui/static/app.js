@@ -159,14 +159,42 @@ function drawResults(m) {
       el("th", { class: "n" }, "Demand"), el("th", { class: "n" }, "Capacity"), el("th", { class: "n" }, "D/C"), el("th", {}, ""))), body));
   }
   if (r.steps.length) box.append(el("details", { open: "" }, el("summary", {}, "Calculation"), el("div", { class: "steps mono" },
-    r.steps.map(s => [el("div", { class: "s" }, el("span", {}, s.label + " = " + (s.unit ? fmt(s.value, s.unit) : s.value.toFixed(2))), el("span", {}, s.source)),
+    r.steps.map(s => [el("div", { class: "s" }, el("span", {}, s.label + " = " + (typeof s.value === "string" ? s.value : s.unit ? fmt(s.value, s.unit) : s.value.toFixed(2))), el("span", {}, s.source)),
       s.note ? el("div", { class: "note" }, s.note) : null]))));
   if (r.assumptions.length) box.append(el("details", {}, el("summary", {}, "Assumptions"), el("ul", { class: "msg small" }, r.assumptions.map(t => el("li", {}, t)))));
   if (r.not_checked.length) box.append(el("details", {}, el("summary", {}, "Not checked on this sheet"), el("ul", { class: "msg small" }, r.not_checked.map(t => el("li", {}, t)))));
 }
 
 // ---------------------------------------------------------------- loads from another member
+function fillWallBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "seismic_elf" && (x.values.lines || []).some(r => (r.name || "").trim()));
+  if (!src.length) return el("div", { class: "fill small" }, "A seismic shear can be filled in from a Seismic Base Shear sheet once it lists its wall or frame lines.");
+  const pick = el("select", {}, el("option", { value: "" }, "choose a seismic sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
+  const line = el("select", { style: "display:none" });
+  let got = null;
+  pick.addEventListener("change", async () => {
+    got = null; line.style.display = "none"; line.textContent = "";
+    if (pick.value === "") return;
+    const s = S.members[+pick.value];
+    try {
+      got = await post("/api/wall_lines", { values: s.values, project: S.project });
+      got.lines.forEach((r, i) => line.append(el("option", { value: i }, "line " + r.line + ", story below " + r.level)));
+      line.style.display = "";
+    } catch (e) { toast(e.message, 12000); }
+  });
+  const go = el("button", { class: "btn", onclick: () => {
+    if (!got || !got.lines.length) return toast("Choose the seismic sheet first.");
+    if (S.project.method !== "ASD" && S.project.method !== "LRFD") return toast("Choose the design method on the Project page first.", 9000);
+    const s = S.members[+pick.value], r = got.lines[+line.value], asd = S.project.method === "ASD";
+    Object.assign(m.values, { V: String(Math.round((asd ? r.asd : r.Eh) * 1000)), load: "seismic",
+      v_source: "sheet " + (s.values.mark || "seismic") + ", line " + r.line + ", story below " + r.level + ": " + (asd ? "0.7 rho QE" : "rho QE") });
+    changed(); drawMain();
+  } }, "Fill Shear");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the seismic shear from"), pick, line, go);
+}
+
 function fillBar(m, changed) {
+  if (m.kind === "shear_wall" || m.kind === "perforated_wall") return fillWallBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");
   if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame once the project has one.");
