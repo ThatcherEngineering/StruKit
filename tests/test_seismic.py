@@ -173,3 +173,35 @@ def test_wall_line_shears(tmp_path):
         calc.build("seismic_elf", dict(v, lines=[dict(name="A", level="Attic", share="50")]), dict(job="2026-000", name="Test", method="ASD"))
     with pytest.raises(calc.Missing):
         calc.build("seismic_elf", dict(v, rho=""), dict(job="2026-000", name="Test", method="ASD"))
+
+
+def test_seismic_system_table(tmp_path):
+    """Table 12.2-1 rows as read from the page images."""
+    S = seismic.SYSTEMS
+    assert S["Bearing wall: light-frame (wood) walls sheathed with wood structural panels"] == ("A.16", 6.5, 3.0, 4.0, (None, None, 65, 65, 65))
+    assert S["Building frame: light-frame (wood) walls sheathed with wood structural panels"][1:4] == (7.0, 2.5, 4.5)
+    assert S["Moment frame: steel ordinary moment frames"][1:4] == (3.5, 3.0, 3.0) and S["Building frame: steel ordinary concentrically braced frames"][1:4] == (3.25, 2.0, 3.25)
+    assert S["Bearing wall: special reinforced masonry shear walls"] == ("A.8", 5.0, 2.5, 3.5, (None, None, 160, 160, 100)) and len(S) == 15
+    f = seismic.system
+    assert f("Moment frame: steel ordinary moment frames", "D") == dict(line="C.4", R=3.5, omega=3.0, Cd=3.0, limit=None, permitted=False, note="l")
+    assert f("Building frame: steel ordinary concentrically braced frames", "D")["limit"] == 35 and f("Building frame: steel ordinary concentrically braced frames", "D")["note"] == "j"
+    assert f("Cantilevered column: timber frames", "B")["limit"] == 35 and not f("Cantilevered column: timber frames", "E")["permitted"]
+    assert f("Moment frame: steel special moment frames", "F")["limit"] is None and f("Bearing wall: ordinary reinforced masonry shear walls", "C")["limit"] == 160
+    from strukit.gui import calc
+    from strukit import calcsheet
+    from strukit.ws_steel_beam import WorksheetError
+    wood = "Bearing wall: light-frame (wood) walls sheathed with wood structural panels"
+    v = dict(mark="EQ5", SDS="0.60", SD1="0.25", S1="0.2", TL="4", ground_source="ASCE 7 Hazard Tool, Site Class D", risk="II", system=wood, Ie="1.0", Ie_source="Table 1.5-2",
+             structure="all other structural systems", hn="30", drift_type="all other structures", de_source="SW sheets",
+             levels=[dict(name="Roof", w="60", h="30", de="0.4"), dict(name="Floor", w="90", h="15", de="0.2")])
+    sheet, _, _ = calc.build("seismic_elf", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert sheet.seismic["sdc"] == "D" and sheet.seismic["Cs"] == pytest.approx(0.60 / 6.5) and sheet.seismic["system"]["limit"] == 65
+    hrow = [x for x in sheet.rows if x.check == "Structural height"][0]
+    assert (hrow.demand, hrow.capacity) == (30, 65) and sheet.seismic["drift"][0]["dDE"] == pytest.approx(4.0 * 0.4)
+    calcsheet._simple_pdf(sheet, str(tmp_path / "s.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    omf, _, _ = calc.build("seismic_elf", dict(v, system="Moment frame: steel ordinary moment frames", structure="steel moment-resisting frame"), dict(job="2026-000", name="Test", method="ASD"))
+    assert any(x.check.startswith("System in Seismic Design Category D") and x.status != "OK" for x in omf.rows)
+    with pytest.raises(WorksheetError):
+        calc.build("seismic_elf", dict(v, system="Steel systems not specifically detailed for seismic resistance"), dict(job="2026-000", name="Test", method="ASD"))
+    with pytest.raises(calc.Missing):
+        calc.build("seismic_elf", dict(v, system="other (type R and Cd)"), dict(job="2026-000", name="Test", method="ASD"))
