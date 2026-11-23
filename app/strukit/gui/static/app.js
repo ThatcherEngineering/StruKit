@@ -186,6 +186,35 @@ function fillFromDiaphragmBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the shear from a diaphragm reaction"), pick, go);
 }
 
+function fillDriftBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "shear_wall" || x.kind === "perforated_wall");
+  const lv = (m.values.levels || []).filter(r => (r.name || "").trim());
+  if (!src.length || !lv.length) return el("div", { class: "fill small" }, "For the drift check, a level's elastic displacement can be filled in from a shear wall sheet's deflection once the project has one and the levels are listed.");
+  const pick = el("select", {}, el("option", { value: "" }, "choose a shear wall"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
+  const level = el("select", {}, el("option", { value: "" }, "story below level"), lv.map(r => el("option", { value: r.name }, r.name)));
+  const go = el("button", { class: "btn", onclick: async () => {
+    if (pick.value === "" || level.value === "") return toast("Choose the shear wall and the level first.");
+    if (S.project.method !== "ASD" && S.project.method !== "LRFD") return toast("Choose the design method on the Project page first.", 9000);
+    const s = S.members[+pick.value];
+    let got;
+    try { got = await post("/api/wall_deflection", { kind: s.kind, values: s.values, project: S.project }); } catch (e) { return toast(e.message, 12000); }
+    if (got.load !== "seismic") return toast("That shear wall sheet is for " + (got.load || "another load") + ", not seismic. Use the wall sheet that carries the seismic shear.", 12000);
+    const asd = S.project.method === "ASD", story = got.defl / (asd ? 0.7 : 1.0);
+    const num = t => parseFloat(String(t || "").replace(/,/g, ""));
+    const rows = lv.slice().sort((a, b) => num(a.h) - num(b.h)), i = rows.findIndex(r => r.name === level.value);
+    if (rows.some(r => isNaN(num(r.h)))) return toast("Give every level its height first.", 9000);
+    let base = 0;
+    if (i > 0) { base = num(rows[i - 1].de); if (isNaN(base)) return toast("Fill the level below (" + rows[i - 1].name + ") first: displacements add up from the base.", 12000); }
+    rows[i].de = (base + story).toFixed(3);
+    const note = "story below " + rows[i].name + ": shear wall " + (s.values.mark || "") + ", " + got.defl.toFixed(3) + " in. at " + S.project.method + " level" + (asd ? " divided by 0.7" : "");
+    const old = (m.values.de_source || "").split("; ").filter(t => t && !t.startsWith("story below " + rows[i].name + ":"));
+    m.values.de_source = old.concat(note).join("; ");
+    changed(); drawMain();
+    toast("Story deflection " + story.toFixed(3) + " in. under the design seismic forces" + (asd ? " (the wall sheet's " + got.defl.toFixed(3) + " in. divided by 0.7)" : "") + "; level " + rows[i].name + " is now " + rows[i].de + " in. Use the wall line with the largest deflection in each story.", 14000);
+  } }, "Fill Displacement");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Drift: take a story deflection from"), pick, level, go);
+}
+
 function fillCollectorBar(m, changed) {
   const src = S.members.filter(x => x.kind === "diaphragm");
   if (!src.length) return el("div", { class: "fill small" }, "The force and the line length can be filled in from a Wood Diaphragm sheet once the project has one.");
@@ -295,6 +324,7 @@ function fillBar(m, changed) {
   if (m.kind === "shear_wall" || m.kind === "perforated_wall") return fillWallBar(m, changed);
   if (m.kind === "diaphragm") return fillDiaphragmBar(m, changed);
   if (m.kind === "collector") return fillCollectorBar(m, changed);
+  if (m.kind === "seismic_elf") return fillDriftBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");
   if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame once the project has one.");
