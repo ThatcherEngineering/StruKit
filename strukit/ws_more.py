@@ -53,7 +53,7 @@ def base_plate_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, loads, com
                 "AISC 360-22 Sect. J8, " + ("Eq. J8-1" if support == "full" else "Eq. J8-2"),
                 f"A1 = {N * B:g} in2; A2 = {A2:g} in2"),
             Row("plate thickness", worst, res.t_min, t, "in",
-                "AISC Manual Part 14, Eq. 14-2 to 14-7 (as printed in AISC Design Examples v16.0, Example J.6)",
+                "AISC Manual Part 14, Eq. 14-2 to 14-7",
                 "demand is the minimum thickness, capacity is the thickness provided")]
     info = [("Column", f"{shapes.normalize(shape)}  (d = {p['d']:g} in, bf = {p['bf']:g} in)"),
             ("Plate", f"{N:g} in (along the column depth) x {B:g} in x {t:g} in thick, Fy = {Fy_plate:g} ksi"),
@@ -597,7 +597,7 @@ def snow_drift_sheet(mark, pg, pg_source, W2, W2_source, ps_lower, ps_source, lu
          ["Drift and sliding snow surcharges are added to the balanced snow load on the lower roof (Sect. 7.7.1, 7.9). Leeward and "
           "windward drifts are separate load cases; drift and sliding surcharges are not added to each other.",
           ("The two roofs are on adjacent structures; the drifts are on the lower structure, measured from its edge nearest the higher one. "
-           "The windward drift is not truncated." if sep else "The upper and lower roofs are parts of one structure with no gap between them.")]),
+           "The windward drift is taken at its full width (Sect. 7.7.1)." if sep else "The upper and lower roofs are parts of one structure with no gap between them.")]),
         (["intersecting drifts at parapet corners (Sect. 7.7.3)", "unbalanced and partial loading of the roof"] if parapet else
          [*([] if sep else ["structures separated by a gap (Sect. 7.7.2, 7.9)"]), "intersecting drifts at corners (Sect. 7.7.3)",
           "drifts at roof projections and parapets (Sect. 7.8)", "unbalanced and partial loading of the lower roof"]
@@ -767,7 +767,7 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         ["Pressures are strength-level (ASCE/SEI 7-22 basic wind speed), in psf, positive toward the surface and negative away from it.",
          "p = q Kd G Cp - qi Kd (GCpi), Eq. 27.3-1, with q = qz on the windward wall and qh on the leeward wall, side walls and roof; qi = qh.",
          "Rigid building (Sect. 26.2): G = 0.85.",
-         "Cp from Figure 27.3-1 with linear interpolation (notes 2 and 3). The area reduction of the -1.3 roof value is not taken.",
+         "Cp from Figure 27.3-1 with linear interpolation (notes 2 and 3). The roof value Cp = -1.3 is used as tabulated.",
          "Horizontal force: the windward wall pressure at the top of each height band is used over that band; the total is not less than the "
          "force on the walls alone (Figure 27.3-1, note 6); the horizontal force on a roof designed by zones is neglected.",
          f"Minimum design wind load: {wind.MIN_WALL:g} psf on the wall area and {wind.MIN_ROOF:g} psf on the roof area projected on a "
