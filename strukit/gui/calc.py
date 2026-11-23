@@ -652,6 +652,24 @@ FORMS = {
                 F("diaphragm", "Diaphragm construction", "select", options=["no", "yes"], required=False, help="NDS 12.5.3")],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Lateral force on the group of nails, by load case; the project's ASD combinations are applied.")]),
+    "bolted_connection": dict(
+        title="Bolted Connection (load parallel to grain)", code="NDS 2018", mark="BC",
+        fields=[F("D", "Bolt diameter", "select", options=["1/2", "5/8", "3/4", "7/8", "1"], unit="in"),
+                F("shear", "Shear", "select", options=["single", "double"], help="double: a main member between two side members"),
+                F("rows", "Rows of bolts"), F("n_row", "Bolts in a row"),
+                F("spacing", "Spacing in a row", unit="in", required=False, help="along the grain; 4 D for the full value"),
+                F("row_spacing", "Spacing between rows", unit="in", required=False),
+                F("end", "End distance", unit="in", help="bolt to the end of the member, along the grain"),
+                F("edge", "Edge distance", unit="in", help="outer row to the edge of the member"),
+                F("sense", "Load in the members", "select", options=["tension", "compression"], help="tension: the bolts bear toward the member end"),
+                F("wood_type", "Wood", "select", options=["softwood", "hardwood"]),
+                F("side_t", "Side member thickness", unit="in"), F("side_w", "Side member width", unit="in"),
+                F("G_side", "Side member specific gravity, G"), F("E_side", "Side member E", unit="psi"), F("side_source", "Where the side member values come from", "text"),
+                F("main_t", "Main member thickness", unit="in"), F("main_w", "Main member width", unit="in"),
+                F("G_main", "Main member specific gravity, G"), F("E_main", "Main member E", unit="psi"), F("main_source", "Where the main member values come from", "text"),
+                F("service", "Moisture", "select", options=["dry", "wet in service", "wet at fabrication, dry in service"], help="NDS Table 11.3.3")],
+        tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
+                  help="Force along the members, by load case; the project's ASD combinations are applied.")]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1346,6 +1364,21 @@ def build(kind, values, project):
         r.done()
         return ws_more.nailed_connection_sheet(mark, nm, D, Lg, ts, Gs, Gss, tm, Gm, Gms, n_, sv, loads, cb,
                                                end_grain=bool(yes(r.text("end_grain", False))), diaphragm=bool(yes(r.text("diaphragm", False)))), "simple", {}
+    if kind == "bolted_connection":
+        cb = combos(project, r.miss, "ASD")
+        Dt = r.text("D")
+        D = {"1/2": 0.5, "5/8": 0.625, "3/4": 0.75, "7/8": 0.875, "1": 1.0}.get(Dt)
+        sh, rn, nr, end, edge, sense, wt = r.text("shear"), r.num("rows"), r.num("n_row"), r.num("end"), r.num("edge"), r.text("sense"), r.text("wood_type")
+        sp = r.num("spacing", bool(nr and nr > 1), label="Spacing in a row")
+        rs = r.num("row_spacing", bool(rn and rn > 1), label="Spacing between rows")
+        st, sw, Gs, Es, ss = r.num("side_t"), r.num("side_w"), r.num("G_side"), r.num("E_side"), r.text("side_source")
+        mt, mw, Gm, Em, ms, sv = r.num("main_t"), r.num("main_w"), r.num("G_main"), r.num("E_main"), r.text("main_source"), r.text("service")
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        r.done()
+        return ws_more.bolted_connection_sheet(mark, D, rn, nr, sp, rs, end, edge, sh, st, sw, Gs, Es, ss, mt, mw, Gm, Em, ms, sense, wt, sv, loads, cb), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")

@@ -70,3 +70,49 @@ def test_group_action_against_table_11_3_6a(ratio, As, n, Cg):
 def test_group_action_edges():
     assert dowel.group_action(0.148, 12, 3, 1e7, 1e7) == 1.0 and dowel.group_action(0.75, 1, 3, 1e7, 1e7) == 1.0
     assert dowel.group_action(0.75, 6, 3, 1.4e6 * 12, 1.4e6 * 24, metal=True) < dowel.group_action(0.75, 6, 3, 1.4e6 * 12, 1.4e6 * 24)
+
+
+def test_bolted_connection_by_hand(tmp_path):
+    """Tension splice, Douglas Fir-Larch (G 0.50, E 1.6e6): 2x6 side members each side of a 4x6 main member (double shear), 2 rows of 3
+    3/4 in. bolts at 3 in. in a row, rows 2.5 in. apart, end distance 5.25 in., edge 1.5 in., dry.
+    Z per bolt by the double shear yield equations (checked against Table 12F in the test below).
+    C-delta: end 5.25 / (7 x 0.75) = 1.0; spacing 3 / (4 x 0.75) = 1.0. Edge minimum: l/D = min(3.5, 3.0)/0.75 = 4 -> 1.5 D = 1.125 in.
+    Cg with As = 2(8.25) = 16.5 in2, Am = 19.25 in2, n = 3, s = 3 in."""
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + 0.7S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3a")])
+    v = dict(mark="BC1", D="3/4", shear="double", rows="2", n_row="3", spacing="3", row_spacing="2.5", end="5.25", edge="1.5", sense="tension", wood_type="softwood",
+             side_t="1.5", side_w="5.5", G_side="0.50", E_side="1600000", side_source="DF-L No. 2", main_t="3.5", main_w="5.5", G_main="0.50", E_main="1600000",
+             main_source="DF-L No. 2", service="dry", loads=[dict(case="D", P="2000"), dict(case="S", P="9000")])
+    sheet, kind, _ = calc.build("bolted_connection", v, proj)
+    c = sheet.connection
+    z = dowel.bolt(0.75, 1.5, 3.5, 0.5, 0.5, double=True)
+    Cg = dowel.group_action(0.75, 3, 3.0, 1.6e6 * 16.5, 1.6e6 * 19.25)
+    assert c["Z"] == z["Z"] and c["Cdelta"] == 1.0 and c["Cg"] == pytest.approx(Cg) and 0.9 < Cg < 1.0 and c["edge_min"] == pytest.approx(1.125)
+    assert sheet.rows[0].demand == pytest.approx(2000 + 6300) and sheet.rows[0].capacity == pytest.approx(6 * z["Z"] * 1.15 * Cg)
+    assert [r.check for r in sheet.rows] == ["Load on the bolts", "Edge distance", "Spacing between rows", "Distance between outer rows"]
+    calcsheet._simple_pdf(sheet, str(tmp_path / "b.pdf"), "2026-000", "NDS 2018", "2026-11-23")
+    short, _, _ = calc.build("bolted_connection", dict(v, end="3.5", spacing="2.5"), proj)
+    assert short.connection["Cdelta"] == pytest.approx(min(3.5 / 5.25, 2.5 / 3.0))
+    from strukit.ws_steel_beam import WorksheetError
+    with pytest.raises(WorksheetError):
+        calc.build("bolted_connection", dict(v, end="2"), proj)                    # under 3.5 D
+    with pytest.raises(WorksheetError):
+        calc.build("bolted_connection", dict(v, spacing="2"), proj)                # under 3 D
+    with pytest.raises(calc.Missing):
+        calc.build("bolted_connection", dict(v, row_spacing=""), proj)
+    with pytest.raises(WorksheetError):
+        calc.build("bolted_connection", dict(v, edge="2"), proj)                   # 2 + 2.5 + 2 = 6.5 in. does not fit in 5.5 in.
+    one, _, _ = calc.build("bolted_connection", dict(v, rows="1", row_spacing="", service="wet at fabrication, dry in service"), proj)
+    assert one.connection["CM"] == 1.0 and len(one.rows) == 2
+    two, _, _ = calc.build("bolted_connection", dict(v, service="wet at fabrication, dry in service"), proj)
+    assert two.connection["CM"] == 0.4
+
+
+@pytest.mark.parametrize("D, tm, G, table", [(0.5, 1.5, 0.50, (1050, 730, 470)), (0.75, 2.5, 0.50, (2400, 1170, 980)), (1.0, 1.5, 0.67, (2810, 2040, 1020)),
+                                             (0.875, 2.5, 0.55, (3360, 1440, 1200)), (0.625, 2.5, 0.46, (1660, 940, 780))])
+def test_double_shear_bolts_against_table_12f(D, tm, G, table):
+    """NDS Table 12F: double shear, sawn lumber, 1-1/2 in. side members: Z parallel, Zs perpendicular, Zm perpendicular."""
+    got = [dowel.bolt(D, 1.5, tm, G, G, a, b, double=True)["Z"] for a, b in ((0, 0), (90, 0), (0, 90))]
+    for g, t in zip(got, table):
+        assert g == pytest.approx(t, abs=8)

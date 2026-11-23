@@ -1326,3 +1326,101 @@ def nailed_connection_sheet(mark, nail_name, D, length, side_t, G_side, G_side_s
                                                                       label=f"{nail_name.strip()}, {D:g} x {length:g} in."))))
     sheet.connection = dict(r, Zp=base * worst["CD"], n=int(n), capacity=worst["cap"], demand=worst["P"], CM=CM)
     return sheet
+
+
+def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, edge, shear, side_t, side_w, G_side, E_side, side_source,
+                            main_t, main_w, G_main, E_main, main_source, sense, wood_type, service, loads, combos):
+    """Bolted wood-to-wood connection loaded parallel to grain in every member (a splice or
+    tension tie), 2018 NDS Ch. 11 and 12 (see dowel.py). shear: "single" or "double" (two
+    side members of side_t each). rows_n rows of n_row bolts. loads: [dict(case, P lb)]."""
+    from . import dowel, wood
+    for nm, v in (("the source of the side member values", side_source), ("the source of the main member values", main_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    CMs = {"dry": 1.0, "wet in service": 0.7, "wet at fabrication, dry in service": 0.4}
+    if service not in CMs:
+        raise WorksheetError(f"{mark}: the service condition is one of: " + "; ".join(CMs))
+    for nm, v in (("the number of rows", rows_n), ("the number of bolts in a row", n_row)):
+        if v is None or v < 1 or int(v) != v:
+            raise WorksheetError(f"{mark}: {nm} is a whole number, 1 or more")
+    rows_n, n_row = int(rows_n), int(n_row)
+    double = shear == "double"
+    if shear not in ("single", "double"):
+        raise WorksheetError(f"{mark}: the connection is single or double shear")
+    if rows_n > 1 and (row_spacing is None or row_spacing <= 0):
+        raise WorksheetError(f"{mark}: the spacing between rows is needed for more than one row")
+    need = 2 * (edge or 0) + (rows_n - 1) * (row_spacing or 0)
+    for nm, wd_ in (("main", main_w), ("side", side_w)):
+        if edge is not None and wd_ is not None and need > wd_ + 1e-6:
+            raise WorksheetError(f"{mark}: the rows and edge distances need {need:g} in. and the {nm} member is {wd_:g} in. wide")
+    try:
+        r = dowel.bolt(D, side_t, main_t, G_side, G_main, double=double)
+        cdel, ce, cs = dowel.geometry_parallel(D, end, spacing, n_row, sense, wood_type)
+        As = side_t * side_w * (2 if double else 1)
+        Am = main_t * main_w
+        Cg = dowel.group_action(D, n_row, spacing, E_side * As, E_main * Am)
+        e_min = dowel.edge_minimum(D, main_t, side_t * (2 if double else 1), row_spacing if rows_n > 1 else None)
+    except dowel.DowelError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    CM = CMs[service]
+    one_row_dry = service == "wet at fabrication, dry in service" and rows_n == 1
+    if one_row_dry:
+        CM = 1.0                                           # Table 11.3.3 note 2: one row parallel to grain
+    n = rows_n * n_row
+    base = r["Z"] * CM * Cg * cdel
+    Ln = footing_line
+    names = {"Im": "Eq. 12.3-7" if double else "Eq. 12.3-1", "Is": "Eq. 12.3-8" if double else "Eq. 12.3-2", "II": "Eq. 12.3-3", "IIIm": "Eq. 12.3-4",
+             "IIIs": "Eq. 12.3-9" if double else "Eq. 12.3-5", "IV": "Eq. 12.3-10" if double else "Eq. 12.3-6"}
+    steps = [Ln("Fes", r["Fes"], "psi", "NDS Table 12.3.3", f"G = {G_side:g}, parallel to grain ({side_source.strip()})"),
+             Ln("Fem", r["Fem"], "psi", "NDS Table 12.3.3", f"G = {G_main:g}, parallel to grain ({main_source.strip()})"),
+             Ln("Fyb", r["Fyb"], "psi", "NDS Table 12A note 2", "full body diameter bolt"),
+             Ln("ls, lm", f"{side_t:g} in, {main_t:g} in", "", "NDS 12.3.5")]
+    for m in ("Im", "Is", "II", "IIIm", "IIIs", "IV"):
+        if m in r["modes"]:
+            steps.append(Ln(f"Z, mode {m}", r["modes"][m], "lb", "NDS " + names[m], f"Rd = {dowel.rd(D, m):g}"))
+    steps += [Ln("Z", r["Z"], "lb", "NDS 12.3.1", f"mode {r['mode']} governs; per bolt"),
+              Ln("CM", CM, "", "NDS Table 11.3.3", service + ("; one row parallel to grain (note 2)" if one_row_dry else "")),
+              Ln("Cg", f"{Cg:.3f}", "", "NDS Eq. 11.3-1", f"{n_row} in a row at {spacing:g} in.; Es As = {E_side * As:,.0f} lb, Em Am = {E_main * Am:,.0f} lb" if n_row > 1 else "one bolt in a row"),
+              Ln("C-delta, end distance", f"{ce:.3f}", "", "NDS 12.5.1.2(a), Table 12.5.1A", f"{end:g} in. provided; {dowel.END[(sense, wood_type)][1] * D:g} in. for 1.0 ({sense}, {wood_type})"),
+              Ln("C-delta, spacing in a row", f"{cs:.3f}", "", "NDS 12.5.1.2(c), Table 12.5.1B", f"{spacing:g} in. provided; {4 * D:g} in. for 1.0" if n_row > 1 else "one bolt in a row"),
+              Ln("C-delta", f"{cdel:.3f}", "", "NDS 12.5.1.2", "the smaller")]
+    worst = None
+    for cb in combos:
+        P = sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)
+        present = [ld["case"] for ld in loads if cb.factors.get(ld["case"], 0.0) and ld["P"]]
+        if not present or abs(P) < 1e-9:
+            continue
+        try:
+            CD, cd_case, cd_dur = wood.load_duration(present)
+        except wood.WoodError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        g = dict(name=cb.name, P=abs(P), CD=CD, cd_case=cd_case, cd_dur=cd_dur, cap=n * base * CD, source=cb.source)
+        if worst is None or g["P"] / g["cap"] > worst["P"] / worst["cap"]:
+            worst = g
+    if worst is None:
+        raise WorksheetError(f"{mark}: no load combination puts load on the connection")
+    steps += [Ln("CD", worst["CD"], "", "NDS Table 2.3.2", f"{worst['cd_case']}, {worst['cd_dur']}; combination {worst['name']}"),
+              Ln("Z' = Z CD CM Ct Cg C-delta", base * worst["CD"], "lb", "NDS Table 11.3.1", "Ct = 1.0"),
+              Ln(f"capacity = {n} Z'", worst["cap"], "lb", "")]
+    rows = [Row("Load on the bolts", worst["name"], worst["P"], worst["cap"], "lb", "NDS Table 11.3.1, 12.3.1", f"{n} bolts; mode {r['mode']}"),
+            Row("Edge distance", "", e_min, edge, "in", "NDS Table 12.5.1C", "minimum against the distance provided")]
+    if rows_n > 1:
+        rows.append(Row("Spacing between rows", "", 1.5 * D, row_spacing, "in", "NDS Table 12.5.1D", "minimum against the spacing provided"))
+        rows.append(Row("Distance between outer rows", "", (rows_n - 1) * row_spacing, 5.0, "in", "NDS 12.5.1.3", "5 in. maximum without detailing for shrinkage"))
+    info = [("Bolts", f"{n} - {D:g} in. diameter, {rows_n} row" + ("s" if rows_n > 1 else "") + f" of {n_row}, {shear} shear"),
+            ("Side Member" + ("s" if double else ""), f"{'2 - ' if double else ''}{side_t:g} x {side_w:g} in., G = {G_side:g}, E = {E_side:,.0f} psi ({side_source.strip()})"),
+            ("Main Member", f"{main_t:g} x {main_w:g} in., G = {G_main:g}, E = {E_main:,.0f} psi ({main_source.strip()})"),
+            ("Layout", f"spacing in a row {spacing:g} in.; " + (f"between rows {row_spacing:g} in.; " if rows_n > 1 else "") + f"end distance {end:g} in.; edge distance {edge:g} in."),
+            ("Conditions", f"load parallel to grain in every member, {sense}; {wood_type}; {service} service")]
+    load_lines = [f"{ld['case']}: {ld['P']:,.0f} lb" + (f"  ({ld['label']})" if ld.get("label") else "") for ld in loads]
+    sheet = SimpleSheet(
+        mark, "Bolted Connection", "Connection", "ASD", info, load_lines, [(worst["name"], worst["source"])], "Lateral Design Value", steps, rows,
+        ["Full body diameter bolts with Fyb = 45,000 psi, in holes 1/32 to 1/16 in. larger than the bolt, members in contact, washers under head and nut (NDS 12.1.3).",
+         "The load acts parallel to the grain of every member and through the centroid of the bolt group; all bolts share the load after the group action factor.",
+         "Sustained temperature not over 100 degrees F (Ct = 1.0, NDS Table 11.3.4).",
+         "E and the gross areas of the members are used for the group action factor as entered."],
+        ["the members at the connection: tension or compression on the net section (NDS 3.1.2), row and group tear-out (NDS Appendix E)",
+         "staggered rows (NDS 11.3.6.2)", "load at an angle to the grain or to the bolt", "the bolts in tension, the washers, steel side plates"])
+    sheet.blocks.append(dict(title="Layout", picture=("bolted", dict(D=D, rows=rows_n, n=n_row, s=spacing, g=row_spacing or 0.0, end=end, edge=edge, w=main_w, sense=sense))))
+    sheet.connection = dict(r, Zp=base * worst["CD"], n=n, Cg=Cg, Cdelta=cdel, CM=CM, capacity=worst["cap"], demand=worst["P"], edge_min=e_min)
+    return sheet
