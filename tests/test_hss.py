@@ -38,3 +38,30 @@ def test_round_hss_limit_states_by_hand():
     with pytest.raises(hss.HSSError):
         hss.flexure(shapes.hss("HSS6x4x1/4"), 46.0)
     assert hss.shear(p, 46.0)["Fcr"] == pytest.approx(27.6)
+
+
+def test_guard_screen_against_design_guide_34(tmp_path):
+    """Design Guide 34 Example 10.1.7 (ASD): rail HSS1.900x0.145 at 4 ft: Ma = 0.205 kip-ft and Va = 0.205 kip under the 200 lb load,
+    0.105 kip-ft and 0.105 kip under 50 lb/ft; Mn/1.67 = 0.966 kip-ft. LRFD: Mu = 0.327 kip-ft, phi Mn = 1.45 kip-ft.
+    Post, by hand: 200 lb x 3.5 ft = 700 lb-ft; 50 lb/ft x 4 ft x 3.5 ft = 700 lb-ft. Loads as printed in ASCE/SEI 7-22 Sect. 4.5.1."""
+    from strukit import calcsheet, ws_more
+    from strukit.gui import calc
+    assert (ws_more.GUARD_P, ws_more.GUARD_W, ws_more.GUARD_INFILL) == (200.0, 50.0, 50.0)
+    v = dict(mark="GD1", rail="HSS1.900x0.145", rail_Fy="46", rail_Fy_source="ASTM A500 Grade C", post="HSS1.900x0.145", post_Fy="46", post_Fy_source="ASTM A500 Grade C",
+             spacing="4", height="3.5", uniform="applies")
+    s, kind, _ = calc.build("guard", v, dict(method="ASD"))
+    r = {x.check: x for x in s.rows}
+    assert kind == "simple" and r["Top rail bending"].demand == pytest.approx(205.4, abs=0.1) and r["Top rail bending"].capacity == pytest.approx(966, abs=1)
+    assert r["Top rail shear"].demand == pytest.approx(205.4, abs=0.1) and r["Post bending"].demand == pytest.approx(700.0)
+    uni = [c for c in s.guard["cases"] if c[0] == "50 lb/ft"][0]
+    assert uni[1] == pytest.approx(105.4, abs=0.1) and uni[2] == pytest.approx(105.4, abs=0.1)
+    calcsheet.simple_pdf(s, str(tmp_path / "g.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
+    l, _, _ = calc.build("guard", v, dict(method="LRFD"))
+    rl = {x.check: x for x in l.rows}
+    assert rl["Top rail bending"].demand == pytest.approx(327, abs=1) and rl["Top rail bending"].capacity == pytest.approx(1450, abs=5)
+    e, _, _ = calc.build("guard", dict(v, uniform="exception", uniform_basis="one- and two-family dwelling", spacing="6"), dict(method="ASD"))
+    assert len(e.guard["cases"]) == 1 and {x.check: x for x in e.rows}["Post bending"].demand == pytest.approx(700.0)
+    assert calc.results("guard", dict(v, uniform="exception"), dict(method="ASD"))["state"] == "incomplete"
+    assert calc.results("guard", v, {})["state"] == "incomplete"
+    bad = calc.results("guard", dict(v, post="HSS6x4x1/4"), dict(method="ASD"))
+    assert bad["state"] != "ok" if "state" in bad else True

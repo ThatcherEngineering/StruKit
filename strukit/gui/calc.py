@@ -835,6 +835,18 @@ FORMS = {
                 F("washer_away", "Washer bearing: 3 in. or more from the member end", "select", options=["no", "yes"], required=False, help="yes: the bearing area factor Cb is taken; NDS 3.10.4")],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Force pulling the lag screws out, on the group, by load case; the project's ASD combinations are applied.")]),
+    "guard": dict(
+        title="Guard (round HSS or pipe)", code="ASCE/SEI 7-22, AISC 360-22", mark="GD",
+        fields=[F("rail", "Top rail", "text", help="round HSS or pipe by its Manual label, for example HSS1.900x0.145 or Pipe 1-1/2 STD"),
+                F("rail_Fy", "Top rail yield stress, Fy", unit="ksi"), F("rail_Fy_source", "Where that Fy comes from", "text", help="for example: ASTM A500 Grade C"),
+                F("post", "Post", "text", help="round HSS or pipe by its Manual label"),
+                F("post_Fy", "Post yield stress, Fy", unit="ksi"), F("post_Fy_source", "Where that Fy comes from", "text"),
+                F("spacing", "Post spacing", unit="ft"),
+                F("height", "Height from the post base to the top rail", unit="ft"),
+                F("uniform", "50 lb/ft uniform load", "select", options=["applies", "exception"], help="ASCE 7-22 Sect. 4.5.1.1: not required for one- and two-family dwellings, "
+                  "factory, industrial and storage areas not open to the public serving 50 occupants or fewer, and roofs not intended for occupancy"),
+                F("uniform_basis", "Exception: which one applies", "text", required=False)],
+        tables=[]),
     "rain_load": dict(
         title="Rain Load", code="ASCE/SEI 7-22", mark="RN",
         fields=[F("risk", "Risk category", "select", options=["I", "II", "III", "IV"], help="sets the design storm, ASCE 7-22 Table 8.2-1"),
@@ -1740,6 +1752,13 @@ def build(kind, values, project):
         r.done()
         return ws_more.bolted_connection_sheet(mark, D, rn, nr, sp, rs, end, edge, sh, st, sw, Gs, Es, ss, mt, mw, Gm, Em, ms, sense, wt, sv, loads, cb,
                                                local=loc, grain=gr, perp=pp, lag=lagd, steel=stl), "simple", {}
+    if kind == "guard":
+        m = method(project, r.miss)
+        uni = (r.text("uniform") or "") != "exception"
+        args = (r.text("rail"), r.num("rail_Fy"), r.text("rail_Fy_source"), r.text("post"), r.num("post_Fy"), r.text("post_Fy_source"), r.num("spacing"), r.num("height"))
+        ub = r.text("uniform_basis", not uni) or ""
+        r.done()
+        return ws_more.guard_sheet(mark, *args, uni, ub, m), "simple", {}
     if kind == "rain_load":
         risk, i, i_s, A, ds, ds_s = r.text("risk"), r.num("i"), r.text("i_source"), r.num("A"), r.num("ds"), r.text("ds_source")
         if (r.text("head_type") or "") == "channel scupper":

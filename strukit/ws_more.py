@@ -2179,3 +2179,77 @@ def wind_kzt_sheet(mark, shape, exposure, exposure_basis, H, Lh, geometry_source
         sheet.blocks.append(dict(title="Kzt by Height Above Ground", lines=t))
     sheet.kzt = dict(rows=res, applies=r0["applies"])
     return sheet
+
+
+GUARD_P, GUARD_W, GUARD_INFILL = 200.0, 50.0, 50.0        # lb, lb/ft, lb on 1 ft2: ASCE/SEI 7-22 Sect. 4.5.1, 4.5.1.1, 4.5.1.2
+
+
+def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_source, spacing_ft, height_ft, uniform, uniform_basis, method):
+    """Guard of round HSS or pipe: top rail spanning between posts, posts cantilevered from
+    their base. Loads: ASCE/SEI 7-22 Sect. 4.5.1 (200 lb at any point, any direction) and
+    4.5.1.1 (50 lb/ft, not concurrent; uniform False where an exception applies, with its
+    basis). Strength: AISC 360-22 Sect. F8 and G5 (see hss.py). The rail is taken as a simple
+    span between posts and carries its own weight with the load applied downward."""
+    from . import hss, shapes
+    for nm, v in (("where the top rail yield stress comes from", rail_Fy_source), ("where the post yield stress comes from", post_Fy_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: say {nm}")
+    if not uniform and not (uniform_basis or "").strip():
+        raise WorksheetError(f"{mark}: say which exception of Sect. 4.5.1.1 applies")
+    for nm, v in (("the post spacing", spacing_ft), ("the guard height", height_ft)):
+        if v is None or v <= 0:
+            raise WorksheetError(f"{mark}: {nm} must be positive")
+    try:
+        pr, pp = shapes.hss(rail), shapes.hss(post)
+        fr, fp = hss.flexure(pr, rail_Fy), hss.flexure(pp, post_Fy)
+        vr, vp = hss.shear(pr, rail_Fy, Lv=spacing_ft * 12 / 2), hss.shear(pp, post_Fy, Lv=height_ft * 12)
+        Mr, Mpst = hss.available(fr["Mn"], "flexure", method), hss.available(fp["Mn"], "flexure", method)
+        Vr, Vpst = hss.available(vr["Vn"], "shear", method), hss.available(vp["Vn"], "shear", method)
+    except (shapes.ShapeError, hss.HSSError) as e:
+        raise WorksheetError(f"{mark}: {e}")
+    S, h, wsw = spacing_ft, height_ft, pr["W"]
+    gD, gL = (1.0, 1.0) if method == "ASD" else (1.2, 1.6)
+    cname = "D + L" if method == "ASD" else "1.2D + 1.6L"
+    csrc = "ASCE/SEI 7-22 Sect. 2.4.1, combination 2" if method == "ASD" else "ASCE/SEI 7-22 Sect. 2.3.1, combination 2"
+    cases = [("200 lb", gD * wsw * S * S / 8 + gL * GUARD_P * S / 4, gD * wsw * S / 2 + gL * GUARD_P, gL * GUARD_P * h, gL * GUARD_P)]
+    if uniform:
+        cases.append(("50 lb/ft", gD * wsw * S * S / 8 + gL * GUARD_W * S * S / 8, gD * wsw * S / 2 + gL * GUARD_W * S / 2, gL * GUARD_W * S * h, gL * GUARD_W * S))
+    g_rm, g_rv = max(cases, key=lambda c: c[1]), max(cases, key=lambda c: c[2])
+    g_pm, g_pv = max(cases, key=lambda c: c[3]), max(cases, key=lambda c: c[4])
+    Ln = footing_line
+    sym = "Mn / 1.67" if method == "ASD" else "0.90 Mn"
+    symv = "Vn / 1.67" if method == "ASD" else "0.90 Vn"
+    steps = [Ln("P", GUARD_P, "lb", "ASCE/SEI 7-22 Sect. 4.5.1", "at any point on the top rail, in any direction"),
+             Ln("w", f"{GUARD_W:g} lb/ft" if uniform else "not applied", "", "ASCE/SEI 7-22 Sect. 4.5.1.1",
+                "along the top rail, in any direction; not concurrent with P" if uniform else uniform_basis.strip()),
+             Ln("rail weight", wsw, "lb/ft", shapes.SOURCE, rail)]
+    for nm, Mr_, Vr_, Mp_, Vp_ in cases:
+        steps += [Ln(f"rail M, {nm}", Mr_, "lb-ft", "statics", ("P S / 4" if nm == "200 lb" else "w S^2 / 8") + " and the rail weight; simple span S"),
+                  Ln(f"rail V, {nm}", Vr_, "lb", "statics", "P beside a post" if nm == "200 lb" else "w S / 2"),
+                  Ln(f"post M, {nm}", Mp_, "lb-ft", "statics", ("P h" if nm == "200 lb" else "w S h") + ", at the post base"),
+                  Ln(f"post V, {nm}", Vp_, "lb", "statics", "")]
+    for nm, shp, pr_, f_, v_, Fy, Ma, Va in (("rail", rail, pr, fr, vr, rail_Fy, Mr, Vr), ("post", post, pp, fp, vp, post_Fy, Mpst, Vpst)):
+        steps += [Ln(f"{nm} D/t", f"{pr_['D_t']:g}", "", "AISC 360-22 Table B4.1b Case 20", f"{shp}; {f_['cls']} (limits {f_['lam_p']:.1f} and {f_['lam_r']:.1f})"),
+                  Ln(f"{nm} Mn", f_["Mn"] * 1000 / 12, "lb-ft", f"AISC 360-22 Eq. {f_['eq']}", f"Fy = {Fy:g} ksi, Z = {pr_['Zx']:g} in3, S = {pr_['Sx']:g} in3"),
+                  Ln(f"{nm} {sym}", Ma * 1000 / 12, "lb-ft", "AISC 360-22 Sect. F1", ""),
+                  Ln(f"{nm} Vn = Fcr Ag / 2", v_["Vn"] * 1000, "lb", "AISC 360-22 Eq. G5-1", f"Fcr = {v_['Fcr']:.1f} ksi, Ag = {pr_['A']:g} in2"),
+                  Ln(f"{nm} {symv}", Va * 1000, "lb", "AISC 360-22 Sect. G1", "")]
+    rows = [Row("Top rail bending", cname, g_rm[1], Mr * 1000 / 12, "lb-ft", "AISC 360-22 Sect. F8", f"{g_rm[0]} load governs"),
+            Row("Top rail shear", cname, g_rv[2], Vr * 1000, "lb", "AISC 360-22 Sect. G5", f"{g_rv[0]} load governs"),
+            Row("Post bending", cname, g_pm[3], Mpst * 1000 / 12, "lb-ft", "AISC 360-22 Sect. F8", f"{g_pm[0]} load governs"),
+            Row("Post shear", cname, g_pv[4], Vpst * 1000, "lb", "AISC 360-22 Sect. G5", f"{g_pv[0]} load governs")]
+    info = [("Top rail", f"{rail}, Fy = {rail_Fy:g} ksi ({rail_Fy_source.strip()})"),
+            ("Posts", f"{post}, Fy = {post_Fy:g} ksi ({post_Fy_source.strip()}), at {S:g} ft"),
+            ("Height", f"{h:g} ft from the post base to the top rail"),
+            ("Loads", "200 lb at any point" + (" or 50 lb/ft" if uniform else f"; uniform load not applied ({uniform_basis.strip()})"))]
+    sheet = SimpleSheet(mark, "Guard", "Guard", method, info, [], [(cname, csrc)], "Loads and Strength", steps, rows,
+                        ["The guard load is a live load.",
+                         "The top rail is a simple span between posts; the posts cantilever from their base and each post takes the rail load of one post spacing.",
+                         "The rail weight acts with the load applied downward."],
+                        ["the post base connection, its welds and anchorage, and the member the posts stand on", "infill, balusters and intermediate rails "
+                         "(50 lb on 1 ft2, ASCE/SEI 7-22 Sect. 4.5.1.2)", "rail splices and the rail to post connection", "deflection of the guard",
+                         "axial load in the posts", "a separate handrail and its brackets"],
+                        picture=None)
+    sheet.blocks.append(dict(title="Guard Elevation", head="Guard Elevation", picture=("guard", dict(S=S, h=h, rail=rail, post=post, uniform=uniform))))
+    sheet.guard = dict(cases=cases, Mr=Mr, Vr=Vr, Mp=Mpst, Vp=Vpst)
+    return sheet
