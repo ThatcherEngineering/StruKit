@@ -17,7 +17,7 @@ def _diagram_data(o):
 
 
 def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, wet, incised,
-         repetitive, unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None):
+         repetitive, unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True):
     """species, grade: as listed in 2018 NDS Supplement Table 4A. size: nominal, "2x10".
     plies: number of pieces side by side, fastened to act together. lu_ft: unbraced length
     of the compression edge (0 when it is supported throughout). bearing_in: bearing
@@ -96,7 +96,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
     out = []
     for cb in combos:
         present = [c for c, v in cb.factors.items() if v and c in by_case]
-        env = contbeam.envelope(lay, E_adj * I, by_case, cb.factors)
+        env = contbeam.envelope(lay, E_adj * I, by_case, cb.factors, snow_partial)
         if env is None:
             continue
         res = env.res_pos
@@ -144,7 +144,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), Fperp_adj, "psi", rows[-1].source,
                         f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = 1.0"))
     for dc in defl_checks:
-        wd = contbeam.deflection(lay, E_adj * I, by_case, dc.factors, dc.ratio)
+        wd = contbeam.deflection(lay, E_adj * I, by_case, dc.factors, dc.ratio, snow_partial)
         if wd is None:
             continue
         rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k}" if v != 1 else k for k, v in dc.factors.items()),
@@ -217,7 +217,10 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
                                     "uses Cb = 1.0.")
-        sheet.not_checked.insert(0, "partial snow loading (ASCE/SEI 7-22 Sect. 7.5)")
+        sheet.assumptions.insert(2, "Snow load (case S) is applied balanced and in the partial loadings of ASCE/SEI 7-22 Sect. 7.5.1."
+                                 if snow_partial else
+                                 "Partial snow loading is not applied: the member spans perpendicular to the ridge of a gable roof "
+                                 "sloped between 1/2 on 12 and 7 on 12 (ASCE/SEI 7-22 Sect. 7.5.1).")
         if min(o["Rmin"] for o in out) < 0:
             sheet.not_checked.insert(0, "uplift at a support (a reaction is upward in at least one load arrangement)")
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
@@ -409,7 +412,7 @@ SUPP_T4A = "2018 NDS Supplement Table 4A"
 
 
 def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, repetitive,
-             unit_weight_pcf=None, self_weight_case="D", spacing_in=None, product="Versa-Lam LVL", spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None):
+             unit_weight_pcf=None, self_weight_case="D", spacing_in=None, product="Versa-Lam LVL", spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True):
     """Structural composite lumber beam (Versa-Lam LVL, Microllam LVL, Parallam PSL or
     TimberStrand LSL), joist orientation, simply supported; evaluation report values and
     the 2018 NDS Chapter 8, ASD, dry use. thickness: of one ply, in.; depth, in. Loads as
@@ -477,7 +480,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
     out = []
     for cb in combos:
         present = [c for c, v in cb.factors.items() if v and c in by_case]
-        env = contbeam.envelope(lay, ref["E"] * I, by_case, cb.factors)
+        env = contbeam.envelope(lay, ref["E"] * I, by_case, cb.factors, snow_partial)
         if env is None:
             continue
         res = env.res_pos
@@ -521,7 +524,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), ref["Fc_perp"], "psi", rows[-1].source,
                         f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = 1.0"))
     for dc in defl_checks:
-        wd = contbeam.deflection(lay, ref["E"] * I, by_case, dc.factors, dc.ratio)
+        wd = contbeam.deflection(lay, ref["E"] * I, by_case, dc.factors, dc.ratio, snow_partial)
         if wd is None:
             continue
         bend = wd[0]
@@ -597,7 +600,10 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
                                     "uses Cb = 1.0.")
-        sheet.not_checked.insert(0, "partial snow loading (ASCE/SEI 7-22 Sect. 7.5)")
+        sheet.assumptions.insert(2, "Snow load (case S) is applied balanced and in the partial loadings of ASCE/SEI 7-22 Sect. 7.5.1."
+                                 if snow_partial else
+                                 "Partial snow loading is not applied: the member spans perpendicular to the ridge of a gable roof "
+                                 "sloped between 1/2 on 12 and 7 on 12 (ASCE/SEI 7-22 Sect. 7.5.1).")
         if min(o["Rmin"] for o in out) < 0:
             sheet.not_checked.insert(0, "uplift at a support (a reaction is upward in at least one load arrangement)")
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
@@ -783,7 +789,7 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
 
 
 def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, wet,
-                unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None):
+                unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True):
     """Glued laminated timber beam, simply supported, bent about the x-x axis; 2018 NDS
     Chapter 5 and Supplement Table 5A, ASD. b, d in inches. See glulam.py."""
     from . import glulam
@@ -845,7 +851,7 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
     out = []
     for cb in combos:
         present = [c for c, v in cb.factors.items() if v and c in by_case]
-        env = contbeam.envelope(lay, E_adj * I, by_case, cb.factors)
+        env = contbeam.envelope(lay, E_adj * I, by_case, cb.factors, snow_partial)
         if env is None:
             continue
         res = env.res_pos
@@ -889,7 +895,7 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), Fperp, "psi", rows[-1].source,
                         f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = 1.0"))
     for dc in defl_checks:
-        wd = contbeam.deflection(lay, E_adj * I, by_case, dc.factors, dc.ratio)
+        wd = contbeam.deflection(lay, E_adj * I, by_case, dc.factors, dc.ratio, snow_partial)
         if wd is None:
             continue
         rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k}" if v != 1 else k for k, v in dc.factors.items()),
@@ -957,7 +963,10 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
                                     "uses Cb = 1.0.")
-        sheet.not_checked.insert(0, "partial snow loading (ASCE/SEI 7-22 Sect. 7.5)")
+        sheet.assumptions.insert(2, "Snow load (case S) is applied balanced and in the partial loadings of ASCE/SEI 7-22 Sect. 7.5.1."
+                                 if snow_partial else
+                                 "Partial snow loading is not applied: the member spans perpendicular to the ridge of a gable roof "
+                                 "sloped between 1/2 on 12 and 7 on 12 (ASCE/SEI 7-22 Sect. 7.5.1).")
         if min(o["Rmin"] for o in out) < 0:
             sheet.not_checked.insert(0, "uplift at a support (a reaction is upward in at least one load arrangement)")
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}

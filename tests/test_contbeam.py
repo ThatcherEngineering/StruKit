@@ -60,7 +60,7 @@ def test_two_span_glulam_beam_by_hand():
     assert r["shear"].demand == pytest.approx(1.5 * 10000 / 99, abs=0.2)                    # 0.625 w L at the centre support
     # live deflection, one span loaded: 0.0092 w L^4 / EI (textbook 0.00915) = 0.0092 x 500/12 x 240^4 / (1.8e6 x 2673)
     assert r["deflection, live"].demand == pytest.approx(0.00915 * (500 / 12) * 240 ** 4 / (1.8e6 * 2673), rel=0.01)
-    assert any("4.3.3" in a for a in s.assumptions) and any("snow" in n for n in s.not_checked)
+    assert any("4.3.3" in a for a in s.assumptions) and any("7.5.1" in a for a in s.assumptions)
     with pytest.raises(Exception, match="bottom edge"):
         ws_wood.glulam_beam("GB3", "24F-V4 DF/DF", False, 5.5, 18, 20, loads, _combos(), [], 0.0, 4.0, False, spans=[20, 20])
 
@@ -76,3 +76,25 @@ def test_sawn_beam_with_overhang_by_hand():
     S = 3.0 * 9.25 ** 2 / 6
     assert r["bending"].demand == pytest.approx(4777.5 * 12 / S, rel=1e-3)
     assert "overhang" in dict(s.info)["Span"] and r["deflection, live"].note.startswith(("span", "right overhang"))
+
+
+def test_partial_snow_arrangements():
+    assert cb.snow_weights(1) == [[1.0]]
+    assert cb.snow_weights(2) == [[1.0, 1.0], [1.0, 0.5], [0.5, 1.0]]
+    w3 = cb.snow_weights(3)
+    for need in ([1, .5, .5], [.5, .5, 1], [.5, 1, 1], [1, 1, .5]):
+        assert [float(v) for v in need] in w3
+    assert len(w3) == 5 and len(cb.snow_weights(4)) == 8                    # balanced + 2 + 2 + (n - 1), with repeats removed
+    assert cb.snow_weights(3, partial=False) == [[1.0, 1.0, 1.0]]
+
+
+def test_partial_snow_on_two_spans_by_hand():
+    # two 10 ft spans, S = 100 plf: balanced span moment 9/128 w L^2 = 703.1 lb-ft; full on one span and half on the other:
+    # R1 = 0.4375 (100)(10) - 0.0625 (50)(10) + ... by superposition of full-on-one (49/512 pattern) and the other span at half:
+    #   end reaction of the loaded span = 437.5 - 31.25 = 406.25 lb; M = R^2 / 2w = 825.2 lb-ft
+    lay = cb.layout(None, [10, 10])
+    bal = cb.envelope(lay, 1e9, {"S": [dict(kind="uniform", w=100.0)]}, {"S": 1.0}, snow_partial=False)
+    par = cb.envelope(lay, 1e9, {"S": [dict(kind="uniform", w=100.0)]}, {"S": 1.0})
+    assert bal.Mpos / 12 == pytest.approx(703.1, abs=0.2) and bal.n == 1
+    assert par.Mpos / 12 == pytest.approx(406.25 ** 2 / 200, rel=1e-4) and par.n == 3
+    assert par.Mneg / 12 == pytest.approx(1250, rel=1e-5)                    # balanced still governs over the support

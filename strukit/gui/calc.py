@@ -154,6 +154,9 @@ FORMS = {
                   help="lengths of the second and later spans, separated by commas; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
                 F("oh_right", "Overhang past the right support", unit="ft", required=False),
+                F("snow_partial", "Partial snow loading (more spans or an overhang)", "select", required=False,
+                  options=["apply", "not required: member perpendicular to the ridge, gable roof 1/2 to 7 on 12"],
+                  help="ASCE/SEI 7-22 Sect. 7.5.1; blank = apply"),
                 F("lu_neg", "Bottom edge unbraced length where it is in compression", unit="ft", required=False,
                   help="needed with more spans or an overhang; 0 = braced"),
                 F("bearing_int", "Bearing length at interior supports", unit="in", required=False, help="blank = same as the ends"),
@@ -186,6 +189,9 @@ FORMS = {
                   help="lengths of the second and later spans, separated by commas; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
                 F("oh_right", "Overhang past the right support", unit="ft", required=False),
+                F("snow_partial", "Partial snow loading (more spans or an overhang)", "select", required=False,
+                  options=["apply", "not required: member perpendicular to the ridge, gable roof 1/2 to 7 on 12"],
+                  help="ASCE/SEI 7-22 Sect. 7.5.1; blank = apply"),
                 F("lu_neg", "Bottom edge unbraced length where it is in compression", unit="ft", required=False,
                   help="needed with more spans or an overhang; 0 = braced"),
                 F("bearing_int", "Bearing length at interior supports", unit="in", required=False, help="blank = same as the ends"),
@@ -216,6 +222,9 @@ FORMS = {
                   help="lengths of the second and later spans, separated by commas; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
                 F("oh_right", "Overhang past the right support", unit="ft", required=False),
+                F("snow_partial", "Partial snow loading (more spans or an overhang)", "select", required=False,
+                  options=["apply", "not required: member perpendicular to the ridge, gable roof 1/2 to 7 on 12"],
+                  help="ASCE/SEI 7-22 Sect. 7.5.1; blank = apply"),
                 F("lu_neg", "Bottom edge unbraced length where it is in compression", unit="ft", required=False,
                   help="needed with more spans or an overhang; 0 = braced"),
                 F("bearing_int", "Bearing length at interior supports", unit="in", required=False, help="blank = same as the ends"),
@@ -268,6 +277,9 @@ FORMS = {
                   help="lengths of the second and later spans, separated by commas; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
                 F("oh_right", "Overhang past the right support", unit="ft", required=False),
+                F("snow_partial", "Partial snow loading (more spans or an overhang)", "select", required=False,
+                  options=["apply", "not required: member perpendicular to the ridge, gable roof 1/2 to 7 on 12"],
+                  help="ASCE/SEI 7-22 Sect. 7.5.1; blank = apply"),
                 F("lu_neg", "Bottom edge unbraced length where it is in compression", unit="ft", required=False,
                   help="needed with more spans or an overhang; 0 = braced"),
                 F("bearing_int", "Bearing length at interior supports", unit="in", required=False, help="blank = same as the ends"),
@@ -314,6 +326,9 @@ FORMS = {
                   help="lengths of the second and later spans, separated by commas; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
                 F("oh_right", "Overhang past the right support", unit="ft", required=False),
+                F("snow_partial", "Partial snow loading (more spans or an overhang)", "select", required=False,
+                  options=["apply", "not required: member perpendicular to the ridge, gable roof 1/2 to 7 on 12"],
+                  help="ASCE/SEI 7-22 Sect. 7.5.1; blank = apply"),
                 F("bearing_int", "Bearing length at intermediate supports", unit="in", required=False, help="3.5 in. minimum; needed with more spans"),
                 F("stiffeners_int", "Web stiffeners at intermediate supports", "select", options=["no", "yes"], required=False),
                 F("flange", "Compression flange supported throughout (sheathing)", "select", options=["yes", "no"], help="NDS 7.3.5")],
@@ -856,7 +871,8 @@ def build(kind, values, project):
         return ws_ijoist.joist(mark, nm, float(dep), span, r.num("spacing", False), loads, cb, dc, bearing, stf, flg,
                                spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0,
                                overhang_right=r.num("oh_right", False) or 0.0, bearing_int_in=r.num("bearing_int", False),
-                               stiffeners_int=bool(yes(r.text("stiffeners_int", False)))), "simple", {}
+                               stiffeners_int=bool(yes(r.text("stiffeners_int", False))),
+                               snow_partial=not (r.text("snow_partial", False) or "").startswith("not required")), "simple", {}
     if kind in ("lvl_post", "wey_post"):
         cb = combos(project, r.miss, "ASD")
         gr, b_, d_, H = r.text("grade"), r.num("b"), r.num("d"), r.num("height")
@@ -924,7 +940,8 @@ def build(kind, values, project):
         more = r.nums("more_spans") if r.text("more_spans", False) else None
         cont = dict(spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0,
                     overhang_right=r.num("oh_right", False) or 0.0, lu_neg_ft=r.num("lu_neg", False),
-                    bearing_int_in=r.num("bearing_int", False))
+                    bearing_int_in=r.num("bearing_int", False),
+                    snow_partial=not (r.text("snow_partial", False) or "").startswith("not required"))
         if glu:
             return ws_wood.glulam_beam(mark, gr, sp_ == "Southern Pine", thk, dep, span, loads, cb, dc, lu or 0.0, bearing, wet, uw,
                                        spacing_in=r.num("spacing", False), **cont), "simple", {}

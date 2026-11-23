@@ -8,7 +8,13 @@ Statics only (beam.py does the analysis). What is read from a standard:
              check takes the worst arrangement.
   IBC Table 1604.3 note: for a cantilever, the deflection limit is based on twice its
              length.
-Partial snow loading (ASCE/SEI 7-22 Sect. 7.5) is not generated.
+  ASCE/SEI 7-22 Sect. 7.5.1  partial snow loading of continuous beams (a cantilever
+             counts as a span): besides the balanced load on every span, Case 1: full
+             balanced load on either exterior span and half on the others; Case 2: half
+             on either exterior span and full on the others; Case 3: full on any two
+             adjacent spans and half on the others. Not required for members spanning
+             perpendicular to the ridge of a gable roof sloped 1/2 on 12 to 7 on 12; the
+             caller says whether it applies.
 
 Units in: ft, plf, lb. Units out: lb, lb-in, in.
 """
@@ -18,6 +24,23 @@ from itertools import product
 from . import beam as bm
 
 PATTERN_CASES = ("L", "Lr")
+SNOW_CASE = "S"
+
+
+def snow_weights(n, partial=True):
+    """Arrangements of the snow load over n spans: a list of per-span multipliers."""
+    out = [[1.0] * n]
+    if partial and n >= 2:
+        for e in (0, n - 1):
+            w = [0.5] * n; w[e] = 1.0; out.append(w)
+            w = [1.0] * n; w[e] = 0.5; out.append(w)
+        for i in range(n - 1):
+            w = [0.5] * n; w[i] = w[i + 1] = 1.0; out.append(w)
+    uniq = []
+    for w in out:
+        if w not in uniq:
+            uniq.append(w)
+    return uniq
 
 
 @dataclass
@@ -101,9 +124,10 @@ def _solve(lay, EI, items):
     return bm.solve(lay.total * 12.0, [s * 12.0 for s in lay.supports], EI, pts, dist)
 
 
-def arrangements(lay, by_case, factors):
-    """Every load arrangement to analyse for one set of load factors: list of results."""
-    fixed, pat = [], {}
+def arrangements(lay, by_case, factors, snow_partial=True):
+    """Every load arrangement to analyse for one set of load factors: list of
+    (description, [(factor, load)])."""
+    fixed, pat, snow = [], {}, {}
     for case, fac in factors.items():
         if not fac:
             continue
@@ -111,10 +135,20 @@ def arrangements(lay, by_case, factors):
             if case in PATTERN_CASES and not lay.simple:
                 for i, piece in _pieces(lay, ld):
                     pat.setdefault(i, []).append((fac, piece))
+            elif case == SNOW_CASE and not lay.simple and snow_partial:
+                for i, piece in _pieces(lay, ld):
+                    snow.setdefault(i, []).append((fac, piece))
             else:
                 fixed.append((fac, ld))
     keys = sorted(pat)
-    return [(on, fixed + [it for k, use in zip(keys, on) if use for it in pat[k]]) for on in product((True, False), repeat=len(keys))]
+    sw = snow_weights(len(lay.segments), True) if snow else [None]
+    out = []
+    for on in product((True, False), repeat=len(keys)):
+        live = [it for k, use in zip(keys, on) if use for it in pat[k]]
+        for w in sw:
+            sn = [(fac * w[i], piece) for i, lst in snow.items() for fac, piece in lst] if w else []
+            out.append(((on, w), fixed + live + sn))
+    return out
 
 
 @dataclass
@@ -131,10 +165,10 @@ class Envelope:
     n: int
 
 
-def envelope(lay, EI, by_case, factors):
+def envelope(lay, EI, by_case, factors, snow_partial=True):
     sup = [s * 12.0 for s in lay.supports]
     best = None
-    for on, items in arrangements(lay, by_case, factors):
+    for on, items in arrangements(lay, by_case, factors, snow_partial):
         r = _solve(lay, EI, items)
         if r is None:
             continue
@@ -154,11 +188,11 @@ def envelope(lay, EI, by_case, factors):
     return best
 
 
-def deflection(lay, EI, by_case, factors, ratio):
+def deflection(lay, EI, by_case, factors, ratio, snow_partial=True):
     """Worst deflection-to-limit over the overhangs and spans and the live load
     arrangements: (deflection in, limit in, segment label, limit text) or None."""
     worst = None
-    for on, items in arrangements(lay, by_case, factors):
+    for on, items in arrangements(lay, by_case, factors, snow_partial):
         r = _solve(lay, EI, items)
         if r is None:
             continue

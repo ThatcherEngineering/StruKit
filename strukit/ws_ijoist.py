@@ -7,7 +7,7 @@ from .ws_steel_beam import Row, WorksheetError
 
 
 def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, bearing_in, stiffeners, flange_supported,
-          spans=None, overhang_left=0.0, overhang_right=0.0, bearing_int_in=None, stiffeners_int=False):
+          spans=None, overhang_left=0.0, overhang_right=0.0, bearing_int_in=None, stiffeners_int=False, snow_partial=True):
     """name: "BCI 6000-1.8" or "TJI 210"; depth in.; loads: dict(case, kind "area"|"uniform"|
     "point", q psf / w plf / P lb, x1_ft, x2_ft or x_ft, label). Self-weight is added to D."""
     if not combos:
@@ -59,7 +59,7 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
     out = []
     for cb in combos:
         present = [c for c, v in cb.factors.items() if v and c in by_case]
-        env = contbeam.envelope(lay, j["EI"], by_case, cb.factors)
+        env = contbeam.envelope(lay, j["EI"], by_case, cb.factors, snow_partial)
         if env is None:
             continue
         res = env.res_neg if env.Mneg > env.Mpos else env.res_pos
@@ -84,7 +84,7 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
         rows.append(Row("intermediate reaction", gi["cb"].name, gi["Rint"], Ri * gi["CD"], "lb", f"2018 NDS 7.3, Table 7.3.1; {rpt}",
                         f"{bearing_int_in:g} in. bearing, {'with' if stiffeners_int else 'without'} web stiffeners ({ri_how}); {cd(gi)}"))
     for dc in defl_checks:
-        wd = contbeam.deflection(lay, j["EI"], by_case, dc.factors, dc.ratio)
+        wd = contbeam.deflection(lay, j["EI"], by_case, dc.factors, dc.ratio, snow_partial)
         if wd is None:
             continue
         bend = wd[0]
@@ -137,7 +137,11 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). The reference moment applies to "
                                     "positive and negative moment.")
-        sheet.not_checked[:0] = ["partial snow loading (ASCE/SEI 7-22 Sect. 7.5)", "lateral restraint of the bottom flange at supports"]
+        sheet.not_checked[:0] = ["lateral restraint of the bottom flange at supports"]
+        sheet.assumptions.insert(2, "Snow load (case S) is applied balanced and in the partial loadings of ASCE/SEI 7-22 Sect. 7.5.1."
+                                 if snow_partial else
+                                 "Partial snow loading is not applied: the member spans perpendicular to the ridge of a gable roof "
+                                 "sloped between 1/2 on 12 and 7 on 12 (ASCE/SEI 7-22 Sect. 7.5.1).")
         if min(o["Rmin"] for o in out) < 0:
             sheet.not_checked.insert(0, "uplift at a support (a reaction is upward in at least one load arrangement)")
     sheet.code = "2018 NDS, " + j["source"].split(" Table")[0]
