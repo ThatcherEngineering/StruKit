@@ -22,6 +22,9 @@ enclosed and partially open rigid buildings with a gable, monoslope or flat roof
   Figure 27.3-1  Cp for walls and roofs; interpolation between values of the same sign, with
                  0.0 taken where the figure gives no value of that sign (notes 2 and 3). The
                  area reduction of the -1.3 value (note b) is not taken.
+  Sect. 27.3.4   parapets (pdf p. 347, page image): pp = qp Kd (GCpn), Eq. 27.3-3, qp at the top
+                 of the parapet, (GCpn) = +1.5 for the windward parapet and -1.0 for the
+                 leeward parapet (net on both faces; both push downwind).
   Sect. 27.1.5   minimum: 16 psf on the wall area and 8 psf on the roof area projected on a
                  vertical plane normal to the wind, as a separate case.
   Figure 27.3-1, note 6: the total horizontal force is not less than that with the roof
@@ -236,7 +239,10 @@ class Surface:
         self.p_neg_internal = self.external + self.internal      # with -GCpi
 
 
-def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, Ke=1.0, roof="gable"):
+GCPN_WINDWARD, GCPN_LEEWARD = 1.5, -1.0                 # Sect. 27.3.4
+
+
+def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, Ke=1.0, roof="gable", parapet=0.0):
     """Design pressures (psf, strength level, positive toward the surface) on the main wind
     force resisting system of a rigid building with a gable, monoslope or flat roof, for one
     wind direction, and the total horizontal force in that direction.
@@ -319,15 +325,23 @@ def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, 
         z0 = s.z
     A_l = area(0.0, top_l)
     F_l = -leeward.external * A_l
-    walls = F_w + F_l
+    par = None
+    if parapet:
+        if parapet < 0:
+            raise WindError("wind: the parapet height must be positive")
+        qw, _ = velocity_pressure(V, exposure, top_w + parapet, Kzt, Ke)
+        ql, _ = velocity_pressure(V, exposure, top_l + parapet, Kzt, Ke)
+        par = dict(height=parapet, q_windward=qw, q_leeward=ql, p_windward=qw * KD_MWFRS * GCPN_WINDWARD, p_leeward=ql * KD_MWFRS * GCPN_LEEWARD)
+        par["F"] = (par["p_windward"] - par["p_leeward"]) * B * parapet
+    walls = F_w + F_l + (par["F"] if par else 0.0)
     total = max([walls] + [walls + r for r in roof_h])
-    A_wall = area(0.0, top_w)
+    A_wall = area(0.0, top_w) + (B * parapet if par else 0.0)
     A_roof = B * rise if normal and direction != "normal_high" else 0.0    # behind the high wall of a monoslope roof: none
     F_min = MIN_WALL * A_wall + MIN_ROOF * A_roof
     return dict(qh=qh, Kh=kh, h_over_L=hl, L_over_B=lb, GCpi=gc, windward=windward, leeward=leeward, side=side, roof=surfaces,
                 walls_together=walls_together, direction=direction, theta=theta, rise=rise, top_w=top_w, top_l=top_l, sloped=sloped,
                 F_windward=F_w, F_leeward=F_l, F_walls=walls, F_roof=roof_h, F_total=total, A_wall=A_wall, A_roof=A_roof,
-                F_min=F_min, F_design=max(total, F_min))
+                F_min=F_min, F_design=max(total, F_min), parapet=par)
 
 
 # ---- Components and cladding, walls, h of 60 ft or less (Figure 30.3-1) ------------------

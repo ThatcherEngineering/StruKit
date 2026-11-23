@@ -648,7 +648,7 @@ def wind_pressure_sheet(mark, V, V_source, exposure, exposure_basis, heights, h_
 
 
 def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, across_ridge, along_ridge, theta, enclosure,
-                     enclosure_basis, Kzt, Kzt_source, elevation_ft=None, elevation_source="", roof="gable"):
+                     enclosure_basis, Kzt, Kzt_source, elevation_ft=None, elevation_source="", roof="gable", parapet=0.0):
     """Design wind pressures on the main wind force resisting system of a rigid building with
     a gable, monoslope or flat roof, ASCE/SEI 7-22 Chapter 27 (directional procedure), for
     each wind direction (see wind.py). across_ridge, along_ridge: plan dimensions; eave: the
@@ -676,7 +676,7 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         cases = [("normal", "Wind Normal to the Ridge", along_ridge, across_ridge),
                  ("parallel", "Wind Parallel to the Ridge", across_ridge, along_ridge)]
     try:
-        res = [(t, Bd, Ld, wind.mwfrs(V, exposure, h_mean, eave, Bd, Ld, enclosure, d, theta, Kzt, Ke, roof=roof)) for d, t, Bd, Ld in cases]
+        res = [(t, Bd, Ld, wind.mwfrs(V, exposure, h_mean, eave, Bd, Ld, enclosure, d, theta, Kzt, Ke, roof=roof, parapet=parapet or 0.0)) for d, t, Bd, Ld in cases]
     except wind.WindError as e:
         raise WorksheetError(f"{mark}: {e}")
     r0 = res[0][3]
@@ -712,7 +712,12 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
                 nm += ", value 1" if s is same[0] else ", value 2"
             out.append(f"{nm:<34}{s.q:>8.1f}{s.Cp:>8.2f}{s.external:>12.1f}{s.p_pos_internal:>12.1f}{s.p_neg_internal:>12.1f}"
                        + (f"{together[id(s)]:>20.1f}" if id(s) in together else ""))
-        f = f"horizontal force: windward wall {r['F_windward']:,.0f} + leeward wall {r['F_leeward']:,.0f} = {r['F_walls']:,.0f} lb"
+        pr = r["parapet"]
+        if pr:
+            out.append(f"parapets, {pr['height']:g} ft high: windward qp {pr['q_windward']:.1f} psf x Kd x 1.5 = {pr['p_windward']:+.1f} psf; "
+                       f"leeward qp {pr['q_leeward']:.1f} psf x Kd x -1.0 = {pr['p_leeward']:+.1f} psf (net, Eq. 27.3-3)")
+        f = (f"horizontal force: windward wall {r['F_windward']:,.0f} + leeward wall {r['F_leeward']:,.0f}"
+             + (f" + parapets {pr['F']:,.0f}" if pr else "") + f" = {r['F_walls']:,.0f} lb")
         out.append(f)
         if any(abs(x) > 0.5 for x in r["F_roof"]):
             out.append("  roof, horizontal: " + " or ".join(f"{x:+,.0f}" for x in r["F_roof"]) + f" lb; total {r['F_total']:,.0f} lb (not less than the walls alone)")
@@ -750,7 +755,7 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
          f"Minimum design wind load: {wind.MIN_WALL:g} psf on the wall area and {wind.MIN_ROOF:g} psf on the roof area projected on a "
          "vertical plane normal to the wind (Sect. 27.1.5)."],
         ["the torsional load cases of Figure 27.3-8 (Sect. 27.3.5)",
-         "parapets and roof overhangs (Sect. 27.3.3, 27.3.4)", "components and cladding (Chapter 30)",
+         ("roof overhangs (Sect. 27.3.3)" if parapet else "parapets and roof overhangs (Sect. 27.3.3, 27.3.4)"), "components and cladding (Chapter 30)",
          "whether the building is rigid (Sect. 26.2) and its enclosure classification (Sect. 26.12)"])
 
     def panel(t, r, Ld):
@@ -768,6 +773,10 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
                 pn["shape"] = "mono_zones"
         return pn
 
+    if parapet:
+        sheet.info.append(("Parapets", f"{parapet:g} ft above the top of the windward and leeward walls"))
+        sheet.assumptions.append("Parapets: net pressure pp = qp Kd (GCpn), Eq. 27.3-3, qp at the top of the parapet, (GCpn) = +1.5 windward and -1.0 leeward; "
+                                 "their force and area are included in the horizontal force and in the minimum.")
     sheet.blocks.append(dict(title="External Pressures", picture=("wind_mwfrs", dict(panels=[panel(t, r, Ld) for t, Bd, Ld, r in res]))))
     for t, Bd, Ld, r in res:
         sheet.blocks.append(dict(title=t, lines=table(r), after=basis(r, Bd, Ld)))

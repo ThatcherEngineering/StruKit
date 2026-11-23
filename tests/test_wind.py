@@ -333,3 +333,19 @@ def test_cc_parapet_and_note_5_by_hand(tmp_path):
     sheet2, _, _ = calc.build("wind_cc_roof", v2, dict(job="2026-000", name="Test", method="ASD"))
     assert "+ (2, 3)" in sheet2.blocks[1]["lines"][0] and "the parapets themselves (Sect. 30.6)" in sheet2.not_checked
     calcsheet._simple_pdf(sheet2, str(tmp_path / "r5.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+
+
+def test_mwfrs_parapets_by_hand():
+    """Flat roof, eave 20 ft, 3 ft parapets, 115 mi/h, Exposure C, B = 60 ft, L = 40 ft. Kz at 23 ft = 0.90 + 0.04(3/5) = 0.924;
+    qp = 0.00256(0.924)(115^2) = 31.28 psf; windward 31.28(0.85)(1.5) = +39.9 psf; leeward 31.28(0.85)(-1.0) = -26.6 psf;
+    force (39.88 + 26.59)(60)(3) = 11,965 lb; minimum wall area 60(20) + 60(3) = 1,380 ft2."""
+    r = wind.mwfrs(115, "C", 20, 20, 60, 40, "enclosed", "normal", 0.0, parapet=3)
+    n = wind.mwfrs(115, "C", 20, 20, 60, 40, "enclosed", "normal", 0.0)
+    p = r["parapet"]
+    assert p["q_windward"] == pytest.approx(31.28, abs=0.01) and p["p_windward"] == pytest.approx(39.9, abs=0.05) and p["p_leeward"] == pytest.approx(-26.6, abs=0.05)
+    assert p["F"] == pytest.approx(11965, abs=10) and r["F_walls"] == pytest.approx(n["F_walls"] + p["F"]) and r["A_wall"] == 1380 and n["parapet"] is None
+    from strukit.gui import calc
+    v = dict(mark="WM3", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed", enclosure_basis="Sect. 26.12",
+             across="40", along="60", eave="20", h="20", theta="0", parapet="3", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, _, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert any("parapets, 3 ft high" in t for t in sheet.blocks[1]["lines"]) and "roof overhangs (Sect. 27.3.3)" in sheet.not_checked
