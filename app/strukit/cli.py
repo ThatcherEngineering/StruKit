@@ -79,7 +79,7 @@ def cmd_run(a):
 
 # ---------------------------------------------------------------- StruKit project files
 KIND_OF = {"steel_beam": "MEMBER", "steel_column": "MEMBER", "frame": "MEMBER", "footing_iso": "FTG",
-           "footing_cont": "FTG", "footing_moment": "FTG", "weld": "CONN", "bolts": "CONN", "base_plate": "CONN", "base_plate_moment": "CONN", "snow": "LOAD"}
+           "footing_cont": "FTG", "footing_moment": "FTG", "weld": "CONN", "bolts": "CONN", "base_plate": "CONN", "base_plate_moment": "CONN", "snow": "LOAD", "wood_beam": "MEMBER"}
 
 
 def _project(path):
