@@ -212,5 +212,24 @@ def test_drift_on_an_adjacent_lower_structure(tmp_path):
              lu_upper="60", lu_lower="40", step="8", separation="6", slide="no")
     sheet, _, _ = calc.build("snow_drift", v, proj)
     assert dict(sheet.info)["Separation"].startswith("6 ft") and any("7.7.2" in str(getattr(l, "source", "")) for l in sheet.steps)
-    assert "sliding snow across the gap (Sect. 7.9)" in sheet.not_checked and sheet.blocks[0]["picture"][1]["gap"] == 6
+    assert "sliding snow (Sect. 7.9)" in sheet.not_checked and sheet.blocks[0]["picture"][1]["gap"] == 6
     calcsheet._simple_pdf(sheet, str(tmp_path / "g.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+
+
+def test_sliding_snow_across_a_gap():
+    """ASCE/SEI 7-22 Sect. 7.9, separated structures (page text, pdf pp. 128-129): considered when h/s > 1 and s < 15 ft; extent 15 - s;
+    load per foot of eave 0.4 pf W (15 - s)/15. pf = 28 psf, W = 20 ft, h = 8 ft, s = 6 ft: 0.4(28)(20) = 224 plf; over 15 ft: 14.93 psf;
+    on the lower roof over 9 ft: 134.4 plf = 224(9/15). s = 10 ft with h = 8 ft: h/s under 1, none. s = 15 ft: none."""
+    from strukit import snow
+    sl = dict(pf=28, W=20, rise_on_12=4, slippery=False)
+    r = snow.lower_roof(40, 0.45, 30, 60, 40, 8, sliding=sl, separation=6)
+    assert r.sliding_psf == pytest.approx(224 / 15) and r.sliding_extent == 9 and r.sliding_total == pytest.approx(224 * 9 / 15)
+    assert snow.lower_roof(40, 0.45, 30, 60, 40, 8, sliding=sl).sliding_extent == 15
+    for h, s_ in ((8, 10), (20, 15), (20, 16)):
+        n = snow.lower_roof(40, 0.45, 30, 60, 40, h, sliding=sl, separation=s_)
+        assert n.sliding_psf == 0 and "7.9" in n.sliding_why
+    from strukit.gui import calc
+    v = dict(mark="SD5", pg="40", pg_source="Hazard Tool", W2="0.45", W2_source="Hazard Tool", ps="30", ps_source="SN1", at="a roof step (lower roof beside a higher roof)",
+             lu_upper="60", lu_lower="40", step="8", separation="6", slide="yes", s_pf="28", s_pf_source="SN1", s_W="20", s_rise="4", s_slippery="no")
+    sheet, _, _ = calc.build("snow_drift", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert sheet.drift.sliding_extent == 9 and not any("sliding" in t for t in sheet.not_checked)
