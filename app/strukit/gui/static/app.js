@@ -215,6 +215,25 @@ function fillDriftBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Drift: take a story deflection from"), pick, level, go);
 }
 
+function fillSnowBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "snow");
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose a roof snow sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 roof snow")));
+  const go = el("button", { class: "btn", onclick: async () => {
+    if (pick.value === "") return toast("Choose the roof snow sheet first.");
+    const s = S.members[+pick.value];
+    let got;
+    try { got = await post("/api/snow_loads", { values: s.values, project: S.project }); } catch (e) { return toast(e.message, 12000); }
+    const mark = s.values.mark || "roof snow sheet", tag = "sheet " + mark + ":";
+    m.values.loads = (m.values.loads || []).filter(r => !(String(r.label || "").startsWith(tag)) && (r.case || r.mag));
+    m.values.loads.push({ case: "S", kind: "area", mag: String(Math.round(got.uniform_design * 10) / 10), mag2: "", x1: "", x2: "", label: tag + " " + got.governs });
+    changed(); drawMain();
+    toast("Snow load " + got.uniform_design.toFixed(1) + " psf added as an area load (" + got.governs + "), on the horizontal projection. It needs the member spacing."
+      + (got.unbalanced ? " The unbalanced loads on that sheet are not carried over: enter them where this member must take them." : ""), 14000);
+  } }, "Add Snow Load");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the uniform snow load from"), pick, go);
+}
+
 function fillCollectorBar(m, changed) {
   const src = S.members.filter(x => x.kind === "diaphragm");
   if (!src.length) return el("div", { class: "fill small" }, "The force and the line length can be filled in from a Wood Diaphragm sheet once the project has one.");
@@ -325,6 +344,7 @@ function fillBar(m, changed) {
   if (m.kind === "diaphragm") return fillDiaphragmBar(m, changed);
   if (m.kind === "collector") return fillCollectorBar(m, changed);
   if (m.kind === "seismic_elf") return fillDriftBar(m, changed);
+  if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) return fillSnowBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");
   if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame once the project has one.");

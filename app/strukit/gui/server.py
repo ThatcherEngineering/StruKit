@@ -168,6 +168,16 @@ def api(path, body):
         except Exception as e:
             return dict(error=f"The diaphragm sheet stopped: {e}")
         return dict(reaction=sheet.diaphragm["reaction"], load=(body.get("values") or {}).get("load"), W=(body.get("values") or {}).get("W"))
+    if path == "/api/snow_loads":
+        try:
+            sheet, _, _ = calc.build("snow", body.get("values") or {}, body.get("project") or {})
+        except calc.Missing as e:
+            return dict(error="The roof snow sheet is not complete: " + "; ".join(e.items))
+        except Exception as e:
+            return dict(error=f"The roof snow sheet stopped: {e}")
+        r = sheet.snow
+        return dict(pf=r.pf, ps=r.ps, balanced=r.balanced, pm=r.pm, uniform_design=r.uniform_design, unbalanced=bool(r.unbalanced),
+                    governs=("minimum snow load pm" if r.pm > r.balanced else "balanced snow load ps" + (" plus rain-on-snow" if r.rain_on_snow else "")))
     if path == "/api/wall_deflection":
         vals, kind = body.get("values") or {}, body.get("kind") or "shear_wall"
         if kind not in ("shear_wall", "perforated_wall"):
