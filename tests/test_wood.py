@@ -379,7 +379,7 @@ def test_southern_pine_table_4b(tmp_path):
                                 ("No. 2", "2x14", 750, 0.9), ("No. 1 Non-Dense", "4x4", 1300, 1.0)):
         r, c, _ = wood.values("SOUTHERN PINE", grade, size)
         assert r["Fb"] == Fb and c == pytest.approx(cf), (grade, size)
-    assert wood.values("SOUTHERN PINE", "No. 2", "4x14")[1] == pytest.approx(0.99) and len(wood.SP_VALUES) == 53
+    assert wood.values("SOUTHERN PINE", "No. 2", "4x14")[1] == pytest.approx(0.99) and len(wood.SP_VALUES) == 76
     for grade, size in (("Construction", "2x6"), ("No. 1 & Btr", "2x8")):
         with pytest.raises(wood.WoodError):
             wood.values("SOUTHERN PINE", grade, size)
@@ -464,3 +464,26 @@ def test_lumber_decking_by_hand(tmp_path):
     single, _, _ = calc.build("decking", dict(v, repetitive="no", service="wet service"), proj)
     assert single.rows[0].capacity == pytest.approx(1750 * 1.15 * 0.85 * 1.04)
     assert calc.results("decking", dict(v, span=""), proj)["state"] == "incomplete"
+
+
+def test_mixed_southern_pine_table_4b(tmp_path):
+    """2018 NDS Supplement Table 4B, Mixed Southern Pine, values read from the Supplement: No. 2, 2 to 4 in. wide: Fb 1,100, Fc 1,450,
+    E 1,400,000; No. 1, 8 in. wide: Fb 1,200, E 1,500,000; Select Structural, 12 in. wide: Fb 1,400; No. 3 and Stud, 10 in. wide: Fb 475;
+    Utility, 4 in. wide: Fb 225, E 1,100,000. Joist: 2x8 No. 1, repetitive: Fb' = 1,200(1.15) = 1,380 psi."""
+    from strukit import calcsheet, wood
+    from strukit.gui import calc
+    M = "MIXED SOUTHERN PINE"
+    v, CF, _ = wood.values(M, "No. 2", "2x4")
+    assert (v["Fb"], v["Fc"], v["E"], CF) == (1100, 1450, 1400000, 1.0)
+    for grade, size, Fb in (("No. 1", "2x8", 1200), ("Select Structural", "2x12", 1400), ("Stud", "2x10", 475), ("Utility", "2x4", 225), ("No. 1", "4x6", 1300)):
+        assert wood.values(M, grade, size)[0]["Fb"] == Fb
+    assert wood.values(M, "No. 1", "2x8")[0]["E"] == 1500000 and wood.post_values(M, "No. 2", "4x4")[3] == "Table 4B"
+    with pytest.raises(wood.WoodError):
+        wood.values(M, "No. 1 Dense", "2x8")
+    proj = dict(method="ASD", combos_asd=[dict(expr="D + L", source="typed in")])
+    f = dict(mark="WB6", species=M, grade="No. 1", size="2x8", plies="1", span="10", spacing="16", bracing="supported throughout", bearing="1.5",
+             service="dry service", incised="no", repetitive="yes", unit_weight="", loads=[dict(case="D", kind="area", mag="10", x1="", x2="", label=""),
+             dict(case="L", kind="area", mag="40", x1="", x2="", label="")], defl=[dict(label="live", expr="L", ratio="360", source="typed in")])
+    s, _, _ = calc.build("wood_beam", f, proj)
+    assert next(x for x in s.rows if x.check == "bending").capacity == pytest.approx(1380.0) and "Mixed Southern Pine" in dict(s.info)["Member"]
+    calcsheet.simple_pdf(s, str(tmp_path / "m.pdf"), "Job", "2018 NDS", "Nov 23, 2026")

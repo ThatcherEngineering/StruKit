@@ -141,7 +141,7 @@ FORMS = {
         title="Wood Beam", code="2018 NDS", mark="WB",
         fields=[F("species", "Species", "select",
                   options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"]
-                  + [x for x in sorted(set(wood.SPECIES) | set(wood.TIMBER_SPECIES) | {wood.SP}) if x not in ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
+                  + [x for x in sorted(set(wood.SPECIES) | set(wood.TIMBER_SPECIES) | set(wood.SP_SPECIES)) if x not in ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
                   help="2018 NDS Supplement Table 4A (2 to 4 in. thick), Table 4B (Southern Pine, 2 to 4 in. thick) or Table 4D (5x5 and larger)"),
                 F("grade", "Grade", "select", options=["Select Structural", "No. 1 & Btr", "No. 1", "No. 2", "No. 1/ No. 2", "No. 3",
                                                         "Stud", "Construction", "Standard", "Utility", "Dense Select Structural",
@@ -266,7 +266,7 @@ FORMS = {
         title="Wood Post", code="2018 NDS", mark="WP",
         fields=[F("species", "Species", "select",
                   options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"]
-                  + [x for x in sorted(set(wood.SPECIES) | set(wood.TIMBER_SPECIES) | {wood.SP}) if x not in ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
+                  + [x for x in sorted(set(wood.SPECIES) | set(wood.TIMBER_SPECIES) | set(wood.SP_SPECIES)) if x not in ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
                   help="2018 NDS Supplement Table 4A or 4B (Southern Pine), 3 and 4 in. thick, or Table 4D (5x5 and larger)"),
                 F("grade", "Grade", "select", options=["Select Structural", "No. 1 & Btr", "No. 1", "No. 2", "No. 1/ No. 2", "No. 3",
                                                         "Stud", "Construction", "Standard", "Utility", "Dense Select Structural",
@@ -339,7 +339,7 @@ FORMS = {
     "builtup_post": dict(
         title="Built-Up Wood Column", code="2018 NDS", mark="BC",
         fields=[F("species", "Species", "select",
-                  options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"] + [x for x in sorted(set(wood.SPECIES) | {wood.SP}) if x not in ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
+                  options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"] + [x for x in sorted(set(wood.SPECIES) | set(wood.SP_SPECIES)) if x not in ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
                   help="2018 NDS Supplement Table 4A, or Table 4B for Southern Pine"),
                 F("grade", "Grade", "select", options=["No. 2", "Select Structural", "No. 1 & Btr", "No. 1", "No. 1/ No. 2", "No. 3", "Stud",
                                                         "Construction", "Standard", "Utility", "Dense Select Structural", "No. 1 Dense", "No. 1 Non-Dense",
