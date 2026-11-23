@@ -429,7 +429,7 @@ def snow_sheet(mark, pg, pg_source, risk, roughness, exposure, thermal, roof_typ
 
 def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, V, load, method, v_source, holddown_inside=None,
                      arm_offset_in=0.0, chord_E=None, chord_A=None, anchor_slip_in=None, sides=1, blocked=True, stud_spacing=None,
-                     field_nails=None, dead_plf=0.0, dead_factor=None, dead_source=""):
+                     field_nails=None, dead_plf=0.0, dead_factor=None, dead_source="", other=None):
     """Wood structural panel shear wall line, SDPWS-2021 Sect. 4.3 (see shearwall.py).
     V is the design shear on the line at the level of `method`; v_source says where it
     comes from. G_source says where the framing specific gravity comes from."""
@@ -442,14 +442,15 @@ def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, 
         raise WorksheetError(f"{mark}: the design shear must be a positive number")
     try:
         w = shearwall.line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_inside, arm_offset_in,
-                           chord_E, chord_A, anchor_slip_in, sides, blocked, stud_spacing, field_nails, dead_plf or 0.0, dead_factor)
+                           chord_E, chord_A, anchor_slip_in, sides, blocked, stud_spacing, field_nails, dead_plf or 0.0, dead_factor, other=other)
     except shearwall.ShearWallError as e:
         raise WorksheetError(f"{mark}: {e}")
     rows = [Row("shear in the wall line", f"{load}, {method}", V, w.capacity, "lb", "SDPWS-2021 4.1.4, Table 4.3A, 4.3.5.5.1",
                 f"nominal {w.design_text}; sum of {len(w.segments)} segment(s)")]
-    info = [("Sheathing", f"wood structural panels, {panel}, {panel_type}, {'both sides' if sides == 2 else 'one side'}, "
+    info = [("Sheathing", f"wood structural panels, {panel}, {panel_type}, {'side 1' if other else 'both sides' if sides == 2 else 'one side'}, "
              + ("blocked" if blocked else f"unblocked, studs at {stud_spacing:g} in") + f"; edge nails at {spacing:g} in"
              + ("" if blocked else f", intermediate nails at {field_nails:g} in")),
+            *([("Side 2", f"wood structural panels, {other['panel']}, {other['panel_type']}, blocked; edge nails at {other['spacing']:g} in")] if other else []),
             ("Framing", f"specific gravity G = {G:g} ({G_source.strip()})"),
             ("Wall", f"{h:g} ft high; full-height segments " + ", ".join(f"{b:g} ft" for b in lengths)),
             ("Design Shear", f"{V:,.0f} lb, {load}, {method} ({v_source.strip()})"),

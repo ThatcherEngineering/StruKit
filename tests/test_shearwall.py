@@ -183,3 +183,31 @@ def test_perforated_wall_rules():
         a = dict(h=8, openings=[(6, 4, 4)]); a.update(kw)
         with pytest.raises(sw.ShearWallError, match=msg):
             sw.perforated(P, 4, "OSB", 0.5, a["h"], 16, a["openings"], 1000, "wind", "ASD")
+
+
+def test_different_sheathing_on_the_two_sides(tmp_path):
+    """SDPWS-2021 4.3.5.4.2. Side 1: Sheathing 7/16 in., 8d at 4 in. (vn 980 plf, Ga 22 OSB); side 2: Sheathing 3/8 in., 8d at 6 in. (vn 615 plf,
+    Ga 17 OSB). Two times the smaller, 1,230 plf, exceeds the larger: vn(c) = 1,230 plf, Ga(c) = 2(17) = 34 kips/in. 8 ft wall, seismic, ASD:
+    1,230(8)/2.8 = 3,514 lb. With side 1 at 2 in. (1,640 plf, Ga 42): the larger governs: vn(c) = 1,640 plf, Ga(c) = 42; 1,640(8)/2.8 = 4,686 lb."""
+    from strukit import shearwall as sw, calcsheet
+    from strukit.gui import calc
+    oth = dict(panel="Sheathing, 3/8 in, 8d common", spacing=6, panel_type="OSB")
+    w = sw.line("Sheathing, 7/16 in, 8d common", 4, "OSB", 0.5, 9, [8], 3000, "seismic", "ASD", other=oth)
+    assert w.capacity == pytest.approx(1230 * 8 / 2.8) and w.Ga == 34
+    w = sw.line("Sheathing, 7/16 in, 8d common", 2, "OSB", 0.5, 9, [8], 3000, "seismic", "ASD", other=oth)
+    assert w.capacity == pytest.approx(1640 * 8 / 2.8) and w.Ga == 42
+    same = sw.line("Sheathing, 7/16 in, 8d common", 4, "OSB", 0.5, 9, [8], 3000, "seismic", "ASD", sides=2)
+    twin = sw.line("Sheathing, 7/16 in, 8d common", 4, "OSB", 0.5, 9, [8], 3000, "seismic", "ASD", other=dict(panel="Sheathing, 7/16 in, 8d common", spacing=4, panel_type="OSB"))
+    assert twin.capacity == pytest.approx(same.capacity) and twin.Ga == same.Ga          # identical sides agree with 4.3.5.4.1
+    for kw in (dict(lengths=[8, 4]), dict(blocked=False, stud_spacing=16, field_nails=12), dict(sides=2)):
+        a = dict(lengths=[8]); a.update(kw)
+        with pytest.raises(sw.ShearWallError):
+            sw.line("Sheathing, 7/16 in, 8d common", 6 if "blocked" in kw else 4, "OSB", 0.5, 9, a.pop("lengths"), 3000, "seismic", "ASD", other=oth, **a)
+    proj = dict(job="2026-000", name="Test", method="ASD")
+    v = dict(mark="SW7", panel="Sheathing, 7/16 in, 8d common", spacing="4", panel_type="OSB", sides="both sides (different panels or nailing)",
+             panel2="Sheathing, 3/8 in, 8d common", spacing2="6", panel_type2="OSB", blocking="blocked", G="0.50", G_source="DF-L, NDS Table 12.3.3A",
+             h="9", lengths="8, 8", load="seismic", V="6000", v_source="seismic sheet SE1")
+    sheet, _, _ = calc.build("shear_wall", v, proj)
+    assert sheet.rows[0].capacity == pytest.approx(2 * 1230 * 8 / 2.8) and dict(sheet.info)["Side 2"].startswith("wood structural panels, Sheathing, 3/8 in")
+    calcsheet._simple_pdf(sheet, str(tmp_path / "w.pdf"), "2026-000", "SDPWS-2021", "2026-11-23")
+    assert calc.results("shear_wall", dict(v, panel2=""), proj)["state"] == "incomplete"
