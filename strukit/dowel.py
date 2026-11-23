@@ -167,3 +167,11 @@ def local_stresses(Ft, Fv, t, w, rows_n, n_row, spacing, end, row_spacing, hole)
     out["capacity"] = min(v for v in (ZNT, ZRT, out["ZGT"]) if v is not None)
     out["governs"] = "net section tension" if out["capacity"] == ZNT else "row tear-out" if out["capacity"] == ZRT else "group tear-out"
     return out
+
+
+# ---- NDS Appendix Table L4: standard common, box and sinker steel wire nails: (length in., diameter in.) ----
+_PENNY = ("6d", "7d", "8d", "10d", "12d", "16d", "20d", "30d", "40d", "50d", "60d")
+_L4 = {"common": ((2, 0.113), (2.25, 0.113), (2.5, 0.131), (3, 0.148), (3.25, 0.148), (3.5, 0.162), (4, 0.192), (4.5, 0.207), (5, 0.225), (5.5, 0.244), (6, 0.263)),
+       "box": ((2, 0.099), (2.25, 0.099), (2.5, 0.113), (3, 0.128), (3.25, 0.128), (3.5, 0.135), (4, 0.148), (4.5, 0.148), (5, 0.162), None, None),
+       "sinker": ((1.875, 0.092), (2.125, 0.099), (2.375, 0.113), (2.875, 0.120), (3.125, 0.135), (3.25, 0.148), (3.75, 0.177), (4.25, 0.192), (4.75, 0.207), None, (5.75, 0.244))}
+NAILS = {f"{p} {kind}": v for kind, row in _L4.items() for p, v in zip(_PENNY, row) if v}

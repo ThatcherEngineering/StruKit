@@ -44,7 +44,7 @@ def test_nailed_connection_sheet(tmp_path):
     from strukit import calcsheet
     proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 5a"),
                                                                         dict(expr="D", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 1a")])
-    v = dict(mark="NC1", nail="16d common", D="0.162", length="3.5", n="8", side_t="1.5", G_side="0.50", G_side_source="Douglas Fir-Larch, NDS Table 12.3.3A",
+    v = dict(mark="NC1", nail="16d common", n="8", side_t="1.5", G_side="0.50", G_side_source="Douglas Fir-Larch, NDS Table 12.3.3A",
              main_t="3.5", G_main="0.50", G_main_source="Douglas Fir-Larch, NDS Table 12.3.3A", service="dry", loads=[dict(case="W", P="1500")])
     sheet, kind, _ = calc.build("nailed_connection", v, proj)
     c = sheet.connection
@@ -53,8 +53,14 @@ def test_nailed_connection_sheet(tmp_path):
     wet, _, _ = calc.build("nailed_connection", dict(v, service="wet in service", end_grain="yes", diaphragm="yes", loads=[dict(case="D", P="400")]), proj)
     assert wet.rows[0].capacity == pytest.approx(8 * c["Z"] * 0.9 * 0.7 * 0.67 * 1.1, rel=1e-6) and wet.rows[0].combo in ("D", "D + 0.6W")
     from strukit.ws_steel_beam import WorksheetError
+    assert calc.FORMS["nailed_connection"]["fields"][0]["options"][:-1] == list(dowel.NAILS) and len(dowel.NAILS) == 30
+    assert dowel.NAILS["16d common"] == (3.5, 0.162) and dowel.NAILS["8d box"] == (2.5, 0.113) and dowel.NAILS["16d sinker"] == (3.25, 0.148) and dowel.NAILS["60d sinker"] == (5.75, 0.244)
+    other, _, _ = calc.build("nailed_connection", dict(v, nail="other (type the size)", nail_name="0.148 x 3 in. gun nail", D="0.148", length="3"), proj)
+    assert other.connection["p"] == 1.5 and other.connection["Z"] == pytest.approx(118, abs=0.75)
+    with pytest.raises(calc.Missing):
+        calc.build("nailed_connection", dict(v, nail="other (type the size)"), proj)
     with pytest.raises(WorksheetError):
-        calc.build("nailed_connection", dict(v, length="2.25"), proj)                 # 0.75 in. penetration, under 6 D
+        calc.build("nailed_connection", dict(v, nail="6d common"), proj)              # 2 in. nail: 0.5 in. penetration, under 6 D
     with pytest.raises(calc.Missing):
         calc.build("nailed_connection", dict(v, loads=[]), proj)
 
