@@ -422,3 +422,18 @@ def test_southern_pine_builtup_column():
     s = ws_wood.builtup_post("BC2", "SOUTHERN PINE", "No. 2", "2x6", 3, "nailed", 10, loads, [Combo("D + L", {"D": 1, "L": 1}, "x")], 1.0, 1.0, "pinned", False, False)
     assert next(l for l in s.steps if l.label == "CF").value == 1.0 and "Table 4B" in next(l for l in s.steps if l.label == "CF").source
     assert any(getattr(l, "value", None) == 1400 for l in s.steps)
+
+
+def test_posts_with_lateral_load_carry_shear_and_moment_diagrams(tmp_path):
+    """A post with wind on its face prints the shear and moment diagram of the combination with the largest moment: 6x6, 10 ft, 120 plf wind,
+    D + 0.6W: w = 72 plf; M = 72(10^2)/8 = 900 lb-ft; V = 360 lb. A post with axial load only has no diagram."""
+    from strukit import calcsheet
+    cs = [Combo("D + 0.6W", {"D": 1, "W": 0.6}, "x"), Combo("D", {"D": 1}, "x")]
+    s = ws_wood.post("P", "DOUGLAS FIR-LARCH", "No. 2", "6x6", 10, [dict(case="D", P=2000)], cs, 1, 1, "pinned", False, False,
+                     lateral=[dict(case="W", kind="uniform", w=120)])
+    d = s.diagram
+    assert d["combo"] == "D + 0.6W" and max(abs(m) for m in d["M"]) == pytest.approx(900, abs=1) and max(abs(v) for v in d["V"]) == pytest.approx(360, abs=1)
+    assert d["x"][-1] == pytest.approx(10.0)
+    calcsheet.simple_pdf(s, str(tmp_path / "p.pdf"), "Job", "2018 NDS", "Nov 23, 2026")
+    plain = ws_wood.post("P", "DOUGLAS FIR-LARCH", "No. 2", "6x6", 10, [dict(case="D", P=2000)], cs, 1, 1, "pinned", False, False)
+    assert getattr(plain, "diagram", None) is None

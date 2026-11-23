@@ -1213,7 +1213,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
     if dg:
         p.y -= 4
         p.room(70)
-        p.head(f"Shear and Moment, {dg['combo']}")
+        p.head(f"Shear and Moment, {dg['combo']}" + (f" ({dg['note']})" if dg.get("note") else ""))
         dy0 = p.y - 40
         V, M = dg["V"], dg["M"]
         _diagram(p.c, LM, dy0, 245, 32, dg["x"], V, BLUE, f"V max = {max(abs(v) for v in V):,.0f} lb")
