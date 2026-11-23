@@ -299,3 +299,37 @@ def test_cc_roof_overhang_by_hand(tmp_path):
     assert len(flat.blocks) == 3 and "wall +" not in flat.blocks[2]["lines"][0]
     calcsheet._simple_pdf(flat, str(tmp_path / "of.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     calcsheet._simple_pdf(sheet, str(tmp_path / "o.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+
+
+def test_cc_parapet_and_note_5_by_hand(tmp_path):
+    """Flat roof, eave 20 ft, top of parapet 24 ft, 115 mi/h, Exposure C, 10 ft2. Wall values carry the 10 percent
+    reduction of Figure 30.3-1 note 5 (roof at 10 degrees or less): +0.9, zone 4 -0.99, zone 5 -1.26; roof zone 2 -2.3,
+    zone 3 -3.2. Kz at 24 ft = 0.90 + 0.04(4/5) = 0.932; qp = 0.00256(0.932)(115^2) = 31.55 psf; qp Kd = 26.82.
+    Case A edge: 26.82(0.9 + 2.3) = 85.8 psf; corner: 26.82(0.9 + 3.2) = 110.0; Case B edge: 26.82(0.9 + 0.99) = 50.7;
+    corner: 26.82(0.9 + 1.26) = 57.9."""
+    r = wind.cc_parapet(115, "C", 24, 20, 40, [10])
+    x = r["rows"][0]
+    assert r["qp"] == pytest.approx(31.55, abs=0.01) and r["a"] == 4.0 and r["edge"] == 12.0
+    assert x["p"]["A_edge"] == pytest.approx(85.8, abs=0.1) and x["p"]["A_corner"] == pytest.approx(110.0, abs=0.1)
+    assert x["p"]["B_edge"] == pytest.approx(50.7, abs=0.1) and x["p"]["B_corner"] == pytest.approx(57.9, abs=0.1)
+    for bad in (dict(hp_top=20), dict(theta=12)):
+        with pytest.raises(wind.WindError):
+            wind.cc_parapet(**dict(dict(V=115, exposure="C", hp_top=24, h=20, least_dim=40, areas=[10]), **bad))
+    # Figure 30.3-2A note 5 on the roof sheet: zone 3 = zone 2; positive in zones 2 and 3 from the wall chart
+    n = wind.cc_roof(115, "C", 20, "enclosed", [10], parapet=True)["rows"][0]
+    assert n["gcp"]["3"] == -2.3 and n["design"]["3"] == n["design"]["2"] and n["edge_positive_gcp"] == pytest.approx(0.9)
+    assert n["edge_positive"] == pytest.approx(30.4704 * 0.85 * (0.9 + 0.18), abs=0.02)
+    with pytest.raises(wind.WindError):
+        wind.cc_roof(115, "C", 20, "enclosed", [10], theta=18, least_dim=40, parapet=True)
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="WP1", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", hp="24", h="20", least="40", theta="0",
+             areas="10, 50, 100", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, kind, _ = calc.build("wind_cc_parapet", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert kind == "simple" and len(sheet.blocks[0]["lines"]) == 5
+    calcsheet._simple_pdf(sheet, str(tmp_path / "p.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    v2 = dict(mark="WR5", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
+              enclosure_basis="Sect. 26.12", h="20", theta="0", parapet="yes", areas="10, 50, 100", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet2, _, _ = calc.build("wind_cc_roof", v2, dict(job="2026-000", name="Test", method="ASD"))
+    assert "+ (2, 3)" in sheet2.blocks[1]["lines"][0] and "the parapets themselves (Sect. 30.6)" in sheet2.not_checked
+    calcsheet._simple_pdf(sheet2, str(tmp_path / "r5.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")

@@ -542,7 +542,24 @@ FORMS = {
                 F("theta", "Roof angle", unit="degrees", help="0 for a flat roof; gable roofs up to 45 degrees, monoslope roofs up to 30"),
                 F("least", "Least horizontal dimension of the building", unit="ft", required=False, help="needed for a gable roof over 7 degrees or a monoslope roof over 3"),
                 F("overhang", "Roof overhangs", "select", options=["no", "yes"], required=False),
+                F("parapet", "Parapet 3 ft or higher around the whole roof", "select", options=["no", "yes"], required=False, help="roofs at 7 degrees or less"),
                 F("areas", "Effective wind areas", "text", "ft2", help="separated by commas, for example 10, 20, 50, 100, 200, 500, 1000"),
+                F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
+                F("Kzt_source", "Where Kzt comes from", "text"),
+                F("elevation", "Ground elevation above sea level", unit="ft", required=False, help="blank = Ke taken as 1.0"),
+                F("elevation_source", "Where the elevation comes from", "text", required=False)],
+        tables=[]),
+    "wind_cc_parapet": dict(
+        title="Wind Pressures, Parapets (flat or up to 7 degrees)", code="ASCE/SEI 7-22", mark="WP",
+        fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
+                F("V_source", "Where V comes from", "text"),
+                F("exposure", "Exposure category", "select", options=["B", "C", "D"], help="ASCE 7-22 Sect. 26.7"),
+                F("exposure_basis", "Basis of the exposure category", "text"),
+                F("hp", "Height of the top of the parapet above ground", unit="ft"),
+                F("h", "Eave (roof) height, h", unit="ft", help="60 ft or less"),
+                F("least", "Least horizontal dimension of the building", unit="ft"),
+                F("theta", "Roof angle", unit="degrees", help="0 for a flat roof; 7 degrees or less"),
+                F("areas", "Effective wind areas", "text", "ft2", help="separated by commas, for example 10, 20, 50, 100, 200, 500"),
                 F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
                 F("Kzt_source", "Where Kzt comes from", "text"),
                 F("elevation", "Ground elevation above sea level", unit="ft", required=False, help="blank = Ke taken as 1.0"),
@@ -1175,7 +1192,16 @@ def build(kind, values, project):
         r.done()
         return ws_more.wind_cc_roof_sheet(mark, V, vs, ex, eb, h, th, en, enb, ars, kzt, ks_, r.num("elevation", False),
                                           r.text("elevation_source", False) or "", least_dim=ld,
-                                          roof="monoslope" if mono else "gable", overhang=bool(yes(r.text("overhang", False)))), "simple", {}
+                                          roof="monoslope" if mono else "gable", overhang=bool(yes(r.text("overhang", False))),
+                                          parapet=bool(yes(r.text("parapet", False)))), "simple", {}
+    if kind == "wind_cc_parapet":
+        V, vs, ex, eb = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis")
+        hp, h, ld, th = r.num("hp"), r.num("h"), r.num("least"), r.num("theta")
+        ars = r.nums("areas") if r.text("areas") else []
+        kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")
+        r.done()
+        return ws_more.wind_cc_parapet_sheet(mark, V, vs, ex, eb, hp, h, ld, th, ars, kzt, ks_, r.num("elevation", False),
+                                             r.text("elevation_source", False) or ""), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")

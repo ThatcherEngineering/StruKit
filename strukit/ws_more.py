@@ -829,7 +829,7 @@ def wind_cc_walls_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, lea
 
 
 def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, enclosure, enclosure_basis, areas,
-                       Kzt, Kzt_source, elevation_ft=None, elevation_source="", least_dim=None, roof="gable", overhang=False):
+                       Kzt, Kzt_source, elevation_ft=None, elevation_source="", least_dim=None, roof="gable", overhang=False, parapet=False):
     """Wind pressures on roof components and cladding, flat roofs, gable roofs up to 45 degrees and monoslope roofs up to 30
     degrees, buildings with h of 60 ft or less, ASCE/SEI 7-22 Chapter 30 Part 1 (see wind.py).
     h: the mean roof height (the eave height at 10 degrees or less)."""
@@ -842,7 +842,7 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
     Ke = wind.ke(elevation_ft) if elevation_ft is not None else 1.0
     L = footing_line
     try:
-        r = wind.cc_roof(V, exposure, h, enclosure, areas, theta, Kzt, Ke, least_dim=least_dim, roof=roof, overhang=overhang)
+        r = wind.cc_roof(V, exposure, h, enclosure, areas, theta, Kzt, Ke, least_dim=least_dim, roof=roof, overhang=overhang, parapet=parapet)
     except wind.WindError as e:
         raise WorksheetError(f"{mark}: {e}")
     qh, gc, fig = r["qh"], r["GCpi"], "Figure " + r["figure"]
@@ -883,8 +883,10 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
             ("Building", f"{hname} h = {h:g} ft; " + ("flat roof" if not theta > 0 else f"{roof} roof at {theta:g} degrees"))]
     not_checked = ["roof overhangs (Sect. 30.7)", "wall components and cladding (Figure 30.3-1)",
                    "the enclosure classification (Sect. 26.12)", "the effective wind area of each component (Sect. 26.2)"]
-    if r["figure"] == "30.3-2A":
+    if r["figure"] == "30.3-2A" and not parapet:
         not_checked.insert(0, "a parapet 3 ft or higher around the roof (Figure 30.3-2A, note 5)")
+    if parapet:
+        not_checked.insert(0, "the parapets themselves (Sect. 30.6)")
     sheet = SimpleSheet(
         mark, "Wind Pressures, Roof Components and Cladding", "Site and Building", "Chapter 30, Part 1", info, [], [],
         "Velocity Pressure and Factors", steps, [],
@@ -895,6 +897,12 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
         not_checked)
     zp = dict(kind="flat", edge=r["edge"], corner=r["corner"]) if "edge" in r else dict(kind={"30.3-2D": "corner", "30.3-5A": "mono_a", "30.3-5B": "mono_b"}.get(r["figure"], "ridge"), a=r["a"])
     sheet.blocks.append(dict(title="Zones", picture=("wind_zones", zp)))
+    if parapet:
+        lines[0] += f"{'+ (2, 3)':>10}"
+        for k, x in enumerate(r["rows"]):
+            lines[k + 1] += f"{x['edge_positive']:>10.1f}"
+        sheet.assumptions.append("A parapet 3 ft or higher runs around the perimeter of the roof: the negative zone 3 values equal those of zone 2, and the "
+                                 "positive pressure in zones 2 and 3, column + (2, 3), uses the positive wall value of Figure 30.3-1 (Figure 30.3-2A, note 5).")
     sheet.blocks.append(dict(title="Design Pressures by Effective Wind Area and Zone", lines=lines))
     if r["overhang"]:
         chart = r["figure"] == "30.3-2A"
@@ -907,5 +915,60 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
             "p = qh Kd [(GCp) - (GCpi)], Eq. 30.7-1. (GCp) = the roof zone value on the top surface less the positive wall value of Figure 30.3-1 "
             "on the bottom surface, for the same effective wind area (Sect. 30.7)."]))
         sheet.not_checked = [t for t in sheet.not_checked if not t.startswith("roof overhangs")] + ["downward pressure on roof overhangs"]
+    sheet.wind = dict(r)
+    return sheet
+
+
+def wind_cc_parapet_sheet(mark, V, V_source, exposure, exposure_basis, hp_top, h_eave, least_dim, theta, areas,
+                          Kzt, Kzt_source, elevation_ft=None, elevation_source=""):
+    """Net wind pressure on parapets as components and cladding, roofs at 7 degrees or less,
+    ASCE/SEI 7-22 Sect. 30.6 (see wind.py)."""
+    for nm, v in (("the source of the basic wind speed", V_source), ("the basis of the exposure category", exposure_basis), ("the source of Kzt", Kzt_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if elevation_ft is not None and not (elevation_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the ground elevation is blank")
+    Ke = wind.ke(elevation_ft) if elevation_ft is not None else 1.0
+    L = footing_line
+    try:
+        r = wind.cc_parapet(V, exposure, hp_top, h_eave, least_dim, areas, theta, Kzt, Ke)
+    except wind.WindError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    qp = r["qp"]
+    steps = [L("V", V, "mi/h", "ASCE/SEI 7-22 Sect. 26.5", V_source.strip()),
+             L("Kzt", Kzt, "", "Sect. 26.8", Kzt_source.strip()),
+             L("Ke" + (" = e^(-0.0000362 ze)" if elevation_ft is not None else ""), Ke, "", "Sect. 26.9, Table 26.9-1",
+               f"ze = {elevation_ft:,.0f} ft" if elevation_ft is not None else "taken as 1.0"),
+             L("Kz at the top of the parapet", r["Kp"], "", "Table 26.10-1", f"Exposure {exposure}, {hp_top:g} ft"),
+             L("qp = 0.00256 Kz Kzt Ke V^2", qp, "psf", "Eq. 26.10-1, Sect. 30.6", "at the top of the parapet"),
+             L("Kd", wind.KD_CC, "", "Table 26.6-1", "buildings, components and cladding"),
+             L("0.6h", r["edge"], "ft", "Figure 30.3-2A", "Load Case A, corner: the parapet beside a roof corner zone (zone 3), this far from a building corner"),
+             L("a", r["a"], "ft", "Figure 30.3-1", "Load Case B, corner: the parapet within this distance of a building corner (wall zone 5)")]
+    lines = [f"{'area':>8}  (GCp):{'wall +':>8}{'roof 2':>8}{'roof 3':>8}{'wall 4':>8}{'wall 5':>8}   net p psf:{'A edge':>9}{'A corner':>10}{'B edge':>9}{'B corner':>10}",
+             f"{'ft2':>8}"]
+    for x in r["rows"]:
+        g, p = x["gcp"], x["p"]
+        lines.append(f"{x['area']:>8g}        {g['wall_pos']:>8.2f}{g['roof2']:>8.2f}{g['roof3']:>8.2f}{g['wall4']:>8.2f}{g['wall5']:>8.2f}"
+                     f"             {p['A_edge']:>9.1f}{p['A_corner']:>10.1f}{p['B_edge']:>9.1f}{p['B_corner']:>10.1f}")
+    info = [("Wind Speed", f"V = {V:g} mi/h ({V_source.strip()})"),
+            ("Exposure", f"{exposure} ({exposure_basis.strip()})"),
+            ("Topography", f"Kzt = {Kzt:g} ({Kzt_source.strip()})"),
+            ("Elevation", f"{elevation_ft:,.0f} ft above sea level ({elevation_source.strip()})" if elevation_ft is not None else "Ke taken as 1.0"),
+            ("Building", f"top of parapet {hp_top:g} ft; eave height h = {h_eave:g} ft (parapet {hp_top - h_eave:g} ft high); least horizontal dimension {least_dim:g} ft; "
+                         + ("flat roof" if not theta > 0 else f"roof at {theta:g} degrees"))]
+    sheet = SimpleSheet(
+        mark, "Wind Pressures, Parapets", "Site and Building", "Chapter 30, Part 4", info, [], [],
+        "Velocity Pressure and Factors", steps, [],
+        ["Pressures are strength-level (ASCE/SEI 7-22 basic wind speed), in psf: the net pressure on the two faces of the parapet together.",
+         "p = qp Kd [(GCp) - (GCpi)], Eq. 30.6-1, on each face. The two faces enclose one parapet cavity, so the internal pressure cancels in the net pressure.",
+         "Load Case A, windward parapet, net pressure toward the roof: the positive wall value (Figure 30.3-1) on the outside face and the negative roof "
+         "zone 2 (edge) or zone 3 (corner) value (Figure 30.3-2A) on the roof side face.",
+         "Load Case B, leeward parapet, net pressure away from the roof: the positive wall value on the roof side face and the negative wall zone 4 (edge) "
+         "or zone 5 (corner) value on the outside face.",
+         "Roof zone 3 values are used as charted, without the change of Figure 30.3-2A note 5.",
+         f"Net pressure not less than {wind.MIN_CC:g} psf (Sect. 30.2.2)."],
+        ["the parapet as part of the main wind force resisting system (Sect. 27.3.4)", "the parapet's own strength and its anchorage to the wall and roof",
+         "the effective wind area of each component (Sect. 26.2)"])
+    sheet.blocks.append(dict(title="Net Design Pressure on the Parapet by Effective Wind Area", lines=lines))
     sheet.wind = dict(r)
     return sheet
