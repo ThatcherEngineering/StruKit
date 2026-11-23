@@ -167,7 +167,7 @@ def api(path, body):
             return dict(error="The diaphragm sheet is not complete: " + "; ".join(e.items))
         except Exception as e:
             return dict(error=f"The diaphragm sheet stopped: {e}")
-        return dict(reaction=sheet.diaphragm["reaction"], load=(body.get("values") or {}).get("load"))
+        return dict(reaction=sheet.diaphragm["reaction"], load=(body.get("values") or {}).get("load"), W=(body.get("values") or {}).get("W"))
     if path == "/api/ping":
         _last_ping[0] = time.time(); _pinged[0] = True
         return {}

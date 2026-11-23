@@ -186,6 +186,23 @@ function fillFromDiaphragmBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the shear from a diaphragm reaction"), pick, go);
 }
 
+function fillCollectorBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "diaphragm");
+  if (!src.length) return el("div", { class: "fill small" }, "The force and the line length can be filled in from a Wood Diaphragm sheet once the project has one.");
+  const pick = el("select", {}, el("option", { value: "" }, "choose a diaphragm"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + (x.values.load || "") + " diaphragm")));
+  const go = el("button", { class: "btn", onclick: async () => {
+    if (pick.value === "") return toast("Choose the diaphragm first.");
+    const s = S.members[+pick.value];
+    let got;
+    try { got = await post("/api/diaphragm_reaction", { values: s.values, project: S.project }); } catch (e) { return toast(e.message, 12000); }
+    Object.assign(m.values, { R: String(Math.round(got.reaction)), W: got.W || m.values.W, level: (got.load || "lateral load") + ", " + S.project.method + " level",
+      R_source: "reaction of diaphragm " + (s.values.mark || "") + " (w L / 2)" });
+    changed(); drawMain();
+    toast("Force " + Math.round(got.reaction).toLocaleString() + " lb from one end of " + (s.values.mark || "the diaphragm") + ". Add the force from a diaphragm on the other side of this line.", 12000);
+  } }, "Fill Force and Length");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the force from a diaphragm reaction"), pick, go);
+}
+
 function fillWallBar(m, changed) {
   const src = S.members.filter(x => x.kind === "seismic_elf" && (x.values.lines || []).some(r => (r.name || "").trim()));
   if (!src.length) return el("div", {}, fillFromDiaphragmBar(m, changed) ||
@@ -277,6 +294,7 @@ function fillWindBar(m, changed) {
 function fillBar(m, changed) {
   if (m.kind === "shear_wall" || m.kind === "perforated_wall") return fillWallBar(m, changed);
   if (m.kind === "diaphragm") return fillDiaphragmBar(m, changed);
+  if (m.kind === "collector") return fillCollectorBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");
   if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame once the project has one.");

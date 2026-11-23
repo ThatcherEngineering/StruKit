@@ -48,7 +48,7 @@ def test_diaphragm_sheet_and_form(tmp_path):
     assert sheet.rows[0].demand == pytest.approx(166.7, abs=0.05) and sheet.rows[0].capacity == pytest.approx(296.7) and sheet.rows[2].demand == pytest.approx(0.214, abs=0.002)
     calcsheet._simple_pdf(sheet, str(tmp_path / "d.pdf"), "2026-000", "SDPWS-2021", "2026-11-23")
     from strukit.gui import server
-    assert server.api("/api/diaphragm_reaction", dict(values=v, project=proj)) == dict(reaction=4000.0, load="wind")
+    assert server.api("/api/diaphragm_reaction", dict(values=v, project=proj)) == dict(reaction=4000.0, load="wind", W="24")
     assert "error" in server.api("/api/diaphragm_reaction", dict(values=dict(v, w=""), project=proj))
     long = calc.results("diaphragm", dict(v, L="80"), proj)
     assert long["state"] == "done" and long["status"] == "FLAG"                     # L/W = 3.33 over 3
@@ -109,3 +109,13 @@ def test_collector_force_by_hand(tmp_path):
     calcsheet._simple_pdf(sheet, str(tmp_path / "c.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     assert calc.results("collector", v, proj)["state"] == "done"
     assert calc.results("collector", dict(v, walls=[]), proj)["state"] == "incomplete" and calc.results("collector", dict(v, level=""), proj)["state"] == "incomplete"
+
+
+def test_diaphragm_reaction_api_gives_the_line_length():
+    """The collector screen fills its force and line length from a diaphragm: 200 plf x 40 ft / 2 = 4,000 lb; W = 24 ft."""
+    from strukit.gui import server
+    proj = dict(job="2026-000", name="Test", method="ASD")
+    v = dict(mark="DI1", panel="Sheathing and Single-Floor, 7/16 in, 8d common", face="2", edges="unblocked", case="Case 1", panel_type="OSB", G="0.42",
+             G_source="SPF", L="40", W="24", load="wind", w="200", w_source="WM1")
+    got = server.api("/api/diaphragm_reaction", dict(values=v, project=proj))
+    assert got["reaction"] == pytest.approx(4000) and got["W"] == "24" and got["load"] == "wind"
