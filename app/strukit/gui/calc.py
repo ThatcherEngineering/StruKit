@@ -166,11 +166,12 @@ FORMS = {
     "wood_post": dict(
         title="Wood Post", code="2018 NDS", mark="WP",
         fields=[F("species", "Species", "select",
-                  options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"] + [x for x in wood.SPECIES if x not in
-                                                                                 ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
-                  help="timbers 5x5 and larger: Douglas Fir-Larch, Hem-Fir and Spruce-Pine-Fir only"),
+                  options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"]
+                  + [x for x in sorted(set(wood.SPECIES) | set(wood.TIMBER_SPECIES)) if x not in ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
+                  help="2018 NDS Supplement Table 4A (3 and 4 in. thick) or Table 4D (5x5 and larger)"),
                 F("grade", "Grade", "select", options=["Select Structural", "No. 1 & Btr", "No. 1", "No. 2", "No. 1/ No. 2", "No. 3",
-                                                        "Stud", "Construction", "Standard", "Utility"]),
+                                                        "Stud", "Construction", "Standard", "Utility", "Dense Select Structural",
+                                                        "Dense No. 1", "No. 2 Dense"]),
                 F("size", "Size (nominal)", "select", options=[x for x in wood.SIZES if x.split("x")[0] in ("3", "4")] + list(wood.TIMBER_SIZES)),
                 F("height", "Height", unit="ft"),
                 F("lu1", "Unbraced length, larger dimension", unit="ft", required=False, help="blank = full height"),
@@ -180,7 +181,11 @@ FORMS = {
                 F("service", "Moisture", "select", options=["dry service", "wet service"]),
                 F("incised", "Incised", "select", options=["yes", "no"]),
                 F("unit_weight", "Wood unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
-        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)])]),
+        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)]),
+                T("lateral", "Lateral load on the narrow face (bending about the strong axis)",
+                  [CASE, F("kind", "Type", "select", options=["uniform", "point"]), F("mag", "Load", unit="plf or lb"),
+                   F("x", "At (point load)", unit="ft", required=False), F("label", "Note", "text", required=False)],
+                  help="leave empty for an axially loaded post")]),
     "snow": dict(
         title="Roof Snow Load", code="ASCE/SEI 7-22", mark="SN",
         fields=[F("pg", "Ground snow load, pg", unit="psf", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
@@ -583,12 +588,23 @@ def build(kind, values, project):
         wet = {"dry service": False, "wet service": True}.get(r.text("service"))
         inc = yes(r.text("incised"))
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
-        if not loads:
+        lat = []
+        for x in r.rows("lateral"):
+            if x["kind"] == "uniform":
+                d = dict(case=x["case"], kind="uniform", w=x["mag"])
+            else:
+                if x["x"] is None:
+                    r.miss.append("Lateral load: a point load needs its location")
+                d = dict(case=x["case"], kind="point", P=x["mag"], x_ft=x["x"])
+            if x["label"]:
+                d["label"] = x["label"]
+            lat.append(d)
+        if not loads and not lat:
             r.miss.append("No load is entered")
-        cases_used([x["case"] for x in loads], cb, r.miss)
+        cases_used([x["case"] for x in loads + lat], cb, r.miss)
         r.done()
         return ws_wood.post(mark, sp, gr, size, H, loads, cb, Ke1, Ke2, ks, wet, inc, r.num("lu1", False), r.num("lu2", False),
-                            r.num("unit_weight", False)), "simple", {}
+                            r.num("unit_weight", False), lateral=lat), "simple", {}
     if kind == "wood_beam":
         cb = combos(project, r.miss, "ASD")
         sp, gr, size, plies, span = r.text("species"), r.text("grade"), r.text("size"), r.text("plies"), r.num("span")
