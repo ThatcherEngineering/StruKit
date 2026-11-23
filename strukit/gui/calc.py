@@ -595,6 +595,19 @@ FORMS = {
                 T("lines", "Wall or frame lines", [F("name", "Line", "text"), F("level", "Story below level", "text", help="a level name from the Levels table"),
                                                   F("share", "Share of the story shear", unit="%")],
                   help="Optional. Each line's share of the story shear, for the shear wall or frame sheets.")]),
+    "live_load": dict(
+        title="Live Load Reduction", code="ASCE/SEI 7-22", mark="LL",
+        fields=[],
+        tables=[T("floors", "Floor members", [F("name", "Member", "text"),
+                    F("element", "Element", "select", options=["interior column", "exterior column without cantilever slabs", "edge column with cantilever slabs",
+                      "corner column with cantilever slabs", "edge beam without cantilever slabs", "interior beam", "all other members"]),
+                    F("Lo", "Unreduced live load, Lo", unit="psf"), F("source", "Source of Lo", "text"), F("AT", "Tributary area", unit="ft2"),
+                    F("floors", "Floors supported"),
+                    F("occupancy", "Occupancy", "select", options=["ordinary", "passenger vehicle garage", "assembly area"], required=False)],
+                  help="ASCE 7-22 Sect. 4.7, Table 4.7-1. Occupancy blank = ordinary."),
+                T("roofs", "Roof members (ordinary roofs)", [F("name", "Member", "text"), F("Lo", "Unreduced roof live load, Lo", unit="psf"),
+                    F("source", "Source of Lo", "text"), F("AT", "Tributary area", unit="ft2"), F("F", "Roof rise", unit="in/ft")],
+                  help="ASCE 7-22 Sect. 4.8.2.")]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1255,6 +1268,12 @@ def build(kind, values, project):
                                          r.num("T", False), r.text("T_source", False) or "", risk=rk, drift=dr,
                                          wall_lines=[(x["name"], x["level"], x["share"]) for x in wl] or None, rho=float(rho) if rho else None,
                                          rho_source=rho_s or ""), "simple", {}
+    if kind == "live_load":
+        fl, rf = r.rows("floors"), r.rows("roofs")
+        if not fl and not rf:
+            r.miss.append("No floor member or roof member is entered")
+        r.done()
+        return ws_more.live_load_sheet(mark, fl, rf), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
