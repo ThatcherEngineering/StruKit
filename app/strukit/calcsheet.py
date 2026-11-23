@@ -1011,14 +1011,14 @@ def _picture(c, top, pic):
         _sketch_title(c, 384, top, "ELEVATION")
         h = max(min(d["d"] * 1.6, 18), 7)
         x0, x1, y = 384, 384 + 118, top - 26 - h
-        memberart.wood_elevation(c, x0, y, x1 - x0, h, d["plies"])
+        memberart.wood_elevation(c, x0, y, x1 - x0, h, d["plies"], kind=d.get("kind", "sawn"), lams=d.get("lams"))
         c.setFillColorRGB(0.20, 0.22, 0.25)
         for xx in (x0 + 3, x1 - 3):
             p_ = c.beginPath(); p_.moveTo(xx, y); p_.lineTo(xx - 4, y - 6); p_.lineTo(xx + 4, y - 6); p_.close()
             c.drawPath(p_, fill=1, stroke=0)
         memberart._dim_h(c, x0 + 3, x1 - 3, y - 15, f"{d['span']:g} ft", FR, ext_from=y - 6)
         _sketch_title(c, 520, top, "SECTION")
-        s_ = memberart.wood_section(c, 540, top - 46, 44, 60, d["b"], d["d"], d["plies"])
+        s_ = memberart.wood_section(c, 540, top - 46, 44, 60, d["b"], d["d"], d["plies"], kind=d.get("kind", "sawn"))
         memberart._dim_h(c, 540 - d["b"] * s_ / 2, 540 + d["b"] * s_ / 2, top - 46 - d["d"] * s_ / 2 - 8, f"{d['b']:g}", FR,
                          ext_from=top - 46 - d["d"] * s_ / 2)
         memberart._dim_v(c, top - 46 - d["d"] * s_ / 2, top - 46 + d["d"] * s_ / 2, 540 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,

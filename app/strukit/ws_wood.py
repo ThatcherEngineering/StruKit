@@ -526,6 +526,6 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         [x for x in ["notches and holes (NDS 8.4.1; manufacturer's limits)", "fastening of the plies to each other" if plies > 1 else None,
                      "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers",
                      "bearing on the supporting member"] if x],
-        picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}")), governing=gb["cb"].name)
+        picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}", kind="lvl")), governing=gb["cb"].name)
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
     return sheet
