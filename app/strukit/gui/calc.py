@@ -530,7 +530,7 @@ FORMS = {
                 F("elevation_source", "Where the elevation comes from", "text", required=False)],
         tables=[]),
     "wind_cc_roof": dict(
-        title="Wind Pressures, Roof Components and Cladding (flat or gable roof)", code="ASCE/SEI 7-22", mark="WR",
+        title="Wind Pressures, Roof Components and Cladding (flat, gable or monoslope roof)", code="ASCE/SEI 7-22", mark="WR",
         fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
                 F("V_source", "Where V comes from", "text"),
                 F("exposure", "Exposure category", "select", options=["B", "C", "D"], help="ASCE 7-22 Sect. 26.7"),
@@ -538,8 +538,9 @@ FORMS = {
                 F("enclosure", "Enclosure classification", "select", options=["enclosed", "partially enclosed", "partially open"], help="ASCE 7-22 Sect. 26.12"),
                 F("enclosure_basis", "Basis of the enclosure classification", "text"),
                 F("h", "Mean roof height, h", unit="ft", help="the eave height where the roof angle is 10 degrees or less; 60 ft or less"),
-                F("theta", "Roof angle", unit="degrees", help="0 for a flat roof; gable roofs up to 45 degrees"),
-                F("least", "Least horizontal dimension of the building", unit="ft", required=False, help="needed where the roof angle is over 7 degrees"),
+                F("roof", "Roof", "select", options=["gable or flat", "monoslope"], required=False),
+                F("theta", "Roof angle", unit="degrees", help="0 for a flat roof; gable roofs up to 45 degrees, monoslope roofs up to 30"),
+                F("least", "Least horizontal dimension of the building", unit="ft", required=False, help="needed for a gable roof over 7 degrees or a monoslope roof over 3"),
                 F("areas", "Effective wind areas", "text", "ft2", help="separated by commas, for example 10, 20, 50, 100, 200, 500, 1000"),
                 F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
                 F("Kzt_source", "Where Kzt comes from", "text"),
@@ -1166,12 +1167,14 @@ def build(kind, values, project):
     if kind == "wind_cc_roof":
         V, vs, ex, eb, h = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h")
         en, enb, th = r.text("enclosure"), r.text("enclosure_basis"), r.num("theta")
-        ld = r.num("least", th is not None and th > 7, label="Least horizontal dimension")
+        mono = (r.text("roof", False) or "").startswith("mono")
+        ld = r.num("least", th is not None and th > (3 if mono else 7), label="Least horizontal dimension")
         ars = r.nums("areas") if r.text("areas") else []
         kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")
         r.done()
         return ws_more.wind_cc_roof_sheet(mark, V, vs, ex, eb, h, th, en, enb, ars, kzt, ks_, r.num("elevation", False),
-                                          r.text("elevation_source", False) or "", least_dim=ld), "simple", {}
+                                          r.text("elevation_source", False) or "", least_dim=ld,
+                                          roof="monoslope" if mono else "gable"), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
