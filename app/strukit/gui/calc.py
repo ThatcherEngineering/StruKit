@@ -287,7 +287,11 @@ FORMS = {
                 F("e2", "Load eccentricity, parallel to the smaller dimension", unit="in", required=False,
                   help="blank = 0; the manufacturer's column tables use 1/6 of the dimension"),
                 F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
-        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)])]),
+        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)]),
+                T("lateral", "Lateral load on the narrow face (bending about the strong axis)",
+                  [CASE, F("kind", "Type", "select", options=["uniform", "point"]), F("mag", "Load", unit="plf or lb"),
+                   F("x", "At (point load)", unit="ft", required=False), F("label", "Note", "text", required=False)],
+                  help="leave empty for a column with no lateral load")]),
     "wey_post": dict(
         title="Microllam, Parallam or TimberStrand Column", code="2018 NDS, ICC-ES ESR-1387", mark="LC",
         fields=[F("grade", "Product and grade", "select", options=['Parallam PSL 1.8E WS', 'Parallam PSL 2.2E WS', 'TimberStrand LSL 1.3E', 'TimberStrand LSL 1.55E', 'Microllam LVL 2.0E-2900Fb WS']
@@ -304,7 +308,11 @@ FORMS = {
                 F("e2", "Load eccentricity, parallel to the smaller dimension", unit="in", required=False,
                   help="blank = 0; Parallam 1.9E and higher take at least t/6 + 5 L^2 / 4608 (ESR-1387)"),
                 F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
-        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)])]),
+        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)]),
+                T("lateral", "Lateral load on the narrow face (bending about the strong axis)",
+                  [CASE, F("kind", "Type", "select", options=["uniform", "point"]), F("mag", "Load", unit="plf or lb"),
+                   F("x", "At (point load)", unit="ft", required=False), F("label", "Note", "text", required=False)],
+                  help="leave empty for a column with no lateral load")]),
     "shear_wall": dict(
         title="Wood Shear Wall", code="SDPWS-2021", mark="SW",
         fields=[F("panel", "Sheathing and nails", "select", options=list(shearwall.PANELS), help="SDPWS Table 4.3A; blocked, one side"),
@@ -779,12 +787,23 @@ def build(kind, values, project):
             gr = gr[len(prod) + 1:]
         Ke1, Ke2, ks = r.num("Ke1"), r.num("Ke2"), r.text("k_source")
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
-        if not loads:
+        lat = []
+        for x in r.rows("lateral"):
+            if x["kind"] == "uniform":
+                d = dict(case=x["case"], kind="uniform", w=x["mag"])
+            else:
+                if x["x"] is None:
+                    r.miss.append("Lateral load: a point load needs its location")
+                d = dict(case=x["case"], kind="point", P=x["mag"], x_ft=x["x"])
+            if x["label"]:
+                d["label"] = x["label"]
+            lat.append(d)
+        if not loads and not lat:
             r.miss.append("No load is entered")
-        cases_used([x["case"] for x in loads], cb, r.miss)
+        cases_used([x["case"] for x in loads + lat], cb, r.miss)
         r.done()
         return ws_wood.lvl_post(mark, gr, b_, d_, H, loads, cb, Ke1, Ke2, ks, r.num("lu1", False), r.num("lu2", False),
-                                r.num("e1", False) or 0.0, r.num("e2", False) or 0.0, r.num("unit_weight", False), product=prod), "simple", {}
+                                r.num("e1", False) or 0.0, r.num("e2", False) or 0.0, r.num("unit_weight", False), product=prod, lateral=lat), "simple", {}
     if kind in ("wood_beam", "lvl_beam", "glulam_beam", "wey_beam"):
         cb = combos(project, r.miss, "ASD")
         lvl, glu = kind in ("lvl_beam", "wey_beam"), kind == "glulam_beam"
