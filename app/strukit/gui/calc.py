@@ -637,6 +637,21 @@ FORMS = {
                 F("defl_limit_source", "Deflection: where the limit comes from", "text", required=False)],
         tables=[T("splices", "Chord splices (for deflection)", [F("x", "Distance to the nearest support", unit="ft"), F("slip", "Slip at the design load", unit="in")],
                   help="Optional.")]),
+    "nailed_connection": dict(
+        title="Nailed Connection (lateral)", code="NDS 2018", mark="NC",
+        fields=[F("nail", "Nail", "text", help="for example: 16d common"),
+                F("D", "Nail diameter", unit="in", help="NDS Appendix Table L4: common 8d 0.131, 10d 0.148, 16d 0.162; box and sinker differ"),
+                F("length", "Nail length", unit="in", help="NDS Appendix Table L4: common 8d 2.5, 10d 3, 16d 3.5"),
+                F("n", "Number of nails"),
+                F("side_t", "Side member thickness", unit="in", help="the piece the nail head is in"),
+                F("G_side", "Side member specific gravity, G", help="NDS Table 12.3.3A"), F("G_side_source", "Where that G comes from", "text"),
+                F("main_t", "Main member thickness", unit="in", help="the piece the nail point is in"),
+                F("G_main", "Main member specific gravity, G"), F("G_main_source", "Where that G comes from", "text"),
+                F("service", "Moisture", "select", options=["dry", "wet in service", "wet at fabrication, dry in service"], help="NDS Table 11.3.3"),
+                F("end_grain", "Nails in the end grain of the main member", "select", options=["no", "yes"], required=False),
+                F("diaphragm", "Diaphragm construction", "select", options=["no", "yes"], required=False, help="NDS 12.5.3")],
+        tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
+                  help="Lateral force on the group of nails, by load case; the project's ASD combinations are applied.")]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1320,6 +1335,17 @@ def build(kind, values, project):
                                        r.num("chord_E", False), r.num("chord_A", False), [(x["x"], x["slip"]) for x in sp],
                                        r.num("defl_limit", False), r.text("defl_limit_source", False) or "", blocked=blk,
                                        spacing=({"2-1/2": 2.5}.get(spc) or float(spc)) if blk else None), "simple", {}
+    if kind == "nailed_connection":
+        cb = combos(project, r.miss, "ASD")
+        nm, D, Lg, n_ = r.text("nail"), r.num("D"), r.num("length"), r.num("n")
+        ts, Gs, Gss, tm, Gm, Gms, sv = r.num("side_t"), r.num("G_side"), r.text("G_side_source"), r.num("main_t"), r.num("G_main"), r.text("G_main_source"), r.text("service")
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        r.done()
+        return ws_more.nailed_connection_sheet(mark, nm, D, Lg, ts, Gs, Gss, tm, Gm, Gms, n_, sv, loads, cb,
+                                               end_grain=bool(yes(r.text("end_grain", False))), diaphragm=bool(yes(r.text("diaphragm", False)))), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
