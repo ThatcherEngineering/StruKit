@@ -29,7 +29,7 @@ Covered: individual full-height wall segments in one line; blocked or unblocked;
 one side, or the same panels and nailing on both sides. Chord tension may be reduced by
 dead load: T = V h / b_eff - (factor x w x b / 2), the dead load taken at the middle of
 the segment and moments about the compression chord, with the arm b_eff / 2.
-Not covered: different sheathing on the two sides (4.3.5.4.2), perforated walls and force
+Not covered: different sheathing on the two sides of unblocked or perforated walls, perforated walls and force
 transfer around openings (4.3.2.2, 4.3.2.3), other sheathing materials, the increase of
 Table 4.3A note 2, moisture above 19 percent (note 5), anchor bolts and plate washers
 (4.3.6.4.3), and the added seismic construction requirements of 4.3.7.1.
@@ -109,8 +109,9 @@ class WallLine:
 
 def line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_inside=None, arm_offset_in=0.0,
          chord_E=None, chord_A=None, anchor_slip_in=None, sides=1, blocked=True, stud_spacing=None, field_nails=None,
-         dead_plf=0.0, dead_factor=None):
-    """A line of individual full-height segments. panel: an entry of PANELS; spacing: edge
+         dead_plf=0.0, dead_factor=None, other=None):
+    """A line of individual full-height segments. other: dict(panel, spacing, panel_type) of
+    a different sheathing system on the opposite side (SDPWS 4.3.5.4.2), blocked walls. panel: an entry of PANELS; spacing: edge
     nail spacing, in.; panel_type: "OSB" or "plywood" (for Ga); G: specific gravity of the
     framing; h: wall height, ft; lengths: segment lengths, ft; V: design shear on the line,
     lb, at the level of `method` ("ASD" or "LRFD"); load: "wind" or "seismic";
@@ -147,11 +148,30 @@ def line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_in
     Ga = (ga_osb if panel_type == "OSB" else ga_ply) * sides
     sg = min(1.0, 1.0 - (0.5 - G))
     nail = 1.0
-    if key[2] == "10d":
+    key2 = panel_key(other["panel"]) if other else None
+    if key[2] == "10d" or (key2 and key2[2] == "10d"):
         if holddown_inside is None:
             raise ShearWallError("shear wall: with 10d nails, say whether the hold-down is on the inside face of the end post "
                                  "(Table 4.3A note 10)")
-        nail = 0.92 if holddown_inside else 1.0
+        nail = (0.92 if holddown_inside else 1.0) if key[2] == "10d" else 1.0
+    dis = None
+    if other:                                               # SDPWS 4.3.5.4.2: different sheathing systems on the two sides
+        if sides != 1 or not blocked:
+            raise ShearWallError("shear wall: different sheathing on the two sides is built for blocked walls; choose it in place of 'both sides'")
+        if other.get("spacing") not in SPACINGS or other.get("panel_type") not in ("OSB", "plywood"):
+            raise ShearWallError("shear wall: the other side needs its edge nail spacing (6, 4, 3 or 2 in.) and its panel (OSB or plywood)")
+        if len({round(b, 6) for b in lengths}) > 1:
+            raise ShearWallError("shear wall: with different sheathing on the two sides the segments of a line must be the same length "
+                                 "(shear distribution, SDPWS 4.3.5.5.1)")
+        vn2_t, g2o, g2p = TABLE_4_3A[key2][SPACINGS.index(other["spacing"])]
+        nail2 = (0.92 if holddown_inside else 1.0) if key2[2] == "10d" else 1.0
+        Ga1, Ga2 = Ga, (g2o if other["panel_type"] == "OSB" else g2p)
+        a1, a2 = vn_t * nail, vn2_t * nail2
+        (lo_v, lo_ga), (hi_v, hi_ga) = sorted(((a1, Ga1), (a2, Ga2)))
+        twice = 2 * lo_v >= hi_v
+        dis = dict(vn1=vn_t, vn2=vn2_t, nail1=nail, nail2=nail2, a1=a1, a2=a2, Ga1=Ga1, Ga2=Ga2, twice=twice,
+                   vn=(2 * lo_v if twice else hi_v), Ga=(2 * lo_ga if twice else hi_ga))
+        Ga = dis["Ga"]
     txt, fac = FACTORS[(load, method)]
     segs = []
     for b in lengths:
@@ -160,7 +180,7 @@ def line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_in
             raise ShearWallError(f"shear wall: a {b:g} ft segment of a {h:g} ft wall has h/b = {r:.2f}, over the {max_ratio:g} limit "
                                  "of SDPWS Table 4.3.3" + ("" if blocked else " for unblocked walls"))
         red = 2 * b / h if r > 2 else 1.0
-        vn = vn_t * sg * nail * red * sides * cub
+        vn = (dis["vn"] * sg * red) if dis else vn_t * sg * nail * red * sides * cub
         segs.append(dict(b=b, r=r, red=red, vn=vn, cap=vn * b * fac))
     total = sum(s["cap"] for s in segs)
     out = []
@@ -180,13 +200,20 @@ def line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_in
     L = [Line("vn", vn_t, "plf", "SDPWS Table 4.3A", f"{panel}, edge nails at {spacing} in"),
          Line("specific gravity factor, 1 - (0.5 - G)", sg, "", "Table 4.3A note 3", f"G = {G:g}"),
          Line("design factor", fac, "", "SDPWS 4.1.4", f"{load}, {method}: nominal {txt}")]
+    if dis:
+        L[0] = Line("vn, side 1", dis["vn1"], "plf", "SDPWS Table 4.3A", f"{panel}, edge nails at {spacing} in")
+        L.insert(1, Line("vn, side 2", dis["vn2"], "plf", "SDPWS Table 4.3A", f"{other['panel']}, edge nails at {other['spacing']} in"))
+        L.insert(2, Line("vn(c), both sides", dis["vn"], "plf", "SDPWS 4.3.5.4.2",
+                         ("two times the smaller" if dis["twice"] else "the larger") + (" (after the 10d nail factor)" if min(dis["nail1"], dis["nail2"]) < 1 else "")))
+        L.insert(3, Line("Ga(c)", dis["Ga"], "kips/in", "SDPWS 4.3.5.4.2",
+                         f"{'two times that of the side with the smaller vn' if dis['twice'] else 'that of the side with the larger vn'}; side 1 {dis['Ga1']:g}, side 2 {dis['Ga2']:g}"))
     if sides == 2:
         L.insert(2, Line("panels on both sides", 2.0, "", "SDPWS 4.3.5.4.1", "the same panels and nailing on each side; vn and Ga doubled"))
     if not blocked:
         L.insert(2, Line("C(ub)", cub, "", "SDPWS Table 4.3.5.3, Eq. 4.3-2",
                          f"unblocked; studs at {stud_spacing:g} in, intermediate nails at {field_nails:g} in"))
-    if key[2] == "10d":
-        L.insert(2, Line("10d nail factor", nail, "", "Table 4.3A note 10",
+    if key[2] == "10d" or (key2 and key2[2] == "10d"):
+        L.insert(4 if dis else 2, Line("10d nail factor", 0.92 if holddown_inside else 1.0, "", "Table 4.3A note 10",
                          "hold-down on the inside face of the end post" if holddown_inside else "hold-down not on the inside face"))
     for i, s in enumerate(out, 1):
         L.append(Line(f"segment {i}: h/b", s.ratio, "", "SDPWS Table 4.3.3",

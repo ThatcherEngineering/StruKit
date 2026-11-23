@@ -421,7 +421,10 @@ FORMS = {
         fields=[F("panel", "Sheathing and nails", "select", options=list(shearwall.PANELS), help="SDPWS Table 4.3A; blocked, one side"),
                 F("spacing", "Edge nail spacing", "select", options=["6", "4", "3", "2"], unit="in"),
                 F("panel_type", "Panel", "select", options=["OSB", "plywood"], help="for the shear stiffness Ga"),
-                F("sides", "Panels on", "select", options=["one side", "both sides (same panels and nailing)"]),
+                F("sides", "Panels on", "select", options=["one side", "both sides (same panels and nailing)", "both sides (different panels or nailing)"]),
+                F("panel2", "Other side: sheathing and nails", "select", options=list(shearwall.PANELS), required=False, help="different panels or nailing on the two sides; SDPWS 4.3.5.4.2"),
+                F("spacing2", "Other side: edge nail spacing", "select", options=["6", "4", "3", "2"], unit="in", required=False),
+                F("panel_type2", "Other side: panel", "select", options=["OSB", "plywood"], required=False),
                 F("blocking", "Panel edges", "select", options=["blocked", "unblocked"], help="unblocked: edge nails at 6 in., wall to 16 ft, h/b to 2"),
                 F("stud_spacing", "Unblocked: stud spacing", "select", options=["12", "16", "20", "24"], unit="in", required=False),
                 F("field_nails", "Unblocked: nail spacing at intermediate framing", "select", options=["6", "12"], unit="in", required=False),
@@ -1381,7 +1384,15 @@ def build(kind, values, project):
         lengths = r.nums("lengths")
         if lengths is not None and not lengths:             # typed, but no number in it (a blank box is already listed)
             r.miss.append("Full-height segment lengths holds no number")
-        sides = 2 if (r.text("sides") or "").startswith("both") else 1
+        sd_ = r.text("sides") or ""
+        oth = None
+        if "different" in sd_:
+            p2, s2, t2 = r.text("panel2", False), r.text("spacing2", False), r.text("panel_type2", False)
+            if not (p2 and s2 and t2):
+                r.miss.append("Other side: sheathing and nails, edge nail spacing and panel are needed")
+            else:
+                oth = dict(panel=p2, spacing=int(s2), panel_type=t2)
+        sides = 2 if (sd_.startswith("both") and "different" not in sd_) else 1
         blocked = r.text("blocking") != "unblocked"
         ss_, fn_ = r.text("stud_spacing", False), r.text("field_nails", False)
         if not blocked and (not ss_ or not fn_):
@@ -1394,7 +1405,7 @@ def build(kind, values, project):
                                         r.num("arm_offset", False) or 0.0, r.num("chord_E", False), r.num("chord_A", False),
                                         r.num("slip", False), sides=sides, blocked=blocked, stud_spacing=int(ss_) if ss_ else None,
                                         field_nails=int(fn_) if fn_ else None, dead_plf=dead or 0.0,
-                                        dead_factor=r.num("dead_factor", False), dead_source=r.text("dead_source", False) or ""), "simple", {}
+                                        dead_factor=r.num("dead_factor", False), dead_source=r.text("dead_source", False) or "", other=oth), "simple", {}
     if kind == "wind_pressure":
         V, vs, ex, eb, h = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h")
         kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")
