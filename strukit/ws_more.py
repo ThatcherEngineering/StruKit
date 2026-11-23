@@ -1329,7 +1329,7 @@ def nailed_connection_sheet(mark, nail_name, D, length, side_t, G_side, G_side_s
 
 
 def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, edge, shear, side_t, side_w, G_side, E_side, side_source,
-                            main_t, main_w, G_main, E_main, main_source, sense, wood_type, service, loads, combos):
+                            main_t, main_w, G_main, E_main, main_source, sense, wood_type, service, loads, combos, local=None):
     """Bolted wood-to-wood connection loaded parallel to grain in every member (a splice or
     tension tie), 2018 NDS Ch. 11 and 12 (see dowel.py). shear: "single" or "double" (two
     side members of side_t each). rows_n rows of n_row bolts. loads: [dict(case, P lb)]."""
@@ -1407,6 +1407,27 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
     if rows_n > 1:
         rows.append(Row("Spacing between rows", "", 1.5 * D, row_spacing, "in", "NDS Table 12.5.1D", "minimum against the spacing provided"))
         rows.append(Row("Distance between outer rows", "", (rows_n - 1) * row_spacing, 5.0, "in", "NDS 12.5.1.3", "5 in. maximum without detailing for shrinkage"))
+    not_checked = ["staggered rows (NDS 11.3.6.2)", "load at an angle to the grain or to the bolt", "the bolts in tension, the washers, steel side plates"]
+    if local and sense == "tension":
+        # local: dict(Ft_main, Fv_main, Ft_side, Fv_side, source, hole); design values with every factor except CD
+        if not (local.get("source") or "").strip():
+            raise WorksheetError(f"{mark}: the source of Ft and Fv for the members is blank")
+        hole = local.get("hole") or (D + 1.0 / 16.0)
+        CDw = worst["CD"]
+        for nm, tt, ww, Ft, Fv in (("main member", main_t, main_w, local["Ft_main"], local["Fv_main"]),
+                                    ("side member" + ("s" if double else ""), side_t * (2 if double else 1), side_w, local["Ft_side"], local["Fv_side"])):
+            ls_ = dowel.local_stresses(Ft * CDw, Fv * CDw, tt, ww, rows_n, n_row, spacing, end, row_spacing, hole)
+            steps += [Ln(f"{nm}: ZNT' = Ft' t (w - nrow Dh)", ls_["ZNT"], "lb", "NDS Eq. E.2-1", f"Ft' = {Ft * CDw:,.0f} psi, t = {tt:g} in., Dh = {hole:g} in."),
+                      Ln(f"{nm}: ZRT' = nrow ni Fv' t s_critical", ls_["ZRT"], "lb", "NDS Eq. E.3-2, E.3-3", f"Fv' = {Fv * CDw:,.0f} psi, s_critical = {ls_['s_critical']:g} in.")]
+            if ls_["ZGT"] is not None:
+                steps.append(Ln(f"{nm}: ZGT' = ZRT-1'/2 + ZRT-n'/2 + Ft' t (nrow - 1)(s_row - Dh)", ls_["ZGT"], "lb", "NDS Eq. E.4-1"))
+            rows.append(Row(f"{nm.capitalize()}: {ls_['governs']}", worst["name"], worst["P"], ls_["capacity"], "lb", "NDS 11.1.2, Appendix E",
+                            "the least of net section tension, row tear-out and group tear-out"))
+        info_local = ("Members", f"Ft and Fv before CD: main {local['Ft_main']:,.0f} and {local['Fv_main']:,.0f} psi; side {local['Ft_side']:,.0f} and {local['Fv_side']:,.0f} psi "
+                                 f"({local['source'].strip()}); bolt holes {hole:g} in.")
+    else:
+        info_local = None
+        not_checked.insert(0, "the members at the connection: tension or compression on the net section (NDS 3.1.2), row and group tear-out (NDS Appendix E)")
     info = [("Bolts", f"{n} - {D:g} in. diameter, {rows_n} row" + ("s" if rows_n > 1 else "") + f" of {n_row}, {shear} shear"),
             ("Side Member" + ("s" if double else ""), f"{'2 - ' if double else ''}{side_t:g} x {side_w:g} in., G = {G_side:g}, E = {E_side:,.0f} psi ({side_source.strip()})"),
             ("Main Member", f"{main_t:g} x {main_w:g} in., G = {G_main:g}, E = {E_main:,.0f} psi ({main_source.strip()})"),
@@ -1419,8 +1440,11 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
          "The load acts parallel to the grain of every member and through the centroid of the bolt group; all bolts share the load after the group action factor.",
          "Sustained temperature not over 100 degrees F (Ct = 1.0, NDS Table 11.3.4).",
          "E and the gross areas of the members are used for the group action factor as entered."],
-        ["the members at the connection: tension or compression on the net section (NDS 3.1.2), row and group tear-out (NDS Appendix E)",
-         "staggered rows (NDS 11.3.6.2)", "load at an angle to the grain or to the bolt", "the bolts in tension, the washers, steel side plates"])
+        not_checked)
+    if info_local:
+        sheet.info.append(info_local)
+        sheet.assumptions.append("Member capacities at the connection use Ft and Fv as entered (every adjustment factor except CD applied), times CD of the governing "
+                                 "combination, on the gross thickness and the hole diameter stated.")
     sheet.blocks.append(dict(title="Layout", picture=("bolted", dict(D=D, rows=rows_n, n=n_row, s=spacing, g=row_spacing or 0.0, end=end, edge=edge, w=main_w, sense=sense))))
     sheet.connection = dict(r, Zp=base * worst["CD"], n=n, Cg=Cg, Cdelta=cdel, CM=CM, capacity=worst["cap"], demand=worst["P"], edge_min=e_min)
     return sheet

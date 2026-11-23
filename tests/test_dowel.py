@@ -116,3 +116,36 @@ def test_double_shear_bolts_against_table_12f(D, tm, G, table):
     got = [dowel.bolt(D, 1.5, tm, G, G, a, b, double=True)["Z"] for a, b in ((0, 0), (90, 0), (0, 90))]
     for g, t in zip(got, table):
         assert g == pytest.approx(t, abs=8)
+
+
+def test_local_stresses_against_nds_appendix_e_examples():
+    """NDS E.7: 2x4 Hem-Fir, one row of 3 - 1/2 in. bolts, hole 0.5625 in., end 3.5 in., spacing 2 in., Ft' 788 psi, Fv' 150 psi:
+    ZNT' = 3,470 lb, ZRT' = 1,350 lb. NDS E.6 (rows 1 and 3 of the staggered group, 3 bolts each): 3-1/8 x 12 glulam, 1 in. bolts,
+    hole 1.0625 in., spacing 4 in., rows 2.5 in. apart, Ft' 1,250, Fv' 191: ZNT' = 34,424 lb, ZRTi' = 7,163 lb, ZGT' = 18,393 lb."""
+    e7 = dowel.local_stresses(788, 150, 1.5, 3.5, 1, 3, 2.0, 3.5, None, 0.5625)
+    assert e7["ZNT"] == pytest.approx(3470, abs=3) and e7["ZRT"] == pytest.approx(1350) and e7["governs"] == "row tear-out" and e7["ZGT"] is None
+    e6 = dowel.local_stresses(1250, 191, 3.125, 12, 3, 3, 4.0, 7.0, 2.5, 1.0625)
+    assert e6["ZNT"] == pytest.approx(34424, abs=2) and e6["ZRTi"] == pytest.approx(7163, abs=1) and e6["ZGT"] == pytest.approx(18393, abs=2)
+    assert e6["governs"] == "group tear-out" and e6["s_critical"] == 4.0
+
+
+def test_bolted_sheet_with_tear_out():
+    """The splice of the test above with Ft 575(1.3) = 748 psi and Fv 180 psi (DF-L No. 2, 2x6 and 4x6), CD 1.15, holes 13/16 in.:
+    main member 3.5 x 5.5: ZNT' = 860(3.5)(5.5 - 1.625) = 11,664 lb; ZRT' = 2(3)(207)(3.5)(3.0) = 13,041 lb;
+    ZGT' = 6,521 + 860(3.5)(2.5 - 0.8125) = 11,600 lb -> group tear-out, 11,600 lb."""
+    from strukit.gui import calc
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + 0.7S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3a")])
+    v = dict(mark="BC2", D="3/4", shear="double", rows="2", n_row="3", spacing="3", row_spacing="2.5", end="5.25", edge="1.5", sense="tension", wood_type="softwood",
+             side_t="1.5", side_w="5.5", G_side="0.50", E_side="1600000", side_source="DF-L No. 2", main_t="3.5", main_w="5.5", G_main="0.50", E_main="1600000",
+             main_source="DF-L No. 2", service="dry", loads=[dict(case="D", P="2000"), dict(case="S", P="9000")],
+             Ft_main="748", Fv_main="180", Ft_side="748", Fv_side="180", local_source="NDS Supplement Table 4A, CF = 1.3")
+    sheet, _, _ = calc.build("bolted_connection", v, proj)
+    main = [r for r in sheet.rows if r.check.startswith("Main member")][0]
+    assert main.check == "Main member: group tear-out" and main.capacity == pytest.approx(11600, abs=25)
+    side = [r for r in sheet.rows if r.check.startswith("Side members")][0]
+    assert side.capacity == pytest.approx(main.capacity * 3.0 / 3.5, rel=1e-6)
+    assert not any("row and group tear-out" in t for t in sheet.not_checked)
+    with pytest.raises(calc.Missing):
+        calc.build("bolted_connection", dict(v, Fv_side=""), proj)
+    plain, _, _ = calc.build("bolted_connection", {k: x for k, x in v.items() if not k.startswith(("Ft_", "Fv_", "local"))}, proj)
+    assert any("row and group tear-out" in t for t in plain.not_checked) and len(plain.rows) == 4
