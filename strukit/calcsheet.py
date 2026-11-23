@@ -1149,6 +1149,8 @@ def _block_picture(c, top, pic):
     name, d = pic
     if name == "snow":
         return _snow_picture(c, top, d)
+    if name == "shear_wall":
+        return _shear_wall_picture(c, top, d)
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
@@ -1209,6 +1211,39 @@ def _block_picture(c, top, pic):
     low = min(low1, low2)
     _small(c, (LM + RM) / 2, low - 4, "dimensions in inches; to scale; edge distances are measured from the rod centres")
     return low - 8
+
+
+def _shear_wall_picture(c, top, d):
+    """Elevation of the wall line: each full-height segment as a sheathed panel with its
+    length, shear and chord forces. Segments are drawn side by side with a gap; lengths and
+    height are to one scale."""
+    segs = d["segs"]
+    total = sum(s["b"] for s in segs)
+    gap = 26.0
+    sc = min((RM - LM - 120 - gap * (len(segs) - 1)) / total, 78.0 / d["h"])
+    _sketch_title(c, LM + 6, top - 4, "ELEVATION")
+    y0 = top - 34 - d["h"] * sc
+    x = LM + 46
+    for i, s in enumerate(segs, 1):
+        w, hh = s["b"] * sc, d["h"] * sc
+        c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setFillColorRGB(*memberart.WOOD_FILL)
+        c.rect(x, y0, w, hh, fill=1, stroke=1)
+        c.setLineWidth(0.3)
+        n = max(int(s["b"] / 1.3333 + 0.5), 1)                # studs at 16 in. for the look of framing
+        for k in range(1, n):
+            c.line(x + w * k / n, y0, x + w * k / n, y0 + hh)
+        c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+        c.drawCentredString(x + w / 2, y0 + hh + 9, f"{s['V']:,.0f} lb  ({s['v']:.0f} plf)")
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+        c.line(x + 2, y0 + hh + 5, x + w - 2, y0 + hh + 5); c.line(x + w - 2, y0 + hh + 5, x + w - 6, y0 + hh + 7)
+        c.line(x + w - 2, y0 + hh + 5, x + w - 6, y0 + hh + 3)
+        c.setFont(FR, 6); c.setFillColorRGB(*GREY)
+        c.drawCentredString(x, y0 - 22, f"T {s['T']:,.0f}"); c.drawCentredString(x + w, y0 - 22, f"C {s['T']:,.0f}")
+        memberart._dim_h(c, x, x + w, y0 - 9, f"{s['b']:g} ft", FR, ext_from=y0)
+        x += w + gap
+    memberart._dim_v(c, y0, y0 + d["h"] * sc, x - gap + 8, f"{d['h']:g} ft", FR, ext_from=x - gap)
+    _small(c, (LM + RM) / 2, y0 - 32, "segments drawn to scale, side by side; chord forces in lb; framing lines are schematic")
+    return y0 - 38
 
 
 def _snow_picture(c, top, d):
