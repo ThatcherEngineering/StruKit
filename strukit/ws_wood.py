@@ -165,11 +165,14 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
 
 
 def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_source, wet, incised, lu1_ft=None, lu2_ft=None,
-         unit_weight_pcf=None, self_weight_case="D"):
-    """Solid sawn post under concentric axial compression, 2018 NDS 3.6 and 3.7, ASD.
+         unit_weight_pcf=None, self_weight_case="D", lateral=()):
+    """Solid sawn post, 2018 NDS 3.6, 3.7 and 3.9.2, ASD: axial compression, with or
+    without lateral load bending it about its strong axis (load on the narrow face).
     size: nominal, dimension lumber or a timber. Ke1, lu1: buckling in the plane of the
     larger dimension d1; Ke2, lu2: in the plane of the smaller dimension d2 (unbraced
-    lengths default to the height). loads: dict(case, P lb, label)."""
+    lengths default to the height). loads: dict(case, P lb, label). lateral: dict(case,
+    kind "uniform"|"point", w plf or P lb, x_ft, label), on the post spanning simply
+    between its base and its top."""
     if not combos:
         raise WorksheetError(f"{mark}: no ASD load combinations given")
     if height_ft is None or height_ft <= 0:
@@ -205,26 +208,88 @@ def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_sourc
         if not ld.get("case") or ld.get("P") is None:
             raise WorksheetError(f"{mark}: a load is missing its case or its value")
         by_case[ld["case"]] = by_case.get(ld["case"], 0.0) + ld["P"]
+    lat_by = {}
+    for ld in lateral:
+        if not ld.get("case") or ld.get("kind") not in ("uniform", "point"):
+            raise WorksheetError(f"{mark}: a lateral load is missing its case or its type")
+        lat_by.setdefault(ld["case"], []).append(ld)
+    Hin = height_ft * 12.0
+    S1 = d2 * d1 ** 2 / 6
+    if lat_by:
+        t_nom, w_nom = wood.nominal(size)
+        if timber:
+            CF_b = (12.0 / d1) ** (1 / 9) if d1 > 12 else 1.0          # Table 4D adjustment factors
+            CM_b = 1.0
+            Fb_ref = ref["Fb"]
+        else:
+            Fb_ref, CF_b = wood.values(species, grade, size)[0]["Fb"], wood.values(species, grade, size)[1]
+            CM_b = (1.0 if Fb_ref * CF_b <= 1150 else 0.85) if wet else 1.0
+        CM_v = 1.0 if timber else (0.97 if wet else 1.0)
     out = []
     for cb in combos:
-        present = [c for c, v in cb.factors.items() if v and c in by_case]
+        present = [c for c, v in cb.factors.items() if v and (c in by_case or c in lat_by)]
         if not present:
             continue
-        P = sum(cb.factors[c] * by_case[c] for c in present)
+        P = sum(cb.factors[c] * by_case[c] for c in present if c in by_case)
         try:
             CD, cd_case, cd_dur = wood.load_duration(present)
             Fc_star = ref["Fc"] * CD * CM_c * CF * Ci_c
             CP, st = wood.column_stability(Fc_star, Emin_adj, Ke1 * lu1, d1, Ke2 * lu2, d2)
         except wood.WoodError as e:
             raise WorksheetError(f"{mark}: {e}")
-        out.append(dict(cb=cb, P=P, CD=CD, cd_case=cd_case, cd_dur=cd_dur, Fc_star=Fc_star, CP=CP, st=st, Fc_adj=Fc_star * CP,
-                        fc=P / A))
+        o = dict(cb=cb, P=P, CD=CD, cd_case=cd_case, cd_dur=cd_dur, Fc_star=Fc_star, CP=CP, st=st, Fc_adj=Fc_star * CP,
+                 fc=P / A, M=0.0, V=0.0, ratio=(P / A) / (Fc_star * CP))
+        pts, dist = [], []
+        for c in present:
+            for ld in lat_by.get(c, []):
+                if ld["kind"] == "uniform":
+                    w = cb.factors[c] * ld["w"] / 12.0
+                    dist.append(bm.DistLoad(0.0, Hin, w, w))
+                else:
+                    pts.append(bm.PointLoad(ld["x_ft"] * 12.0, cb.factors[c] * ld["P"]))
+        if pts or dist:
+            res = bm.solve(Hin, [0.0, Hin], ref["E"] * d2 * d1 ** 3 / 12, pts, dist)
+            o["M"] = max(abs(res.M_max()[0]), abs(res.M_min()[0]))
+            o["V"] = abs(res.V_abs_max()[0])
+            fb = o["M"] / S1
+            Fb_star = Fb_ref * CD * CM_b * CF_b * Ci_c
+            try:
+                CL, bst = wood.beam_stability(Fb_star, Emin_adj, lu2, d2, d1)
+            except wood.WoodError as e:
+                raise WorksheetError(f"{mark}: {e}")
+            FcE1 = 0.822 * Emin_adj / (Ke1 * lu1 / d1) ** 2
+            FcE2 = 0.822 * Emin_adj / (Ke2 * lu2 / d2) ** 2
+            if o["fc"] >= FcE1:
+                raise WorksheetError(f"{mark}: {cb.name}: the axial stress reaches the buckling stress FcE1; the post is too slender")
+            FbE = bst.get("FbE")
+            i3 = (o["fc"] / o["Fc_adj"]) ** 2 + fb / (Fb_star * CL * (1 - o["fc"] / FcE1))          # Eq. 3.9-3
+            i4 = (o["fc"] / FcE2 + (fb / FbE) ** 2) if FbE else 0.0                                  # Eq. 3.9-4
+            o.update(fb=fb, Fb_star=Fb_star, CL=CL, Fb_adj=Fb_star * CL, FcE1=FcE1, FcE2=FcE2, FbE=FbE, i3=i3, i4=i4,
+                     fv=1.5 * o["V"] / A, Fv_adj=ref["Fv"] * CD * CM_v * Ci_c, ratio=max(i3, i4, o["ratio"]))
+        out.append(o)
     if not out:
         raise WorksheetError(f"{mark}: no load combination loads this post")
-    g = max(out, key=lambda o: o["fc"] / o["Fc_adj"])
-    rows = [Row("compression", g["cb"].name, g["fc"], g["Fc_adj"], "psi", "2018 NDS 3.6.3, 3.7.1, Table 4.3.1",
-                f"P = {g['P']:,.0f} lb; CD = {g['CD']:g} ({g['cd_case']}, {g['cd_dur']}); CP = {g['CP']:.3f}; "
-                f"le/d = {g['st']['ratio']:.2f}")]
+    axial = [o for o in out if o["P"] > 0]
+    rows = []
+    g = max(axial, key=lambda o: o["fc"] / o["Fc_adj"]) if axial else max(out, key=lambda o: o["ratio"])
+    if axial:
+        rows.append(Row("compression", g["cb"].name, g["fc"], g["Fc_adj"], "psi", "2018 NDS 3.6.3, 3.7.1, Table 4.3.1",
+                        f"P = {g['P']:,.0f} lb; CD = {g['CD']:g} ({g['cd_case']}, {g['cd_dur']}); CP = {g['CP']:.3f}; "
+                        f"le/d = {g['st']['ratio']:.2f}"))
+    bent = [o for o in out if o["M"] > 0]
+    gb = None
+    if bent:
+        gb = max(bent, key=lambda o: o["i3"])
+        rows.append(Row("compression with bending", gb["cb"].name, gb["i3"], 1.0, "", "2018 NDS Eq. 3.9-3",
+                        f"fc = {gb['fc']:.1f} psi, fb = {gb['fb']:.1f} psi; M = {gb['M'] / 12:,.0f} lb-ft; "
+                        f"CD = {gb['CD']:g} ({gb['cd_case']}, {gb['cd_dur']}); CL = {gb['CL']:.3f}"))
+        g4 = max(bent, key=lambda o: o["i4"])
+        if g4["i4"] > 0:
+            rows.append(Row("stability under bending", g4["cb"].name, g4["i4"], 1.0, "", "2018 NDS Eq. 3.9-4",
+                            f"fc / FcE2 + (fb / FbE)^2; FcE2 = {g4['FcE2']:,.0f} psi, FbE = {g4['FbE']:,.0f} psi"))
+        gv = max(bent, key=lambda o: o["fv"] / o["Fv_adj"])
+        rows.append(Row("shear", gv["cb"].name, gv["fv"], gv["Fv_adj"], "psi", "2018 NDS 3.4.1, 3.4.2, Table 4.3.1",
+                        f"V = {gv['V']:,.0f} lb; CD = {gv['CD']:g} ({gv['cd_case']}, {gv['cd_dur']})"))
     L = footing_line
     src_t = f"2018 NDS Supplement {table}"
     steps = [L("b x d", bb, "in", SUPP_T1B, f"{bb:g} in x {dd:g} in dressed"), L("A", A, "in2", "geometry"),
@@ -241,23 +306,40 @@ def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_sourc
              L("CP", g["CP"], "", "NDS Eq. 3.7-1", "c = 0.8 for sawn lumber"),
              L("Fc' = Fc* CP", g["Fc_adj"], "psi", "NDS Table 4.3.1"),
              L("fc = P / A", g["fc"], "psi", "NDS 3.6.3", f"P = {g['P']:,.0f} lb, {g['cb'].name}")]
+    if gb:
+        tb = "Table 4D" if timber else "Table 4A"
+        steps += [L("S1 = d2 d1^2 / 6", S1, "in3", "NDS Eq. 3.3-4", f"bending about the strong axis, {gb['cb'].name}"),
+                  L("Fb", Fb_ref, "psi", f"2018 NDS Supplement {tb}"), L("CF for Fb", CF_b, "", tb + " adjustment factors"),
+                  L("Fb1' = Fb CD CM CL CF Ci", gb["Fb_adj"], "psi", "NDS Table 4.3.1",
+                    f"CD = {gb['CD']:g}, CM = {CM_b:g}, CL = {gb['CL']:.3f}"),
+                  L("fb1 = M / S1", gb["fb"], "psi", "NDS Eq. 3.3-1", f"M = {gb['M'] / 12:,.0f} lb-ft"),
+                  L("fc", gb["fc"], "psi", "NDS 3.6.3", f"P = {gb['P']:,.0f} lb"),
+                  L("Fc'", gb["Fc_adj"], "psi", "NDS Table 4.3.1", f"CD = {gb['CD']:g}, CP = {gb['CP']:.3f}"),
+                  L("FcE1 = 0.822 Emin' / (le1/d1)^2", gb["FcE1"], "psi", "NDS 3.9.2"),
+                  L("(fc/Fc')^2 + fb1 / [Fb1' (1 - fc/FcE1)]", gb["i3"], "", "NDS Eq. 3.9-3", "not more than 1.0")]
     info = [("Member", f"{size} {species.title()} {grade}" + (f" ({note})" if note else "") + f"; {table}"),
             ("Size", f"{bb:g} in x {dd:g} in dressed"),
             ("Height", f"{height_ft:g} ft; unbraced {lu1 / 12:g} ft for the {d1:g} in dimension and {lu2 / 12:g} ft for the {d2:g} in dimension"),
             ("Ends", f"Ke = {Ke1:g} and {Ke2:g} ({k_source.strip()})"),
             ("Conditions", ("wet service" if wet else "dry service") + "; " + ("incised" if incised else "not incised"))]
     load_lines = [f"{ld['case']:<3} axial {ld['P']:>10,.0f} lb   {ld.get('label', '')}" for ld in loads]
+    for ld in lateral:
+        load_lines.append(f"{ld['case']:<3} lateral uniform {ld['w']:>7.1f} plf   {ld.get('label', '')}" if ld["kind"] == "uniform" else
+                          f"{ld['case']:<3} lateral point {ld['P']:>9,.0f} lb at {ld['x_ft']:g} ft   {ld.get('label', '')}")
     assumptions = ["Allowable stress design, 2018 NDS. Temperature factor Ct = 1.0 (NDS 2.3.3, sustained temperature to 100 F).",
-                   "The load acts along the centre of the post; no bending is considered.",
+                   "The axial load acts along the centre of the post." + (" Lateral load bends the post about its strong axis; "
+                   "the post spans simply between its base and its top." if lateral else " No bending is considered."),
                    f"Self-weight {sw:,.0f} lb (unit weight {unit_weight_pcf:g} pcf) added to load case {self_weight_case}." if sw is not None
                    else "Self-weight is not added separately."]
     sheet = SimpleSheet(
         mark, "Wood Post", "Member", "ASD", info, load_lines, [(c.name, c.source) for c in combos],
         f"Governing Calculation ({g['cb'].name})", steps, rows, assumptions,
-        ["bending from eccentric or lateral load (NDS 3.9)", "bearing on the end grain and on the supporting member (NDS 3.10)",
-         "connections at the top and base"],
+        (["bending from eccentric load (NDS 15.4)", "bending about the weak axis"] if lateral else
+         ["bending from eccentric or lateral load (NDS 3.9)"])
+        + ["bearing on the end grain and on the supporting member (NDS 3.10)", "connections at the top and base"],
         picture=("wood_post", dict(b=bb, d=dd, height=height_ft, size=size)), governing=g["cb"].name)
     sheet.base = {o["cb"].name: o["P"] for o in out}
+    sheet.governing = max(out, key=lambda o: o["ratio"])["cb"].name
     return sheet
 
 

@@ -15,10 +15,13 @@ Read from the documents:
 
   NDS 3.6, 3.7             columns; column stability factor CP (Eq. 3.7-1, c = 0.8 for sawn
                            lumber, FcE = 0.822 Emin' / (le/d)^2, le/d not over 50)
-  Supplement Table 4D      timbers 5 x 5 and larger: Douglas Fir-Larch, Hem-Fir and
-                           Spruce-Pine-Fir, grades Select Structural, No. 1 and No. 2, typed
-                           from the table (the other species and the dense grades are not in
-                           StruKit's file), and its wet service factors
+  Supplement Table 4D      timbers 5 x 5 and larger, and its wet service factors. 29 species
+                           are in StruKit's file: those whose Beams and Stringers and Posts
+                           and Timbers rows both read cleanly from the table text, each
+                           group confirmed by its printed classification label. Left out:
+                           Alaska Cedar, Baldcypress, Hem-Fir (North), Mixed Oak, Redwood,
+                           Sitka Spruce, Spruce-Pine-Fir (South), Western Juniper, and
+                           Southern Pine.
 
 Covered: visually graded dimension lumber 2 to 4 in. thick (Table 4A) as beams and posts,
 and timbers (Table 4D) as posts, allowable stress design. Not covered: Southern Pine
@@ -68,6 +71,7 @@ def _load_timbers():
 
 
 TIMBER_VALUES, TIMBER_SIZES = _load_timbers()
+TIMBER_SPECIES = sorted({k[0] for k in TIMBER_VALUES})
 # Table 4A size factors for Fc: nominal width -> factor (Select Structural to No. 3)
 _CF_C_MAIN = {2: 1.15, 3: 1.15, 4: 1.15, 5: 1.1, 6: 1.1, 8: 1.05, 10: 1.0, 12: 1.0, 14: 0.9, 16: 0.9}
 SPECIES = sorted({k[0] for k in VALUES})
@@ -206,8 +210,7 @@ def post_values(species, grade, size):
         t, w = nominal(size)
         cls = timber_class(t, w)
         if (species, cls, grade) not in TIMBER_VALUES:
-            raise WoodError(f"wood: {species} {grade} {cls} is not in StruKit's {SUPP} Table 4D file "
-                            "(Douglas Fir-Larch, Hem-Fir, Spruce-Pine-Fir; Select Structural, No. 1, No. 2)")
+            raise WoodError(f"wood: {species} {grade} {cls} is not in StruKit's {SUPP} Table 4D file")
         return dict(TIMBER_VALUES[(species, cls, grade)]), 1.0, TIMBER_SIZES[size], "Table 4D, " + cls, ""
     raise WoodError(f"wood: {size} is not a size in {SUPP} Table 1B")
 

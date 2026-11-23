@@ -177,3 +177,48 @@ def test_post_wet_service_and_screen():
     assert r["state"] == "done" and r["rows"][0]["demand"] == pytest.approx(200.4, abs=0.05)
     r = calc.results("wood_post", dict(v, k_source="", Ke1=""), proj)
     assert r["state"] == "incomplete" and any("Ke comes from" in m for m in r["messages"])
+
+
+def test_table_4d_file():
+    # values read against the table text for these species; every species has both classifications complete
+    assert len(wood.TIMBER_SPECIES) == 29
+    v = wood.TIMBER_VALUES
+    assert v[("PONDEROSA PINE", "Posts and Timbers", "No. 2")]["Fc"] == 325 and v[("PONDEROSA PINE", "Beams and Stringers", "No. 1")]["Fb"] == 925
+    assert v[("WESTERN CEDARS", "Posts and Timbers", "No. 1")]["Fc"] == 800 and v[("WESTERN CEDARS", "Posts and Timbers", "No. 1")]["Emin"] == 370000
+    assert v[("DOUGLAS FIR-SOUTH", "Posts and Timbers", "Select Structural")]["Fc"] == 1050
+    assert v[("DOUGLAS FIR-LARCH", "Posts and Timbers", "Dense No. 1")]["Fc"] == 1200
+    for sp in wood.TIMBER_SPECIES:
+        for cls in ("Beams and Stringers", "Posts and Timbers"):
+            assert all((sp, cls, g) in v for g in ("Select Structural", "No. 1", "No. 2"))
+    for sp in ("REDWOOD", "SITKA SPRUCE", "ALASKA CEDAR"):
+        assert sp not in wood.TIMBER_SPECIES
+
+
+def test_post_with_lateral_load_by_hand():
+    # 4x6 DF-L No. 2 (3.5 x 5.5), 10 ft, braced at mid-height the weak way; D 1,500 lb, L 3,000 lb, wind 120 plf
+    # D + 0.6W: fc = 1,500/19.25 = 77.92; M = 0.6 x 120 x 100/8 = 900 lb-ft; S1 = 3.5 x 5.5^2/6 = 17.646; fb = 612.0
+    # le1/d1 = 120/5.5 = 21.82 governs (le2/d2 = 60/3.5 = 17.14); FcE1 = 0.822 x 580,000/21.82^2 = 1,001.6
+    # Fc* = 1,350 x 1.6 x 1.1 = 2,376; CP = 0.3762; Fc' = 893.8
+    # Fb* = 900 x 1.6 x 1.3 = 1,872; CL = 0.992; Eq. 3.9-3: (77.92/893.8)^2 + 612.0/(1,857 x (1 - 77.92/1,001.6)) = 0.365
+    cb = [Combo("D + L", {"D": 1, "L": 1}, "x"), Combo("D + 0.6W", {"D": 1, "W": 0.6}, "x"),
+          Combo("D + 0.75L + 0.45W", {"D": 1, "L": 0.75, "W": 0.45}, "x")]
+    s = ws_wood.post("S1", "DOUGLAS FIR-LARCH", "No. 2", "4x6", 10, [dict(case="D", P=1500), dict(case="L", P=3000)], cb, 1, 1, "pinned",
+                     False, False, lu2_ft=5, lateral=[dict(case="W", kind="uniform", w=120)])
+    r = _row(s, "compression with bending")
+    assert r.combo == "D + 0.6W" and r.demand == pytest.approx(0.365, abs=0.002) and r.capacity == 1.0
+    assert "fb = 612.0 psi" in r.note and "CD = 1.6" in r.note
+    assert _row(s, "shear").demand == pytest.approx(1.5 * 360 / 19.25, rel=1e-3) and _row(s, "shear").capacity == pytest.approx(180 * 1.6)
+    c = _row(s, "compression")
+    assert c.combo == "D + L" and c.demand == pytest.approx(4500 / 19.25, rel=1e-4)
+    # Eq. 3.9-4 for the worst case: fc/FcE2 + (fb/FbE)^2, FcE2 = 0.822 x 580,000/17.14^2 = 1,622
+    assert "FcE2 = 1,622 psi" in _row(s, "stability").note
+
+
+def test_post_screen_with_lateral_table():
+    from strukit.gui import calc
+    proj = dict(method="ASD", combos_asd=[dict(expr="D + 0.6W", source="typed in")], combos_lrfd=[])
+    v = dict(mark="S1", species="DOUGLAS FIR-LARCH", grade="No. 2", size="4x6", height="10", lu1="", lu2="5", Ke1="1", Ke2="1",
+             k_source="pinned", service="dry service", incised="no", unit_weight="", loads=[dict(case="D", P="1500", label="")],
+             lateral=[dict(case="W", kind="uniform", mag="120", x="", label="wind")])
+    r = calc.results("wood_post", v, proj)
+    assert r["state"] == "done" and next(x for x in r["rows"] if x["check"] == "compression with bending")["demand"] == pytest.approx(0.365, abs=0.002)
