@@ -7,7 +7,7 @@ from .ws_steel_beam import Row, WorksheetError
 
 
 def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, bearing_in, stiffeners, flange_supported,
-          spans=None, overhang_left=0.0, overhang_right=0.0, bearing_int_in=None, stiffeners_int=False, snow_partial=True):
+          spans=None, overhang_left=0.0, overhang_right=0.0, bearing_int_in=None, stiffeners_int=False, snow_partial=True, rise_on_12=0.0):
     """name: "BCI 6000-1.8" or "TJI 210"; depth in.; loads: dict(case, kind "area"|"uniform"|
     "point", q psf / w plf / P lb, x1_ft, x2_ft or x_ft, label). Self-weight is added to D."""
     if not combos:
@@ -38,6 +38,8 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
             if ld.get("q2") is not None:
                 ld.update(w2=ld["q2"] * spacing_in / 12.0, area2=ld["q2"])
     loads.append(dict(case="D", kind="uniform", w=j["weight"], label="joist weight"))
+    from .ws_wood import _slope, SLOPE_ASSUMPTION, SLOPE_NOT_CHECKED
+    cos_s = _slope(rise_on_12, loads, mark)
     by_case = {}
     for ld in loads:
         if not ld.get("case") or not ld.get("kind"):
@@ -69,7 +71,7 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
             CD, cd_case, cd_dur = wood.load_duration(present)
         except wood.WoodError as e:
             raise WorksheetError(f"{mark}: {e}")
-        M, V, R = max(env.Mpos, env.Mneg) / 12.0, env.V, env.R_end
+        M, V, R = max(env.Mpos, env.Mneg) / 12.0, env.V * cos_s, env.R_end
         out.append(dict(res=res, cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, M=M, V=V, R=R, Rint=env.R_int, Rmin=env.R_min,
                         neg=env.Mneg > env.Mpos))
     gm = max(out, key=lambda o: o["M"] / o["CD"])
@@ -89,11 +91,11 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
         wd = contbeam.deflection(lay, j["EI"], by_case, dc.factors, dc.ratio, snow_partial)
         if wd is None:
             continue
-        bend = wd[0]
+        bend = wd[0] / cos_s ** 2
         Md = max(float(wd[4].M.max()), 0.0) + max(-float(wd[4].M.min()), 0.0)
         shear = 8.0 * Md / j["K"]
         rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k}" if v != 1 else k for k, v in dc.factors.items()),
-                        bend + shear, wd[1], "in", dc.source + "; " + ("ESR-1336 Sect. 4.11" if j["product"] == "BCI" else "ESR-1153 Table 3 note 2"),
+                        bend + shear, wd[1] / cos_s, "in", dc.source + "; " + ("ESR-1336 Sect. 4.11" if j["product"] == "BCI" else "ESR-1153 Table 3 note 2"),
                         (f"limit span/{dc.ratio:g}" if lay.simple else f"{wd[2]}, limit {wd[3]}") + f"; bending {bend:.3f} in + shear {shear:.3f} in"))
     k_note = "K x 10^6 lb" if j["product"] == "BCI" else "K d x 10^5 lb"
     steps = [L("Mr", j["M"], "lb-ft", j["source"], "reference design moment"),
@@ -118,12 +120,15 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
         if ld["kind"] == "uniform":
             where = f"{ld.get('x1_ft', 0):g} to {ld.get('x2_ft', span_ft):g} ft"
             if "area" in ld:
-                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld.get('w_slope', ld['w']):.1f} plf"
+                                   + (f" along the slope = {ld['w']:.1f} plf of horizontal" if "w_slope" in ld else "") + f"   {where:<14} {ld.get('label', '')}")
                                   if "w2" not in ld else
                                   (f"{ld['case']:<3} area    {ld['area']:.1f} to {ld['area2']:.1f} psf x {spacing_in:g} in = {ld['w']:.1f} to {ld['w2']:.1f} plf   "
                                    f"{where:<14} {ld.get('label', '')}"))
             else:
-                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w2" not in ld else
+                load_lines.append((f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w_slope" not in ld else
+                                   f"{ld['case']:<3} uniform {ld['w_slope']:.1f} plf along the slope = {ld['w']:.1f} plf of horizontal   {where:<14} {ld.get('label', '')}")
+                                  if "w2" not in ld else
                                   f"{ld['case']:<3} tapered {ld['w']:.1f} to {ld['w2']:.1f} plf   {where:<16} {ld.get('label', '')}")
         else:
             load_lines.append(f"{ld['case']:<3} point   {ld['P']:>9.0f} lb    at {ld['x_ft']:g} ft{'':<8} {ld.get('label', '')}")
@@ -139,6 +144,10 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
         picture=("ijoist", dict(supports=lay.supports, d=j["depth"], span=span_ft, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), w2=x.get("w2"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gm["cb"].name)
     from .ws_wood import _diagram_data
     sheet.diagram = _diagram_data(gm)
+    if cos_s < 1.0:
+        sheet.assumptions.insert(1, SLOPE_ASSUMPTION.format(r=rise_on_12, c=cos_s))
+        sheet.not_checked[:0] = SLOPE_NOT_CHECKED
+        sheet.info.insert(2, ("Slope", f"{rise_on_12:g} on 12; spans are horizontal; sloped length {lay.total / cos_s:.2f} ft"))
     if not lay.simple:
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). The reference moment applies to "
