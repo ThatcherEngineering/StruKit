@@ -149,6 +149,7 @@ FORMS = {
                 F("size", "Size (nominal)", "select", options=list(wood.SIZES) + list(wood.TIMBER_SIZES)),
                 F("plies", "Number of plies", "select", options=["1", "2", "3", "4", "5", "6"]),
                 F("span", "Span", unit="ft"),
+                F("spacing", "Member spacing (joists and rafters)", unit="in", required=False, help="needed for area loads in psf"),
                 F("bracing", "Compression edge", "select", options=["supported throughout", "braced at a spacing"]),
                 F("lu", "Brace spacing (unbraced length)", unit="ft", required=False),
                 F("bearing", "Bearing length at each support", unit="in"),
@@ -157,8 +158,8 @@ FORMS = {
                 F("repetitive", "Repetitive member", "select", options=["yes", "no"],
                   help="joists, rafters or similar at 24 in. or less, three or more, joined by sheathing (NDS 4.3.9)"),
                 F("unit_weight", "Wood unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
-        tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point"]),
-                                     F("mag", "Load", unit="plf or lb"),
+        tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point", "area"]),
+                                     F("mag", "Load", unit="plf, lb or psf"),
                                      F("x1", "From / at", unit="ft", required=False),
                                      F("x2", "To", unit="ft", required=False),
                                      F("label", "Note", "text", required=False)]),
@@ -615,8 +616,9 @@ def build(kind, values, project):
         inc, rep, uw = yes(r.text("incised")), yes(r.text("repetitive")), r.num("unit_weight", False)
         loads = []
         for ld in r.rows("loads"):
-            if ld["kind"] == "uniform":
-                d = dict(case=ld["case"], kind="uniform", w=ld["mag"])
+            if ld["kind"] in ("uniform", "area"):
+                d = dict(case=ld["case"], kind="uniform", w=ld["mag"]) if ld["kind"] == "uniform" else \
+                    dict(case=ld["case"], kind="area", q=ld["mag"])
                 if ld["x1"] is not None or ld["x2"] is not None:
                     d.update(x1_ft=ld["x1"] or 0.0, x2_ft=ld["x2"] if ld["x2"] is not None else span)
             else:
@@ -631,7 +633,10 @@ def build(kind, values, project):
         dc = checks(r.rows("defl"), r.miss, "Deflection limits")
         cases_used([ld["case"] for ld in loads], cb, r.miss)
         r.done()
-        return ws_wood.beam(mark, sp, gr, size, int(plies), span, loads, cb, dc, lu or 0.0, bearing, wet, inc, rep, uw), "simple", {}
+        if any(ld["kind"] == "area" for ld in loads) and r.num("spacing", False) is None:
+            raise Missing(["Member spacing is blank; an area load in psf needs it"])
+        return ws_wood.beam(mark, sp, gr, size, int(plies), span, loads, cb, dc, lu or 0.0, bearing, wet, inc, rep, uw,
+                            spacing_in=r.num("spacing", False)), "simple", {}
     if kind == "snow":
         pg, src, risk = r.num("pg"), r.text("pg_source"), r.text("risk")
         rough, expo, therm = r.text("roughness"), r.text("exposure"), r.text("thermal")

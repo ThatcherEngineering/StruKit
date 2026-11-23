@@ -240,3 +240,31 @@ def test_timber_beam_by_hand():
     assert _row(s, "bending").capacity == 1200 and _row(s, "bearing").capacity == pytest.approx(625 * 0.67)
     with pytest.raises(WorksheetError, match="single piece"):
         ws_wood.beam("TB", "DOUGLAS FIR-LARCH", "No. 1", "6x12", 2, 16, loads, DL, [], 0, 5.5, False, False, False)
+
+
+def test_job_2026_011_deck_joist_by_spacing():
+    # sealed StruCalc package, page 16: 2x10 DF-L No. 2 at 16 in, 4.5 ft, 60 psf live, self-weight 3.16 plf:
+    # Fb' 1,138.5 psi (CF 1.1, Cr 1.15); bending 118.1, shear 20.2, bearing 41.6 psi on 3 in; deflection 0.005 in
+    loads = [dict(case="L", kind="area", q=60), dict(case="D", kind="uniform", w=3.16)]
+    s = ws_wood.beam("DJ", "DOUGLAS FIR-LARCH", "No. 2", "2x10", 1, 4.5, loads, DL, [DeflCheck("total", {"D": 1, "L": 1}, 360, "x")], 0, 3.0,
+                     False, False, True, spacing_in=16)
+    assert _row(s, "bending").demand == pytest.approx(118.1, abs=0.1) and _row(s, "bending").capacity == pytest.approx(1138.5)
+    assert _row(s, "shear").demand == pytest.approx(20.2, abs=0.05)
+    assert _row(s, "bearing").demand == pytest.approx(41.6, abs=0.05)
+    assert _row(s, "deflection").demand == pytest.approx(0.005, abs=0.0005) and _row(s, "deflection").capacity == pytest.approx(0.15)
+    assert any("60.0 psf x 16 in = 80.0 plf" in t for t in s.load_lines)
+    with pytest.raises(WorksheetError, match="spacing"):
+        ws_wood.beam("DJ", "DOUGLAS FIR-LARCH", "No. 2", "2x10", 1, 4.5, loads, DL, [], 0, 3.0, False, False, True)
+
+
+def test_joist_screen_area_load():
+    from strukit.gui import calc
+    proj = dict(method="ASD", combos_asd=[dict(expr="D + L", source="typed in")], combos_lrfd=[])
+    v = dict(mark="DJ", species="DOUGLAS FIR-LARCH", grade="No. 2", size="2x10", plies="1", span="4.5", spacing="16",
+             bracing="supported throughout", bearing="3", service="dry service", incised="no", repetitive="yes", unit_weight="",
+             loads=[dict(case="L", kind="area", mag="60", x1="", x2="", label="deck live"), dict(case="D", kind="uniform", mag="3.16", x1="", x2="", label="")],
+             defl=[])
+    r = calc.results("wood_beam", v, proj)
+    assert r["state"] == "done" and next(x for x in r["rows"] if x["check"] == "bending")["demand"] == pytest.approx(118.1, abs=0.1)
+    r = calc.results("wood_beam", dict(v, spacing=""), proj)
+    assert r["state"] == "incomplete" and "spacing" in r["messages"][0]
