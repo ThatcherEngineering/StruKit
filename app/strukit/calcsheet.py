@@ -1398,7 +1398,7 @@ def _snow_drift_picture(c, top, d):
     ybase = top - 96
     for i, (kind, x) in enumerate(panels):
         x0 = LM + 10 + i * pw
-        title = {"drift": (x or {}).get("kind", "").upper() + " DRIFT", "sliding": "SLIDING SNOW", "none": "BALANCED"}[kind]
+        title = {"drift": ((x or {}).get("kind", "").upper() + " DRIFT").strip(), "sliding": "SLIDING SNOW", "none": "BALANCED"}[kind]
         _sketch_title(c, x0, top - 4, title)
         wx = x0 + 34                                        # face of the upper wall
         c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)

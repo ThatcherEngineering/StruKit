@@ -463,9 +463,10 @@ FORMS = {
                 F("W2", "Winter wind parameter, W2", help="from the ASCE 7 Hazard Tool; Fig. 7.6-1"), F("W2_source", "Where W2 comes from", "text"),
                 F("ps", "Balanced snow load on the lower roof", unit="psf", help="from its Roof Snow Load sheet"),
                 F("ps_source", "Where that load comes from", "text", help="for example: sheet SN1"),
-                F("lu_upper", "Upper roof length, perpendicular to the step", unit="ft"),
-                F("lu_lower", "Lower roof length, perpendicular to the step", unit="ft"),
-                F("step", "Height of the upper roof above the lower roof at the step", unit="ft"),
+                F("at", "Drift at", "select", options=["a roof step (lower roof beside a higher roof)", "a parapet or roof projection"]),
+                F("lu_upper", "Upper roof length, perpendicular to the step", unit="ft", required=False, help="roof step only"),
+                F("lu_lower", "Lower roof length, perpendicular to the step (parapet: roof length upwind)", unit="ft"),
+                F("step", "Height of the upper roof, or of the parapet, above the roof", unit="ft"),
                 F("slide", "Sliding snow from the upper roof", "select", options=["no", "yes"], help="the upper roof slopes toward the lower roof"),
                 F("s_pf", "Sliding: upper roof flat roof snow load, pf", unit="psf", required=False),
                 F("s_pf_source", "Sliding: where pf comes from", "text", required=False),
@@ -1039,9 +1040,11 @@ def build(kind, values, project):
                                         dead_factor=r.num("dead_factor", False), dead_source=r.text("dead_source", False) or ""), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
-        ps, pss, lu1, lu2, step = r.num("ps"), r.text("ps_source"), r.num("lu_upper"), r.num("lu_lower"), r.num("step")
+        par = (r.text("at") or "").startswith("a parapet")
+        ps, pss, lu2, step = r.num("ps"), r.text("ps_source"), r.num("lu_lower"), r.num("step")
+        lu1 = r.num("lu_upper", not par, label="Upper roof length")
         sl = None
-        if yes(r.text("slide")):
+        if yes(r.text("slide")) and not par:
             sl = dict(pf=r.num("s_pf", label="Sliding: upper roof pf"), pf_source=r.text("s_pf_source", False) or "",
                       W=r.num("s_W", label="Sliding: eave to ridge W"), rise_on_12=r.num("s_rise", label="Sliding: rise in 12"),
                       slippery=yes(r.text("s_slippery", False)))
@@ -1050,7 +1053,7 @@ def build(kind, values, project):
             if not sl["pf_source"]:
                 r.miss.append("Sliding: where pf comes from is blank")
         r.done()
-        return ws_more.snow_drift_sheet(mark, pg, src, W2, w2s, ps, pss, lu1, lu2, step, sl), "simple", {}
+        return ws_more.snow_drift_sheet(mark, pg, src, W2, w2s, ps, pss, lu1, lu2, step, sl, parapet=par), "simple", {}
     if kind == "snow":
         pg, src, risk = r.num("pg"), r.text("pg_source"), r.text("risk")
         rough, expo, therm = r.text("roughness"), r.text("exposure"), r.text("thermal")
