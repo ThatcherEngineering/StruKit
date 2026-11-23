@@ -233,3 +233,15 @@ def test_sliding_snow_across_a_gap():
              lu_upper="60", lu_lower="40", step="8", separation="6", slide="yes", s_pf="28", s_pf_source="SN1", s_W="20", s_rise="4", s_slippery="no")
     sheet, _, _ = calc.build("snow_drift", v, dict(job="2026-000", name="Test", method="ASD"))
     assert sheet.drift.sliding_extent == 9 and not any("sliding" in t for t in sheet.not_checked)
+
+
+def test_snow_loads_api_for_member_screens():
+    """Beam and joist screens take the uniform design snow load from a roof snow sheet: the larger of the balanced case and the minimum."""
+    from strukit.gui import server, calc
+    v = _typed()
+    sheet, _, _ = calc.build("snow", v, {})
+    got = server.api("/api/snow_loads", dict(values=v, project={}))
+    r = sheet.snow
+    assert got["uniform_design"] == pytest.approx(r.uniform_design) and got["ps"] == pytest.approx(r.ps) and got["unbalanced"] == bool(r.unbalanced)
+    assert got["governs"].startswith("minimum" if r.pm > r.balanced else "balanced")
+    assert "not complete" in server.api("/api/snow_loads", dict(values=dict(v, pg=""), project={}))["error"]
