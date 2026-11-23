@@ -174,3 +174,14 @@ def test_sliding_snow_by_hand():
     # 2 on 12 and not slippery: none; 1 on 12 and slippery: applies
     assert snow.lower_roof(30, 0.45, 21, 40, 30, 8, sliding=dict(pf=30, W=20, rise_on_12=2, slippery=False)).sliding_psf == 0
     assert snow.lower_roof(30, 0.45, 21, 40, 30, 8, sliding=dict(pf=30, W=20, rise_on_12=1, slippery=True)).sliding_psf == pytest.approx(16)
+
+
+def test_parapet_drift_by_hand():
+    from strukit import snow
+    # pg 30 (gamma 17.9), W2 0.45, ps 21 psf, 120 ft of roof upwind, 3 ft parapet: hb = 1.173, hc = 1.827
+    # 0.75 hd = 0.75 x 1.5 sqrt(30^0.74 x 120^0.70 x 0.45^1.7 / 17.9); the height is capped at hc; width 8 x 0.75 hd
+    h = 0.75 * 1.5 * (30 ** 0.74 * 120 ** 0.70 * 0.45 ** 1.7 / 17.9) ** 0.5
+    r = snow.lower_roof(30, 0.45, 21, None, 120, 3, parapet=True)
+    assert r.leeward is None and r.governing is r.windward
+    assert r.windward.hd_eq == pytest.approx(h) and r.windward.height == pytest.approx(min(h, r.hc)) and r.windward.width == pytest.approx(8 * h)
+    assert r.windward.pd == pytest.approx(min(h, r.hc) * 17.9)

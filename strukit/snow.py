@@ -215,8 +215,13 @@ def roof(pg, risk, roughness, exposure, thermal, roof_type, rise_on_12, slippery
 #          upper roof steeper than 2 on 12: 0.4 pf W per foot of eave (pf and W of the
 #          upper roof), spread over 15 ft from the eave; on a lower roof narrower than
 #          15 ft the load is reduced in proportion (the same psf)
-# Not covered: adjacent structures with a gap (7.7.2, 7.9), intersecting drifts (7.7.3),
-# roof projections and parapets (7.8).
+#   7.8    parapets and roof projections: the windward method of 7.7.1, height 0.75 hd
+#          from Eq. 7.6-1 with lu = the roof length upwind of a parapet (for a projection,
+#          the greater of the lengths upwind and downwind). Exception (read from the page
+#          image): no drift where the side of a roof projection is less than 15 ft long, or
+#          the clear distance between the balanced snow and the bottom of the projection
+#          is at least 2 ft.
+# Not covered: adjacent structures with a gap (7.7.2, 7.9), intersecting drifts (7.7.3).
 @dataclass
 class Drift:
     kind: str
@@ -244,14 +249,16 @@ class LowerRoof:
     sliding_why: str
 
 
-def lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding=None):
+def lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding=None, parapet=False):
     """Drift surcharge on a lower roof at a roof step, and sliding snow from the upper
     roof. ps_lower: balanced snow load on the lower roof, psf. lu_upper, lu_lower: roof
     lengths perpendicular to the step, ft. step_ft: height of the upper roof above the
     lower roof at the step. sliding: None, or dict(pf, W, rise_on_12, slippery) for the
     upper roof draining toward the lower roof."""
-    for nm, v in (("the ground snow load", pg), ("the winter wind parameter W2", W2), ("the balanced load on the lower roof", ps_lower),
-                  ("the upper roof length", lu_upper), ("the lower roof length", lu_lower), ("the step height", step_ft)):
+    if parapet:
+        lu_upper, sliding = lu_lower, None                  # 7.8: one drift, by the windward method, on the roof beside the parapet
+    for nm, v in (("the ground snow load", pg), ("the winter wind parameter W2", W2), ("the balanced snow load on the roof", ps_lower),
+                  ("the upper roof length", lu_upper), ("the roof length", lu_lower), ("the height of the step or parapet", step_ft)):
         if v is None or v <= 0:
             raise SnowError(f"snow: {nm} must be a positive number")
     g = density(pg)
@@ -268,14 +275,17 @@ def lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding=None):
             pd = height * g
             far = pd * (1 - lu_lower / width) if width > lu_lower else 0.0
             return Drift(kind, hd_eq, height, width, pd, far, min(width, lu_lower))
-        h_l = min(drift_height(pg, lu_upper, W2), 0.6 * lu_lower)
-        if h_l <= hc:
-            lee = shape("leeward", h_l, h_l, 4 * h_l)
-        else:
-            lee = shape("leeward", h_l, hc, min(4 * h_l ** 2 / hc, 8 * hc))
         h_w = 0.75 * drift_height(pg, lu_lower, W2)
         wind = shape("windward", h_w, min(h_w, hc), 8 * h_w)
-        gov = lee if lee.height >= wind.height else wind
+        if parapet:
+            gov = wind
+        else:
+            h_l = min(drift_height(pg, lu_upper, W2), 0.6 * lu_lower)
+            if h_l <= hc:
+                lee = shape("leeward", h_l, h_l, 4 * h_l)
+            else:
+                lee = shape("leeward", h_l, hc, min(4 * h_l ** 2 / hc, 8 * hc))
+            gov = lee if lee.height >= wind.height else wind
     s_psf = s_ext = s_tot = 0.0
     s_why = ""
     if sliding:
