@@ -993,24 +993,57 @@ def _picture(c, top, pic):
     """Pictures for SimpleSheet members (base plate, footing with moment)."""
     name, d = pic
     if name == "wood_post":
-        _sketch_title(c, 400, top, "ELEVATION")
+        ax, lat = d.get("axial") or [], d.get("lateral") or []
+        _sketch_title(c, 400, top, "LOADING" if (ax or lat) else "ELEVATION")
         wpt = max(min(d["d"] * 1.8, 16), 7)
-        c.saveState(); c.translate(430 + wpt / 2, top - 96); c.rotate(90)
+        drop = (14 + 6.5 * len(ax)) if ax else 0                     # room above the post for the axial load and its labels
+        ytop, ybot = top - 18 - drop, top - 96 - drop
+        c.saveState(); c.translate(430 + wpt / 2, ybot); c.rotate(90)
         memberart.wood_elevation(c, 0, 0, 78, wpt, 1, kind=d.get("kind", "sawn"))
         c.restoreState()
-        memberart._dim_v(c, top - 96, top - 18, 430 + wpt / 2 + 8, f"{d['height']:g} ft", FR, ext_from=430 + wpt / 2)
+        memberart._dim_v(c, ybot, ytop, 430 + wpt / 2 + 8, f"{d['height']:g} ft", FR, ext_from=430 + wpt / 2)
+        c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC)
+        if ax:
+            c.setLineWidth(0.9)
+            _arrow_down(c, 430, ytop + 12, ytop + 1, head=3)
+            c.setFont(FR, 5.5)
+            for i, t_ in enumerate(ax):
+                c.drawCentredString(430, ytop + 14 + 6.5 * (len(ax) - 1 - i), t_)
+        if lat:
+            xl = 430 - wpt / 2
+            for k, ld in enumerate(lat):
+                c.setLineWidth(0.45)
+                if ld["kind"] == "uniform":
+                    xo = xl - 9 - 0 * k
+                    c.line(xo, ybot, xo, ytop)
+                    for i in range(8):
+                        yy = ybot + (ytop - ybot) * i / 7
+                        c.line(xo, yy, xl - 2.2, yy)
+                        t = c.beginPath(); t.moveTo(xl - 0.5, yy); t.lineTo(xl - 3, yy + 1.1); t.lineTo(xl - 3, yy - 1.1); t.close()
+                        c.drawPath(t, fill=1, stroke=0)
+                    c.setFont(FR, 5.5); c.drawRightString(xo - 2, (ytop + ybot) / 2 - 2 + 7 * k, f"{ld['case']} {ld['w']:,.0f} plf")
+                else:
+                    yy = ybot + (ytop - ybot) * ld["x_ft"] / d["height"]
+                    c.setLineWidth(0.8); c.line(xl - 16, yy, xl - 3, yy)
+                    t = c.beginPath(); t.moveTo(xl - 0.5, yy); t.lineTo(xl - 3.6, yy + 1.6); t.lineTo(xl - 3.6, yy - 1.6); t.close()
+                    c.drawPath(t, fill=1, stroke=0)
+                    c.setFont(FR, 5.5); c.drawRightString(xl - 18, yy - 2, f"{ld['case']} {ld['P']:,.0f} lb")
+        c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK)
         _sketch_title(c, 505, top, "SECTION")
         s_ = memberart.wood_section(c, 528, top - 50, 46, 46, d["b"], d["d"], 1, kind=d.get("kind", "sawn"))
         memberart._dim_h(c, 528 - d["b"] * s_ / 2, 528 + d["b"] * s_ / 2, top - 50 - d["d"] * s_ / 2 - 8, f"{d['b']:g}", FR,
                          ext_from=top - 50 - d["d"] * s_ / 2)
         memberart._dim_v(c, top - 50 - d["d"] * s_ / 2, top - 50 + d["d"] * s_ / 2, 528 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,
                          ext_from=528 + d["b"] * s_ / 2)
-        _small(c, 476, top - 106, "section to scale, dimensions in inches")
-        return top - 110
+        _small(c, 476, top - 106 - drop, "section to scale, dimensions in inches" + ("; loads in lb and plf" if (ax or lat) else ""))
+        return top - 110 - drop
     if name == "ijoist":
-        _sketch_title(c, 384, top, "ELEVATION")
+        lh = _beam_loads_height(d.get("loads"))
+        _sketch_title(c, 384, top, "LOADING" if lh else "ELEVATION")
         h = max(min(d["d"] * 1.2, 18), 9)
-        x0, x1, y = 384, 384 + 118, top - 26 - h
+        x0, x1, y = 384, 384 + 118, top - 26 - h - max(lh - 8, 0)
+        if lh:
+            _beam_loads(c, x0 + 3, x1 - 3, y + h, d["span"], d["loads"])
         fl = max(h * 0.16, 1.8)
         c.setLineWidth(0.5); c.setStrokeColorRGB(*memberart.LVL_LINE)
         c.setFillColorRGB(0.93, 0.87, 0.74); c.rect(x0, y, x1 - x0, h, fill=1, stroke=1)                 # web
@@ -1029,12 +1062,15 @@ def _picture(c, top, pic):
         c.setFillColorRGB(*memberart.LVL_FILL)
         c.rect(cx - fw / 2, cy - D / 2, fw, fd, fill=1, stroke=1); c.rect(cx - fw / 2, cy + D / 2 - fd, fw, fd, fill=1, stroke=1)
         memberart._dim_v(c, cy - D / 2, cy + D / 2, cx + fw / 2 + 7, f"{d['d']:g}", FR, ext_from=cx + fw / 2)
-        _small(c, 476, top - 98, "schematic; depth in inches")
-        return top - 102
+        _small(c, 476, min(top - 98, y - 34), "schematic; depth in inches" + ("; loads in plf and lb" if lh else ""))
+        return min(top - 102, y - 38)
     if name == "wood_beam":
-        _sketch_title(c, 384, top, "ELEVATION")
+        lh = _beam_loads_height(d.get("loads"))
+        _sketch_title(c, 384, top, "LOADING" if lh else "ELEVATION")
         h = max(min(d["d"] * 1.6, 18), 7)
-        x0, x1, y = 384, 384 + 118, top - 26 - h
+        x0, x1, y = 384, 384 + 118, top - 26 - h - max(lh - 8, 0)
+        if lh:
+            _beam_loads(c, x0 + 3, x1 - 3, y + h, d["span"], d["loads"])
         memberart.wood_elevation(c, x0, y, x1 - x0, h, d["plies"], kind=d.get("kind", "sawn"), lams=d.get("lams"))
         c.setFillColorRGB(0.20, 0.22, 0.25)
         for xx in (x0 + 3, x1 - 3):
@@ -1047,8 +1083,8 @@ def _picture(c, top, pic):
                          ext_from=top - 46 - d["d"] * s_ / 2)
         memberart._dim_v(c, top - 46 - d["d"] * s_ / 2, top - 46 + d["d"] * s_ / 2, 540 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,
                          ext_from=540 + d["b"] * s_ / 2)
-        _small(c, 476, top - 98, "section to scale, dimensions in inches")
-        return top - 102
+        _small(c, 476, min(top - 98, y - 34), "section to scale, dimensions in inches" + ("; loads in plf and lb" if lh else ""))
+        return min(top - 102, y - 38)
     if name == "base_plate":
         _sketch_title(c, 470, top, "PLAN", centred=True)
         memberart.base_plate_plan(c, 470, top - 52, 170, 82, d["d"], d["bf"], d["tf"], d["tw"], d["N"], d["B"],
@@ -1166,6 +1202,66 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
     if sheet.rows:
         _summary(p, sheet.rows)
     return _closing(p, sheet.assumptions, sheet.not_checked)
+
+
+LOADC = (0.16, 0.33, 0.58)
+
+
+def _arrow_down(c, x, y_top, y_tip, head=2.2):
+    c.line(x, y_top, x, y_tip + head)
+    t = c.beginPath(); t.moveTo(x, y_tip); t.lineTo(x - head * 0.7, y_tip + head * 1.6); t.lineTo(x + head * 0.7, y_tip + head * 1.6); t.close()
+    c.drawPath(t, fill=1, stroke=0)
+
+
+def _beam_load_rows(loads):
+    """Rows of the loading diagram, bottom row first: each uniform load is its own band;
+    all point loads share the lowest row."""
+    uni = [ld for ld in loads if ld["kind"] == "uniform"]
+    pts = [ld for ld in loads if ld["kind"] != "uniform"]
+    return pts, uni
+
+
+def _beam_loads_height(loads):
+    pts, uni = _beam_load_rows(loads or [])
+    return (16 if pts else 0) + 12 * len(uni) + (3 if (pts or uni) else 0)
+
+
+def _beam_loads(c, x0, x1, y, span, loads):
+    """Loading diagram over a beam whose top is at y, drawn between x0 and x1 (the span):
+    point loads as single arrows with their value, uniform loads as bands of arrows, each
+    labelled with its load case and value. Loads are in plf and lb."""
+    pts, uni = _beam_load_rows(loads or [])
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC)
+    yy = y + 1.5
+    if pts:
+        c.setLineWidth(0.8)
+        at = {}
+        for ld in pts:
+            at.setdefault(round(ld["x_ft"], 3), []).append(f"{ld['case']} {ld['P']:,.0f}")
+        for xf, parts in at.items():
+            xx = x0 + (x1 - x0) * xf / span
+            _arrow_down(c, xx, yy + 13, yy, head=2.8)
+            c.setFont(FR, 5.5)
+            txt = " + ".join(parts) + " lb"
+            if xx - x0 < 20:
+                c.drawString(xx + 2.5, yy + 8.5, txt)
+            elif x1 - xx < 20:
+                c.drawRightString(xx - 2.5, yy + 8.5, txt)
+            else:
+                c.drawString(xx + 2.5, yy + 8.5, txt)
+        yy += 16
+    for ld in uni:
+        xa = x0 + (x1 - x0) * ld.get("x1_ft", 0.0) / span
+        xb = x0 + (x1 - x0) * ld.get("x2_ft", span) / span
+        c.setLineWidth(0.45)
+        c.line(xa, yy + 5, xb, yy + 5)
+        n = max(int((xb - xa) / 9), 2)
+        for i in range(n + 1):
+            _arrow_down(c, xa + (xb - xa) * i / n, yy + 5, yy, head=1.5)
+        c.setFont(FR, 5.5)
+        c.drawCentredString((xa + xb) / 2, yy + 6.5, f"{ld['case']} {ld['w']:,.0f} plf" if ld["w"] >= 20 else f"{ld['case']} {ld['w']:.1f} plf")
+        yy += 12
+    c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK)
 
 
 def _block_picture(c, top, pic):
