@@ -1001,7 +1001,7 @@ def wind_cc_parapet_sheet(mark, V, V_source, exposure, exposure_basis, hp_top, h
 
 
 def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie_source, structure, hn, levels, T_analysis=None,
-                      T_source="", unit="kips", risk=None, drift=None):
+                      T_source="", unit="kips", risk=None, drift=None, wall_lines=None, rho=None, rho_source=""):
     """Seismic base shear and story forces, ASCE/SEI 7-22 Sect. 12.8 (see seismic.py).
     levels: [(name, weight, height above the base ft)]."""
     from . import seismic
@@ -1071,6 +1071,33 @@ def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie
     sheet.blocks.append(dict(title="Diaphragm Design Forces", lines=dl, after=[
         "Fpx = (sum of Fi at and above the level / sum of wi at and above the level) wpx, Eq. 12.10-1; not less than 0.2 SDS Ie wpx, Eq. 12.10-2; "
         "need not exceed 0.4 SDS Ie wpx, Eq. 12.10-3. wpx is the weight tributary to the diaphragm: the level weight unless a diaphragm weight is entered."]))
+    if wall_lines:                              # [(wall or frame line, level name, percent of the story shear below that level)]
+        if rho not in (1.0, 1.3):
+            raise WorksheetError(f"{mark}: the redundancy factor for the wall lines is 1.0 or 1.3 (Sect. 12.3.4)")
+        if not (rho_source or "").strip():
+            raise WorksheetError(f"{mark}: the basis of the redundancy factor is blank")
+        by = {str(x["name"]).strip().lower(): x for x in r["rows"]}
+        wl = [f"{'line':<14}{'story below':<16}{'Vx ' + unit:>10}{'share %':>9}{'QE ' + unit:>10}{'rho QE ' + unit:>13}{'0.7 rho QE ' + unit:>17}"]
+        out_lines, tot = [], {}
+        for nm, lvl, pct in wall_lines:
+            x = by.get(str(lvl).strip().lower())
+            if x is None:
+                raise WorksheetError(f"{mark}: wall line {nm}: '{lvl}' is not one of the levels")
+            if pct is None or pct <= 0 or pct > 100:
+                raise WorksheetError(f"{mark}: wall line {nm}: the share is between 0 and 100 percent")
+            q = x["V"] * pct / 100.0
+            tot[x["name"]] = tot.get(x["name"], 0.0) + pct
+            out_lines.append(dict(line=nm, level=x["name"], Vx=x["V"], share=pct, QE=q, Eh=rho * q, asd=0.7 * rho * q))
+            wl.append(f"{str(nm)[:13]:<14}{str(x['name'])[:15]:<16}{x['V']:>10.2f}{pct:>9.1f}{q:>10.2f}{rho * q:>13.2f}{0.7 * rho * q:>17.2f}")
+        notes = [f"Each line takes the listed share of the story shear below the level (as entered). Eh = rho QE, Eq. 12.4-3, rho = {rho:g} "
+                 f"({rho_source.strip()}). 0.7 rho QE is the horizontal seismic load effect in the allowable stress design combinations (Sect. 2.4.5)."]
+        sheet.blocks.append(dict(title="Shear to Each Wall or Frame Line", lines=wl, after=notes))
+        sheet.assumptions.append("Shares of the story shear to the wall or frame lines total: "
+                                 + "; ".join(f"{k} {v:g} percent" for k, v in tot.items()) + ".")
+        sheet.not_checked = [t.replace("the redundancy factor (Sect. 12.3.4) and the vertical seismic load effect (Sect. 12.4.2.2)",
+                                       "the value of the redundancy factor (Sect. 12.3.4.2) and the vertical seismic load effect (Sect. 12.4.2.2)")
+                             for t in sheet.not_checked] + ["how the story shear divides among the lines (diaphragm flexibility, Sect. 12.3.1; torsion, Sect. 12.8.4)"]
+        r = dict(r, lines=out_lines)
     if drift:                                   # dict(Cd, Cd_source, structure, de={level name: elastic displacement in}, de_source)
         for nm, v in (("the source of Cd", drift.get("Cd_source")), ("the source of the elastic displacements", drift.get("de_source"))):
             if not (v or "").strip():
