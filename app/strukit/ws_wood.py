@@ -10,6 +10,12 @@ from .ws_steel_beam import Row, WorksheetError
 footing_line = Line
 
 
+def _diagram_data(o):
+    """Shear (lb) and moment (lb-ft) along the span (ft) for one combination."""
+    r = o["res"]
+    return dict(combo=o["cb"].name, x=[v / 12.0 for v in r.x.tolist()], V=r.V.tolist(), M=[v / 12.0 for v in r.M.tolist()])
+
+
 def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, wet, incised,
          repetitive, unit_weight_pcf=None, self_weight_case="D", spacing_in=None):
     """species, grade: as listed in 2018 NDS Supplement Table 4A. size: nominal, "2x10".
@@ -100,7 +106,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         M = max(abs(res.M_max()[0]), abs(res.M_min()[0]))
         V = abs(res.V_abs_max()[0])
         R = max(abs(v) for v in res.reactions.values())
-        out.append(dict(cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
+        out.append(dict(res=res, cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
                         Fv_adj=Fv_adj, M=M, V=V, R=R, fb=M / S, fv=1.5 * V / A, reactions=dict(res.reactions)))
     if not out:
         raise WorksheetError(f"{mark}: no load combination loads this beam")
@@ -183,6 +189,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=size, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     sheet.not_checked = [x for x in sheet.not_checked if x]
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
+    sheet.diagram = _diagram_data(gb)
     return sheet
 
 
@@ -445,7 +452,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         M = max(abs(res.M_max()[0]), abs(res.M_min()[0]))
         V = abs(res.V_abs_max()[0])
         R = max(abs(v) for v in res.reactions.values())
-        out.append(dict(cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
+        out.append(dict(res=res, cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
                         Fv_adj=ref["Fv"] * CD, M=M, V=V, R=R, fb=M / S, fv=1.5 * V / A, reactions=dict(res.reactions)))
     if not out:
         raise WorksheetError(f"{mark}: no load combination loads this beam")
@@ -529,6 +536,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
                      "bearing on the supporting member"] if x],
         picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}", kind="lvl", loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
+    sheet.diagram = _diagram_data(gb)
     return sheet
 
 
@@ -778,7 +786,7 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         M = max(abs(res.M_max()[0]), abs(res.M_min()[0]))
         V = abs(res.V_abs_max()[0])
         R = max(abs(v) for v in res.reactions.values())
-        out.append(dict(cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
+        out.append(dict(res=res, cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
                         Fv_adj=ref["Fv"] * CD * CMv, M=M, V=V, R=R, fb=M / S, fv=1.5 * V / A, reactions=dict(res.reactions)))
     if not out:
         raise WorksheetError(f"{mark}: no load combination loads this beam")
@@ -855,4 +863,5 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
          "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers", "bearing on the supporting member"],
         picture=("wood_beam", dict(b=b, d=d, plies=1, span=span_ft, size=f"{b:g}x{d:g}", kind="glulam", lams=max(int(round(d / 1.5)), 2), loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
+    sheet.diagram = _diagram_data(gb)
     return sheet

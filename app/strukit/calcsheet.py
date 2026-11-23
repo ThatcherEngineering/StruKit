@@ -413,7 +413,7 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     # column standing up, with its load and supports
     ex, eh = 440, 62
     ey = top - 88
-    _sketch_title(c, ex, top, "ELEVATION", centred=True)
+    _sketch_title(c, ex, top, "LOADING", centred=True)
     braces = [sheet.Ly_ft * 12 * k for k in range(1, 50) if sheet.Ly_ft * k < sheet.height_ft - 1e-6]
     w = memberart.steel_column_elevation(c, ex, ey, eh, pr["d"], pr["tf"], sheet.height_ft * 12, braces)
     c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
@@ -427,7 +427,14 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
             c.line(ex - 12 + 4 * k, ey - 0.6, ex - 15 + 4 * k, ey - 4.5)
     c.setFillColorRGB(*GREY); c.setFont(FM, 7.5)
     c.drawString(ex + w / 2 + 6, ey + eh / 2 - 3, f"{sheet.height_ft:g} ft")
-    c.drawRightString(ex - 6, ey + eh + 9, "P")
+    ax_txt = [f"{ld['case']} {ld['P']:.1f} kip" for ld in sheet.loads]
+    c.setFillColorRGB(*LOADC); c.setFont(FR, 5.5)
+    if len(ax_txt) <= 2:
+        for i, t_ in enumerate(ax_txt):
+            c.drawRightString(ex - 6, ey + eh + 8 + 6.5 * (len(ax_txt) - 1 - i), t_)
+    else:
+        c.drawRightString(ex - 6, ey + eh + 9, " + ".join(f"{ld['case']} {ld['P']:.1f}" for ld in sheet.loads) + " kip")
+    c.setFillColorRGB(*GREY); c.setFont(FM, 7.5)
     if braces:
         _small(c, ex, ey - 11, "x = braced against weak-axis buckling")
     _small(c, ex, ey - (19 if braces else 11), ("fixed base, free top; " if sheet.sway else "")
@@ -449,10 +456,15 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
             for k in range(6):
                 arrow(ey + eh * (0.05 + 0.18 * k))
             c.line(xl - 16, ey + eh * 0.05, xl - 16, ey + eh * 0.95)
+            c.setFont(FR, 5.5)
+            for i, ld in enumerate([x for x in sheet.lateral if x["kind"] == "uniform"]):
+                c.drawRightString(xl - 19, ey + eh * 0.5 - 2 - 6.5 * i, f"{ld['case']} {ld['w']:.3g} kip/ft")
         for ld in sheet.lateral:
             if ld["kind"] == "point":
-                arrow(ey + eh * ld["x_ft"] / sheet.height_ft, 24)
-        c.setStrokeColorRGB(*INK)
+                yy_ = ey + eh * ld["x_ft"] / sheet.height_ft
+                arrow(yy_, 24)
+                c.setFont(FR, 5.5); c.drawRightString(xl - 28, yy_ - 2, f"{ld['case']} {ld['P']:.3g} kip")
+        c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK)
     p.head("Loads")
     for ld in sheet.loads:
         s = f"{ld['case']:<3} axial    {ld['P']:.2f} kip"
@@ -1185,6 +1197,16 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
             p.room(24)
             p.text(t, font=FM, size=8, dy=10)
             p.text(src, size=7.5, color=GREY, x=LM + 12)
+    dg = getattr(sheet, "diagram", None)
+    if dg:
+        p.y -= 4
+        p.room(70)
+        p.head(f"Shear and Moment, {dg['combo']}")
+        dy0 = p.y - 40
+        V, M = dg["V"], dg["M"]
+        _diagram(p.c, LM, dy0, 245, 32, dg["x"], V, BLUE, f"V max = {max(abs(v) for v in V):,.0f} lb")
+        _diagram(p.c, LM + 280, dy0, 245, 32, dg["x"], [-m for m in M], (0.54, 0.35, 0.0), f"M max = {max(abs(m) for m in M):,.0f} lb-ft")
+        p.y = dy0 - 12
     p.y -= 4
     _steps(p, sheet.steps_title, sheet.steps)
     for b in sheet.blocks:
