@@ -698,8 +698,10 @@ FORMS = {
                 F("p_Fv_source", "Perpendicular member: where Fv comes from", "text", required=False),
                 F("sense", "Load in the member loaded parallel to grain", "select", options=["tension", "compression"], help="tension: the bolts bear toward the member end"),
                 F("wood_type", "Wood", "select", options=["softwood", "hardwood"]),
+                F("side_steel", "Side member material", "select", required=False, options=["wood", "ASTM A36 steel plate", "ASTM A653 Grade 33 steel sheet"], help="blank = wood; steel: load parallel to the grain of the main member"),
                 F("side_t", "Side member thickness", unit="in"), F("side_w", "Side member width", unit="in"),
-                F("G_side", "Side member specific gravity, G"), F("E_side", "Side member E", unit="psi"), F("side_source", "Where the side member values come from", "text"),
+                F("G_side", "Side member specific gravity, G", required=False, help="wood side members"), F("E_side", "Side member E", unit="psi", required=False, help="wood side members"),
+                F("side_source", "Where the side member values come from", "text", required=False, help="wood side members"),
                 F("main_t", "Main member thickness", unit="in"), F("main_w", "Main member width", unit="in"),
                 F("G_main", "Main member specific gravity, G"), F("E_main", "Main member E", unit="psi"), F("main_source", "Where the main member values come from", "text"),
                 F("service", "Moisture", "select", options=["dry", "wet in service", "wet at fabrication, dry in service"], help="NDS Table 11.3.3"),
@@ -729,8 +731,10 @@ FORMS = {
                 F("p_Fv_source", "Perpendicular member: where Fv comes from", "text", required=False),
                 F("sense", "Load in the member loaded parallel to grain", "select", options=["tension", "compression"], help="tension: the lag screws bear toward the member end"),
                 F("wood_type", "Wood", "select", options=["softwood", "hardwood"]),
+                F("side_steel", "Side member material", "select", required=False, options=["wood", "ASTM A36 steel plate", "ASTM A653 Grade 33 steel sheet"], help="blank = wood; steel: load parallel to the grain of the main member"),
                 F("side_t", "Side member thickness", unit="in"), F("side_w", "Side member width", unit="in"),
-                F("G_side", "Side member specific gravity, G"), F("E_side", "Side member E", unit="psi"), F("side_source", "Where the side member values come from", "text"),
+                F("G_side", "Side member specific gravity, G", required=False, help="wood side members"), F("E_side", "Side member E", unit="psi", required=False, help="wood side members"),
+                F("side_source", "Where the side member values come from", "text", required=False, help="wood side members"),
                 F("main_t", "Main member thickness", unit="in"), F("main_w", "Main member width", unit="in"),
                 F("G_main", "Main member specific gravity, G"), F("E_main", "Main member E", unit="psi"), F("main_source", "Where the main member values come from", "text"),
                 F("service", "Moisture", "select", options=["dry", "wet in service", "wet at fabrication, dry in service"], help="NDS Table 11.3.3")],
@@ -1513,7 +1517,13 @@ def build(kind, values, project):
         sh, rn, nr, end, edge, sense, wt = ("single" if islag else r.text("shear")), r.num("rows"), r.num("n_row"), r.num("end"), r.num("edge"), r.text("sense"), r.text("wood_type")
         sp = r.num("spacing", bool(nr and nr > 1), label="Spacing in a row")
         rs = r.num("row_spacing", bool(rn and rn > 1), label="Spacing between rows")
-        st, sw, Gs, Es, ss = r.num("side_t"), r.num("side_w"), r.num("G_side"), r.num("E_side"), r.text("side_source")
+        stl = r.text("side_steel", False) or ""
+        stl = "ASTM A36" if "A36" in stl else "ASTM A653 Grade 33" if "A653" in stl else None
+        st, sw = r.num("side_t"), r.num("side_w")
+        Gs, Es = r.num("G_side", not stl, label="Side member specific gravity, G"), r.num("E_side", not stl, label="Side member E")
+        ss = r.text("side_source", False)
+        if not stl and not ss:
+            r.miss.append("Where the side member values come from is blank")
         mt, mw, Gm, Em, ms, sv = r.num("main_t"), r.num("main_w"), r.num("G_main"), r.num("E_main"), r.text("main_source"), r.text("service")
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
         if not loads:
@@ -1533,14 +1543,14 @@ def build(kind, values, project):
         lv = {k: (None if islag else r.num(k, False)) for k in ("Ft_main", "Fv_main", "Ft_side", "Fv_side")}
         if any(v is not None for v in lv.values()):
             for k, lab in (("Ft_main", "main member Ft"), ("Fv_main", "main member Fv"), ("Ft_side", "side member Ft"), ("Fv_side", "side member Fv")):
-                if lv[k] is None:
+                if lv[k] is None and not (stl and "side" in k):
                     r.miss.append(f"Tear-out: {lab} is blank")
             if not r.text("local_source", False):
                 r.miss.append("Tear-out: where Ft and Fv come from is blank")
             loc = dict(lv, source=r.text("local_source", False) or "", hole=r.num("hole", False))
         r.done()
         return ws_more.bolted_connection_sheet(mark, D, rn, nr, sp, rs, end, edge, sh, st, sw, Gs, Es, ss, mt, mw, Gm, Em, ms, sense, wt, sv, loads, cb,
-                                               local=loc, grain=gr, perp=pp, lag=lagd), "simple", {}
+                                               local=loc, grain=gr, perp=pp, lag=lagd, steel=stl), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")

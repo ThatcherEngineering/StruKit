@@ -97,13 +97,18 @@ def nail(D, side_t, G_side, G_main, penetration=None):
 BOLT_FYB = 45000.0
 
 
-def bolt(D, side_t, main_t, G_side, G_main, theta_side=0.0, theta_main=0.0, double=False):
+# Dowel bearing strength of steel side plates, psi (NDS Tables 12B and 12K, note 2)
+STEEL_FE = {"ASTM A36": 87000.0, "ASTM A653 Grade 33": 61850.0}
+
+
+def bolt(D, side_t, main_t, G_side, G_main, theta_side=0.0, theta_main=0.0, double=False, Fes=None):
     """Bolt through wood members, full body diameter 1/4 to 1 in. theta: angle of load to
     grain in each member, degrees. double: two side members of side_t each."""
     if D < 0.25 or D > 1.0:
         raise DowelError("dowel: bolts from 1/4 to 1 in. diameter")
-    r = lateral(D, side_t, main_t, fe(G_side, D, theta_side), fe(G_main, D, theta_main), BOLT_FYB, double, max(theta_side, theta_main))
-    return dict(r, Fes=fe(G_side, D, theta_side), Fem=fe(G_main, D, theta_main), Fyb=BOLT_FYB)
+    Fes = fe(G_side, D, theta_side) if Fes is None else Fes          # Fes given: a steel side plate
+    r = lateral(D, side_t, main_t, Fes, fe(G_main, D, theta_main), BOLT_FYB, double, max(theta_side, theta_main))
+    return dict(r, Fes=Fes, Fem=fe(G_main, D, theta_main), Fyb=BOLT_FYB)
 
 
 def group_action(D, n, s, Es_As, Em_Am, metal=False):
@@ -269,7 +274,7 @@ def lag_thread(D, L):
     return dict(T=T, E=LAG_E[D], S=L - T, Dr=LAG_DR[D])
 
 
-def lag(D, side_t, G_side, G_main, penetration, theta_side=0.0, theta_main=0.0):
+def lag(D, side_t, G_side, G_main, penetration, theta_side=0.0, theta_main=0.0, Fes=None):
     """Single shear lag screw, wood side member, side grain. The yield equations and Rd use the
     root diameter Dr (NDS 12.3.7.1(c)); the dowel bearing strengths use the nominal diameter D (as
     Table 12J is built). penetration: into the main member, tapered tip excluded, not less
@@ -279,6 +284,6 @@ def lag(D, side_t, G_side, G_main, penetration, theta_side=0.0, theta_main=0.0):
     if penetration is None or penetration < 4.0 * D - 1e-9:
         raise DowelError(f"lag screw: the penetration into the main member, tip excluded, is less than 4 D = {4 * D:g} in. (NDS 12.1.4.6)")
     Dr, Fyb = LAG_DR[D], lag_fyb(D)
-    Fes, Fem = fe(G_side, D, theta_side), fe(G_main, D, theta_main)
+    Fes, Fem = (fe(G_side, D, theta_side) if Fes is None else Fes), fe(G_main, D, theta_main)
     r = lateral(Dr, side_t, penetration, Fes, Fem, Fyb, False, max(theta_side, theta_main), nominal=D)
     return dict(r, Dr=Dr, Fyb=Fyb, Fes=Fes, Fem=Fem, lm=penetration)

@@ -332,3 +332,37 @@ def test_lag_withdrawal_sheet_by_hand(tmp_path):
     for bad in (dict(L="6", main_t="3.5"), dict(steel="1200"), dict(G_main_source="")):
         with pytest.raises(Exception):
             calc.build("lag_withdrawal", dict(v, **bad), proj)
+
+
+def test_steel_side_plates_against_nds_tables_12b_and_12k(tmp_path):
+    """NDS Table 12B (bolts, 1/4 in. A36 side plate, G 0.50): (tm, D): Z parallel, Z perp = (1.5, 1/2): 580, 310; (3.5, 3/4): 1670, 680;
+    (5.5, 1): 2860, 1170; (2.5, 5/8): 1050, 470. Table 12K (lag screws, G 0.50, p = 8 D): 1/4 in. A36: 1/2: 520, 320; 3/4: 1060, 600; 1/4: 210, 150;
+    A653 Grade 33: 0.239 in., 1/2: 460, 290; 0.075 in., 1/4: 150, 110; 0.134 in., 3/8: 220, 140."""
+    for (tm, D), vals in {(1.5, 0.5): (580, 310), (3.5, 0.75): (1670, 680), (5.5, 1.0): (2860, 1170), (2.5, 0.625): (1050, 470)}.items():
+        for th, v in zip((0, 90), vals):
+            assert abs(dowel.bolt(D, 0.25, tm, None, 0.5, 0, th, Fes=dowel.STEEL_FE["ASTM A36"])["Z"] - v) <= 6
+    for (ts, D, gr), vals in {(0.25, 0.5, "ASTM A36"): (520, 320), (0.25, 0.75, "ASTM A36"): (1060, 600), (0.25, 0.25, "ASTM A36"): (210, 150),
+                              (0.239, 0.5, "ASTM A653 Grade 33"): (460, 290), (0.075, 0.25, "ASTM A653 Grade 33"): (150, 110),
+                              (0.134, 0.375, "ASTM A653 Grade 33"): (220, 140)}.items():
+        for th, v in zip((0, 90), vals):
+            assert abs(dowel.lag(D, ts, None, 0.5, 8 * D, 0, th, Fes=dowel.STEEL_FE[gr])["Z"] - v) <= 6
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 5a")])
+    v = dict(mark="BC5", D="3/4", shear="single", rows="1", n_row="3", spacing="3", end="5.25", edge="1.75", sense="tension", wood_type="softwood",
+             side_steel="ASTM A36 steel plate", side_t="0.25", side_w="3", main_t="3.5", main_w="3.5", G_main="0.50", E_main="1600000", main_source="DF-L",
+             service="dry", loads=[dict(case="W", P="6000")])
+    sheet, _, _ = calc.build("bolted_connection", v, proj)
+    c = sheet.connection
+    assert c["Z"] == pytest.approx(1671.4, abs=0.1) and c["Cg"] == pytest.approx(dowel.group_action(0.75, 3, 3, 29e6 * 0.75, 1.6e6 * 12.25, metal=True))
+    assert c["capacity"] == pytest.approx(3 * 1671.38 * c["Cg"] * 1.6, abs=0.5) and dict(sheet.info)["Side Plate"].startswith("0.25 x 3 in. ASTM A36 steel")
+    assert "steel side plate" in sheet.not_checked[0] and any("87,000" in t for t in sheet.assumptions)
+    calcsheet._simple_pdf(sheet, str(tmp_path / "s.pdf"), "2026-000", "2018 NDS", "2026-11-23")
+    tear, _, _ = calc.build("bolted_connection", dict(v, Ft_main="575", Fv_main="180", local_source="NDS Supplement Table 4A"), proj)
+    assert sum("Main member:" in x.check for x in tear.rows) == 1 and not any("Side member" in x.check for x in tear.rows)
+    lg, _, _ = calc.build("lag_connection", dict(v, D="1/2", L="4", n_row="2", end="4", main_t="5.5"), proj)
+    assert lg.connection["Z"] == pytest.approx(517.2, abs=0.1) and lg.connection_lag["p"] == pytest.approx(3.4375)
+    with pytest.raises(Exception):
+        calc.build("bolted_connection", dict(v, grain="perpendicular in the main member", p_loaded="3", p_unloaded="2", p_end="12"), proj)
+    with pytest.raises(calc.Missing):
+        calc.build("bolted_connection", dict(v, side_steel="wood"), proj)

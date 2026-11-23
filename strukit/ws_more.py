@@ -1560,12 +1560,18 @@ def lag_withdrawal_sheet(mark, D, length, n, side_t, main_t, G_main, G_main_sour
 
 
 def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, edge, shear, side_t, side_w, G_side, E_side, side_source,
-                            main_t, main_w, G_main, E_main, main_source, sense, wood_type, service, loads, combos, local=None, grain="parallel", perp=None, lag=None):
+                            main_t, main_w, G_main, E_main, main_source, sense, wood_type, service, loads, combos, local=None, grain="parallel", perp=None, lag=None, steel=None):
     """Bolted wood-to-wood connection loaded parallel to grain in every member (a splice or
     tension tie), 2018 NDS Ch. 11 and 12 (see dowel.py). shear: "single" or "double" (two
     side members of side_t each). rows_n rows of n_row bolts. loads: [dict(case, P lb)]."""
     from . import dowel, wood
     fs = "lag screw" if lag else "bolt"
+    if steel:
+        if steel not in dowel.STEEL_FE:
+            raise WorksheetError(f"{mark}: the steel side plate is one of: " + "; ".join(dowel.STEEL_FE))
+        if grain != "parallel":
+            raise WorksheetError(f"{mark}: with steel side plates the load is parallel to the grain of the main member")
+        G_side, E_side, side_source = None, 29000000.0, steel
     for nm, v in (("the source of the side member values", side_source), ("the source of the main member values", main_source)):
         if not (v or "").strip():
             raise WorksheetError(f"{mark}: {nm} is blank")
@@ -1588,7 +1594,7 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
     # perp: dict(loaded_edge, unloaded_edge, end) of the member loaded perpendicular to grain
     need = 2 * (edge or 0) + (rows_n - 1) * (row_spacing or 0)
     for nm, wd_ in (("main", main_w), ("side", side_w)):
-        if grain == nm:
+        if grain == nm or (steel and nm == "side"):
             continue
         if edge is not None and wd_ is not None and need > wd_ + 1e-6:
             raise WorksheetError(f"{mark}: the rows and edge distances need {need:g} in. and the {nm} member is {wd_:g} in. wide")
@@ -1601,9 +1607,9 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
                 raise WorksheetError(f"{mark}: the lag screw is longer than the washer, side member and main member together")
             if p_lag <= 0:
                 raise WorksheetError(f"{mark}: the lag screw does not reach the main member")
-            r = dowel.lag(D, side_t, G_side, G_main, p_lag, 90.0 if grain == "side" else 0.0, 90.0 if grain == "main" else 0.0)
+            r = dowel.lag(D, side_t, G_side, G_main, p_lag, 90.0 if grain == "side" else 0.0, 90.0 if grain == "main" else 0.0, Fes=dowel.STEEL_FE.get(steel))
         else:
-            r = dowel.bolt(D, side_t, main_t, G_side, G_main, 90.0 if grain == "side" else 0.0, 90.0 if grain == "main" else 0.0, double=double)
+            r = dowel.bolt(D, side_t, main_t, G_side, G_main, 90.0 if grain == "side" else 0.0, 90.0 if grain == "main" else 0.0, double=double, Fes=dowel.STEEL_FE.get(steel))
         cdel, ce, cs = dowel.geometry_parallel(D, end, spacing, n_row, sense, wood_type)
         As = side_t * side_w * (2 if double else 1)
         Am = main_t * main_w
@@ -1623,8 +1629,8 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
                 As = side_t * gw * (2 if double else 1)
             else:
                 Am = main_t * gw
-        Cg = dowel.group_action(D, n_row, spacing, E_side * As, E_main * Am)
-        e_min = dowel.edge_minimum(D, (p_lag if lag else main_t), side_t * (2 if double else 1), row_spacing if rows_n > 1 else None)
+        Cg = dowel.group_action(D, n_row, spacing, E_side * As, E_main * Am, metal=bool(steel))
+        e_min = dowel.edge_minimum(D, (p_lag if lag else main_t), (1e9 if steel else side_t * (2 if double else 1)), row_spacing if rows_n > 1 else None)
     except dowel.DowelError as e:
         raise WorksheetError(f"{mark}: {e}")
     CM = CMs[service]
@@ -1636,7 +1642,8 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
     Ln = footing_line
     names = {"Im": "Eq. 12.3-7" if double else "Eq. 12.3-1", "Is": "Eq. 12.3-8" if double else "Eq. 12.3-2", "II": "Eq. 12.3-3", "IIIm": "Eq. 12.3-4",
              "IIIs": "Eq. 12.3-9" if double else "Eq. 12.3-5", "IV": "Eq. 12.3-10" if double else "Eq. 12.3-6"}
-    steps = [Ln("Fes", r["Fes"], "psi", "NDS Table 12.3.3", f"G = {G_side:g}, {'perpendicular' if grain == 'side' else 'parallel'} to grain ({side_source.strip()})"),
+    steps = [Ln("Fes", r["Fes"], "psi", "NDS Table 12K note 2" if lag else "NDS Table 12B note 2", f"{steel} steel side plate" + ("s" if double else "")) if steel else
+             Ln("Fes", r["Fes"], "psi", "NDS Table 12.3.3", f"G = {G_side:g}, {'perpendicular' if grain == 'side' else 'parallel'} to grain ({side_source.strip()})"),
              Ln("Fem", r["Fem"], "psi", "NDS Table 12.3.3", f"G = {G_main:g}, {'perpendicular' if grain == 'main' else 'parallel'} to grain ({main_source.strip()})"),
              Ln("Fyb", r["Fyb"], "psi", "NDS Table 12J note 2" if lag else "NDS Table 12A note 2", f"{D:g} in. lag screw" if lag else "full body diameter bolt")]
     if lag:
@@ -1651,7 +1658,7 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
             steps.append(Ln(f"Z, mode {m}", r["modes"][m], "lb", "NDS " + names[m], f"Rd = {dowel.rd(r['Dr'] if lag else D, m, 0.0 if grain == 'parallel' else 90.0, D if lag else None):.3g}"))
     steps += [Ln("Z", r["Z"], "lb", "NDS 12.3.1", f"mode {r['mode']} governs; per {fs}"),
               Ln("CM", CM, "", "NDS Table 11.3.3", service + ("; one row parallel to grain (note 2)" if one_row_dry else "")),
-              Ln("Cg", f"{Cg:.3f}", "", "NDS Eq. 11.3-1", f"{n_row} in a row at {spacing:g} in.; Es As = {E_side * As:,.0f} lb, Em Am = {E_main * Am:,.0f} lb" if n_row > 1 else f"one {fs} in a row"),
+              Ln("Cg", f"{Cg:.3f}", "", "NDS Eq. 11.3-1", f"{n_row} in a row at {spacing:g} in.; Es As = {E_side * As:,.0f} lb, Em Am = {E_main * Am:,.0f} lb" + ("; wood to metal" if steel else "") if n_row > 1 else f"one {fs} in a row"),
               Ln("C-delta, end distance", f"{ce:.3f}", "", "NDS 12.5.1.2(a), Table 12.5.1A", f"{end:g} in. provided; {dowel.END[(sense, wood_type)][1] * D:g} in. for 1.0 ({sense}, {wood_type})"),
               Ln("C-delta, spacing in a row", f"{cs:.3f}", "", "NDS 12.5.1.2(c), Table 12.5.1B", f"{spacing:g} in. provided; {4 * D:g} in. for 1.0" if n_row > 1 else f"one {fs} in a row"),
               ]
@@ -1701,7 +1708,7 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
         hole = local.get("hole") or (D + 1.0 / 16.0)
         CDw = worst["CD"]
         for nm, tt, ww, Ft, Fv in (("main member", main_t, main_w, local["Ft_main"], local["Fv_main"]),
-                                    ("side member" + ("s" if double else ""), side_t * (2 if double else 1), side_w, local["Ft_side"], local["Fv_side"])):
+                                    ("side member" + ("s" if double else ""), side_t * (2 if double else 1), side_w, local.get("Ft_side"), local.get("Fv_side")))[:1 if steel else 2]:
             ls_ = dowel.local_stresses(Ft * CDw, Fv * CDw, tt, ww, rows_n, n_row, spacing, end, row_spacing, hole)
             steps += [Ln(f"{nm}: ZNT' = Ft' t (w - nrow Dh)", ls_["ZNT"], "lb", "NDS Eq. E.2-1", f"Ft' = {Ft * CDw:,.0f} psi, t = {tt:g} in., Dh = {hole:g} in."),
                       Ln(f"{nm}: ZRT' = nrow ni Fv' t s_critical", ls_["ZRT"], "lb", "NDS Eq. E.3-2, E.3-3", f"Fv' = {Fv * CDw:,.0f} psi, s_critical = {ls_['s_critical']:g} in.")]
@@ -1709,12 +1716,13 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
                 steps.append(Ln(f"{nm}: ZGT' = ZRT-1'/2 + ZRT-n'/2 + Ft' t (nrow - 1)(s_row - Dh)", ls_["ZGT"], "lb", "NDS Eq. E.4-1"))
             rows.append(Row(f"{nm.capitalize()}: {ls_['governs']}", worst["name"], worst["P"], ls_["capacity"], "lb", "NDS 11.1.2, Appendix E",
                             "the least of net section tension, row tear-out and group tear-out"))
-        info_local = ("Members", f"Ft and Fv before CD: main {local['Ft_main']:,.0f} and {local['Fv_main']:,.0f} psi; side {local['Ft_side']:,.0f} and {local['Fv_side']:,.0f} psi "
+        info_local = ("Members", f"Ft and Fv before CD: main {local['Ft_main']:,.0f} and {local['Fv_main']:,.0f} psi" + ("" if steel else f"; side {local['Ft_side']:,.0f} and {local['Fv_side']:,.0f} psi") + " "
                                  f"({local['source'].strip()}); bolt holes {hole:g} in.")
     else:
         info_local = None
         not_checked.insert(0, "the members at the connection: tension or compression on the net section (NDS 3.1.2), row and group tear-out (NDS Appendix E)")
     info = [("Lag Screws" if lag else "Bolts", f"{n} - {D:g} in. diameter" + (f" x {lag['L']:g} in. long" if lag else "") + f", {rows_n} row" + ("s" if rows_n > 1 else "") + f" of {n_row}, {shear} shear"),
+            ("Side Plate" + ("s" if double else ""), f"{'2 - ' if double else ''}{side_t:g} x {side_w:g} in. {steel} steel, E = 29,000,000 psi") if steel else
             ("Side Member" + ("s" if double else ""), f"{'2 - ' if double else ''}{side_t:g} x {side_w:g} in., G = {G_side:g}, E = {E_side:,.0f} psi ({side_source.strip()})"),
             ("Main Member", f"{main_t:g} x {main_w:g} in., G = {G_main:g}, E = {E_main:,.0f} psi ({main_source.strip()})"),
             ("Layout", (f"spacing in a row {spacing:g} in.; " if n_row > 1 and spacing else "") + (f"between rows {row_spacing:g} in.; " if rows_n > 1 else "") + f"end distance {end:g} in.; edge distance {edge:g} in."),
@@ -1770,6 +1778,11 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
         sheet.blocks.append(dict(title="Layout, Member Loaded Perpendicular to Grain",
                                  picture=("bolted_perp", dict(D=D, rows=rows_n, n=n_row, s=spacing, g=row_spacing or 0.0, w=(side_w if grain == "side" else main_w),
                                                               loaded_edge=perp["loaded_edge"], unloaded_edge=perp["unloaded_edge"], end=perp["end"]))))
+    if steel:
+        sheet.not_checked[:] = [x.replace(", steel side plates", "").replace(", the washers, steel side plates", ", the washers") for x in sheet.not_checked]
+        sheet.not_checked.insert(0, "the steel side plate" + ("s" if double else "") + " and the fastener spacing and edge distances in the steel (AISC 360)")
+        sheet.assumptions.append(f"Steel side plate{'s' if double else ''}: dowel bearing strength Fe = {dowel.STEEL_FE[steel]:,.0f} psi for {steel} steel; the group action factor uses "
+                                 "the wood-to-metal load/slip modulus (NDS 11.3.6).")
     if lag:
         sheet.connection_lag = dict(th, p=p_lag)
     sheet.connection = dict(r, Zp=base * worst["CD"], n=n, Cg=Cg, Cdelta=cdel, CM=CM, capacity=worst["cap"], demand=worst["P"], edge_min=e_min)
