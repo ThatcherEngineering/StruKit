@@ -1127,3 +1127,50 @@ def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie
         r = dict(r, sdc=cat[0])
     sheet.seismic = r
     return sheet
+
+
+def live_load_sheet(mark, floors, roofs):
+    """Reduced uniform live loads, ASCE/SEI 7-22 Sect. 4.7 (floors) and 4.8 (ordinary roofs).
+    floors: [dict(name, element, AT, Lo, source, floors, occupancy)]; roofs: [dict(name, AT, F, Lo, source)]."""
+    from . import liveload
+    if not floors and not roofs:
+        raise WorksheetError(f"{mark}: enter at least one floor member or roof member")
+    fl, rf = [], []
+    try:
+        for x in floors or []:
+            if not (x.get("source") or "").strip():
+                raise WorksheetError(f"{mark}: {x['name']}: the source of the live load is blank")
+            fl.append((x, liveload.floor(x["Lo"], x["element"], x["AT"], x["floors"], x.get("occupancy") or "ordinary")))
+        for x in roofs or []:
+            if not (x.get("source") or "").strip():
+                raise WorksheetError(f"{mark}: {x['name']}: the source of the roof live load is blank")
+            rf.append((x, liveload.roof(x["Lo"], x["AT"], x["F"])))
+    except liveload.LiveLoadError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    sheet = SimpleSheet(
+        mark, "Live Load Reduction", "Members", "Sect. 4.7, 4.8",
+        [("Members", f"{len(fl)} floor member" + ("s" if len(fl) != 1 else "") + f", {len(rf)} roof member" + ("s" if len(rf) != 1 else ""))],
+        [], [], "", [], [],
+        (["Floors: L = Lo (0.25 + 15 / sqrt(KLL AT)), Eq. 4.7-1, for KLL AT of 400 ft2 or more; not less than 0.50 Lo for one floor supported and "
+          "0.40 Lo for two or more; live loads over 100 psf and passenger vehicle garages are reduced only for two or more floors, by at most "
+          "20 percent (Sect. 4.7.3, 4.7.4); assembly areas are not reduced (Sect. 4.7.5). KLL from Table 4.7-1."] if fl else [])
+        + (["Roofs: Lr = Lo R1 R2, not less than 12 psf and not more than 20 psf, Eq. 4.8-1; R1 by tributary area, R2 by the rise F in inches per foot."] if rf else []),
+        ["the tributary area of each member", "the one-way slab area limit (Sect. 4.7.6)", "roofs with an occupancy (Sect. 4.8.3)",
+         "partial loading of the reduced load (Sect. 4.3.3)"])
+    if fl:
+        def short(by):
+            return ("0.50 Lo minimum" if "minimum 0.50" in by else "0.40 Lo minimum" if "minimum 0.40" in by else "20 percent limit" if "exception" in by
+                    else "not reduced" if "not reduced" in by else "Eq. 4.7-1")
+        t = [f"{'member':<10}{'element':<41}{'Lo psf':>7}{'AT ft2':>8}{'floors':>7}{'KLL AT':>8}{'factor':>7}{'L psf':>7}   by"]
+        for x, r in fl:
+            t.append(f"{str(x['name'])[:9]:<10}{x['element'][:40]:<41}{x['Lo']:>7g}{x['AT']:>8,.0f}{int(x['floors']):>7d}{r['KLL_AT']:>8,.0f}{r['factor']:>7.3f}{r['L']:>7.1f}   {short(r['by'])}")
+        occ = sorted({(x.get('occupancy') or 'ordinary') for x, r in fl if (x.get('occupancy') or 'ordinary') != 'ordinary'})
+        sheet.blocks.append(dict(title="Floor Members", lines=t, after=["Unreduced loads Lo: " + "; ".join(sorted({f"{x['Lo']:g} psf ({x['source'].strip()})" for x, r in fl})) + "."]
+                                 + (["Occupancy: " + "; ".join(f"{x['name']}: {x['occupancy']}" for x, r in fl if (x.get('occupancy') or 'ordinary') != 'ordinary') + "."] if occ else [])))
+    if rf:
+        t = [f"{'member':<14}{'Lo psf':>8}{'AT ft2':>9}{'F in/ft':>9}{'R1':>7}{'R2':>7}{'Lr psf':>8}   by"]
+        for x, r in rf:
+            t.append(f"{str(x['name'])[:13]:<14}{x['Lo']:>8g}{x['AT']:>9,.0f}{x['F']:>9g}{r['R1']:>7.2f}{r['R2']:>7.2f}{r['Lr']:>8.1f}   {r['by']}")
+        sheet.blocks.append(dict(title="Roof Members", lines=t, after=["Unreduced roof loads Lo: " + "; ".join(sorted({f"{x['Lo']:g} psf ({x['source'].strip()})" for x, r in rf})) + "."]))
+    sheet.live = dict(floors=[r for x, r in fl], roofs=[r for x, r in rf])
+    return sheet

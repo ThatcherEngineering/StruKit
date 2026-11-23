@@ -1220,7 +1220,8 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         _diagram(p.c, LM + 280, dy0, 245, 32, dg["x"], [-m for m in M], (0.54, 0.35, 0.0), f"M max = {max(abs(m) for m in M):,.0f} lb-ft")
         p.y = dy0 - 12
     p.y -= 4
-    _steps(p, sheet.steps_title, sheet.steps)
+    if sheet.steps:
+        _steps(p, sheet.steps_title, sheet.steps)
     for b in sheet.blocks:
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
