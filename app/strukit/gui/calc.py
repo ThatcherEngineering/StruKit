@@ -148,6 +148,7 @@ FORMS = {
                                                         "Dense No. 1", "No. 2 Dense"]),
                 F("size", "Size (nominal)", "select", options=list(wood.SIZES) + list(wood.TIMBER_SIZES)),
                 F("plies", "Number of plies", "select", options=["1", "2", "3", "4", "5", "6"]),
+                F("flat", "Loaded on the wide face (flat use, plank)", "select", options=["no", "yes"], required=False, help="one piece 2 to 4 in. thick; blank = no"),
                 F("span", "Span", unit="ft"),
                 F("spacing", "Member spacing (joists and rafters)", unit="in", required=False, help="needed for area loads in psf"),
                 F("rise", "Roof rise in 12 (sloped rafter; spans are horizontal)", required=False, help="blank = level member; dead load is entered along the slope"),
@@ -1350,7 +1351,7 @@ def build(kind, values, project):
             return ws_wood.lvl_beam(mark, gr, thk, dep, int(plies), span, loads, cb, dc, lu or 0.0, bearing, rep, uw,
                                     spacing_in=r.num("spacing", False), product=prod, **cont), "simple", {}
         return ws_wood.beam(mark, sp, gr, size, int(plies), span, loads, cb, dc, lu or 0.0, bearing, wet, inc, rep, uw,
-                            spacing_in=r.num("spacing", False), **cont), "simple", {}
+                            spacing_in=r.num("spacing", False), flat=bool(yes(r.text("flat", False))), **cont), "simple", {}
     if kind == "perforated_wall":
         m = method(project, r.miss)
         panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")
