@@ -1642,6 +1642,24 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
         CM = 1.0                                           # Table 11.3.3 note 2: one row parallel to grain
     n = rows_n * n_row
     base = r["Z"] * CM * Cg * cdel
+    base_lat, comb = base, None
+    alpha = (lag or {}).get("alpha") or 0.0
+    if lag and alpha:
+        if not 0 < alpha <= 90:
+            raise WorksheetError(f"{mark}: the angle of the load to the wood surface is from 0 to 90 degrees")
+        import math as _m
+        try:
+            Wl = dowel.lag_withdrawal(G_main, D)
+        except dowel.DowelError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        pt_l = min(th["T"], lag["L"] - wash - side_t) - th["E"]
+        if pt_l <= 0:
+            raise WorksheetError(f"{mark}: no thread reaches the main member beyond the tapered tip")
+        CMw = 0.7 if service == "wet in service" else 1.0
+        Wp = Wl * pt_l * CMw
+        ca, sa = _m.cos(_m.radians(alpha)), _m.sin(_m.radians(alpha))
+        base = Wp * base_lat / (Wp * ca ** 2 + base_lat * sa ** 2)
+        comb = dict(W=Wl, pt=pt_l, CMw=CMw, Wp=Wp, alpha=alpha)
     Ln = footing_line
     names = {"Im": "Eq. 12.3-7" if double else "Eq. 12.3-1", "Is": "Eq. 12.3-8" if double else "Eq. 12.3-2", "II": "Eq. 12.3-3", "IIIm": "Eq. 12.3-4",
              "IIIs": "Eq. 12.3-9" if double else "Eq. 12.3-5", "IV": "Eq. 12.3-10" if double else "Eq. 12.3-6"}
@@ -1685,9 +1703,15 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
     if worst is None:
         raise WorksheetError(f"{mark}: no load combination puts load on the connection")
     steps += [Ln("CD", worst["CD"], "", "NDS Table 2.3.2", f"{worst['cd_case']}, {worst['cd_dur']}; combination {worst['name']}"),
-              Ln("Z' = Z CD CM Ct Cg C-delta", base * worst["CD"], "lb", "NDS Table 11.3.1", "Ct = 1.0"),
-              Ln(f"capacity = {n} Z'", worst["cap"], "lb", "")]
-    rows = [Row(f"Load on the {fs}s", worst["name"], worst["P"], worst["cap"], "lb", "NDS Table 11.3.1, 12.3.1", f"{n} {fs}s; mode {r['mode']}"),
+              Ln("Z' = Z CD CM Ct Cg C-delta", base_lat * worst["CD"], "lb", "NDS Table 11.3.1", "Ct = 1.0")]
+    if comb:
+        steps += [Ln("W = 1800 G^1.5 D^0.75", comb["W"], "lb/in", "NDS Eq. 12.2-1", f"G = {G_main:g}"),
+                  Ln("thread penetration, p", f"{comb['pt']:.3f} in", "", "NDS 12.2.1.2, Table L2", f"thread length T = {th['T']:g} in., less the tapered tip"),
+                  Ln("W' p = W p CD CM Ct", comb["Wp"] * worst["CD"], "lb", "NDS Table 11.3.1", f"CM = {comb['CMw']:g} for withdrawal (Table 11.3.3); Ct = 1.0"),
+                  Ln("Z'a = W'p Z' / (W'p cos^2 a + Z' sin^2 a)", base * worst["CD"], "lb", "NDS Eq. 12.4-1", f"a = {alpha:g} degrees between the wood surface and the load")]
+    steps += [Ln(f"capacity = {n} Z'" + ("a" if comb else ""), worst["cap"], "lb", "")]
+    rows = [Row(f"Load on the {fs}s", worst["name"], worst["P"], worst["cap"], "lb", "NDS Table 11.3.1, 12.3.1" + (", 12.4.1" if comb else ""),
+                f"{n} {fs}s; mode {r['mode']}" + (f"; load at {alpha:g} degrees to the wood surface" if comb else "")),
             Row("Edge distance", "", e_min, edge, "in", "NDS Table 12.5.1C", "minimum against the distance provided")]
     if grain != "parallel":
         pname = "side member" + ("s" if double else "") if grain == "side" else "main member"
@@ -1701,7 +1725,8 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
         rs_min = 1.5 * D if grain == "parallel" else max(1.5 * D, dowel.row_spacing_min_perp(D, min(main_t, side_t * (2 if double else 1))))
         rows.append(Row("Spacing between rows", "", rs_min, row_spacing, "in", "NDS Table 12.5.1D", "minimum against the spacing provided"))
         rows.append(Row("Distance between outer rows", "", (rows_n - 1) * row_spacing, 5.0, "in", "NDS 12.5.1.3", "5 in. maximum without detailing for shrinkage"))
-    not_checked = ["staggered rows (NDS 11.3.6.2)", f"load at an angle to the grain or to the {fs}", "withdrawal and combined lateral and withdrawal loading (NDS 12.2.1, 12.4.1), steel side plates" if lag else "the bolts in tension, the washers, steel side plates"]
+    not_checked = ["staggered rows (NDS 11.3.6.2)", f"load at an angle to the grain or to the {fs}", ("bearing of the washer or head on the side member, the tensile strength of the lag screw (NDS 12.2.1.4), steel side plates" if comb else
+                    "withdrawal and combined lateral and withdrawal loading (NDS 12.2.1, 12.4.1), steel side plates") if lag else "the bolts in tension, the washers, steel side plates"]
     if lag:
         rows.insert(1, Row("Penetration into the main member", "", 4 * D, p_lag, "in", "NDS 12.1.4.6", "4 D minimum, tapered tip excluded"))
     if local and sense == "tension" and grain == "parallel":
@@ -1786,7 +1811,11 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
         sheet.not_checked.insert(0, "the steel side plate" + ("s" if double else "") + " and the fastener spacing and edge distances in the steel (AISC 360)")
         sheet.assumptions.append(f"Steel side plate{'s' if double else ''}: dowel bearing strength Fe = {dowel.STEEL_FE[steel]:,.0f} psi for {steel} steel; the group action factor uses "
                                  "the wood-to-metal load/slip modulus (NDS 11.3.6).")
+    if comb:
+        sheet.assumptions.append(f"The load acts at {alpha:g} degrees to the wood surface, in the plane of the lateral load direction stated; the lateral and withdrawal "
+                                 "design values are combined by NDS Eq. 12.4-1. The force entered is the resultant.")
+        sheet.info.append(("Load Angle", f"{alpha:g} degrees between the wood surface and the load"))
     if lag:
-        sheet.connection_lag = dict(th, p=p_lag)
+        sheet.connection_lag = dict(th, p=p_lag, comb=comb)
     sheet.connection = dict(r, Zp=base * worst["CD"], n=n, Cg=Cg, Cdelta=cdel, CM=CM, capacity=worst["cap"], demand=worst["P"], edge_min=e_min)
     return sheet

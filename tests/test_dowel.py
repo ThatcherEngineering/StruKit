@@ -367,3 +367,26 @@ def test_steel_side_plates_against_nds_tables_12b_and_12k(tmp_path):
         calc.build("bolted_connection", dict(v, grain="perpendicular in the main member", p_loaded="3", p_unloaded="2", p_end="12"), proj)
     with pytest.raises(calc.Missing):
         calc.build("bolted_connection", dict(v, side_steel="wood"), proj)
+
+
+def test_lag_combined_lateral_and_withdrawal_by_hand(tmp_path):
+    """NDS Eq. 12.4-1. One 1/2 x 5 in. lag, 2x side member on a 4x main, G 0.50, load at 30 degrees to the wood surface, D + S (CD 1.15):
+    Z = 394.2 lb; W = 378.4 lb/in.; thread penetration = min(3, 3.5) - 0.3125 = 2.6875 in.; W p = 1,017 lb;
+    Z'a = 1.15 (1017)(394.2) / (1017 cos^2 30 + 394.2 sin^2 30) = 1.15 (400,900 / 861.3) = 535.3 lb. At 90 degrees Z'a = W'p; at 0 the sheet is lateral only."""
+    import math
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3")])
+    v = dict(mark="LC2", D="1/2", L="5", rows="1", n_row="1", end="6", edge="2.75", sense="tension", wood_type="softwood", alpha="30",
+             side_t="1.5", side_w="5.5", G_side="0.50", E_side="1600000", side_source="DF-L No. 2", main_t="3.5", main_w="5.5", G_main="0.50", E_main="1600000",
+             main_source="DF-L No. 2", service="dry", loads=[dict(case="D", P="300"), dict(case="S", P="200")])
+    sheet, _, _ = calc.build("lag_connection", v, proj)
+    assert sheet.connection["capacity"] == pytest.approx(535.3, abs=0.1) and sheet.connection_lag["comb"]["pt"] == pytest.approx(2.6875)
+    assert "12.4.1" in sheet.rows[0].source and dict(sheet.info)["Load Angle"].startswith("30 degrees") and not any("combined lateral" in t for t in sheet.not_checked)
+    calcsheet._simple_pdf(sheet, str(tmp_path / "c.pdf"), "2026-000", "2018 NDS", "2026-11-23")
+    up, _, _ = calc.build("lag_connection", dict(v, alpha="90"), proj)
+    assert up.connection["capacity"] == pytest.approx(1.15 * 378.403 * 2.6875, abs=0.1)
+    flat, _, _ = calc.build("lag_connection", dict(v, alpha="0"), proj)
+    assert flat.connection["capacity"] == pytest.approx(1.15 * 394.22, abs=0.1) and flat.connection_lag["comb"] is None
+    with pytest.raises(Exception):
+        calc.build("lag_connection", dict(v, alpha="120"), proj)

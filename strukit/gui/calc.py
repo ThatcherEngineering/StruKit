@@ -717,6 +717,7 @@ FORMS = {
         fields=[F("D", "Lag screw diameter", "select", options=["1/4", "5/16", "3/8", "7/16", "1/2", "5/8", "3/4", "7/8", "1"], unit="in"),
                 F("L", "Lag screw length", "select", options=["1", "1-1/2", "2", "2-1/2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"], unit="in", help="NDS Appendix Table L2"),
                 F("washer", "Washer thickness under the head", unit="in", required=False, help="blank = none deducted from the penetration"),
+                F("alpha", "Angle of the load to the wood surface", unit="deg", required=False, help="blank or 0 = lateral load only; over 0: combined lateral and withdrawal, NDS 12.4.1"),
                 F("rows", "Rows of lag screws"), F("n_row", "Lag screws in a row"),
                 F("spacing", "Spacing in a row", unit="in", required=False, help="along the grain; 4 D for the full value"),
                 F("row_spacing", "Spacing between rows", unit="in", required=False),
@@ -1515,7 +1516,7 @@ def build(kind, values, project):
         lagd = None
         if islag:
             Lt = r.text("L")
-            lagd = dict(L={"1": 1.0, "1-1/2": 1.5, "2": 2.0, "2-1/2": 2.5}.get(Lt) or (float(Lt) if Lt and Lt.isdigit() else None), washer=r.num("washer", False))
+            lagd = dict(L={"1": 1.0, "1-1/2": 1.5, "2": 2.0, "2-1/2": 2.5}.get(Lt) or (float(Lt) if Lt and Lt.isdigit() else None), washer=r.num("washer", False), alpha=r.num("alpha", False))
         sh, rn, nr, end, edge, sense, wt = ("single" if islag else r.text("shear")), r.num("rows"), r.num("n_row"), r.num("end"), r.num("edge"), r.text("sense"), r.text("wood_type")
         sp = r.num("spacing", bool(nr and nr > 1), label="Spacing in a row")
         rs = r.num("row_spacing", bool(rn and rn > 1), label="Spacing between rows")
