@@ -168,6 +168,22 @@ def api(path, body):
         except Exception as e:
             return dict(error=f"The diaphragm sheet stopped: {e}")
         return dict(reaction=sheet.diaphragm["reaction"], load=(body.get("values") or {}).get("load"), W=(body.get("values") or {}).get("W"))
+    if path == "/api/wall_deflection":
+        vals, kind = body.get("values") or {}, body.get("kind") or "shear_wall"
+        if kind not in ("shear_wall", "perforated_wall"):
+            return dict(error="Choose a shear wall sheet.")
+        try:
+            sheet, _, _ = calc.build(kind, vals, body.get("project") or {})
+        except calc.Missing as e:
+            return dict(error="The shear wall sheet is not complete: " + "; ".join(e.items))
+        except Exception as e:
+            return dict(error=f"The shear wall sheet stopped: {e}")
+        w = sheet.wall
+        ds = [s_.defl for s_ in getattr(w, "segments", [])] if hasattr(w, "segments") else [getattr(w, "defl", None)]
+        ds = [d for d in ds if d is not None]
+        if not ds:
+            return dict(error="That shear wall sheet has no deflection: fill its deflection boxes (end post area and E, anchorage slip) first.")
+        return dict(defl=max(ds), load=vals.get("load"), method=(body.get("project") or {}).get("method"))
     if path == "/api/ping":
         _last_ping[0] = time.time(); _pinged[0] = True
         return {}

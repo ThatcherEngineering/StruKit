@@ -233,3 +233,21 @@ def test_seismic_combinations_with_overstrength():
     sh, _, _ = calc.build("wood_post", v, proj)
     comp = next(x for x in sh.rows if x.check == "compression")
     assert comp.combo == "1.14D + 1.75Em" and comp.demand == pytest.approx(7530 / 30.25, abs=0.01)
+
+
+def test_wall_deflection_api_for_the_drift_check():
+    """The seismic screen fills a level's elastic displacement from a shear wall sheet: the wall's deflection at the project's load level, which the
+    screen divides by 0.7 for an ASD project. 12 ft wall, 10 ft high, 3,000 lb ASD: 0.224 in.; under the design seismic forces 0.224/0.7 = 0.320 in."""
+    from strukit.gui import server
+    from strukit import shearwall as sw
+    proj = dict(job="2026-000", name="Test", method="ASD")
+    v = dict(mark="SW1", panel="Sheathing, 7/16 in, 8d common", spacing="4", panel_type="OSB", sides="one side", blocking="blocked", G="0.50", G_source="DF-L",
+             h="10", lengths="12, 6", load="seismic", V="3000", v_source="EQ1", chord_A="16.5", chord_E="1600000", slip="0.125")
+    got = server.api("/api/wall_deflection", dict(kind="shear_wall", values=v, project=proj))
+    w = sw.line("Sheathing, 7/16 in, 8d common", 4, "OSB", 0.5, 10, [12, 6], 3000, "seismic", "ASD", chord_E=1.6e6, chord_A=16.5, anchor_slip_in=0.125)
+    assert got["defl"] == pytest.approx(max(s.defl for s in w.segments)) and got["load"] == "seismic" and got["method"] == "ASD"
+    one = server.api("/api/wall_deflection", dict(kind="shear_wall", values=dict(v, lengths="12"), project=proj))
+    assert one["defl"] == pytest.approx(0.2241, abs=0.0002) and one["defl"] / 0.7 == pytest.approx(0.320, abs=0.001)
+    assert "no deflection" in server.api("/api/wall_deflection", dict(kind="shear_wall", values=dict(v, slip=""), project=proj))["error"]
+    assert "not complete" in server.api("/api/wall_deflection", dict(kind="shear_wall", values=dict(v, V=""), project=proj))["error"]
+    assert "error" in server.api("/api/wall_deflection", dict(kind="wood_beam", values=v, project=proj))
