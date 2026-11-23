@@ -27,6 +27,10 @@ Read from the standard (pdf pp. 185-186; equations and tables confirmed against 
                  IV) and Table 11.6-2 (SD1 under 0.067: A, A; 0.067 to under 0.133: B, C; 0.133
                  to under 0.20: C, D; 0.20 and over: D, D). The permission to use Table 11.6-1
                  alone is not taken.
+  Sect. 12.10.1.1 diaphragm design force (pdf pp. 190-191, equations confirmed against the page
+                 images): Fpx = [sum of Fi from the top to x / sum of wi from the top to x] wpx,
+                 Eq. 12.10-1; not less than 0.2 SDS Ie wpx, Eq. 12.10-2; need not exceed
+                 0.4 SDS Ie wpx, Eq. 12.10-3. wpx is the level weight unless one is entered.
 R, Ie, SDS, SD1, S1 and TL are entered with their sources. Not covered: Method 1 (the
 multi-period spectrum), the SDS limit of Sect. 12.8.1.3, the
 redundancy factor, vertical seismic load, torsion, drift, P-delta, structural irregularities
@@ -92,7 +96,11 @@ def elf(SDS, SD1, S1, TL, R, Ie, structure, hn, levels, T_analysis=None):
             raise SeismicError(f"seismic: {nm} must be positive")
     if not levels:
         raise SeismicError("seismic: enter at least one level with its weight and height")
+    wp_of = {str(lv_[0]): (lv_[3] if len(lv_) > 3 and lv_[3] is not None else lv_[1]) for lv_ in levels}
+    levels = [tuple(lv_[:3]) for lv_ in levels]
     for nm, w, h in levels:
+        if wp_of[str(nm)] <= 0:
+            raise SeismicError(f"seismic: level {nm}: the diaphragm weight must be positive")
         if w is None or w <= 0 or h is None or h <= 0:
             raise SeismicError(f"seismic: level {nm}: the weight and the height must be positive")
         if h > hn + 1e-9:
@@ -131,6 +139,14 @@ def elf(SDS, SD1, S1, TL, R, Ie, structure, hn, levels, T_analysis=None):
         rows.append(dict(name=nm, w=w, h=h, whk=w * h ** k, Cvx=cvx, F=F, V=shear))
     for i, r in enumerate(rows):               # overturning moment at each level: forces above times their height over it
         r["M"] = sum(q["F"] * (q["h"] - r["h"]) for q in rows[:i + 1])
+    sw = 0.0
+    for r in rows:                             # diaphragm design forces, Sect. 12.10.1.1
+        sw += r["w"]
+        wp = wp_of[str(r["name"])]
+        eq = r["V"] / sw * wp
+        lo, hi = 0.2 * SDS * Ie * wp, 0.4 * SDS * Ie * wp
+        r.update(wp=wp, Fpx_eq=eq, Fpx_min=lo, Fpx_max=hi, Fpx=min(max(eq, lo), hi),
+                 Fpx_by="Eq. 12.10-2" if eq < lo else "Eq. 12.10-3" if eq > hi else "Eq. 12.10-1")
     M_base = sum(r["F"] * r["h"] for r in rows)
     return dict(Ta=Ta, Ct=Ct, x=x, Cu=Cu, T=T, T_note=T_note, R_over_Ie=RI, Cs_123=c3, Cs_cap=cap, cap_eq=cap_eq, Cs_min=c6, Cs_s1=c7,
                 Cs=Cs, governs=governs, W=W, V=V, k=k, rows=rows, M_base=M_base)

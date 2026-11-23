@@ -1035,9 +1035,16 @@ def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie
          "Level weights are the effective seismic weights of Sect. 12.7.2, as entered."],
         ["whether the equivalent lateral force procedure is permitted (Table 12.6-1)", ("" if risk else "the Seismic Design Category (Sect. 11.6) and ") + "system limits and height limits (Table 12.2-1)",
          "the redundancy factor (Sect. 12.3.4) and the vertical seismic load effect (Sect. 12.4.2.2)", "structural irregularities (Sect. 12.3.2)",
-         "torsion (Sect. 12.8.4), story drift (Sect. 12.8.6) and P-delta effects (Sect. 12.8.7)", "diaphragm forces (Sect. 12.10)"])
+         "torsion (Sect. 12.8.4), story drift (Sect. 12.8.6) and P-delta effects (Sect. 12.8.7)",
+         "diaphragm transfer forces, collectors and their overstrength forces (Sect. 12.10.1.1, 12.10.2)"])
     sheet.blocks.append(dict(title="Story Forces", picture=("seismic_forces", dict(rows=r["rows"], V=r["V"], unit=unit, hn=hn))))
     sheet.blocks.append(dict(title="Vertical Distribution", lines=lines))
+    dl = [f"{'level':<16}{'wpx ' + unit:>11}{'Eq. 12.10-1':>13}{'minimum':>10}{'maximum':>10}{'Fpx ' + unit:>11}   governed by"]
+    for x in r["rows"]:
+        dl.append(f"{str(x['name'])[:15]:<16}{x['wp']:>11,.1f}{x['Fpx_eq']:>13.2f}{x['Fpx_min']:>10.2f}{x['Fpx_max']:>10.2f}{x['Fpx']:>11.2f}   {x['Fpx_by']}")
+    sheet.blocks.append(dict(title="Diaphragm Design Forces", lines=dl, after=[
+        "Fpx = (sum of Fi at and above the level / sum of wi at and above the level) wpx, Eq. 12.10-1; not less than 0.2 SDS Ie wpx, Eq. 12.10-2; "
+        "need not exceed 0.4 SDS Ie wpx, Eq. 12.10-3. wpx is the weight tributary to the diaphragm: the level weight unless a diaphragm weight is entered."]))
     if cat:
         sheet.info.insert(3, ("Category", f"Risk Category {risk}; Seismic Design Category {cat[0]}"))
         r = dict(r, sdc=cat[0])
