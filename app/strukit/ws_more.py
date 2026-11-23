@@ -2018,7 +2018,7 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
     return sheet
 
 
-def rain_load_sheet(mark, risk, i, i_source, A, ds, ds_source, head, D=None, D_source="", bay=None, dp=None, dp_source=""):
+def rain_load_sheet(mark, risk, i, i_source, A, ds, ds_source, head, D=None, D_source="", bay=None, dp=None, dp_source="", low=None):
     """Design rain load on a roof, ASCE/SEI 7-22 Chapter 8 (see rain.py). i: 15 minute rainfall
     intensity, in./hr; A: roof area draining to one secondary drain or scupper, ft2; ds: static
     head, in.; head: dict(dh, source) typed in, or dict(scupper=width in.); ponding head either
@@ -2115,7 +2115,23 @@ def rain_load_sheet(mark, risk, i, i_source, A, ds, ds_source, head, D=None, D_s
                          "snow or rain-on-snow acting with ponding"])
     if R is not None:
         sheet.blocks.append(dict(title="Water on the Roof", head="Water on the Roof", picture=("rain", dict(ds=ds, dh=dh, dp=dpv, R=R))))
-    sheet.rain = dict(Q=Q, dh=dh, R0=R0, R=R, dp=dpv, pond=pond)
+    ls = None
+    if low is not None:                                   # low: dict(slope in./ft, parallel_edge, Ls, S)
+        try:
+            ls = rain.low_slope(low["slope"], low.get("Ls"), low.get("S"), low.get("parallel_edge", False))
+        except rain.RainError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        lines = [Ln("roof slope", f"{low['slope']:g} in./ft", "", "", ""),
+                 Ln("condition 1: slope less than 1/4 in./ft", "yes" if ls["cond1"] else "no", "", "ASCE/SEI 7-22 Sect. 8.3", "")]
+        if ls["beta"] is not None:
+            lines += [Ln("beta = (Ls / S + pi) / 20", f"{ls['beta']:.3f} in./ft", "", "ASCE/SEI 7-22 Sect. 8.3",
+                         f"Ls = {low['Ls']:g} ft, S = {low['S']:g} ft; secondary members parallel to the free-draining edge"),
+                      Ln("condition 2: slope less than beta", "yes" if ls["cond2"] else "no", "", "ASCE/SEI 7-22 Sect. 8.3", "")]
+        lines.append(Ln("ponding investigation of bays without accumulated rain", "required" if ls["investigate"] else "not required", "", "ASCE/SEI 7-22 Sect. 8.3", ""))
+        sheet.blocks.append(dict(title="Bays with Low Slope", head="Bays with Low Slope", steps=lines))
+        sheet.not_checked = ["the ponding investigation of bays with low slope where Sect. 8.3 requires it (deflected roof, low points)" if "Sect. 8.3" in t else t
+                             for t in sheet.not_checked]
+    sheet.rain = dict(Q=Q, dh=dh, R0=R0, R=R, dp=dpv, pond=pond, low=ls)
     return sheet
 
 
