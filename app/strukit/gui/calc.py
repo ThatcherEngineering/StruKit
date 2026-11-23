@@ -736,6 +736,24 @@ FORMS = {
                 F("service", "Moisture", "select", options=["dry", "wet in service", "wet at fabrication, dry in service"], help="NDS Table 11.3.3")],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Force along the members, by load case; the project's ASD combinations are applied.")]),
+    "lag_withdrawal": dict(
+        title="Lag Screws in Withdrawal", code="NDS 2018", mark="LW",
+        fields=[F("D", "Lag screw diameter", "select", options=["1/4", "5/16", "3/8", "7/16", "1/2", "5/8", "3/4", "7/8", "1"], unit="in"),
+                F("L", "Lag screw length", "select", options=["1", "1-1/2", "2", "2-1/2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"], unit="in", help="NDS Appendix Table L2"),
+                F("washer", "Washer thickness under the head", unit="in", required=False, help="blank = none"),
+                F("n", "Number of lag screws"),
+                F("side_t", "Side member thickness", unit="in", help="the part the screw passes through, wood or steel"),
+                F("main_t", "Main member thickness", unit="in", help="the piece the threads are in, measured along the screw"),
+                F("G_main", "Main member specific gravity, G", help="NDS Table 12.3.3A"), F("G_main_source", "Where that G comes from", "text"),
+                F("service", "Moisture in service", "select", options=["dry", "wet in service"], help="NDS Table 11.3.3"),
+                F("end_grain", "Screws in the end grain of the main member", "select", options=["no", "yes"], required=False),
+                F("edge", "Edge distance", unit="in", required=False, help="1.5 D minimum; NDS Table 12.5.1E"),
+                F("end", "End distance", unit="in", required=False, help="4 D minimum"),
+                F("spacing", "Spacing", unit="in", required=False, help="4 D minimum"),
+                F("steel", "Allowable tension of one screw", unit="lb", required=False, help="the steel at the root diameter; NDS 12.2.1.4"),
+                F("steel_source", "Where that allowable tension comes from", "text", required=False)],
+        tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
+                  help="Force pulling the lag screws out, on the group, by load case; the project's ASD combinations are applied.")]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1466,6 +1484,23 @@ def build(kind, values, project):
         cases_used([x["case"] for x in loads], cb, r.miss)
         r.done()
         return ws_more.nail_withdrawal_sheet(mark, nm, D, Lg, hd, ts, Gs, Gss, tm, Gm, Gms, n_, sv, loads, cb, toe_nail=toe), "simple", {}
+    if kind == "lag_withdrawal":
+        cb = combos(project, r.miss, "ASD")
+        Dt, Lt = r.text("D"), r.text("L")
+        D = {"1/4": 0.25, "5/16": 0.3125, "3/8": 0.375, "7/16": 0.4375, "1/2": 0.5, "5/8": 0.625, "3/4": 0.75, "7/8": 0.875, "1": 1.0}.get(Dt)
+        Lg = {"1": 1.0, "1-1/2": 1.5, "2": 2.0, "2-1/2": 2.5}.get(Lt) or (float(Lt) if Lt and Lt.isdigit() else None)
+        n_, ts, tm, Gm, Gms, sv = r.num("n"), r.num("side_t"), r.num("main_t"), r.num("G_main"), r.text("G_main_source"), r.text("service")
+        st_ = r.num("steel", False)
+        if st_ is not None and not r.text("steel_source", False):
+            r.miss.append("Where the allowable tension of the screw comes from is blank")
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        r.done()
+        return ws_more.lag_withdrawal_sheet(mark, D, Lg, n_, ts, tm, Gm, Gms, sv, loads, cb, washer=r.num("washer", False) or 0.0,
+                                            end_grain=bool(yes(r.text("end_grain", False))), edge=r.num("edge", False), end=r.num("end", False),
+                                            spacing=r.num("spacing", False), steel=st_, steel_source=r.text("steel_source", False) or ""), "simple", {}
     if kind in ("bolted_connection", "lag_connection"):
         cb = combos(project, r.miss, "ASD")
         Dt = r.text("D")

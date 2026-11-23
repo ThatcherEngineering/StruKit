@@ -1472,6 +1472,93 @@ def nail_withdrawal_sheet(mark, nail_name, D, length, head, side_t, G_side, G_si
     return sheet
 
 
+def lag_withdrawal_sheet(mark, D, length, n, side_t, main_t, G_main, G_main_source, service, loads, combos, washer=0.0, end_grain=False,
+                         edge=None, end=None, spacing=None, steel=None, steel_source=""):
+    """Lag screws loaded in withdrawal, 2018 NDS 12.2.1 (see dowel.py). side_t: thickness of
+    the part the screw passes through (wood or steel). loads: [dict(case, P lb)], P pulling
+    the screw out; combos: ASD combinations. service: "dry" or "wet in service". steel:
+    allowable tension of one screw, lb (optional, with its source). edge, end, spacing:
+    provided distances, in. (optional; checked against Table 12.5.1E)."""
+    from . import dowel, wood
+    if not (G_main_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the main member specific gravity is blank")
+    CMs = {"dry": 1.0, "wet in service": 0.7}
+    if service not in CMs:
+        raise WorksheetError(f"{mark}: the service condition is one of: " + "; ".join(CMs))
+    if n is None or n < 1 or int(n) != n:
+        raise WorksheetError(f"{mark}: the number of lag screws is a whole number, 1 or more")
+    if side_t is None or side_t < 0 or main_t is None or main_t <= 0:
+        raise WorksheetError(f"{mark}: the side and main member thicknesses are needed")
+    if steel is not None and not (steel_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the screw's allowable tension is blank")
+    washer = washer or 0.0
+    try:
+        th = dowel.lag_thread(D, length)
+        W = dowel.lag_withdrawal(G_main, D)
+    except dowel.DowelError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    in_main = length - washer - side_t
+    if in_main > main_t + 1e-9:
+        raise WorksheetError(f"{mark}: the lag screw is longer than the washer, side member and main member together")
+    pt = min(th["T"], in_main) - th["E"]
+    if pt <= 0:
+        raise WorksheetError(f"{mark}: no thread reaches the main member beyond the tapered tip")
+    CM, Ceg = CMs[service], (0.75 if end_grain else 1.0)
+    Ln = footing_line
+    steps = [Ln("W = 1800 G^1.5 D^0.75", W, "lb/in", "NDS Eq. 12.2-1", f"G = {G_main:g} ({G_main_source.strip()}); D = {D:g} in."),
+             Ln("thread length T, tapered tip E", f"{th['T']:g} in, {th['E']:.3f} in", "", "NDS Table L2", f"{length:g} in. lag screw"),
+             Ln("length in the main member", f"{in_main:.3f} in", "", "", f"L - {'washer - ' if washer else ''}side member"),
+             Ln("thread penetration, pt", f"{pt:.3f} in", "", "NDS 12.2.1.2", "the lesser of T and the length in the main member, less E"),
+             Ln("W pt", W * pt, "lb", "NDS 12.2.1.2", "one lag screw"),
+             Ln("CM", CM, "", "NDS Table 11.3.3", service)]
+    if end_grain:
+        steps.append(Ln("Ceg", Ceg, "", "NDS 12.2.1.3", "withdrawal from end grain"))
+    base = W * pt * CM * Ceg
+    worst = None
+    for cb in combos:
+        P = sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)
+        present = [ld["case"] for ld in loads if cb.factors.get(ld["case"], 0.0) and ld["P"]]
+        if not present or P < 1e-9:
+            continue
+        try:
+            CD, cd_case, cd_dur = wood.load_duration(present)
+        except wood.WoodError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        g = dict(name=cb.name, P=P, CD=CD, cd_case=cd_case, cd_dur=cd_dur, cap=n * base * CD, source=cb.source)
+        if worst is None or g["P"] / g["cap"] > worst["P"] / worst["cap"]:
+            worst = g
+    if worst is None:
+        raise WorksheetError(f"{mark}: no load combination pulls on the connection")
+    steps += [Ln("CD", worst["CD"], "", "NDS Table 2.3.2", f"{worst['cd_case']}, {worst['cd_dur']}; combination {worst['name']}"),
+              Ln("W' pt = W pt CD CM Ct" + (" Ceg" if end_grain else ""), base * worst["CD"], "lb", "NDS Table 11.3.1", "Ct = 1.0; one lag screw"),
+              Ln(f"capacity = {int(n)} W' pt", worst["cap"], "lb", "")]
+    rows = [Row("Withdrawal of the lag screws", worst["name"], worst["P"], worst["cap"], "lb", "NDS Table 11.3.1, 12.2.1", f"{int(n)} lag screws")]
+    not_checked = ["combined lateral and withdrawal loading (NDS 12.4.1)", "bearing of the washer or head on the side member, and the side member itself"]
+    if steel is not None:
+        rows.append(Row("Tension in the lag screws", worst["name"], worst["P"], n * steel, "lb", "NDS 12.2.1.4, 11.2.3", f"{steel:,.0f} lb per screw ({steel_source.strip()})"))
+    else:
+        not_checked.insert(0, "the tensile strength of the lag screw at the root diameter (NDS 12.2.1.4)")
+    given = [(nm, v, k) for nm, v, k in (("Edge distance", edge, 1.5), ("End distance", end, 4.0), ("Spacing", spacing, 4.0)) if v is not None]
+    for nm, v, k in given:
+        rows.append(Row(nm, "", k * D, v, "in", "NDS Table 12.5.1E", f"{k:g} D minimum against the distance provided"))
+    if len(given) < 3:
+        not_checked.append("edge distance, end distance and spacing where not entered (NDS Table 12.5.1E)")
+    info = [("Fastener", f"{int(n)} - {D:g} in. diameter x {length:g} in. long lag screws" + (f", {washer:g} in. washer" if washer else "")),
+            ("Side Member", f"{side_t:g} in. thick"),
+            ("Main Member", f"{main_t:g} in. thick, G = {G_main:g} ({G_main_source.strip()})"),
+            ("Conditions", service + (" service" if service == "dry" else "") + ("; screws in the end grain of the main member" if end_grain else ""))]
+    load_lines = [f"{ld['case']}: {ld['P']:,.0f} lb" + (f"  ({ld['label']})" if ld.get("label") else "") for ld in loads]
+    sheet = SimpleSheet(
+        mark, "Lag Screws in Withdrawal", "Connection", "ASD", info, load_lines, [(f"{worst['name']}", worst["source"])], "Withdrawal Design Value", steps, rows,
+        ["Standard hex lag screws (NDS Table L2) turned into " + ("the end grain" if end_grain else "the side grain") + " of the main member in lead holes bored to NDS 12.1.4.2; load along the screw.",
+         "Thread length is the minimum of NDS Table L2.",
+         "Sustained temperature not over 100 degrees F (Ct = 1.0, NDS Table 11.3.4).",
+         "All lag screws share the load equally."],
+        not_checked)
+    sheet.connection = dict(W=W, pt=pt, T=th["T"], E=th["E"], capacity=worst["cap"], demand=worst["P"], CD=worst["CD"], CM=CM)
+    return sheet
+
+
 def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, edge, shear, side_t, side_w, G_side, E_side, side_source,
                             main_t, main_w, G_main, E_main, main_source, sense, wood_type, service, loads, combos, local=None, grain="parallel", perp=None, lag=None):
     """Bolted wood-to-wood connection loaded parallel to grain in every member (a splice or
