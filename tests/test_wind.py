@@ -101,11 +101,14 @@ def test_mwfrs_sheet_and_form(tmp_path):
              enclosure="enclosed", enclosure_basis="Sect. 26.12", across="40", along="60", eave="16", h="20", theta="22.62",
              Kzt="1.0", Kzt_source="no hill, ridge or escarpment, Sect. 26.8.1", elevation="6200", elevation_source="site survey")
     sheet, kind, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
-    assert kind == "simple" and len(sheet.blocks) == 2 and sheet.wind["qh"] == pytest.approx(30.47 * wind.ke(6200), abs=0.01)
-    assert any("windward roof" in t for t in sheet.blocks[0]["lines"]) and any("0 to h/2 (0.0 to 10.0 ft)" in t for t in sheet.blocks[1]["lines"])
+    assert kind == "simple" and len(sheet.blocks) == 3 and sheet.blocks[0]["picture"][0] == "wind_mwfrs" and sheet.wind["qh"] == pytest.approx(30.47 * wind.ke(6200), abs=0.01)
+    assert any("windward roof" in t for t in sheet.blocks[1]["lines"]) and any("0 to h/2 (0.0 to 10.0 ft)" in t for t in sheet.blocks[2]["lines"])
     out = tmp_path / "w.pdf"
     calcsheet._simple_pdf(sheet, str(out), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     assert out.stat().st_size > 2000
+    flat, _, _ = calc.build("wind_mwfrs", dict(v, theta="0", h="16"), dict(job="2026-000", name="Test", method="ASD"))
+    calcsheet._simple_pdf(flat, str(tmp_path / "f.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    assert "zones" in flat.blocks[0]["picture"][1]["panels"][0]
     v2 = dict(v, enclosure_basis="")
     with pytest.raises(calc.Missing):
         calc.build("wind_mwfrs", v2, dict(job="2026-000", name="Test", method="ASD"))
