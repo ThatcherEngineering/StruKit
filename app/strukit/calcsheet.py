@@ -1226,7 +1226,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
                    230 if b["picture"][0] in ("anchorage", "perforated_wall") else 215 if b["picture"][0] == "lag" else 175)
-            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "nailed", "toe_nail", "lag", "bolted", "bolted_perp"):
+            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "collector", "nailed", "toe_nail", "lag", "bolted", "bolted_perp"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
             p.head(b.get("head") or b["title"] + ": Inputs and Layout")
@@ -1344,6 +1344,8 @@ def _block_picture(c, top, pic):
         return _seismic_forces_picture(c, top, d)
     if name == "diaphragm":
         return _diaphragm_picture(c, top, d)
+    if name == "collector":
+        return _collector_picture(c, top - 6, d)
     if name == "nailed":
         return _nailed_picture(c, top, d)
     if name == "lag":
@@ -1730,6 +1732,49 @@ def _toe_nail_picture(c, top, d):
     off = 24 if d.get("withdrawal") else 0
     _small(c, xc, y_bot - 12 - off, f"section through one toe-nail, to scale; main member {tm:g} in thick" + (", not shown full depth" if tmd < tm else ""))
     return y_bot - 18 - off
+
+
+def _collector_picture(c, top, d):
+    """The line of resistance to scale with its walls drawn heavy, the diaphragm shear along
+    it, and the collector force diagram above with the value at each peak; the line length
+    and each wall dimensioned."""
+    W, segs, pts, Fmax = d["W"], d["segments"], d["points"], d["Fmax"]
+    s_ = 320.0 / W
+    x0 = (LM + RM) / 2 - 160.0
+    h = 34.0                                              # half height of the force diagram
+    y_axis = top - 22 - h
+    y_line = y_axis - h - 30
+    k = (h / Fmax) if Fmax > 0 else 0.0
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5); c.line(x0, y_axis, x0 + W * s_, y_axis)
+    pth = c.beginPath(); pth.moveTo(x0, y_axis)
+    for x, F in pts:
+        pth.lineTo(x0 + x * s_, y_axis + F * k)
+    pth.lineTo(x0 + W * s_, y_axis); pth.close()
+    c.setFillColorRGB(0.87, 0.91, 0.97); c.setStrokeColorRGB(*LOADC); c.setLineWidth(0.9); c.drawPath(pth, fill=1, stroke=1)
+    c.setFillColorRGB(*LOADC); c.setFont(FR, 6.5)
+    for x, F in pts:
+        if abs(F) > 0.02 * Fmax:
+            c.drawCentredString(x0 + x * s_, y_axis + F * k + (4 if F > 0 else -9), f"{abs(F):,.0f} lb")
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawRightString(x0 - 6, y_axis - 2, "collector force")
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8); c.line(x0, y_line, x0 + W * s_, y_line)
+    c.setLineWidth(4.0)
+    for a, b in segs:
+        c.line(x0 + a * s_, y_line, x0 + (a + b) * s_, y_line)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.6)
+    n = max(6, int(W * s_ / 26))
+    for i in range(n):
+        xa = x0 + (i + 0.15) * W * s_ / n
+        _arrow(c, xa, y_line + 9, xa + 0.6 * W * s_ / n, y_line + 9, head=3)
+    c.setFont(FR, 6.5); c.drawString(x0 + W * s_ + 6, y_line + 7, f"vd = {d['vd']:,.0f} plf")
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawRightString(x0 - 6, y_line - 2, "line, walls heavy")
+    yd = y_line - 10
+    edges = sorted({0.0, W} | {a for a, b in segs} | {a + b for a, b in segs})
+    for a, b in zip(edges[:-1], edges[1:]):
+        if (b - a) * s_ > 16:
+            memberart._dim_h(c, x0 + a * s_, x0 + b * s_, yd, f"{b - a:g} ft", FR, ext_from=y_line)
+    memberart._dim_h(c, x0, x0 + W * s_, yd - 14, f"{W:g} ft", FR, ext_from=yd)
+    _small(c, (LM + RM) / 2, yd - 30, f"line of resistance to scale; walls take vw = {d['vw']:,.0f} plf; forces above and below the axis are of opposite sense")
+    return yd - 36
 
 
 def _diaphragm_picture(c, top, d):

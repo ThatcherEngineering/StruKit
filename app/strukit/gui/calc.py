@@ -615,6 +615,15 @@ FORMS = {
                 T("roofs", "Roof members (ordinary roofs)", [F("name", "Member", "text"), F("Lo", "Unreduced roof live load, Lo", unit="psf"),
                     F("source", "Source of Lo", "text"), F("AT", "Tributary area", unit="ft2"), F("F", "Roof rise", unit="in/ft")],
                   help="ASCE 7-22 Sect. 4.8.2.")]),
+    "collector": dict(
+        title="Collector Force (drag strut)", code="ASCE/SEI 7-22", mark="CL",
+        fields=[F("line_name", "Line", "text", required=False, help="for example: grid A, roof"),
+                F("W", "Length of the line", unit="ft", help="the diaphragm dimension along this line of resistance"),
+                F("R", "Force the diaphragm delivers to the line", unit="lb", help="the reaction at this line from the diaphragm sheet"),
+                F("level", "Load and load level", "text", help="for example: seismic, strength level"),
+                F("R_source", "Where that force comes from", "text", help="for example: diaphragm sheet DI1")],
+        tables=[T("walls", "Walls on the line", [F("start", "Starts at", unit="ft"), F("length", "Length", unit="ft")],
+                  help="Each wall length on the line, measured from one end of the line. The walls take the force in proportion to their lengths.")]),
     "diaphragm": dict(
         title="Wood Diaphragm", code="SDPWS-2021", mark="DI",
         fields=[F("panel", "Sheathing and nails", "select", options=["Structural I, 5/16 in, 6d common", "Structural I, 3/8 in, 8d common", "Structural I, 15/32 in, 10d common",
@@ -1469,6 +1478,13 @@ def build(kind, values, project):
             r.miss.append("No floor member or roof member is entered")
         r.done()
         return ws_more.live_load_sheet(mark, fl, rf), "simple", {}
+    if kind == "collector":
+        W_, R_, lv, rs_ = r.num("W"), r.num("R"), r.text("level"), r.text("R_source")
+        segs = r.rows("walls")
+        if not segs:
+            r.miss.append("No wall is entered on the line")
+        r.done()
+        return ws_more.collector_sheet(mark, W_, R_, rs_, lv, segs, r.text("line_name", False) or ""), "simple", {}
     if kind == "diaphragm":
         m = method(project, r.miss)
         blk = r.text("edges") == "blocked"

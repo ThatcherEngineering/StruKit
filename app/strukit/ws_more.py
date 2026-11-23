@@ -1280,6 +1280,50 @@ def diaphragm_sheet(mark, panel, face_in, case, panel_type, G, G_source, L, W, w
     return sheet
 
 
+def collector_sheet(mark, W, R, R_source, level, segments, line_name=""):
+    """Axial force in a collector (drag strut) along one line of resistance (see
+    diaphragm.collector). R: the force the diaphragm delivers to the line, lb, at the load
+    level named in `level` (text, for example "seismic, strength level"); segments:
+    [dict(start, length)] of the walls on the line, ft."""
+    from . import diaphragm
+    if not (R_source or "").strip():
+        raise WorksheetError(f"{mark}: say where the force on the line comes from")
+    if not (level or "").strip():
+        raise WorksheetError(f"{mark}: say what load and load level the force is (for example seismic, strength level)")
+    try:
+        r = diaphragm.collector(W, R, [(x["start"], x["length"]) for x in segments])
+    except diaphragm.DiaphragmError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    Ln = footing_line
+    steps = [Ln("force on the line, R", R, "lb", "", f"{level.strip()}; {R_source.strip()}"),
+             Ln("vd = R / W", r["vd"], "plf", "", f"diaphragm shear delivered along the line, W = {W:g} ft"),
+             Ln("wall length on the line", f"{r['Lw']:g} ft", "", "", f"{len(r['segments'])} length" + ("s" if len(r["segments"]) != 1 else "")),
+             Ln("vw = R / wall length", r["vw"], "plf", "", "shear taken out by the walls"),
+             Ln("largest collector force", r["Fmax"], "lb", "", f"at {r['x_max']:g} ft; tension or compression as the load reverses")]
+    t = [f"{'x ft':>8}{'force lb':>12}   at"]
+    ends = {round(a, 6): "start of a wall" for a, b in r["segments"]}
+    ends.update({round(a + b, 6): "end of a wall" for a, b in r["segments"]})
+    for x, F in r["points"]:
+        t.append(f"{x:>8.2f}{F:>12,.0f}   " + ("end of the line" if x in (0.0, W) or abs(x - W) < 1e-9 else ends.get(round(x, 6), "")))
+    info = [("Line", (line_name.strip() + "; " if (line_name or "").strip() else "") + f"{W:g} ft long"),
+            ("Force", f"{R:,.0f} lb, {level.strip()} ({R_source.strip()})"),
+            ("Walls", "; ".join(f"{b:g} ft starting at {a:g} ft" for a, b in r["segments"]))]
+    sheet = SimpleSheet(
+        mark, "Collector Force", "Line of Resistance", "Sect. 12.10.2", info, [], [], "Shear Along the Line", steps, [],
+        ["The diaphragm delivers its shear uniformly along the line; the walls on the line take it in proportion to their lengths.",
+         "The collector force at a point is the sum, from one end of the line, of the diaphragm shear delivered less the shear taken out by the walls; "
+         "it is zero at both ends of the line. Positive and negative values are of opposite sense and both reverse with the load.",
+         "The force is at the load level of the force entered."],
+        ["the collector member, its splices and its connections to the walls", "the load combinations with overstrength where Sect. 12.10.2.1 requires them",
+         "the diaphragm forces of Eq. 12.10-1 and 12.10-2 and transfer forces (Sect. 12.10.1.1)", "walls of different stiffness sharing the line other than by length",
+         "diaphragm shear from both sides of the line where the two differ along it"])
+    sheet.blocks.append(dict(title="Collector Force Along the Line", picture=("collector", dict(W=W, segments=r["segments"], points=r["points"], Fmax=r["Fmax"],
+                                                                                              vd=r["vd"], vw=r["vw"]))))
+    sheet.blocks.append(dict(title="Force at Each Change", lines=t))
+    sheet.collector = r
+    return sheet
+
+
 def nailed_connection_sheet(mark, nail_name, D, length, side_t, G_side, G_side_source, main_t, G_main, G_main_source, n, service, loads, combos,
                             end_grain=False, diaphragm=False, toe_nail=False, screw=None):
     """Laterally loaded nailed connection, single shear, wood to wood, 2018 NDS Ch. 11 and 12
