@@ -879,7 +879,7 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
         r = wind.cc_roof(V, exposure, h, enclosure, areas, theta, Kzt, Ke, least_dim=least_dim, roof=roof, overhang=overhang, parapet=parapet)
     except wind.WindError as e:
         raise WorksheetError(f"{mark}: {e}")
-    qh, gc, fig = r["qh"], r["GCpi"], "Figure " + r["figure"]
+    qh, gc, fig = r["qh"], r["GCpi"], ("Figures " if "and" in r["figure"] else "Figure ") + r["figure"]
     hname = "eave height" if theta <= 10 else "mean roof height"
     steps = [L("V", V, "mi/h", "ASCE/SEI 7-22 Sect. 26.5", V_source.strip()),
              L("Kzt", Kzt, "", "Sect. 26.8", Kzt_source.strip()),
@@ -891,7 +891,10 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
              L("GCpi", gc, "", "Table 26.13-1", f"{enclosure} building; plus and minus")]
     if "a" in r:
         steps += [L("a", r["a"], "ft", fig, f"width of the edge zones; least horizontal dimension {least_dim:g} ft")]
-        zone_text = ("Zones 3' and 2': along the high eave, 2a wide, zone 3' for 4a from each end; zone 2' also along each sloping edge, 2a wide. "
+        zone_text = ("Zone 3: within a of the eaves. Zone 2: within a of the ridge and of each hip, on each side. Zone 1: the rest of the roof."
+                     + (" (GCp) is interpolated between Figures 30.3-2F and 30.3-2G by roof angle (Figure 30.3-2G, note 6)." if "and" in r["figure"] else "")
+                     if roof == "hip" else
+                     "Zones 3' and 2': along the high eave, 2a wide, zone 3' for 4a from each end; zone 2' also along each sloping edge, 2a wide. "
                      "Zone 3: at each low eave corner, 2a by 2a. Zone 2: along the low eave, a wide. Zone 1: the rest of the roof." if r["figure"] == "30.3-5A" else
                      "Zones 3 and 2: along the high eave, 2a wide, zone 3 for 4a from each end. Zone 2 also along the other three edges, a wide. "
                      "Zone 1: the rest of the roof." if r["figure"] == "30.3-5B" else
@@ -929,7 +932,7 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
          f"(GCp) from {fig} by effective wind area (Sect. 26.2).",
          f"Net pressure not less than {wind.MIN_CC:g} psf in either direction (Sect. 30.2.2).", zone_text],
         not_checked)
-    zp = dict(kind="flat", edge=r["edge"], corner=r["corner"]) if "edge" in r else dict(kind={"30.3-2D": "corner", "30.3-5A": "mono_a", "30.3-5B": "mono_b"}.get(r["figure"], "ridge"), a=r["a"])
+    zp = dict(kind="flat", edge=r["edge"], corner=r["corner"]) if "edge" in r else dict(kind="hip" if roof == "hip" else {"30.3-2D": "corner", "30.3-5A": "mono_a", "30.3-5B": "mono_b"}.get(r["figure"], "ridge"), a=r["a"])
     sheet.blocks.append(dict(title="Zones", picture=("wind_zones", zp)))
     if parapet:
         lines[0] += f"{'+ (2, 3)':>10}"

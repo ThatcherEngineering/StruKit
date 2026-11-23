@@ -1727,6 +1727,21 @@ def _wind_zones_picture(c, top, d):
         memberart._dim_v(c, y1 - k, y1, x1 + 9, f"0.2h = {d['corner']:.1f} ft", FR, ext_from=x1)
         memberart._dim_v(c, y0, y0 + e, x1 + 9, f"0.6h = {d['edge']:.1f} ft", FR, ext_from=x1)
         note = "roof plan; not to scale"
+    elif kind == "hip":
+        a = 12.0
+        run = H / 2.0                                         # hips drawn at 45 degrees in plan
+        xa, xb, ym = x0 + run, x1 - run, (y0 + y1) / 2
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+        c.line(xa, ym, xb, ym)
+        for (cx, cy, rx) in ((x0, y0, xa), (x0, y1, xa), (x1, y0, xb), (x1, y1, xb)):
+            c.line(cx, cy, rx, ym)
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5); c.setDash(3, 2); c.rect(x0 + a, y0 + a, W - 2 * a, H - 2 * a, fill=0, stroke=1); c.setDash()
+        tag((x0 + x1) / 2, y0 + a / 2, "3"); tag((x0 + x1) / 2, y1 - a / 2, "3"); tag(x0 + a / 2, ym, "3"); tag(x1 - a / 2, ym, "3")
+        tag((xa + xb) / 2 - 16, ym, "2"); tag((x0 + a + xa) / 2 + 4, (y0 + a + ym) / 2 + 4, "2"); tag((x1 - a + xb) / 2 - 4, (y1 - a + ym) / 2 - 4, "2")
+        tag((x0 + x1) / 2, (y0 + a + ym) / 2 - 2, "1"); tag((x0 + x1) / 2, (y1 - a + ym) / 2 + 2, "1"); tag(x0 + a + (run - a) / 2 - 2, ym, "1"); tag(x1 - a - (run - a) / 2 + 2, ym, "1")
+        memberart._dim_h(c, x0, x0 + a, y0 - 9, f"a = {d['a']:.1f} ft", FR, ext_from=y0)
+        memberart._dim_v(c, y1 - a, y1, x1 + 9, f"a = {d['a']:.1f} ft", FR, ext_from=x1)
+        note = "roof plan; not to scale; zone 2 also runs the width a each side of the ridge and of each hip"
     elif kind in ("mono_a", "mono_b"):
         a = 13.0
         A5 = kind == "mono_a"

@@ -532,7 +532,7 @@ FORMS = {
                 F("elevation_source", "Where the elevation comes from", "text", required=False)],
         tables=[]),
     "wind_cc_roof": dict(
-        title="Wind Pressures, Roof Components and Cladding (flat, gable or monoslope roof)", code="ASCE/SEI 7-22", mark="WR",
+        title="Wind Pressures, Roof Components and Cladding (flat, gable, hip or monoslope roof)", code="ASCE/SEI 7-22", mark="WR",
         fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
                 F("V_source", "Where V comes from", "text"),
                 F("exposure", "Exposure category", "select", options=["B", "C", "D"], help="ASCE 7-22 Sect. 26.7"),
@@ -540,7 +540,7 @@ FORMS = {
                 F("enclosure", "Enclosure classification", "select", options=["enclosed", "partially enclosed", "partially open"], help="ASCE 7-22 Sect. 26.12"),
                 F("enclosure_basis", "Basis of the enclosure classification", "text"),
                 F("h", "Mean roof height, h", unit="ft", help="the eave height where the roof angle is 10 degrees or less; 60 ft or less"),
-                F("roof", "Roof", "select", options=["gable or flat", "monoslope"], required=False),
+                F("roof", "Roof", "select", options=["gable or flat", "hip", "monoslope"], required=False),
                 F("theta", "Roof angle", unit="degrees", help="0 for a flat roof; gable roofs up to 45 degrees, monoslope roofs up to 30"),
                 F("least", "Least horizontal dimension of the building", unit="ft", required=False, help="needed for a gable roof over 7 degrees or a monoslope roof over 3"),
                 F("overhang", "Roof overhangs", "select", options=["no", "yes"], required=False),
@@ -1314,12 +1314,13 @@ def build(kind, values, project):
         en, enb, th = r.text("enclosure"), r.text("enclosure_basis"), r.num("theta")
         mono = (r.text("roof", False) or "").startswith("mono")
         ld = r.num("least", th is not None and th > (3 if mono else 7), label="Least horizontal dimension")
+        hipr = r.text("roof", False) == "hip"
         ars = r.nums("areas") if r.text("areas") else []
         kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")
         r.done()
         return ws_more.wind_cc_roof_sheet(mark, V, vs, ex, eb, h, th, en, enb, ars, kzt, ks_, r.num("elevation", False),
                                           r.text("elevation_source", False) or "", least_dim=ld,
-                                          roof="monoslope" if mono else "gable", overhang=bool(yes(r.text("overhang", False))),
+                                          roof="monoslope" if mono else "hip" if hipr else "gable", overhang=bool(yes(r.text("overhang", False))),
                                           parapet=bool(yes(r.text("parapet", False)))), "simple", {}
     if kind == "wind_cc_parapet":
         V, vs, ex, eb = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis")

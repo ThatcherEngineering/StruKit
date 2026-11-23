@@ -86,7 +86,7 @@ Components and cladding, buildings with h of 60 ft or less (Chapter 30, Part 1),
   Figure 30.3-2A note 5: with a parapet 3 ft or higher around the perimeter of a roof at 7
                  degrees or less, the negative zone 3 values equal those of zone 2, and the
                  positive values in zones 2 and 3 equal those of wall zones 4 and 5.
-Not covered: roof components and cladding on hip and other roof shapes, on gable roofs over 45
+Not covered: roof components and cladding on other roof shapes, on gable and hip roofs over 45
 degrees and monoslope roofs over 30 degrees, the parapet provision of Figure 30.3-2A note 5, roof overhangs
 (Sect. 30.7); Parts 2 to 5 of Chapter 30;
 hip, mansard and arched roofs; open buildings; flexible buildings;
@@ -492,7 +492,17 @@ ROOF_GCP_MONO = {
     "30.3-5B": dict(lo=10, hi=30, zones=("1", "2", "3"),
                     curves={"positive": (10, 0.4, 100, 0.3), "1": (10, -1.3, 100, -1.1), "2": (10, -1.6, 100, -1.2), "3": (10, -2.9, 100, -2.0)}),
 }
-ROOF_GCP_ALL = dict(ROOF_GCP, **ROOF_GCP_MONO)
+# Hip roofs, Figures 30.3-2E (over 7 to 20 degrees), 2F (over 20 to 27) and 2G (45 degrees), pdf pp. 384-386, read from
+# 330 dpi page images, break points measured on the log scale. Figure 30.3-2G note 6: between 27 and 45 degrees
+# (GCp) = [GCp(2G) - GCp(2F)] (theta - 27) / (45 - 27) + GCp(2F), zone by zone. Zones: 3 within a of the eaves; 2 within a
+# of the ridge and of each hip, on each side; 1 the rest. At 7 degrees or less Figure 30.3-2A is used.
+ROOF_GCP_HIP = {
+    "30.3-2E": dict(lo=7, hi=20, zones=("1", "2", "3"), curves={"positive": (10, 0.7, 100, 0.3), "1": (10, -1.8, 200, -0.8), "2": (10, -2.4, 200, -1.3), "3": (10, -2.6, 200, -1.4)}),
+    "30.3-2F": dict(lo=20, hi=27, zones=("1", "2", "3"), curves={"positive": (10, 0.7, 100, 0.3), "1": (10, -1.4, 100, -0.8), "2": (10, -2.0, 100, -1.0), "3": (10, -2.0, 100, -1.0)}),
+    "30.3-2G": dict(lo=45, hi=45, zones=("1", "2", "3"), curves={"positive": (10, 0.7, 100, 0.3), "1": (10, -1.5, 100, -0.7), "2": (10, -1.8, 100, -0.8), "3": (10, -2.4, 100, -1.0)}),
+    "30.3-2F and 30.3-2G": dict(lo=27, hi=45, zones=("1", "2", "3"), curves=None),
+}
+ROOF_GCP_ALL = dict(ROOF_GCP, **ROOF_GCP_MONO, **ROOF_GCP_HIP)
 
 
 def cc_roof_figure(theta, roof="gable"):
@@ -502,7 +512,9 @@ def cc_roof_figure(theta, roof="gable"):
             raise WindError("wind: roof components and cladding are built for monoslope roofs up to 30 degrees")
         return "30.3-2A" if theta <= 3 else "30.3-5A" if theta <= 10 else "30.3-5B"
     if theta is None or theta < 0 or theta > 45:
-        raise WindError("wind: roof components and cladding are built for flat roofs and gable roofs up to 45 degrees")
+        raise WindError("wind: roof components and cladding are built for flat roofs and gable and hip roofs up to 45 degrees")
+    if roof == "hip":
+        return "30.3-2A" if theta <= 7 else "30.3-2E" if theta <= 20 else "30.3-2F" if theta <= 27 else "30.3-2G" if theta >= 45 else "30.3-2F and 30.3-2G"
     for name, f in ROOF_GCP.items():
         if theta <= f["hi"]:
             return name
@@ -512,7 +524,14 @@ def cc_roof_gcp(area, zone, theta=0.0, roof="gable"):
     """(GCp) for a flat, gable or monoslope roof, Figures 30.3-2A to 2D, 5A and 5B."""
     if area is None or area <= 0:
         raise WindError("wind: the effective wind area must be positive")
-    curves = ROOF_GCP_ALL[cc_roof_figure(theta, roof)]["curves"]
+    fig = cc_roof_figure(theta, roof)
+    if fig == "30.3-2F and 30.3-2G":
+        f_, g_ = ROOF_GCP_HIP["30.3-2F"]["curves"], ROOF_GCP_HIP["30.3-2G"]["curves"]
+        if zone not in f_:
+            raise WindError(f"wind: zone {zone} is not a zone of a hip roof at {theta:g} degrees")
+        vf, vg = _log_line(area, *f_[zone]), _log_line(area, *g_[zone])
+        return (vg - vf) * (theta - 27.0) / 18.0 + vf
+    curves = ROOF_GCP_ALL[fig]["curves"]
     if zone not in curves:
         raise WindError(f"wind: zone {zone} is not a zone of a {roof} roof at {theta:g} degrees")
     return _log_line(area, *curves[zone])

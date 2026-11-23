@@ -435,3 +435,27 @@ def test_mwfrs_hip_roof_by_hand(tmp_path):
     calcsheet._simple_pdf(sheet, str(tmp_path / "h.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     with pytest.raises(calc.Missing):
         calc.build("wind_mwfrs", dict(v, theta_hip=""), dict(job="2026-000", name="Test", method="ASD"))
+
+
+def test_cc_roof_hip(tmp_path):
+    """Figures 30.3-2E, 2F, 2G end values as read, and note 6 by hand at 36 degrees (halfway), 10 ft2: zone 3 (-2.0 - 2.4)/2 = -2.2;
+    zone 1 (-1.4 - 1.5)/2 = -1.45; at 100 ft2 zone 2 (-1.0 - 0.8)/2 = -0.9. 2E zone 3 at 50 ft2: -2.6 + 1.2 log(5)/log(20) = -2.6 + 1.2(0.5372) = -1.955."""
+    g, F = wind.cc_roof_gcp, wind.cc_roof_figure
+    assert [F(t, "hip") for t in (5, 7, 15, 20, 24, 27, 30, 45)] == ["30.3-2A"] * 2 + ["30.3-2E"] * 2 + ["30.3-2F"] * 2 + ["30.3-2F and 30.3-2G", "30.3-2G"]
+    ends = {15: {"positive": (0.7, 100, 0.3), "1": (-1.8, 200, -0.8), "2": (-2.4, 200, -1.3), "3": (-2.6, 200, -1.4)},
+            25: {"positive": (0.7, 100, 0.3), "1": (-1.4, 100, -0.8), "2": (-2.0, 100, -1.0), "3": (-2.0, 100, -1.0)},
+            45: {"positive": (0.7, 100, 0.3), "1": (-1.5, 100, -0.7), "2": (-1.8, 100, -0.8), "3": (-2.4, 100, -1.0)}}
+    for th, zs in ends.items():
+        for z, (v10, A2, v2) in zs.items():
+            assert g(10, z, th, "hip") == v10 and g(2, z, th, "hip") == v10 and g(A2, z, th, "hip") == pytest.approx(v2) and g(1000, z, th, "hip") == pytest.approx(v2)
+    assert g(10, "3", 36, "hip") == pytest.approx(-2.2) and g(10, "1", 36, "hip") == pytest.approx(-1.45) and g(100, "2", 36, "hip") == pytest.approx(-0.9)
+    assert g(50, "3", 15, "hip") == pytest.approx(-1.955, abs=0.001) and g(10, "3", 27.0001, "hip") == pytest.approx(-2.0, abs=0.001)
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="WR6", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
+             enclosure_basis="Sect. 26.12", h="20", theta="30", roof="hip", least="40", areas="10, 50, 100", overhang="yes", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, _, _ = calc.build("wind_cc_roof", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert sheet.wind["figure"] == "30.3-2F and 30.3-2G" and sheet.blocks[0]["picture"][1]["kind"] == "hip" and any("note 6" in t for t in sheet.assumptions)
+    calcsheet._simple_pdf(sheet, str(tmp_path / "h.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    low, _, _ = calc.build("wind_cc_roof", dict(v, theta="5", overhang="no"), dict(job="2026-000", name="Test", method="ASD"))
+    assert low.wind["figure"] == "30.3-2A"
