@@ -118,7 +118,7 @@ def wood_section(c, cx, cy, box_w, box_h, b, d, plies=1, kind="sawn", lam_in=1.5
         c.setLineWidth(0.7); c.setStrokeColorRGB(*LVL_LINE); c.setFillColorRGB(*LVL_FILL)
         c.rect(x0, y0, B, D, fill=1, stroke=1)
         c.setStrokeColorRGB(*LVL_GRAIN); c.setLineWidth(0.2)
-        n = max(int(B / 0.9), 3 * plies)
+        n = max(int(B / 2.0), 3 * plies)
         for i in range(1, n):
             c.line(x0 + B * i / n, y0, x0 + B * i / n, y0 + D)
         c.setStrokeColorRGB(*LVL_LINE); c.setLineWidth(0.55)

@@ -996,11 +996,11 @@ def _picture(c, top, pic):
         _sketch_title(c, 400, top, "ELEVATION")
         wpt = max(min(d["d"] * 1.8, 16), 7)
         c.saveState(); c.translate(430 + wpt / 2, top - 96); c.rotate(90)
-        memberart.wood_elevation(c, 0, 0, 78, wpt, 1)
+        memberart.wood_elevation(c, 0, 0, 78, wpt, 1, kind=d.get("kind", "sawn"))
         c.restoreState()
         memberart._dim_v(c, top - 96, top - 18, 430 + wpt / 2 + 8, f"{d['height']:g} ft", FR, ext_from=430 + wpt / 2)
         _sketch_title(c, 505, top, "SECTION")
-        s_ = memberart.wood_section(c, 528, top - 50, 46, 46, d["b"], d["d"], 1)
+        s_ = memberart.wood_section(c, 528, top - 50, 46, 46, d["b"], d["d"], 1, kind=d.get("kind", "sawn"))
         memberart._dim_h(c, 528 - d["b"] * s_ / 2, 528 + d["b"] * s_ / 2, top - 50 - d["d"] * s_ / 2 - 8, f"{d['b']:g}", FR,
                          ext_from=top - 50 - d["d"] * s_ / 2)
         memberart._dim_v(c, top - 50 - d["d"] * s_ / 2, top - 50 + d["d"] * s_ / 2, 528 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,

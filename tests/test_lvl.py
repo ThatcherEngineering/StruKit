@@ -78,3 +78,51 @@ def test_limits():
         ws_wood.lvl_beam("B", "9.9E 9999", 1.75, 14, 1, 16, [dict(case="D", kind="uniform", w=1)], _combos(), [], 0, 3, False)
     with pytest.raises(Exception, match="7 in"):
         ws_wood.lvl_beam("B", "2.1E 2800", 3.5, 14, 3, 16, [dict(case="D", kind="uniform", w=1)], _combos(), [], 0, 3, False) if False else scl.volume_factor(14, 7.5)
+
+
+# ---- columns ----------------------------------------------------------------------------
+# Independent reference: Boise Cascade LVL-W2000, "Versa-Lam 1.8E 2650 Column Tables"
+# (2018 NDS, Ke = 1.0, eccentricity of 1/6 of the thickness or width, worst case). The
+# guide's Emin uses a 1.05 factor where NDS Eq. D-4 has 1.03 (design property note 8), so
+# the table is reproduced here with the guide's Emin; StruKit itself uses Eq. D-4 as
+# ESR-1040 note 6 says, which gives about 1 percent less.
+from strukit import wood
+
+
+def _table_load(b, d, L_ft, CD, emin):
+    d1, d2, le = max(b, d), min(b, d), L_ft * 12.0
+    v = scl.values("1.8E 2650")
+    Fcs = v["Fc"] * CD
+    CP, st = wood.column_stability(Fcs, emin, le, d1, le, d2, c=0.9)
+    FcE1, FcE2 = 0.822 * emin / (le / d1) ** 2, 0.822 * emin / (le / d2) ** 2
+    Fb = v["Fb_plank"] * CD
+    lo, hi = 0.0, Fcs * CP * d1 * d2
+    for _ in range(60):
+        P = (lo + hi) / 2
+        r = scl.eccentric_column(P / (d1 * d2), Fcs * CP, d1, d2, 0.0, d2 / 6, Fb, Fb * scl.plank_volume_factor(d2), FcE1, FcE2)[0]
+        lo, hi = (P, hi) if r < 1 else (lo, P)
+    return lo
+
+
+def test_column_table_of_the_boise_design_guide():
+    guide_emin = 1.7e6 * (1 - 1.645 * 0.10) * 1.05 / 1.66
+    for b, d, L, CD, tab in ((3.5, 3.5, 8, 1.0, 6930), (3.5, 3.5, 4, 1.0, 14700), (3.5, 5.25, 10, 1.15, 7715),
+                             (5.25, 5.25, 12, 1.0, 15590), (7, 7, 20, 1.25, 20910), (3.5, 7, 6, 1.0, 20195), (5.25, 7, 16, 1.0, 13525)):
+        assert _table_load(b, d, L, CD, guide_emin) == pytest.approx(tab, rel=0.004)
+        assert _table_load(b, d, L, CD, scl.emin(1.7e6)) < tab            # StruKit's Emin is the lower one
+
+
+def test_lvl_column_sheet():
+    s = ws_wood.lvl_post("LC1", "1.8E 2650", 3.5, 3.5, 8, [dict(case="D", P=2000.0), dict(case="L", P=4500.0)], _combos(), 1.0, 1.0,
+                         "pinned top and bottom", e2_in=3.5 / 6)
+    r = {x.check: x for x in s.rows}
+    # 6,500 lb is under the guide's 6,930 lb and over the 6,853 lb StruKit allows? no: 6,500 < 6,853, so it passes
+    assert r["compression with eccentric load"].demand < 1.0 and r["compression"].demand == pytest.approx(6500 / 12.25)
+    # hand: Emin = 880,949; le/d = 27.43; FcE = 962.5; Fc* = 3,000; CP by Eq. 3.7-1 with c = 0.9
+    FcE = 0.822 * scl.emin(1.7e6) / (96 / 3.5) ** 2
+    a = FcE / 3000
+    CP = (1 + a) / 1.8 - ((1 + a) ** 2 / 3.24 - a / 0.9) ** 0.5
+    assert r["compression"].capacity == pytest.approx(3000 * CP, rel=1e-6)
+    s2 = ws_wood.lvl_post("LC1", "1.8E 2650", 3.5, 3.5, 8, [dict(case="D", P=2000.0), dict(case="L", P=5000.0)], _combos(), 1.0, 1.0,
+                          "pinned top and bottom", e2_in=3.5 / 6)
+    assert {x.check: x for x in s2.rows}["compression with eccentric load"].demand > 1.0

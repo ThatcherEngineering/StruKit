@@ -529,3 +529,135 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}", kind="lvl")), governing=gb["cb"].name)
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
     return sheet
+
+
+def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_source, lu1_ft=None, lu2_ft=None, e1_in=0.0, e2_in=0.0,
+             unit_weight_pcf=None, self_weight_case="D"):
+    """One-piece Versa-Lam LVL column, ICC-ES ESR-1040 values, 2018 NDS 3.6, 3.7 and
+    15.4.1(b), ASD, dry use. b_in x d_in: the section. Ke1, lu1 and e1 go with the larger
+    dimension d1; Ke2, lu2 and e2 with the smaller dimension d2. e1, e2: eccentricity of
+    the axial load from the centre, in. loads: dict(case, P lb, label)."""
+    from . import scl
+    if not combos:
+        raise WorksheetError(f"{mark}: no ASD load combinations given")
+    if height_ft is None or height_ft <= 0:
+        raise WorksheetError(f"{mark}: the height must be positive")
+    if not (k_source or "").strip():
+        raise WorksheetError(f"{mark}: say where the effective length factors come from")
+    if b_in is None or d_in is None or min(b_in, d_in) < 1.5 or min(b_in, d_in) > 7.0 or max(b_in, d_in) > 48:
+        raise WorksheetError(f"{mark}: the section must be 1.5 to 7 in. thick and not more than 48 in. wide (ESR-1040)")
+    e1, e2 = abs(e1_in or 0.0), abs(e2_in or 0.0)
+    try:
+        ref = scl.values(grade)
+    except scl.SclError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    d1, d2 = max(b_in, d_in), min(b_in, d_in)
+    A = d1 * d2
+    Emin = scl.emin(ref["E_app"])
+    lu1 = (lu1_ft if lu1_ft else height_ft) * 12.0
+    lu2 = (lu2_ft if lu2_ft else height_ft) * 12.0
+    loads = [dict(x) for x in loads]
+    sw = None
+    if unit_weight_pcf:
+        sw = unit_weight_pcf * A / 144.0 * height_ft
+        loads.append(dict(case=self_weight_case, P=sw, label="self-weight"))
+    if not loads:
+        raise WorksheetError(f"{mark}: no loads given")
+    by_case = {}
+    for ld in loads:
+        if not ld.get("case") or ld.get("P") is None:
+            raise WorksheetError(f"{mark}: a load is missing its case or its value")
+        by_case[ld["case"]] = by_case.get(ld["case"], 0.0) + ld["P"]
+    FcE1 = 0.822 * Emin / (Ke1 * lu1 / d1) ** 2
+    FcE2 = 0.822 * Emin / (Ke2 * lu2 / d2) ** 2
+    CV1, CV2 = scl.plank_volume_factor(d1), scl.plank_volume_factor(d2)
+    out = []
+    for cb in combos:
+        present = [c for c, v in cb.factors.items() if v and c in by_case]
+        if not present:
+            continue
+        P = sum(cb.factors[c] * by_case[c] for c in present)
+        try:
+            CD, cd_case, cd_dur = wood.load_duration(present)
+            Fc_star = ref["Fc"] * CD
+            CP, st = wood.column_stability(Fc_star, Emin, Ke1 * lu1, d1, Ke2 * lu2, d2, c=0.9)
+            CL, bst = wood.beam_stability(ref["Fb_plank"] * CD, Emin, lu2, d2, d1)
+        except wood.WoodError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        Fb1 = ref["Fb_plank"] * CD * min(CV1, CL)
+        Fb2 = ref["Fb_plank"] * CD * CV2
+        fc = P / A
+        o = dict(cb=cb, P=P, CD=CD, cd_case=cd_case, cd_dur=cd_dur, Fc_star=Fc_star, CP=CP, st=st, Fc_adj=Fc_star * CP, fc=fc,
+                 Fb1=Fb1, Fb2=Fb2, CL=CL, FbE=bst.get("FbE"), i3=0.0, i4=0.0)
+        if (e1 or e2) and P > 0:
+            o["i3"], o["i4"] = scl.eccentric_column(fc, o["Fc_adj"], d1, d2, e1, e2, Fb1, Fb2, FcE1, FcE2, o["FbE"] if e1 else None)
+            if o["i3"] == float("inf"):
+                raise WorksheetError(f"{mark}: {cb.name}: the axial stress reaches the buckling stress; the column is too slender")
+        o["ratio"] = max(fc / o["Fc_adj"], o["i3"])
+        out.append(o)
+    if not out:
+        raise WorksheetError(f"{mark}: no load combination loads this column")
+    g = max(out, key=lambda o: o["fc"] / o["Fc_adj"])
+    rows = [Row("compression", g["cb"].name, g["fc"], g["Fc_adj"], "psi", "2018 NDS 3.6.3, 3.7.1, Table 8.3.1; ESR-1040 Table 1",
+                f"P = {g['P']:,.0f} lb; CD = {g['CD']:g} ({g['cd_case']}, {g['cd_dur']}); CP = {g['CP']:.3f}; le/d = {g['st']['ratio']:.2f}")]
+    ge = None
+    if e1 or e2:
+        ge = max(out, key=lambda o: o["i3"])
+        rows.append(Row("compression with eccentric load", ge["cb"].name, ge["i3"], 1.0, "", "2018 NDS Eq. 15.4-3",
+                        f"fc = {ge['fc']:.1f} psi; e1 = {e1:g} in, e2 = {e2:g} in; CD = {ge['CD']:g} ({ge['cd_case']}, {ge['cd_dur']})"))
+        g4 = max(out, key=lambda o: o["i4"])
+        if e1 and g4["FbE"]:
+            rows.append(Row("stability under eccentric load", g4["cb"].name, g4["i4"], 1.0, "", "2018 NDS Eq. 15.4-4",
+                            f"fc / FcE2 + [fc (6 e1 / d1) / FbE]^2; FcE2 = {FcE2:,.0f} psi, FbE = {g4['FbE']:,.0f} psi"))
+    L = footing_line
+    steps = [L("d1 x d2", d1, "in", "member size", f"{d1:g} in x {d2:g} in"), L("A", A, "in2", "geometry"),
+             L("Fc", ref["Fc"], "psi", scl.SOURCE),
+             L("Emin = E [1 - 1.645 (0.10)] (1.03) / 1.66", Emin, "psi", "ESR-1040 Table 1 note 6; NDS Eq. D-4",
+               f"apparent E = {ref['E_app']:,.0f} psi"),
+             L("CD", g["CD"], "", "NDS Table 2.3.2", f"{g['cd_case']}, {g['cd_dur']}"),
+             L("Fc* = Fc CD", g["Fc_star"], "psi", "NDS 3.7.1.5"),
+             L("le1 / d1", Ke1 * lu1 / d1, "", "NDS 3.7.1.3", f"Ke = {Ke1:g}, l = {lu1:g} in, d1 = {d1:g} in"),
+             L("le2 / d2", Ke2 * lu2 / d2, "", "NDS 3.7.1.3", f"Ke = {Ke2:g}, l = {lu2:g} in, d2 = {d2:g} in"),
+             L("FcE = 0.822 Emin / (le/d)^2", g["st"]["FcE"], "psi", "NDS 3.7.1.5", f"le/d = {g['st']['ratio']:.2f}"),
+             L("CP", g["CP"], "", "NDS Eq. 3.7-1", "c = 0.9 for structural composite lumber"),
+             L("Fc' = Fc* CP", g["Fc_adj"], "psi", "NDS Table 8.3.1"),
+             L("fc = P / A", g["fc"], "psi", "NDS 3.6.3", f"P = {g['P']:,.0f} lb, {g['cb'].name}")]
+    if ge:
+        steps += [L("Fb", ref["Fb_plank"], "psi", scl.SOURCE, f"plank orientation; {ge['cb'].name}"),
+                  L("fc", ge["fc"], "psi", "NDS 3.6.3", f"P = {ge['P']:,.0f} lb"),
+                  L("Fc'", ge["Fc_adj"], "psi", "NDS Table 8.3.1", f"CD = {ge['CD']:g}, CP = {ge['CP']:.3f}"),
+                  L("FcE1 = 0.822 Emin / (le1/d1)^2", FcE1, "psi", "NDS 15.4.1"),
+                  L("FcE2 = 0.822 Emin / (le2/d2)^2", FcE2, "psi", "NDS 15.4.1")]
+        if e1:
+            steps += [L("Fb1' = Fb CD x (lesser of CV and CL)", ge["Fb1"], "psi", "NDS Table 8.3.1, 8.3.6.1",
+                        f"CV = {CV1:.3f} (ESR-1040 Table 1 note 4), CL = {ge['CL']:.3f}"),
+                      L("fc (6 e1 / d1)", ge["fc"] * 6 * e1 / d1, "psi", "NDS 15.4.1", f"e1 = {e1:g} in")]
+        if e2:
+            steps += [L("Fb2' = Fb CD CV", ge["Fb2"], "psi", "NDS Table 8.3.1", f"CV = {CV2:.3f} (ESR-1040 Table 1 note 4)"),
+                      L("fc (6 e2 / d2)", ge["fc"] * 6 * e2 / d2, "psi", "NDS 15.4.1", f"e2 = {e2:g} in")]
+        steps.append(L("Eq. 15.4-3", ge["i3"], "", "NDS Eq. 15.4-3", "not more than 1.0"))
+    info = [("Member", f"{d2:g} in x {d1:g} in Versa-Lam LVL {grade}, one piece"),
+            ("Height", f"{height_ft:g} ft; unbraced {lu1 / 12:g} ft for the {d1:g} in dimension and {lu2 / 12:g} ft for the {d2:g} in dimension"),
+            ("Ends", f"Ke = {Ke1:g} and {Ke2:g} ({k_source.strip()})"),
+            ("Load Position", f"eccentricity {e1:g} in parallel to the {d1:g} in face and {e2:g} in parallel to the {d2:g} in face"
+             if (e1 or e2) else "along the centre of the column"),
+            ("Conditions", "dry use, moisture content under 16 percent")]
+    load_lines = [f"{ld['case']:<3} axial {ld['P']:>10,.0f} lb   {ld.get('label', '')}" for ld in loads]
+    assumptions = ["Allowable stress design, 2018 NDS Chapter 8, with reference design values from ICC-ES ESR-1040. "
+                   "Temperature factor Ct = 1.0 (NDS 2.3.3, sustained temperature to 100 F)."]
+    if e1 or e2:
+        assumptions.append("Bending from the eccentric load uses the plank-orientation Fb about either axis, with the volume factor "
+                           "of ESR-1040 Table 1 note 4.")
+    else:
+        assumptions.append("The axial load acts along the centre of the column. No bending is considered.")
+    assumptions.append(f"Self-weight {sw:,.0f} lb (unit weight {unit_weight_pcf:g} pcf) added to load case {self_weight_case}."
+                       if sw is not None else "Self-weight is not added separately.")
+    sheet = SimpleSheet(
+        mark, "LVL Column", "Member", "ASD", info, load_lines, [(c.name, c.source) for c in combos],
+        f"Governing Calculation ({g['cb'].name})", steps, rows, assumptions,
+        ["bending from lateral load (NDS 15.4.1(a))", "bearing on the end grain and on the supporting member (NDS 3.10)",
+         "connections at the top and base"],
+        picture=("wood_post", dict(b=b_in, d=d_in, height=height_ft, size=f"{d2:g}x{d1:g}", kind="lvl")), governing=g["cb"].name)
+    sheet.base = {o["cb"].name: o["P"] for o in out}
+    sheet.governing = max(out, key=lambda o: o["ratio"])["cb"].name
+    return sheet
