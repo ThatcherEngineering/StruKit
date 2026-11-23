@@ -1473,7 +1473,7 @@ def nail_withdrawal_sheet(mark, nail_name, D, length, head, side_t, G_side, G_si
 
 
 def lag_withdrawal_sheet(mark, D, length, n, side_t, main_t, G_main, G_main_source, service, loads, combos, washer=0.0, end_grain=False,
-                         edge=None, end=None, spacing=None, steel=None, steel_source=""):
+                         edge=None, end=None, spacing=None, steel=None, steel_source="", steel_side=False):
     """Lag screws loaded in withdrawal, 2018 NDS 12.2.1 (see dowel.py). side_t: thickness of
     the part the screw passes through (wood or steel). loads: [dict(case, P lb)], P pulling
     the screw out; combos: ASD combinations. service: "dry" or "wet in service". steel:
@@ -1544,7 +1544,7 @@ def lag_withdrawal_sheet(mark, D, length, n, side_t, main_t, G_main, G_main_sour
     if len(given) < 3:
         not_checked.append("edge distance, end distance and spacing where not entered (NDS Table 12.5.1E)")
     info = [("Fastener", f"{int(n)} - {D:g} in. diameter x {length:g} in. long lag screws" + (f", {washer:g} in. washer" if washer else "")),
-            ("Side Member", f"{side_t:g} in. thick"),
+            ("Side Plate" if steel_side else "Side Member", f"{side_t:g} in. thick" + (", steel" if steel_side else "")),
             ("Main Member", f"{main_t:g} in. thick, G = {G_main:g} ({G_main_source.strip()})"),
             ("Conditions", service + (" service" if service == "dry" else "") + ("; screws in the end grain of the main member" if end_grain else ""))]
     load_lines = [f"{ld['case']}: {ld['P']:,.0f} lb" + (f"  ({ld['label']})" if ld.get("label") else "") for ld in loads]
@@ -1555,6 +1555,9 @@ def lag_withdrawal_sheet(mark, D, length, n, side_t, main_t, G_main, G_main_sour
          "Sustained temperature not over 100 degrees F (Ct = 1.0, NDS Table 11.3.4).",
          "All lag screws share the load equally."],
         not_checked)
+    if side_t > 0:
+        sheet.blocks.append(dict(title="Section", picture=("lag", dict(D=D, L=length, side_t=side_t, main_t=main_t, T=th["T"], E=th["E"], pt=pt, washer=washer,
+                                                                       steel_side=steel_side, label=f"{D:g} x {length:g} in. lag screw"))))
     sheet.connection = dict(W=W, pt=pt, T=th["T"], E=th["E"], capacity=worst["cap"], demand=worst["P"], CD=worst["CD"], CM=CM)
     return sheet
 
