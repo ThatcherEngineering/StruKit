@@ -10,8 +10,22 @@ Read from the standard (page images; numbers confirmed against the image):
   Sect. 26.9, Table 26.9-1  Ke = e^(-0.0000362 ze), ze = ground elevation above sea level,
                  ft; Ke = 1.0 is permitted in all cases.
   Sect. 26.8     Kzt is entered by the engineer (1.0 where 26.8.1 does not apply).
-Not covered here: pressure coefficients and design pressures (Chapters 27 to 30), Kd, G,
-internal pressure.
+
+Main wind force resisting system, directional procedure (Chapter 27), enclosed, partially
+enclosed and partially open rigid buildings with a gable or flat roof:
+  Eq. 27.3-1     p = q Kd G Cp - qi Kd (GCpi); q = qz on the windward wall, qh on the leeward
+                 wall, side walls and roof; qi = qh (permitted in all cases: qh is not less
+                 than qz at an opening).
+  Table 26.6-1   Kd = 0.85, buildings, main wind force resisting system.
+  Sect. 26.11.1  G = 0.85 for a rigid building.
+  Table 26.13-1  GCpi; both signs are considered.
+  Figure 27.3-1  Cp for walls and roofs; interpolation between values of the same sign, with
+                 0.0 taken where the figure gives no value of that sign (notes 2 and 3). The
+                 area reduction of the -1.3 value (note b) is not taken.
+  Sect. 27.1.5   minimum: 16 psf on the wall area and 8 psf on the roof area projected on a
+                 vertical plane normal to the wind, as a separate case.
+Not covered: hip, monoslope, mansard and arched roofs; open buildings; flexible buildings;
+parapets and roof overhangs; the torsional cases of Figure 27.3-8; Chapters 28 and 30.
 """
 import math
 
@@ -56,8 +70,10 @@ def velocity_pressure(V, exposure, z, Kzt=1.0, Ke=1.0, chapter_28=False):
 
 # ---- Main wind force resisting system, directional procedure: data read so far -----------
 # ASCE/SEI 7-22 Figure 27.3-1 (pdf pp. 344-345) and Table 26.13-1 (pdf p. 341), read from
-# the page images. Design pressures are not built yet: Eq. 27.3-1 and the directionality
-# factor Kd (Table 26.6-1) still have to be read from the page before they are used.
+# the page images.
+KD_MWFRS = 0.85                                          # Table 26.6-1, buildings, main wind force resisting system
+G_RIGID = 0.85                                           # Sect. 26.11.1
+MIN_WALL, MIN_ROOF = 16.0, 8.0                           # Sect. 27.1.5, psf
 GCPI = {"enclosed": 0.18, "partially enclosed": 0.55, "partially open": 0.18, "open": 0.0}      # Table 26.13-1, plus and minus
 WALL_CP_WINDWARD = 0.8                                   # with qz
 WALL_CP_SIDE = -0.7                                      # with qh
@@ -91,3 +107,122 @@ def wall_cp_leeward(L_over_B):
     for (a, ca), (b, cb) in zip(pts[:-1], pts[1:]):
         if L_over_B <= b:
             return ca + (cb - ca) * (L_over_B - a) / (b - a)
+
+
+def _lin(x, pts):
+    """pts: sorted (x, y or None). None at either end of the interval gives None."""
+    if x <= pts[0][0]:
+        return pts[0][1]
+    if x >= pts[-1][0]:
+        return pts[-1][1]
+    for (a, ya), (b, yb) in zip(pts[:-1], pts[1:]):
+        if x <= b:
+            if x == a:
+                return ya
+            if x == b:
+                return yb
+            if ya is None or yb is None:
+                return None
+            return ya + (yb - ya) * (x - a) / (b - a)
+
+
+def _across(hl, by_ratio):
+    """Interpolate between the h/L rows; where one row has no value of that sign, 0.0 is used (note 3)."""
+    keys = sorted(by_ratio)
+    if hl <= keys[0]:
+        return by_ratio[keys[0]]
+    if hl >= keys[-1]:
+        return by_ratio[keys[-1]]
+    for a, b in zip(keys[:-1], keys[1:]):
+        if hl <= b:
+            ya, yb = by_ratio[a], by_ratio[b]
+            if ya is None and yb is None:
+                return None
+            ya, yb = ya or 0.0, yb or 0.0
+            return ya + (yb - ya) * (hl - a) / (b - a)
+
+
+def roof_cp_windward(theta, h_over_L):
+    """Figure 27.3-1, windward roof, wind normal to the ridge, theta 10 degrees and over.
+    Returns (first value, second value); None where the figure gives none."""
+    if theta < 10:
+        raise WindError("wind: under 10 degrees the roof is taken by distance from the windward edge")
+    if theta > 60:
+        return None, (0.8 if theta > 80 else 0.01 * theta)
+    out = []
+    for i in (0, 1):
+        rows = {r: _lin(theta, [(t, v[i]) for t, v in sorted(ROOF_WINDWARD[r].items())]) for r in ROOF_WINDWARD}
+        out.append(_across(h_over_L, rows))
+    return tuple(out)
+
+
+def roof_cp_leeward(theta, h_over_L):
+    return _across(h_over_L, {r: _lin(theta, sorted(ROOF_LEEWARD[r].items())) for r in ROOF_LEEWARD})
+
+
+def roof_cp_parallel(h_over_L):
+    """Figure 27.3-1, wind parallel to the ridge (all theta) or normal to it with theta under
+    10 degrees: [(zone, from as a multiple of h, to (None = the leeward edge), Cp)], each zone
+    also with -0.18."""
+    lo = {(0.0, 0.5): -0.9, (0.5, 1.0): -0.9, (1.0, 2.0): -0.5, (2.0, None): -0.3}
+    hi = {(0.0, 0.5): -1.3, (0.5, 1.0): -0.7, (1.0, 2.0): -0.7, (2.0, None): -0.7}
+    names = {(0.0, 0.5): "0 to h/2", (0.5, 1.0): "h/2 to h", (1.0, 2.0): "h to 2h", (2.0, None): "over 2h"}
+    return [(names[k], k[0], k[1], _across(h_over_L, {0.5: lo[k], 1.0: hi[k]})) for k in lo]
+
+
+class Surface:
+    def __init__(self, name, q, q_name, Cp, qi, GCpi, zone=None):
+        self.name, self.q, self.q_name, self.Cp, self.zone = name, q, q_name, Cp, zone
+        self.external = q * KD_MWFRS * G_RIGID * Cp
+        self.internal = qi * KD_MWFRS * GCpi
+        self.p_pos_internal = self.external - self.internal      # with +GCpi
+        self.p_neg_internal = self.external + self.internal      # with -GCpi
+
+
+def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, Ke=1.0):
+    """Design pressures (psf, strength level, positive toward the surface) on the main wind
+    force resisting system of a rigid gable or flat roofed building for one wind direction.
+    B: plan dimension normal to the wind; L: parallel to the wind; h: mean roof height (the
+    eave height where theta is 10 degrees or less); eave: eave height; direction: "normal"
+    or "parallel" to the ridge."""
+    if enclosure not in GCPI or enclosure == "open":
+        raise WindError("wind: the enclosure is enclosed, partially enclosed or partially open (open buildings are not covered)")
+    if direction not in ("normal", "parallel"):
+        raise WindError("wind: the wind direction is normal or parallel to the ridge")
+    for nm, v in (("the mean roof height", h), ("the eave height", eave), ("B", B), ("L", L)):
+        if v is None or v <= 0:
+            raise WindError(f"wind: {nm} must be positive")
+    if theta is None or theta < 0 or theta >= 90:
+        raise WindError("wind: the roof angle is from 0 to under 90 degrees")
+    if eave > h + 1e-9 and theta > 10:
+        raise WindError("wind: the eave height is above the mean roof height")
+    gc = GCPI[enclosure]
+    qh, kh = velocity_pressure(V, exposure, h, Kzt, Ke)
+    hl, lb = h / L, L / B
+    zs = [z for z in HEIGHTS if z < eave - 1e-9] + [eave]
+    windward = []
+    for z in zs:
+        qz, k = velocity_pressure(V, exposure, z, Kzt, Ke)
+        s = Surface(f"windward wall at {z:g} ft", qz, "qz", WALL_CP_WINDWARD, qh, gc)
+        s.z, s.Kz = z, k
+        windward.append(s)
+    cl = wall_cp_leeward(lb)
+    leeward = Surface("leeward wall", qh, "qh", cl, qh, gc)
+    side = Surface("side walls", qh, "qh", WALL_CP_SIDE, qh, gc)
+    roof = []
+    if direction == "normal" and theta >= 10:
+        a, b = roof_cp_windward(theta, hl)
+        for v in (a, b):
+            if v is not None:
+                roof.append(Surface("windward roof", qh, "qh", v, qh, gc))
+        roof.append(Surface("leeward roof", qh, "qh", roof_cp_leeward(theta, hl), qh, gc))
+    else:
+        for nm, x1, x2, cp in roof_cp_parallel(hl):
+            if x1 * h >= L - 1e-9:
+                continue
+            to = L if x2 is None or x2 * h > L else x2 * h
+            roof.append(Surface("roof", qh, "qh", cp, qh, gc, zone=(nm, x1 * h, to)))
+        roof.append(Surface("roof, all zones", qh, "qh", ROOF_PARALLEL_OTHER, qh, gc))
+    walls_together = [(s.z, s.external - leeward.external) for s in windward]
+    return dict(qh=qh, Kh=kh, h_over_L=hl, L_over_B=lb, GCpi=gc, windward=windward, leeward=leeward, side=side, roof=roof,
+                walls_together=walls_together, direction=direction, theta=theta)

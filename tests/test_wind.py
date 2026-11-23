@@ -49,3 +49,63 @@ def test_figure_27_3_1_data_as_read():
     assert wind.ROOF_WINDWARD[0.5][20] == (-0.4, 0.0) and wind.ROOF_WINDWARD[1.0][10] == (-1.3, -0.18) and wind.ROOF_WINDWARD[0.25][35] == (0.0, 0.4)
     assert wind.ROOF_LEEWARD[0.25][10] == -0.3 and wind.ROOF_LEEWARD[1.0][15] == -0.6 and wind.GCPI["partially enclosed"] == 0.55
     assert wind.ROOF_PARALLEL[0.5][2] == ("h to 2h", -0.5)
+
+
+def test_roof_cp_interpolation_by_hand():
+    # 22.5 degrees, h/L 0.375: rows 0.25 -> (-0.25, 0.25), 0.5 -> (-0.35, 0.10); halfway between
+    a, b = wind.roof_cp_windward(22.5, 0.375)
+    assert a == pytest.approx(-0.30) and b == pytest.approx(0.175)
+    # no value of that sign in the figure: none, and 0.0 is used when interpolating to a row that has one (note 3)
+    assert wind.roof_cp_windward(40, 0.25) == (None, pytest.approx(0.4))
+    assert wind.roof_cp_windward(40, 0.4)[0] == pytest.approx(-0.06)
+    assert wind.roof_cp_windward(70, 0.3) == (None, pytest.approx(0.7)) and wind.roof_cp_windward(85, 0.3) == (None, 0.8)
+    assert wind.roof_cp_windward(10, 2.0) == (-1.3, -0.18) and wind.roof_cp_windward(10, 0.1) == (-0.7, -0.18)
+    assert wind.roof_cp_leeward(12.5, 0.75) == pytest.approx(-0.575) and wind.roof_cp_leeward(30, 0.3) == -0.6
+    z = wind.roof_cp_parallel(0.75)
+    assert [round(v[3], 3) for v in z] == [-1.1, -0.8, -0.6, -0.5]
+    assert [v[3] for v in wind.roof_cp_parallel(0.2)] == [-0.9, -0.9, -0.5, -0.3] and [v[3] for v in wind.roof_cp_parallel(3)] == [-1.3, -0.7, -0.7, -0.7]
+
+
+def test_mwfrs_pressures_by_hand():
+    """115 mi/h, Exposure C, enclosed, 40 ft across the ridge x 60 ft along it, eave 16 ft, h = 20 ft,
+    5 on 12 gable (22.62 degrees), wind normal to the ridge. By hand:
+    qh = 0.00256(0.90)(115^2) = 30.47 psf; q15 = 0.00256(0.85)(115^2) = 28.78; Kz at 16 ft = 0.86, q16 = 29.12
+    Kd G = 0.7225; internal = 30.47(0.85)(0.18) = 4.66 psf
+    windward wall at 15 ft: 28.78(0.7225)(0.8) = 16.63; leeward (L/B = 0.667): 30.47(0.7225)(-0.5) = -11.01
+    side: 30.47(0.7225)(-0.7) = -15.41
+    h/L = 0.5: windward roof -0.4 + 0.1(2.62/5) = -0.3476 and 0.0 + 0.2(2.62/5) = 0.1048; leeward -0.6
+    -> -7.65, 2.31, -13.21 psf."""
+    import math
+    th = math.degrees(math.atan(5 / 12))
+    r = wind.mwfrs(115, "C", h=20, eave=16, B=60, L=40, enclosure="enclosed", direction="normal", theta=th)
+    assert r["qh"] == pytest.approx(30.47, abs=0.01) and r["L_over_B"] == pytest.approx(0.667, abs=0.001)
+    w15, w16 = r["windward"]
+    assert w15.external == pytest.approx(16.63, abs=0.01) and w16.q == pytest.approx(29.12, abs=0.01)
+    assert w15.p_pos_internal == pytest.approx(16.63 - 4.66, abs=0.01) and w15.p_neg_internal == pytest.approx(16.63 + 4.66, abs=0.01)
+    assert r["leeward"].external == pytest.approx(-11.01, abs=0.01) and r["side"].external == pytest.approx(-15.41, abs=0.01)
+    assert [round(s.Cp, 4) for s in r["roof"]] == [-0.3476, 0.1048, -0.6]
+    assert [round(s.external, 2) for s in r["roof"]] == [-7.65, 2.31, -13.21]
+    assert r["walls_together"][0][1] == pytest.approx(16.63 + 11.01, abs=0.01)
+    # parallel to the ridge: B = 40, L = 60, h/L = 0.333: zones to 10, 20, 40 and 60 ft
+    p = wind.mwfrs(115, "C", h=20, eave=16, B=40, L=60, enclosure="partially enclosed", direction="parallel", theta=th)
+    assert [(s.zone[1], s.zone[2], s.Cp) for s in p["roof"][:-1]] == [(0, 10, -0.9), (10, 20, -0.9), (20, 40, -0.5), (40, 60, -0.3)]
+    assert p["roof"][-1].Cp == -0.18 and p["leeward"].Cp == pytest.approx(-0.4) and p["GCpi"] == 0.55
+    with pytest.raises(wind.WindError):
+        wind.mwfrs(115, "C", 20, 16, 40, 60, "open", "normal", th)
+
+
+def test_mwfrs_sheet_and_form(tmp_path):
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="WM1", V="115", V_source="ASCE 7 Hazard Tool, Risk Category II", exposure="C", exposure_basis="open terrain, Sect. 26.7.3",
+             enclosure="enclosed", enclosure_basis="Sect. 26.12", across="40", along="60", eave="16", h="20", theta="22.62",
+             Kzt="1.0", Kzt_source="no hill, ridge or escarpment, Sect. 26.8.1", elevation="6200", elevation_source="site survey")
+    sheet, kind, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert kind == "simple" and len(sheet.blocks) == 2 and sheet.wind["qh"] == pytest.approx(30.47 * wind.ke(6200), abs=0.01)
+    assert any("windward roof" in t for t in sheet.blocks[0]["lines"]) and any("0 to h/2 (0.0 to 10.0 ft)" in t for t in sheet.blocks[1]["lines"])
+    out = tmp_path / "w.pdf"
+    calcsheet._simple_pdf(sheet, str(out), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    assert out.stat().st_size > 2000
+    v2 = dict(v, enclosure_basis="")
+    with pytest.raises(calc.Missing):
+        calc.build("wind_mwfrs", v2, dict(job="2026-000", name="Test", method="ASD"))
