@@ -1233,6 +1233,15 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
             p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
         if b.get("steps"):
             _steps(p, b["title"], b["steps"])
+        if b.get("lines"):
+            p.room(14 + 10 * min(len(b["lines"]), 8))
+            p.head(b["title"])
+            for t in b["lines"]:
+                p.room(11); p.text(t, font=FM, size=7.5, dy=10)
+            for t in b.get("after", ()):
+                for u in _split(t, 125):
+                    p.room(11); p.text(u, size=7.5, color=GREY, dy=10)
+            p.y -= 3
     if sheet.rows:
         _summary(p, sheet.rows)
     return _closing(p, sheet.assumptions, sheet.not_checked)

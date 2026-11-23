@@ -645,3 +645,82 @@ def wind_pressure_sheet(mark, V, V_source, exposure, exposure_basis, heights, h_
          "the 0.70 minimum Kz of Chapter 28 for Exposure B below 30 ft"])
     sheet.wind = dict(qh=qh, Kh=kh, Ke=Ke, table=table)
     return sheet
+
+
+def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, across_ridge, along_ridge, theta, enclosure,
+                     enclosure_basis, Kzt, Kzt_source, elevation_ft=None, elevation_source=""):
+    """Design wind pressures on the main wind force resisting system of a rigid gable or flat
+    roofed building, ASCE/SEI 7-22 Chapter 27 (directional procedure), for wind normal and
+    parallel to the ridge (see wind.py). across_ridge, along_ridge: plan dimensions."""
+    for nm, v in (("the source of the basic wind speed", V_source), ("the basis of the exposure category", exposure_basis),
+                  ("the source of Kzt", Kzt_source), ("the basis of the enclosure classification", enclosure_basis)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if elevation_ft is not None and not (elevation_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the ground elevation is blank")
+    Ke = wind.ke(elevation_ft) if elevation_ft is not None else 1.0
+    L = footing_line
+    try:
+        rn = wind.mwfrs(V, exposure, h_mean, eave, along_ridge, across_ridge, enclosure, "normal", theta, Kzt, Ke)
+        rp = wind.mwfrs(V, exposure, h_mean, eave, across_ridge, along_ridge, enclosure, "parallel", theta, Kzt, Ke)
+    except wind.WindError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    qh, kh, gc = rn["qh"], rn["Kh"], rn["GCpi"]
+    steps = [L("V", V, "mi/h", "ASCE/SEI 7-22 Sect. 26.5", V_source.strip()),
+             L("Kzt", Kzt, "", "Sect. 26.8", Kzt_source.strip()),
+             L("Ke" + (" = e^(-0.0000362 ze)" if elevation_ft is not None else ""), Ke, "", "Sect. 26.9, Table 26.9-1",
+               f"ze = {elevation_ft:,.0f} ft" if elevation_ft is not None else "taken as 1.0"),
+             L("Kh", kh, "", "Table 26.10-1", f"Exposure {exposure}, h = {h_mean:g} ft"),
+             L("qh = 0.00256 Kh Kzt Ke V^2", qh, "psf", "Eq. 26.10-1", "at the mean roof height")]
+    for s in rn["windward"]:
+        steps += [L(f"qz at {s.z:g} ft", s.q, "psf", "Eq. 26.10-1, Table 26.10-1", f"Kz = {s.Kz:.2f}")]
+    steps += [L("Kd", wind.KD_MWFRS, "", "Table 26.6-1", "buildings, main wind force resisting system"),
+              L("G", wind.G_RIGID, "", "Sect. 26.11.1", "rigid building"),
+              L("GCpi", gc, "", "Table 26.13-1", f"{enclosure} building; plus and minus"),
+              L("qi Kd GCpi", qh * wind.KD_MWFRS * gc, "psf", "Eq. 27.3-1", "internal pressure, qi = qh; acts on every surface, plus and minus")]
+
+    def table(r):
+        out = [f"{'surface':<34}{'q psf':>8}{'Cp':>8}{'q Kd G Cp':>12}{'with +GCpi':>12}{'with -GCpi':>12}"]
+        for s in r["windward"] + [r["leeward"], r["side"]] + r["roof"]:
+            nm = s.name if not s.zone else f"roof, {s.zone[0]} ({s.zone[1]:.1f} to {s.zone[2]:.1f} ft)"
+            if s.name == "windward roof" and sum(1 for x in r["roof"] if x.name == "windward roof") == 2:
+                nm += ", value 1" if s is [x for x in r["roof"] if x.name == "windward roof"][0] else ", value 2"
+            out.append(f"{nm:<34}{s.q:>8.1f}{s.Cp:>8.2f}{s.external:>12.1f}{s.p_pos_internal:>12.1f}{s.p_neg_internal:>12.1f}")
+        out.append("windward and leeward walls together (internal pressure cancels): "
+                   + "; ".join(f"{p:.1f} psf at {z:g} ft" for z, p in r["walls_together"]))
+        return out
+
+    def basis(r, Bd, Ld):
+        t = f"B = {Bd:g} ft normal to the wind, L = {Ld:g} ft parallel to it; L/B = {r['L_over_B']:.2f}, h/L = {r['h_over_L']:.2f}. "
+        if r["direction"] == "normal" and theta >= 10:
+            t += "Where two windward roof values are listed, the roof is designed for each."
+        else:
+            t += "Roof zones are measured from the windward edge; each zone is also designed for Cp = -0.18."
+        return [t]
+
+    info = [("Wind Speed", f"V = {V:g} mi/h ({V_source.strip()})"),
+            ("Exposure", f"{exposure} ({exposure_basis.strip()})"),
+            ("Topography", f"Kzt = {Kzt:g} ({Kzt_source.strip()})"),
+            ("Elevation", f"{elevation_ft:,.0f} ft above sea level ({elevation_source.strip()})" if elevation_ft is not None else "Ke taken as 1.0"),
+            ("Enclosure", f"{enclosure} ({enclosure_basis.strip()})"),
+            ("Building", f"{across_ridge:g} ft across the ridge x {along_ridge:g} ft along it; eave {eave:g} ft; mean roof height h = {h_mean:g} ft; "
+                         f"gable roof at {theta:g} degrees" if theta > 0 else
+                         f"{across_ridge:g} ft x {along_ridge:g} ft; roof height h = {h_mean:g} ft; flat roof")]
+    sheet = SimpleSheet(
+        mark, "Wind Pressures, Main Wind Force Resisting System", "Site and Building", "Chapter 27", info, [], [],
+        "Velocity Pressure and Factors", steps, [],
+        ["Pressures are strength-level (ASCE/SEI 7-22 basic wind speed), in psf, positive toward the surface and negative away from it.",
+         "p = q Kd G Cp - qi Kd (GCpi), Eq. 27.3-1, with q = qz on the windward wall and qh on the leeward wall, side walls and roof; qi = qh.",
+         "Rigid building (Sect. 26.2): G = 0.85.",
+         "Cp from Figure 27.3-1 with linear interpolation (notes 2 and 3). The area reduction of the -1.3 roof value is not taken.",
+         f"Minimum design wind load, as a separate case: {wind.MIN_WALL:g} psf on the wall area and {wind.MIN_ROOF:g} psf on the roof area projected on a "
+         "vertical plane normal to the wind (Sect. 27.1.5)."],
+        ["the comparison of the total building force with the minimum of Sect. 27.1.5", "the torsional load cases of Figure 27.3-8 (Sect. 27.3.5)",
+         "parapets and roof overhangs (Sect. 27.3.3, 27.3.4)", "components and cladding (Chapter 30)",
+         "whether the building is rigid (Sect. 26.2) and its enclosure classification (Sect. 26.12)"])
+    sheet.blocks.append(dict(title="Wind Normal to the Ridge" if theta > 0 else f"Wind Parallel to the {across_ridge:g} ft Dimension",
+                             lines=table(rn), after=basis(rn, along_ridge, across_ridge)))
+    sheet.blocks.append(dict(title="Wind Parallel to the Ridge" if theta > 0 else f"Wind Parallel to the {along_ridge:g} ft Dimension",
+                             lines=table(rp), after=basis(rp, across_ridge, along_ridge)))
+    sheet.wind = dict(qh=qh, normal=rn, parallel=rp)
+    return sheet
