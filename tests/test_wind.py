@@ -402,3 +402,36 @@ def test_wind_line_api():
     assert d[1]["to"] == pytest.approx(24.33, abs=0.01) and d[0]["to"] == 16 and d[1]["w"] > 0
     assert "error" in server.api("/api/wind_line", dict(values=v, project={}, z1="20", z2="12"))
     assert "error" in server.api("/api/wind_line", dict(values=dict(v, V=""), project={}, z1="8", z2="16"))
+
+
+def test_mwfrs_hip_roof_by_hand(tmp_path):
+    """40 ft across x 60 ft along, eave 16 ft, h 20 ft, all slopes 5 on 12 (22.62 degrees), 115 mi/h, Exposure C, enclosed.
+    rise 8.333 ft, hip run 20 ft, ridge 20 ft. Wind normal to the ridge (B 60, L 40): walls to the eave 26,547 lb as the gable;
+    facing plane projected (60 + 20)/2 x 8.333 = 333.3 ft2; Cp -0.3476 / 0.1048 windward, -0.6 leeward:
+    (-7.653 + 13.209)(333.3) = 1,852 lb; (2.306 + 13.209)(333.3) = 5,172 lb; total 31,719 lb. Side slopes by zones.
+    Wind parallel (B 40, L 60, h/L 0.333): windward Cp at 22.62 degrees between the h/L rows: -0.2809 / 0.2032; projected 40(8.333)/2 = 166.7 ft2."""
+    import math
+    th = math.degrees(math.atan(5 / 12))
+    n = wind.mwfrs(115, "C", 20, 16, 60, 40, "enclosed", "normal", th, roof="hip", theta_hip=th)
+    assert n["ridge"] == pytest.approx(20) and n["A_roof"] == pytest.approx(333.33, abs=0.01) and n["F_walls"] == pytest.approx(26547, abs=3)
+    assert [round(x) for x in n["F_roof"]] == pytest.approx([1852, 5172], abs=2) and n["F_total"] == pytest.approx(31719, abs=4)
+    names = [s.name for s in n["roof"]]
+    assert names[:3] == ["windward roof", "windward roof", "leeward roof"] and names[-1] == "sides, all zones" and n["roof"][3].zone[0] == "0 to h/2"
+    p = wind.mwfrs(115, "C", 20, 16, 40, 60, "enclosed", "parallel", th, roof="hip", theta_hip=th)
+    assert [round(s.Cp, 4) for s in p["roof"][:3]] == pytest.approx([-0.2809, 0.2032, -0.6], abs=0.0002) and p["A_roof"] == pytest.approx(166.67, abs=0.01)
+    assert p["top_w"] == 16 and p["taper"] == 0.0 and p["F_min"] == pytest.approx(16 * 40 * 16 + 8 * 166.67, abs=1)
+    low = wind.mwfrs(115, "C", 20, 16, 60, 40, "enclosed", "normal", 8.0, roof="hip", theta_hip=30.0)       # facing slope under 10 degrees: zones only
+    assert not low["sloped"] and low["F_roof"] == [0.0] and all(s.name.startswith("roof") for s in low["roof"])
+    with pytest.raises(wind.WindError):
+        wind.mwfrs(115, "C", 20, 16, 40, 60, "enclosed", "parallel", th, roof="hip", theta_hip=10.0)     # hip run 47 ft: the ends meet
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="WM6", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed", enclosure_basis="Sect. 26.12",
+             across="40", along="60", eave="16", h="20", theta="22.62", roof="hip", theta_hip="22.62", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, _, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
+    pans = sheet.blocks[0]["picture"][1]["panels"]
+    assert [x["shape"] for x in pans] == ["gable", "gable"] and pans[0]["top"] == 0.0 and pans[1]["top"] == pytest.approx(20, abs=0.05)
+    assert any("Hip roof:" in t for t in sheet.assumptions) and any("sides, 0 to h/2" in t for t in sheet.blocks[1]["lines"])
+    calcsheet._simple_pdf(sheet, str(tmp_path / "h.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    with pytest.raises(calc.Missing):
+        calc.build("wind_mwfrs", dict(v, theta_hip=""), dict(job="2026-000", name="Test", method="ASD"))

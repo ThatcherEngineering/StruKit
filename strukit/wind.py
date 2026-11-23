@@ -12,7 +12,8 @@ Read from the standard (page images; numbers confirmed against the image):
   Sect. 26.8     Kzt is entered by the engineer (1.0 where 26.8.1 does not apply).
 
 Main wind force resisting system, directional procedure (Chapter 27), enclosed, partially
-enclosed and partially open rigid buildings with a gable, monoslope or flat roof:
+enclosed and partially open rigid buildings with a gable, hip, monoslope or flat roof
+(hip roofs: see mwfrs_hip; Zach's ruling of 2026-11-23 14:03):
   Eq. 27.3-1     p = q Kd G Cp - qi Kd (GCpi); q = qz on the windward wall, qh on the leeward
                  wall, side walls and roof; qi = qh (permitted in all cases: qh is not less
                  than qz at an opening).
@@ -249,7 +250,54 @@ class Surface:
 GCPN_WINDWARD, GCPN_LEEWARD = 1.5, -1.0                 # Sect. 27.3.4
 
 
-def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, Ke=1.0, roof="gable", parapet=0.0):
+def mwfrs_hip(V, exposure, h, eave, B, L, enclosure, direction, theta, theta_hip, Kzt=1.0, Ke=1.0, parapet=0.0):
+    """Hip roof. theta: slope of the main roof planes (eave parallel to the ridge); theta_hip:
+    slope of the hip end planes. For each wind direction the plane facing the wind takes the
+    windward roof coefficients of Figure 27.3-1 at its own slope, the opposite plane the
+    leeward coefficients, and the planes at the sides the coefficients by distance from the
+    windward edge. direction "normal" (to the ridge) or "parallel". Walls run to the eave."""
+    if direction not in ("normal", "parallel"):
+        raise WindError("wind: the wind direction is normal or parallel to the ridge")
+    for nm, v in (("the roof angle", theta), ("the hip end roof angle", theta_hip)):
+        if v is None or v <= 0 or v >= 90:
+            raise WindError(f"wind: {nm} of a hip roof is over 0 and under 90 degrees")
+    r = mwfrs(V, exposure, h, eave, B, L, enclosure, "normal", 0.0, Kzt, Ke, parapet=parapet)      # walls to the eave; roof by zones
+    normal = direction == "normal"
+    across, along = (L, B) if normal else (B, L)
+    rise = math.tan(math.radians(theta)) * across / 2.0
+    run_hip = rise / math.tan(math.radians(theta_hip))
+    ridge = along - 2.0 * run_hip
+    if ridge < -1e-6:
+        raise WindError("wind: the hip ends meet before the ridge forms (the hip end slope is too flat for this plan)")
+    ridge = max(ridge, 0.0)
+    facing = theta if normal else theta_hip
+    A_proj = (B + ridge) / 2.0 * rise if normal else B * rise / 2.0
+    gc, qh, hl = r["GCpi"], r["qh"], r["h_over_L"]
+    zones = r["roof"]
+    roof_h, sloped = [0.0], facing >= 10
+    if sloped:
+        for z in zones:
+            z.name = "side slopes" if z.zone else "sides, all zones"
+        a, b = roof_cp_windward(facing, hl)
+        lee = Surface("leeward roof", qh, "qh", roof_cp_leeward(facing, hl), qh, gc)
+        ww = [Surface("windward roof", qh, "qh", v, qh, gc) for v in (a, b) if v is not None]
+        roof_h = [(x.external - lee.external) * A_proj for x in ww]
+        r["roof"] = ww + [lee] + zones
+    walls = r["F_walls"]
+    total = max([walls] + [walls + x for x in roof_h])
+    F_min = MIN_WALL * r["A_wall"] + MIN_ROOF * A_proj
+    r.update(direction=direction, theta=facing, rise=rise, ridge=ridge, run_hip=run_hip, sloped=sloped, F_roof=roof_h, F_total=total,
+             A_roof=A_proj, F_min=F_min, F_design=max(total, F_min), hip=True)
+    return r
+
+
+def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, Ke=1.0, roof="gable", parapet=0.0, theta_hip=None):
+    if roof == "hip":
+        return mwfrs_hip(V, exposure, h, eave, B, L, enclosure, direction, theta, theta_hip, Kzt, Ke, parapet)
+    return _mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta, Kzt, Ke, roof, parapet)
+
+
+def _mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, Ke=1.0, roof="gable", parapet=0.0):
     """Design pressures (psf, strength level, positive toward the surface) on the main wind
     force resisting system of a rigid building with a gable, monoslope or flat roof, for one
     wind direction, and the total horizontal force in that direction.

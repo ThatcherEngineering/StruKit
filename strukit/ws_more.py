@@ -648,7 +648,7 @@ def wind_pressure_sheet(mark, V, V_source, exposure, exposure_basis, heights, h_
 
 
 def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, across_ridge, along_ridge, theta, enclosure,
-                     enclosure_basis, Kzt, Kzt_source, elevation_ft=None, elevation_source="", roof="gable", parapet=0.0):
+                     enclosure_basis, Kzt, Kzt_source, elevation_ft=None, elevation_source="", roof="gable", parapet=0.0, theta_hip=None):
     """Design wind pressures on the main wind force resisting system of a rigid building with
     a gable, monoslope or flat roof, ASCE/SEI 7-22 Chapter 27 (directional procedure), for
     each wind direction (see wind.py). across_ridge, along_ridge: plan dimensions; eave: the
@@ -662,6 +662,8 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         raise WorksheetError(f"{mark}: the source of the ground elevation is blank")
     if roof == "monoslope" and not theta > 0:
         raise WorksheetError(f"{mark}: a monoslope roof needs a roof angle above 0")
+    if roof == "hip" and (not theta > 0 or not (theta_hip or 0) > 0):
+        raise WorksheetError(f"{mark}: a hip roof needs the roof angle and the hip end roof angle")
     Ke = wind.ke(elevation_ft) if elevation_ft is not None else 1.0
     L = footing_line
     flat = not theta > 0
@@ -676,7 +678,7 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         cases = [("normal", "Wind Normal to the Ridge", along_ridge, across_ridge),
                  ("parallel", "Wind Parallel to the Ridge", across_ridge, along_ridge)]
     try:
-        res = [(t, Bd, Ld, wind.mwfrs(V, exposure, h_mean, eave, Bd, Ld, enclosure, d, theta, Kzt, Ke, roof=roof, parapet=parapet or 0.0)) for d, t, Bd, Ld in cases]
+        res = [(t, Bd, Ld, wind.mwfrs(V, exposure, h_mean, eave, Bd, Ld, enclosure, d, theta, Kzt, Ke, roof=roof, parapet=parapet or 0.0, theta_hip=theta_hip)) for d, t, Bd, Ld in cases]
     except wind.WindError as e:
         raise WorksheetError(f"{mark}: {e}")
     r0 = res[0][3]
@@ -706,7 +708,7 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         out = [f"{'surface':<34}{'q psf':>8}{'Cp':>8}{'q Kd G Cp':>12}{'with +GCpi':>12}{'with -GCpi':>12}{'less leeward wall':>20}"]
         together = {id(x): p_ for x, (z_, p_) in zip(r["windward"], r["walls_together"])}
         for s in r["windward"] + [r["leeward"], r["side"]] + r["roof"]:
-            nm = s.name if not s.zone else f"roof, {s.zone[0]} ({s.zone[1]:.1f} to {s.zone[2]:.1f} ft)"
+            nm = s.name if not s.zone else f"{'roof' if s.name == 'roof' else 'sides'}, {s.zone[0]} ({s.zone[1]:.1f} to {s.zone[2]:.1f} ft)"
             same = two(r, s.name)
             if r["sloped"] and len(same) == 2 and s.name in ("windward roof", "roof"):
                 nm += ", value 1" if s is same[0] else ", value 2"
@@ -730,11 +732,13 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         t += "Less leeward wall: the windward and leeward walls together (internal pressure cancels). "
         if r["sloped"]:
             t += "Where two roof values are listed, the roof is designed for each."
+            if roof == "hip":
+                t += " Sides: the roof planes at the sides, by zones measured from the windward edge; each zone is also designed for Cp = -0.18."
         else:
             t += "Roof zones are measured from the windward edge; each zone is also designed for Cp = -0.18."
         return [t]
 
-    shape = "flat roof" if flat else f"{roof} roof at {theta:g} degrees"
+    shape = "flat roof" if flat else f"{roof} roof at {theta:g} degrees" + (f", hip ends at {theta_hip:g} degrees" if roof == "hip" else "")
     info = [("Wind Speed", f"V = {V:g} mi/h ({V_source.strip()})"),
             ("Exposure", f"{exposure} ({exposure_basis.strip()})"),
             ("Topography", f"Kzt = {Kzt:g} ({Kzt_source.strip()})"),
@@ -762,8 +766,8 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         d = r["direction"]
         pn = dict(title=t.upper().replace("WIND NORMAL TO THE RIDGE, ", "WIND "), L=Ld, hl=r["top_w"], hr=r["top_l"], rise=r["rise"],
                   windward=r["windward"][-1].external, leeward=r["leeward"].external)
-        if r["sloped"] and roof == "gable":
-            pn.update(shape="gable", hl=eave, hr=eave, roof_windward=[x.external for x in two(r, "windward roof")],
+        if r["sloped"] and roof in ("gable", "hip"):
+            pn.update(shape="gable", hl=eave, hr=eave, top=(r.get("ridge", 0.0) if (roof == "hip" and d == "parallel") else 0.0), roof_windward=[x.external for x in two(r, "windward roof")],
                       roof_leeward=[x.external for x in two(r, "leeward roof")])
         elif r["sloped"]:
             pn.update(shape="mono", roof_values=[x.external for x in r["roof"]])
@@ -777,6 +781,10 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         sheet.info.append(("Parapets", f"{parapet:g} ft above the top of the windward and leeward walls"))
         sheet.assumptions.append("Parapets: net pressure pp = qp Kd (GCpn), Eq. 27.3-3, qp at the top of the parapet, (GCpn) = +1.5 windward and -1.0 leeward; "
                                  "their force and area are included in the horizontal force and in the minimum.")
+    if roof == "hip":
+        sheet.assumptions.insert(4, "Hip roof: for each wind direction the roof plane facing the wind takes the windward roof coefficients at its slope, the opposite "
+                                    "plane the leeward coefficients, and the planes at the sides the coefficients by distance from the windward edge (Figure 27.3-1). "
+                                    "The horizontal roof force acts on the area of the facing plane projected on a vertical plane.")
     sheet.blocks.append(dict(title="External Pressures", picture=("wind_mwfrs", dict(panels=[panel(t, r, Ld) for t, Bd, Ld, r in res]))))
     for t, Bd, Ld, r in res:
         sheet.blocks.append(dict(title=t, lines=table(r), after=basis(r, Bd, Ld)))
