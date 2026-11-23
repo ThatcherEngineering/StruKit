@@ -1223,7 +1223,8 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
     _steps(p, sheet.steps_title, sheet.steps)
     for b in sheet.blocks:
         if b.get("picture"):
-            p.room(230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
+            p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
+                   230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
             if b["picture"][0] == "wind_mwfrs":
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
@@ -1412,66 +1413,80 @@ def _arrow(c, x1, y1, x2, y2, head=3.2):
 def _wind_mwfrs_picture(c, top, d):
     """One section through the building for each wind direction, to scale, wind from the
     left: an arrow on each surface toward it (pressure) or away from it (suction) with the
-    external pressure q Kd G Cp in psf. The internal pressure is not drawn."""
+    external pressure q Kd G Cp in psf. The internal pressure is not drawn. Two panels to a row."""
     import math
     pw = (RM - LM) / 2
-    ybase = top - 112
+    hmax = max(max(pn["hl"], pn["hr"]) + (pn["rise"] if pn["shape"] == "gable" else 0.0) for pn in d["panels"])
+    lmax = max(pn["L"] for pn in d["panels"])
+    s = min((pw - 150) / lmax, 62.0 / hmax)
+    y = top
     for i, pn in enumerate(d["panels"]):
-        x0 = LM + i * pw
-        _sketch_title(c, x0 + 6, top - 4, pn["title"])
-        L, eave, rise = pn["L"], pn["eave"], pn["rise"]
-        s = min((pw - 150) / L, 62.0 / (eave + rise))
+        if i and i % 2 == 0:
+            y -= 140
+        x0 = LM + (i % 2) * pw
+        ybase = y - 112
+        _sketch_title(c, x0 + 6, y - 4, pn["title"])
+        L, shape = pn["L"], pn["shape"]
         xl = x0 + 76 + ((pw - 150) - L * s) / 2
-        xr, ye, yr = xl + L * s, ybase + eave * s, ybase + (eave + rise) * s
+        xr, yl, yrt = xl + L * s, ybase + pn["hl"] * s, ybase + pn["hr"] * s
         c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4); c.line(x0 + 30, ybase, x0 + pw - 30, ybase)
         c.setStrokeColorRGB(*INK); c.setLineWidth(1.0)
-        c.line(xl, ybase, xl, ye); c.line(xr, ybase, xr, ye)
-        if pn["gable"]:
-            c.line(xl, ye, (xl + xr) / 2, yr); c.line((xl + xr) / 2, yr, xr, ye)
+        c.line(xl, ybase, xl, yl); c.line(xr, ybase, xr, yrt)
+        if shape == "gable":
+            yp = yl + pn["rise"] * s
+            c.line(xl, yl, (xl + xr) / 2, yp); c.line((xl + xr) / 2, yp, xr, yrt)
         else:
-            c.line(xl, ye, xr, ye)
+            c.line(xl, yl, xr, yrt)
         c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.7); c.setFont(FR, 6)
 
-        def wall(x, p, side, label):
+        def wall(x, ht, p, side, label):
             out = -1 if side == "left" else 1
             for f in (0.3, 0.7):
-                y = ybase + eave * s * f
+                yy = ybase + ht * s * f
                 a, b = (x + out * 16, x + out * 1) if p >= 0 else (x + out * 1, x + out * 16)
-                _arrow(c, a, y, b, y)
+                _arrow(c, a, yy, b, yy)
             t = f"{label} {p:+.1f}"
-            (c.drawRightString if side == "left" else c.drawString)(x + out * 19, ybase + eave * s * 0.5 - 2, t)
+            (c.drawRightString if side == "left" else c.drawString)(x + out * 19, ybase + ht * s * 0.5 - 2, t)
 
-        wall(xl, pn["windward"], "left", "windward")
-        wall(xr, pn["leeward"], "right", "leeward")
-        if pn["gable"]:
-            ang = math.atan2(yr - ye, (xr - xl) / 2)
-            for sign, vals, nm in ((-1, pn["roof_windward"], "windward roof"), (1, pn["roof_leeward"], "leeward roof")):
-                mx, my = (xl + xr) / 2 + sign * (xr - xl) / 4, (ye + yr) / 2
-                nx, ny = sign * math.sin(ang), math.cos(ang)
-                p0 = vals[0]
-                a, b = ((mx + nx * 16, my + ny * 16), (mx + nx, my + ny)) if p0 >= 0 else ((mx + nx, my + ny), (mx + nx * 16, my + ny * 16))
-                _arrow(c, a[0], a[1], b[0], b[1])
-                t = nm + " " + " and ".join(f"{v:+.1f}" for v in vals)
-                (c.drawRightString if sign < 0 else c.drawString)(mx + nx * 19 + sign * 2, my + ny * 19 + 1, t)
+        def slope(xa, ya, xb, yb, vals, nm, align):
+            ang = math.atan2(yb - ya, xb - xa)
+            mx, my = (xa + xb) / 2, (ya + yb) / 2
+            nx, ny = -math.sin(ang), math.cos(ang)
+            a, b = ((mx + nx * 16, my + ny * 16), (mx + nx, my + ny)) if vals[0] >= 0 else ((mx + nx, my + ny), (mx + nx * 16, my + ny * 16))
+            _arrow(c, a[0], a[1], b[0], b[1])
+            t = nm + " " + " and ".join(f"{v:+.1f}" for v in vals)
+            {"right": c.drawRightString, "left": c.drawString, "centre": c.drawCentredString}[align](
+                mx + nx * 19 + (-2 if align == "right" else 2 if align == "left" else 0), my + ny * 19 + 1, t)
+
+        wall(xl, pn["hl"], pn["windward"], "left", "windward")
+        wall(xr, pn["hr"], pn["leeward"], "right", "leeward")
+        ytop = max(yl, yrt)
+        if shape == "gable":
+            slope(xl, yl, (xl + xr) / 2, yp, pn["roof_windward"], "windward roof", "right")
+            slope((xl + xr) / 2, yp, xr, yrt, pn["roof_leeward"], "leeward roof", "left")
+        elif shape == "mono":
+            slope(xl, yl, xr, yrt, pn["roof_values"], "roof", "centre")
         else:
             zs = pn["zones"]
             for k, (x1, x2, p) in enumerate(zs):
                 xa, xb = xl + x1 * s, xl + x2 * s
+                ya = yl + (yrt - yl) * ((xa + xb) / 2 - xl) / (xr - xl)
                 if k:
-                    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4); c.line(xa, ye - 3, xa, ye + 20)
+                    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4); c.line(xa, ya - 3, xa, ya + 20)
                     c.setStrokeColorRGB(*LOADC); c.setLineWidth(0.7)
                 xm = (xa + xb) / 2
-                a, b = (ye + 16, ye + 1) if p >= 0 else (ye + 1, ye + 16)
+                a, b = (ya + 16, ya + 1) if p >= 0 else (ya + 1, ya + 16)
                 _arrow(c, xm, a, xm, b)
-                c.drawCentredString(xm, ye + 19 + (7 if (xb - xa) < 26 and k % 2 else 0), f"{p:+.1f}")
-            c.drawString(xr + 4, ye + 12, f"each zone also {pn['other']:+.1f}")
+                c.drawCentredString(xm, ya + 19 + (7 if (xb - xa) < 26 and k % 2 else 0), f"{p:+.1f}")
+            c.drawString(xr + 4, yrt + 12, f"each zone also {pn['other']:+.1f}")
             c.setFillColorRGB(*GREY)
-            c.drawCentredString((xl + xr) / 2, ye - 8, "roof zones at " + ", ".join(f"{x2:g}" for x1, x2, p in zs) + " ft")
+            c.drawCentredString((xl + xr) / 2, min(yl, yrt) - 8, "roof zones at " + ", ".join(f"{x2:g}" for x1, x2, p in zs) + " ft")
         c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
-        _arrow(c, x0 + 6, top - 26, x0 + 34, top - 26, head=4)
-        c.setFont(FR, 6); c.drawString(x0 + 6, top - 22, "WIND")
+        _arrow(c, x0 + 6, y - 26, x0 + 34, y - 26, head=4)
+        c.setFont(FR, 6); c.drawString(x0 + 6, y - 22, "WIND")
         memberart._dim_h(c, xl, xr, ybase - 9, f"L = {L:g} ft", FR, ext_from=ybase)
-    _small(c, (LM + RM) / 2, ybase - 30, "sections to scale; external pressure q Kd G Cp in psf, + toward the surface, - away from it; windward wall value at the eave")
+    ybase = y - 112
+    _small(c, (LM + RM) / 2, ybase - 30, "sections to scale; external pressure q Kd G Cp in psf, + toward the surface, - away from it; windward wall value at its top")
     return ybase - 36
 
 

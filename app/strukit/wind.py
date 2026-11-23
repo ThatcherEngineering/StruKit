@@ -12,7 +12,7 @@ Read from the standard (page images; numbers confirmed against the image):
   Sect. 26.8     Kzt is entered by the engineer (1.0 where 26.8.1 does not apply).
 
 Main wind force resisting system, directional procedure (Chapter 27), enclosed, partially
-enclosed and partially open rigid buildings with a gable or flat roof:
+enclosed and partially open rigid buildings with a gable, monoslope or flat roof:
   Eq. 27.3-1     p = q Kd G Cp - qi Kd (GCpi); q = qz on the windward wall, qh on the leeward
                  wall, side walls and roof; qi = qh (permitted in all cases: qh is not less
                  than qz at an opening).
@@ -24,7 +24,9 @@ enclosed and partially open rigid buildings with a gable or flat roof:
                  area reduction of the -1.3 value (note b) is not taken.
   Sect. 27.1.5   minimum: 16 psf on the wall area and 8 psf on the roof area projected on a
                  vertical plane normal to the wind, as a separate case.
-Not covered: hip, monoslope, mansard and arched roofs; open buildings; flexible buildings;
+  Figure 27.3-1, note 6: the total horizontal force is not less than that with the roof
+                 forces neglected.
+Not covered: hip, mansard and arched roofs; open buildings; flexible buildings;
 parapets and roof overhangs; the torsional cases of Figure 27.3-8; Chapters 28 and 30.
 """
 import math
@@ -92,6 +94,9 @@ ROOF_LEEWARD = {0.25: {10: -0.3, 15: -0.5, 20: -0.6}, 0.5: {10: -0.5, 15: -0.5, 
 ROOF_PARALLEL = {0.5: (("0 to h/2", -0.9), ("h/2 to h", -0.9), ("h to 2h", -0.5), ("over 2h", -0.3)),
                  1.0: (("0 to h/2", -1.3), ("over h/2", -0.7))}
 ROOF_PARALLEL_OTHER = -0.18
+# Monoslope roofs (Figure 27.3-1 diagrams, pdf p. 344, read from the page image): wind normal to
+# the ridge blowing toward the low eave wall puts the windward roof Cp on the whole roof; blowing toward the high
+# eave wall puts the leeward roof Cp on the whole roof. Wind parallel to the ridge: the same zones as a gable roof.
 # note b: the -1.3 value may be reduced with the area it applies to: 100 ft2 or less 1.0; 250 ft2 0.9; 1,000 ft2 or more 0.8
 
 
@@ -179,16 +184,21 @@ class Surface:
         self.p_neg_internal = self.external + self.internal      # with -GCpi
 
 
-def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, Ke=1.0):
+def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, Ke=1.0, roof="gable"):
     """Design pressures (psf, strength level, positive toward the surface) on the main wind
-    force resisting system of a rigid gable or flat roofed building for one wind direction.
+    force resisting system of a rigid building with a gable, monoslope or flat roof, for one
+    wind direction, and the total horizontal force in that direction.
     B: plan dimension normal to the wind; L: parallel to the wind; h: mean roof height (the
-    eave height where theta is 10 degrees or less); eave: eave height; direction: "normal"
-    or "parallel" to the ridge."""
+    eave height where theta is 10 degrees or less); eave: eave height (the low eave of a
+    monoslope roof). direction: "normal" or "parallel" to the ridge; for a monoslope roof
+    "normal_low" (wind blowing toward the low eave wall), "normal_high" or "parallel"."""
     if enclosure not in GCPI or enclosure == "open":
         raise WindError("wind: the enclosure is enclosed, partially enclosed or partially open (open buildings are not covered)")
-    if direction not in ("normal", "parallel"):
-        raise WindError("wind: the wind direction is normal or parallel to the ridge")
+    if roof not in ("gable", "monoslope"):
+        raise WindError("wind: the roof is gable (or flat) or monoslope")
+    ok = ("normal", "parallel") if roof == "gable" else ("normal_low", "normal_high", "parallel")
+    if direction not in ok:
+        raise WindError("wind: the wind direction is " + ", ".join(ok))
     for nm, v in (("the mean roof height", h), ("the eave height", eave), ("B", B), ("L", L)):
         if v is None or v <= 0:
             raise WindError(f"wind: {nm} must be positive")
@@ -196,33 +206,73 @@ def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, 
         raise WindError("wind: the roof angle is from 0 to under 90 degrees")
     if eave > h + 1e-9 and theta > 10:
         raise WindError("wind: the eave height is above the mean roof height")
+    normal = direction != "parallel"
+    across = L if normal else B
+    rise = math.tan(math.radians(theta)) * (across / 2 if roof == "gable" else across)
     gc = GCPI[enclosure]
     qh, kh = velocity_pressure(V, exposure, h, Kzt, Ke)
     hl, lb = h / L, L / B
-    zs = [z for z in HEIGHTS if z < eave - 1e-9] + [eave]
+    # wall heights: windward, leeward; a wall under the roof slope (wind parallel to the ridge) runs from the eave up by the rise
+    if normal:
+        top_w = eave + (rise if direction == "normal_high" else 0.0)
+        top_l = eave + (rise if direction == "normal_low" else 0.0)
+        taper = 0.0
+    else:
+        top_w = top_l = eave + rise
+        taper = rise
+    zs = [z for z in HEIGHTS if z < top_w - 1e-9] + [top_w]
     windward = []
     for z in zs:
         qz, k = velocity_pressure(V, exposure, z, Kzt, Ke)
-        s = Surface(f"windward wall at {z:g} ft", qz, "qz", WALL_CP_WINDWARD, qh, gc)
+        s = Surface(f"windward wall at {round(z, 1):g} ft", qz, "qz", WALL_CP_WINDWARD, qh, gc)
         s.z, s.Kz = z, k
         windward.append(s)
     cl = wall_cp_leeward(lb)
     leeward = Surface("leeward wall", qh, "qh", cl, qh, gc)
     side = Surface("side walls", qh, "qh", WALL_CP_SIDE, qh, gc)
-    roof = []
-    if direction == "normal" and theta >= 10:
+    surfaces, roof_h = [], [0.0]            # roof_h: horizontal roof force for each windward roof value, lb
+    sloped = normal and theta >= 10
+    if sloped and roof == "gable":
         a, b = roof_cp_windward(theta, hl)
-        for v in (a, b):
-            if v is not None:
-                roof.append(Surface("windward roof", qh, "qh", v, qh, gc))
-        roof.append(Surface("leeward roof", qh, "qh", roof_cp_leeward(theta, hl), qh, gc))
+        lee = Surface("leeward roof", qh, "qh", roof_cp_leeward(theta, hl), qh, gc)
+        ww = [Surface("windward roof", qh, "qh", v, qh, gc) for v in (a, b) if v is not None]
+        surfaces = ww + [lee]
+        roof_h = [(x.external - lee.external) * B * rise for x in ww]
+    elif sloped and direction == "normal_low":
+        a, b = roof_cp_windward(theta, hl)
+        surfaces = [Surface("roof", qh, "qh", v, qh, gc) for v in (a, b) if v is not None]
+        roof_h = [x.external * B * rise for x in surfaces]
+    elif sloped:
+        surfaces = [Surface("roof", qh, "qh", roof_cp_leeward(theta, hl), qh, gc)]
+        roof_h = [-surfaces[0].external * B * rise]
     else:
         for nm, x1, x2, cp in roof_cp_parallel(hl):
             if x1 * h >= L - 1e-9:
                 continue
             to = L if x2 is None or x2 * h > L else x2 * h
-            roof.append(Surface("roof", qh, "qh", cp, qh, gc, zone=(nm, x1 * h, to)))
-        roof.append(Surface("roof, all zones", qh, "qh", ROOF_PARALLEL_OTHER, qh, gc))
+            surfaces.append(Surface("roof", qh, "qh", cp, qh, gc, zone=(nm, x1 * h, to)))
+        surfaces.append(Surface("roof, all zones", qh, "qh", ROOF_PARALLEL_OTHER, qh, gc))
     walls_together = [(s.z, s.external - leeward.external) for s in windward]
-    return dict(qh=qh, Kh=kh, h_over_L=hl, L_over_B=lb, GCpi=gc, windward=windward, leeward=leeward, side=side, roof=roof,
-                walls_together=walls_together, direction=direction, theta=theta)
+
+    def width(z):                          # wall width normal to the wind at height z
+        return B if z <= eave or not taper else B * max(0.0, 1.0 - (z - eave) / taper)
+
+    def area(z1, z2):
+        cuts = sorted({z1, z2} | ({eave} if z1 < eave < z2 else set()))
+        return sum((width(a_) + width(b_)) / 2 * (b_ - a_) for a_, b_ in zip(cuts[:-1], cuts[1:]))
+
+    F_w, z0 = 0.0, 0.0
+    for s in windward:                     # the pressure at the top of each height band over that band
+        F_w += s.external * area(z0, s.z)
+        z0 = s.z
+    A_l = area(0.0, top_l)
+    F_l = -leeward.external * A_l
+    walls = F_w + F_l
+    total = max([walls] + [walls + r for r in roof_h])
+    A_wall = area(0.0, top_w)
+    A_roof = B * rise if normal and direction != "normal_high" else 0.0    # behind the high wall of a monoslope roof: none
+    F_min = MIN_WALL * A_wall + MIN_ROOF * A_roof
+    return dict(qh=qh, Kh=kh, h_over_L=hl, L_over_B=lb, GCpi=gc, windward=windward, leeward=leeward, side=side, roof=surfaces,
+                walls_together=walls_together, direction=direction, theta=theta, rise=rise, top_w=top_w, top_l=top_l, sloped=sloped,
+                F_windward=F_w, F_leeward=F_l, F_walls=walls, F_roof=roof_h, F_total=total, A_wall=A_wall, A_roof=A_roof,
+                F_min=F_min, F_design=max(total, F_min))
