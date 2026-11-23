@@ -7,7 +7,7 @@ naming the box, and all such messages come back together.
 """
 import re
 
-from .. import calcsheet, glulam, scl, shapes, shearwall, snow, wood, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column, ws_wood
+from .. import calcsheet, glulam, ijoist, scl, shapes, shearwall, snow, wood, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column, ws_wood
 from ..footing import FootingInputError
 from ..steel_beam import SteelInputError
 from ..ws_steel_beam import Combo, DeflCheck, WorksheetError
@@ -250,6 +250,22 @@ FORMS = {
                 F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
         tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point", "area"]),
                                      F("mag", "Load", unit="plf, lb or psf"),
+                                     F("x1", "From / at", unit="ft", required=False),
+                                     F("x2", "To", unit="ft", required=False),
+                                     F("label", "Note", "text", required=False)]),
+                T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
+                                                F("ratio", "Span /"), F("source", "Source", "text")])]),
+    "ijoist": dict(
+        title="I-Joist", code="2018 NDS, ICC-ES ESR-1336, ESR-1153", mark="J",
+        fields=[F("name", "Joist series", "select", options=list(ijoist.NAMES), help="Boise BCI (ESR-1336) or Weyerhaeuser TJI (ESR-1153)"),
+                F("depth", "Depth", "select", options=[f"{d:g}" for d in ijoist.DEPTHS], unit="in"),
+                F("span", "Span", unit="ft"),
+                F("spacing", "Joist spacing", unit="in", required=False, help="needed for area loads in psf"),
+                F("bearing", "Bearing length at each end", unit="in", help="1.5 in. minimum for BCI, 1.75 in. for TJI"),
+                F("stiffeners", "Web stiffeners at the end bearing", "select", options=["no", "yes"]),
+                F("flange", "Compression flange supported throughout (sheathing)", "select", options=["yes", "no"], help="NDS 7.3.5")],
+        tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["area", "uniform", "point"]),
+                                     F("mag", "Load", unit="psf, plf or lb"),
                                      F("x1", "From / at", unit="ft", required=False),
                                      F("x2", "To", unit="ft", required=False),
                                      F("label", "Note", "text", required=False)]),
@@ -711,6 +727,32 @@ def build(kind, values, project):
         r.done()
         return ws_wood.post(mark, sp, gr, size, H, loads, cb, Ke1, Ke2, ks, wet, inc, r.num("lu1", False), r.num("lu2", False),
                             r.num("unit_weight", False), lateral=lat), "simple", {}
+    if kind == "ijoist":
+        from .. import ws_ijoist
+        cb = combos(project, r.miss, "ASD")
+        nm, dep, span, bearing = r.text("name"), r.text("depth"), r.num("span"), r.num("bearing")
+        stf, flg = yes(r.text("stiffeners")), yes(r.text("flange"))
+        loads = []
+        for ld in r.rows("loads"):
+            if ld["kind"] in ("uniform", "area"):
+                d = dict(case=ld["case"], kind="uniform", w=ld["mag"]) if ld["kind"] == "uniform" else dict(case=ld["case"], kind="area", q=ld["mag"])
+                if ld["x1"] is not None or ld["x2"] is not None:
+                    d.update(x1_ft=ld["x1"] or 0.0, x2_ft=ld["x2"] if ld["x2"] is not None else span)
+            else:
+                if ld["x1"] is None:
+                    r.miss.append("Loads: a point load needs its location (From / at)")
+                d = dict(case=ld["case"], kind="point", P=ld["mag"], x_ft=ld["x1"])
+            if ld["label"]:
+                d["label"] = ld["label"]
+            loads.append(d)
+        if not loads:
+            r.miss.append("No loads are entered")
+        dc = checks(r.rows("defl"), r.miss, "Deflection limits")
+        cases_used([ld["case"] for ld in loads], cb, r.miss)
+        r.done()
+        if any(ld["kind"] == "area" for ld in loads) and r.num("spacing", False) is None:
+            raise Missing(["Joist spacing is blank; an area load in psf needs it"])
+        return ws_ijoist.joist(mark, nm, float(dep), span, r.num("spacing", False), loads, cb, dc, bearing, stf, flg), "simple", {}
     if kind == "lvl_post":
         cb = combos(project, r.miss, "ASD")
         gr, b_, d_, H = r.text("grade"), r.num("b"), r.num("d"), r.num("height")
@@ -994,7 +1036,7 @@ def sheet_pdf(kind, values, project, path):
     fn = {"steel_beam": calcsheet.steel_beam_pdf, "steel_column": calcsheet.steel_column_pdf,
           "footing": calcsheet.footing_pdf, "frame": calcsheet.frame_pdf, "conn": calcsheet.conn_pdf,
           "simple": calcsheet.simple_pdf}[pk]
-    fn(sheet, path, job_of(project), FORMS[kind]["code"], project.get("date") or "", **kw)
+    fn(sheet, path, job_of(project), getattr(sheet, "code", None) or FORMS[kind]["code"], project.get("date") or "", **kw)
     return path
 
 
@@ -1008,7 +1050,7 @@ def package_pdf(project, members, path, cover=True):
         except Exception:
             skipped.append((m["values"].get("mark") or "(no mark)"))
             continue
-        code = FORMS[m["kind"]]["code"]
+        code = getattr(sheet, "code", None) or FORMS[m["kind"]]["code"]
         items.append((pk, sheet, code, kw))
         if code not in codes:
             codes.append(code)
