@@ -82,7 +82,8 @@ def tension_breakout(hef, fc, nx, sx, ny, sy, cx1, cx2, cy1, cy2, psi_c, deep_eq
     edge distances from the outer rods. Returns (N, detail dict).
     deep_eq_for_groups: use Eq. 17.6.2.2.3 for a group with 11 to 25 in. embedment. The Code
     words that equation for a single anchor; AISC Design Guide 1 (3rd Ed.) Example 4.7-11
-    uses it for a row of two rods. Off by default (the lower value); detail["alt"] carries
+    uses it for a row of two rods. Off by default: Zach ruled 2026-11-23 to use the more
+    conservative (lower) value. detail["alt"] carries
     the value the other reading gives."""
     close = [c for c in (cx1, cx2, cy1, cy2) if c < 1.5 * hef]
     h = hef
@@ -197,7 +198,7 @@ def check(da, nt, futa, fya, ductile, hef, Abrg, fc, ha, n, s_row, s_rows, c_end
     if d["alt"]:
         notes.append(f"Breakout of the row uses Eq. 17.6.2.2.1 ({N / 1000:.1f} kip nominal). Eq. 17.6.2.2.3, for embedment "
                      f"from 11 to 25 in., would give {d['alt'] / 1000:.1f} kip; the Code words it for a single rod, while "
-                     "AISC Design Guide 1 Example 4.7-11 applies it to a row. The lower value is used.")
+                     "AISC Design Guide 1 Example 4.7-11 applies it to a row. Thatcher Engineering standard: the lower value is used.")
     Np = psi_cP * 8 * Abrg * fc / 1000                    # Eq. 17.6.3.1, 17.6.3.2.2a
     L.append(Line("Npn = psi_c,P 8 Abrg f'c", Np, "kip", "Eq. 17.6.3.1, 17.6.3.2.2a", f"psi_c,P = {psi_cP:g}; phi = {phi_p:g}"))
     M.append(Mode("Npn", "pullout", "tension", phi_p, Np, 1.0 / n,
