@@ -612,7 +612,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
 
 
 def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_source, lu1_ft=None, lu2_ft=None, e1_in=0.0, e2_in=0.0,
-             unit_weight_pcf=None, self_weight_case="D", product="Versa-Lam LVL", lateral=()):
+             unit_weight_pcf=None, self_weight_case="D", product="Versa-Lam LVL", lateral=(), plies=1, fastening=None):
     """One-piece structural composite lumber column, evaluation report values, 2018 NDS 3.6, 3.7 and
     15.4.1(b), ASD, dry use. b_in x d_in: the section. Ke1, lu1 and e1 go with the larger
     dimension d1; Ke2, lu2 and e2 with the smaller dimension d2. e1, e2: eccentricity of
@@ -627,14 +627,30 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
     if b_in is None or d_in is None or min(b_in, d_in) <= 0:
         raise WorksheetError(f"{mark}: the section dimensions must be positive")
     e1, e2 = abs(e1_in or 0.0), abs(e2_in or 0.0)
+    ply_t, face = b_in, d_in                              # built-up: b_in is one ply, d_in the face width of the plies
+    if plies not in (1, 2, 3, 4, 5):
+        raise WorksheetError(f"{mark}: the number of plies must be 1 to 5 (NDS 15.3.1)")
+    if plies > 1:
+        if fastening not in ("nailed", "bolted"):
+            raise WorksheetError(f"{mark}: say whether the plies are nailed or bolted together (NDS 15.3)")
+        if e1 or e2 or lateral:
+            raise WorksheetError(f"{mark}: a built-up column is checked for axial load only; eccentric and lateral load are not covered")
+        if ply_t < 1.5:
+            raise WorksheetError(f"{mark}: each ply of a built-up column is at least 1.5 in. thick (NDS 15.3.1)")
+        b_in = ply_t * plies
     d1, d2 = max(b_in, d_in), min(b_in, d_in)
     A = d1 * d2
     lu1 = (lu1_ft if lu1_ft else height_ft) * 12.0
     lu2 = (lu2_ft if lu2_ft else height_ft) * 12.0
     try:
-        ref = scl.column_spec(product, grade, d1, d2, lu2 / 12.0)
+        ref = scl.column_spec(product, grade, max(ply_t, face), min(ply_t, face), lu2 / 12.0) if plies > 1 else \
+            scl.column_spec(product, grade, d1, d2, lu2 / 12.0)
     except scl.SclError as e:
         raise WorksheetError(f"{mark}: {e}")
+    if plies > 1 and ref["e2_min"]:
+        raise WorksheetError(f"{mark}: this grade takes a minimum eccentricity (ESR-1387 Table 1 note 13); a built-up column of it "
+                             "is not covered")
+    Kf = {None: 1.0, "nailed": 0.6, "bolted": 0.75}[fastening if plies > 1 else None]
     e2_typed = e2
     e2 = max(e2, ref["e2_min"])
     Emin = ref["Emin"]
@@ -688,7 +704,19 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
         Fb1 = ref["Fb1"] * CD * (CV1 * CL if CV1 > 1 else min(CV1, CL))
         Fb2 = ref["Fb2"] * CD * CV2
         fc = P / A
-        o = dict(cb=cb, P=P, CD=CD, cd_case=cd_case, cd_dur=cd_dur, Fc_star=Fc_star, CP=CP, st=st, Fc_adj=Fc_star * CP, fc=fc,
+        bu = None
+        if plies > 1:
+            def _cp(r):
+                a_ = 0.822 * Emin / r ** 2 / Fc_star
+                return (1 + a_) / 1.8 - math.sqrt(((1 + a_) / 1.8) ** 2 - a_ / 0.9)
+            stack_is_d1 = b_in >= d_in
+            le_face = (Ke2 * lu2) if stack_is_d1 else (Ke1 * lu1)
+            le_stack = (Ke1 * lu1) if stack_is_d1 else (Ke2 * lu2)
+            cp_face, cp_stack = _cp(le_face / face), Kf * _cp(le_stack / b_in)
+            single = min(_cp(le_stack / ply_t), cp_face) if le_stack / ply_t <= 50 else None
+            CP = max(min(cp_face, cp_stack), single or 0.0)
+            bu = dict(cp_face=cp_face, cp_stack=cp_stack, single=single, le_face=le_face, le_stack=le_stack)
+        o = dict(bu=bu, cb=cb, P=P, CD=CD, cd_case=cd_case, cd_dur=cd_dur, Fc_star=Fc_star, CP=CP, st=st, Fc_adj=Fc_star * CP, fc=fc,
                  Fb1=Fb1, Fb2=Fb2, CL=CL, FbE=bst.get("FbE"), i3=0.0, i4=0.0, M=Mlat, V=Vlat, fb1=Mlat / S1,
                  fv=1.5 * Vlat / A, Fv_adj=ref["Fv1"] * CD)
         if ((e1 or e2) and P > 0) or Mlat:
@@ -730,7 +758,14 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
              L("le1 / d1", Ke1 * lu1 / d1, "", "NDS 3.7.1.3", f"Ke = {Ke1:g}, l = {lu1:g} in, d1 = {d1:g} in"),
              L("le2 / d2", Ke2 * lu2 / d2, "", "NDS 3.7.1.3", f"Ke = {Ke2:g}, l = {lu2:g} in, d2 = {d2:g} in"),
              L("FcE = 0.822 Emin / (le/d)^2", g["st"]["FcE"], "psi", "NDS 3.7.1.5", f"le/d = {g['st']['ratio']:.2f}"),
-             L("CP", g["CP"], "", "NDS Eq. 3.7-1", "c = 0.9 for structural composite lumber"),
+             L("CP", g["CP"], "", "NDS Eq. 3.7-1", "c = 0.9 for structural composite lumber")] + ([] if plies == 1 else [
+             L("CP across the face width", g["bu"]["cp_face"], "", "NDS Eq. 15.3-1", f"Kf = 1.0; le/d = {g['bu']['le_face'] / face:.2f}"),
+             L("CP across the plies", g["bu"]["cp_stack"], "", "NDS Eq. 15.3-1",
+               f"Kf = {Kf:g} ({fastening}); le/d = {g['bu']['le_stack'] / b_in:.2f}")]
+             + ([L("CP, one ply as a solid column", g["bu"]["single"], "", "NDS 15.3.2.2, Eq. 3.7-1",
+                   f"le / t = {g['bu']['le_stack'] / ply_t:.1f}; Fc' need not be less than this")] if g["bu"]["single"] is not None else [])
+             + [L("CP, built-up column", g["CP"], "", "NDS 15.3.2.2", "the smaller of the two"
+                  + (", but not less than the one-ply value" if g["bu"]["single"] is not None else ""))]) + [
              L("Fc' = Fc* CP", g["Fc_adj"], "psi", "NDS Table 8.3.1"),
              L("fc = P / A", g["fc"], "psi", "NDS 3.6.3", f"P = {g['P']:,.0f} lb, {g['cb'].name}")]
     if ge:
@@ -753,7 +788,8 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
             steps += [L("Fb2' = Fb CD CV", ge["Fb2"], "psi", "NDS Table 8.3.1", f"Fb = {ref['Fb2']:,.0f} psi, {ref['fb2_note']} ({ref['source']}); CV = {CV2:.3f} ({ref['cv_src']})"),
                       L("fc (6 e2 / d2)", ge["fc"] * 6 * e2 / d2, "psi", "NDS 15.4.1", f"e2 = {e2:.3g} in")]
         steps.append(L(f"Eq. {eq}", ge["i3"], "", f"NDS Eq. {eq}", "not more than 1.0"))
-    info = [("Member", f"{d2:g} in x {d1:g} in {ref['name']} {grade}, one piece"),
+    info = [("Member", f"{d2:g} in x {d1:g} in {ref['name']} {grade}, one piece" if plies == 1 else
+             f"({plies}) {ply_t:g} in x {face:g} in {ref['name']} {grade}, {fastening} together ({b_in:g} in x {face:g} in)"),
             ("Height", f"{height_ft:g} ft; unbraced {lu1 / 12:g} ft for the {d1:g} in dimension and {lu2 / 12:g} ft for the {d2:g} in dimension"),
             ("Ends", f"Ke = {Ke1:g} and {Ke2:g} ({k_source.strip()})"),
             ("Load Position", f"eccentricity {e1:.3g} in parallel to the {d1:g} in face and {e2:.3g} in parallel to the {d2:g} in face"
@@ -775,6 +811,9 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
                                "(ESR-1387 Table 1 note 13).")
     else:
         assumptions.append("The axial load acts along the centre of the column. No bending is considered.")
+    if plies > 1:
+        assumptions.append(f"All plies are full column length with faces in contact, and are {fastening} in accordance with NDS "
+                           + ("15.3.3." if fastening == "nailed" else "15.3.4."))
     assumptions.append(f"Self-weight {sw:,.0f} lb (unit weight {unit_weight_pcf:g} pcf) added to load case {self_weight_case}."
                        if sw is not None else "Self-weight is not added separately.")
     sheet = SimpleSheet(
@@ -782,7 +821,7 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
         f"Governing Calculation ({g['cb'].name})", steps, rows, assumptions,
         (["deflection under lateral load", "lateral load on the wide face"] if lateral else ["bending from lateral load (NDS 15.4.1(a))"]) + ["bearing on the end grain and on the supporting member (NDS 3.10)",
          "connections at the top and base"],
-        picture=("wood_post", dict(b=b_in, d=d_in, height=height_ft, size=f"{d2:g}x{d1:g}", kind="lvl", axial=[f"{x['case']} {x['P']:,.0f} lb" for x in loads], lateral=[dict(x) for x in lateral])), governing=g["cb"].name)
+        picture=("wood_post", dict(b=b_in, d=d_in, height=height_ft, size=f"{d2:g}x{d1:g}", kind="lvl", plies=plies if b_in >= 0 else 1, axial=[f"{x['case']} {x['P']:,.0f} lb" for x in loads], lateral=[dict(x) for x in lateral])), governing=g["cb"].name)
     sheet.base = {o["cb"].name: o["P"] for o in out}
     sheet.governing = max(out, key=lambda o: o["ratio"])["cb"].name
     return sheet

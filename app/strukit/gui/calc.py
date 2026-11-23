@@ -344,7 +344,9 @@ FORMS = {
         fields=[F("grade", "Versa-Lam grade", "select", options=["1.8E 2650", "2.1E 3100", "2.1E 2800", "1.8E 2400"]
                   + [g for g in scl.GRADES if g not in ("1.8E 2650", "2.1E 3100", "2.1E 2800", "1.8E 2400")],
                   help="ICC-ES ESR-1040 Table 1; use the grade stamped on the product"),
-                F("b", "Section, one side", unit="in", help="one piece; 3.5, 5.25 or 7"),
+                F("b", "Section, one side (the thickness of one ply when built up)", unit="in", help="3.5, 5.25 or 7; or 1.75 per ply"),
+                F("plies", "Number of plies", "select", options=["1", "2", "3", "4", "5"], required=False, help="blank = one piece"),
+                F("fastening", "Plies fastened by", "select", options=["nailed", "bolted"], required=False, help="NDS 15.3.3 or 15.3.4"),
                 F("d", "Section, other side", unit="in"),
                 F("height", "Height", unit="ft"),
                 F("lu1", "Unbraced length, larger dimension", unit="ft", required=False, help="blank = full height"),
@@ -365,7 +367,9 @@ FORMS = {
         fields=[F("grade", "Product and grade", "select", options=['Parallam PSL 1.8E WS', 'Parallam PSL 2.2E WS', 'TimberStrand LSL 1.3E', 'TimberStrand LSL 1.55E', 'Microllam LVL 2.0E-2900Fb WS']
                   + [f"{p} {g}" for p in scl.WEY for g in scl.WEY[p] if f"{p} {g}" not in ['Parallam PSL 1.8E WS', 'Parallam PSL 2.2E WS', 'TimberStrand LSL 1.3E', 'TimberStrand LSL 1.55E', 'Microllam LVL 2.0E-2900Fb WS']],
                   help="Weyerhaeuser, ICC-ES ESR-1387 Table 1; use the grade stamped on the product"),
-                F("b", "Section, one side", unit="in", help="one piece"),
+                F("b", "Section, one side (the thickness of one ply when built up)", unit="in"),
+                F("plies", "Number of plies", "select", options=["1", "2", "3", "4", "5"], required=False, help="blank = one piece"),
+                F("fastening", "Plies fastened by", "select", options=["nailed", "bolted"], required=False, help="NDS 15.3.3 or 15.3.4"),
                 F("d", "Section, other side", unit="in"),
                 F("height", "Height", unit="ft"),
                 F("lu1", "Unbraced length, larger dimension", unit="ft", required=False, help="blank = full height"),
@@ -919,7 +923,8 @@ def build(kind, values, project):
         cases_used([x["case"] for x in loads + lat], cb, r.miss)
         r.done()
         return ws_wood.lvl_post(mark, gr, b_, d_, H, loads, cb, Ke1, Ke2, ks, r.num("lu1", False), r.num("lu2", False),
-                                r.num("e1", False) or 0.0, r.num("e2", False) or 0.0, r.num("unit_weight", False), product=prod, lateral=lat), "simple", {}
+                                r.num("e1", False) or 0.0, r.num("e2", False) or 0.0, r.num("unit_weight", False), product=prod, lateral=lat,
+                                plies=int(r.text("plies", False) or 1), fastening=r.text("fastening", False) or None), "simple", {}
     if kind in ("wood_beam", "lvl_beam", "glulam_beam", "wey_beam"):
         cb = combos(project, r.miss, "ASD")
         lvl, glu = kind in ("lvl_beam", "wey_beam"), kind == "glulam_beam"
