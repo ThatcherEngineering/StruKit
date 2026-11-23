@@ -829,7 +829,7 @@ def wind_cc_walls_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, lea
 
 
 def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, enclosure, enclosure_basis, areas,
-                       Kzt, Kzt_source, elevation_ft=None, elevation_source="", least_dim=None, roof="gable"):
+                       Kzt, Kzt_source, elevation_ft=None, elevation_source="", least_dim=None, roof="gable", overhang=False):
     """Wind pressures on roof components and cladding, flat roofs, gable roofs up to 45 degrees and monoslope roofs up to 30
     degrees, buildings with h of 60 ft or less, ASCE/SEI 7-22 Chapter 30 Part 1 (see wind.py).
     h: the mean roof height (the eave height at 10 degrees or less)."""
@@ -842,7 +842,7 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
     Ke = wind.ke(elevation_ft) if elevation_ft is not None else 1.0
     L = footing_line
     try:
-        r = wind.cc_roof(V, exposure, h, enclosure, areas, theta, Kzt, Ke, least_dim=least_dim, roof=roof)
+        r = wind.cc_roof(V, exposure, h, enclosure, areas, theta, Kzt, Ke, least_dim=least_dim, roof=roof, overhang=overhang)
     except wind.WindError as e:
         raise WorksheetError(f"{mark}: {e}")
     qh, gc, fig = r["qh"], r["GCpi"], "Figure " + r["figure"]
@@ -896,5 +896,14 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
     zp = dict(kind="flat", edge=r["edge"], corner=r["corner"]) if "edge" in r else dict(kind={"30.3-2D": "corner", "30.3-5A": "mono_a", "30.3-5B": "mono_b"}.get(r["figure"], "ridge"), a=r["a"])
     sheet.blocks.append(dict(title="Zones", picture=("wind_zones", zp)))
     sheet.blocks.append(dict(title="Design Pressures by Effective Wind Area and Zone", lines=lines))
+    if r["overhang"]:
+        ol = [f"{'area ft2':>9}  wall +{'':>4}(GCp):" + "".join(f"{z:>7}" for z in zs) + f"   p psf:" + "".join(f"{z:>8}" for z in zs)]
+        for x in r["rows"]:
+            ol.append(f"{x['area']:>9g}{x['overhang_wall']:>8.2f}{'':>10}" + "".join(f"{x['overhang_gcp'][z]:>7.2f}" for z in zs)
+                      + f"{'':>9}" + "".join(f"{x['overhang'][z]:>8.1f}" for z in zs))
+        sheet.blocks.append(dict(title="Roof Overhangs: Uplift by Effective Wind Area and Zone", lines=ol, after=[
+            "p = qh Kd [(GCp) - (GCpi)], Eq. 30.7-1. (GCp) = the roof zone value on the top surface less the positive wall value of Figure 30.3-1 "
+            "on the bottom surface, for the same effective wind area (Sect. 30.7)."]))
+        sheet.not_checked = [t for t in sheet.not_checked if not t.startswith("roof overhangs")] + ["downward pressure on roof overhangs"]
     sheet.wind = dict(r)
     return sheet

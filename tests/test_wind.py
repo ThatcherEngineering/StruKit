@@ -273,3 +273,23 @@ def test_cc_roof_monoslope(tmp_path):
         calcsheet._simple_pdf(sheet, str(tmp_path / f"{kind}.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     with pytest.raises(calc.Missing):
         calc.build("wind_cc_roof", dict(v, theta="6", least=""), dict(job="2026-000", name="Test", method="ASD"))
+
+
+def test_cc_roof_overhang_by_hand(tmp_path):
+    """Sect. 30.7, gable roof at 18 degrees, 50 ft2: roof zone 3 -2.342, zone 2 -1.787, zone 1 -1.290 (test above);
+    wall positive at 50 ft2: 1.0 - 0.3 log(5)/log(50) = 0.877; overhang (GCp) = -3.219, -2.664, -2.167;
+    115 mi/h, Exposure C, h = 20 ft, enclosed: zone 3: 30.47(0.85)(-3.219 - 0.18) = -88.0 psf."""
+    r = wind.cc_roof(115, "C", 20, "enclosed", [50], theta=18, least_dim=40, overhang=True)
+    x = r["rows"][0]
+    assert x["overhang_wall"] == pytest.approx(0.877, abs=0.001)
+    assert [round(x["overhang_gcp"][z], 3) for z in ("3", "2", "1")] == pytest.approx([-3.219, -2.664, -2.167], abs=0.002)
+    assert x["overhang"]["3"] == pytest.approx(-88.0, abs=0.1)
+    with pytest.raises(wind.WindError):
+        wind.cc_roof(115, "C", 20, "enclosed", [50], theta=5, overhang=True)
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="WR4", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
+             enclosure_basis="Sect. 26.12", h="20", theta="18", least="40", overhang="yes", areas="10, 50, 100", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, _, _ = calc.build("wind_cc_roof", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert len(sheet.blocks) == 3 and "downward pressure on roof overhangs" in sheet.not_checked
+    calcsheet._simple_pdf(sheet, str(tmp_path / "o.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")

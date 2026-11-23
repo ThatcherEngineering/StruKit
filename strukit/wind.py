@@ -60,6 +60,12 @@ Components and cladding, buildings with h of 60 ft or less (Chapter 30, Part 1),
                  along the high eave in a strip 2a wide (3 for 4a from each end); zone 2 along
                  the other three edges, a wide; zone 1 the rest. At 3 degrees or less Figure
                  30.3-2A applies.
+  Sect. 30.7     roof overhangs (pdf p. 396): p = qh Kd [(GCp) - (GCpi)], Eq. 30.7-1, with (GCp)
+                 the sum of the top surface (the roof zone's value) and the bottom surface (the
+                 adjacent wall's value for the same effective wind area). Built for uplift:
+                 the roof's negative value less the wall's positive value. For gable roofs at
+                 7 degrees or less the standard gives a separate overhang chart in Figure
+                 30.3-2A; that chart is not built.
 Not covered: roof components and cladding on hip and other roof shapes, on gable roofs over 45
 degrees and monoslope roofs over 30 degrees, the parapet provision of Figure 30.3-2A note 5, roof overhangs
 (Sect. 30.7); Parts 2 to 5 of Chapter 30;
@@ -417,7 +423,7 @@ def cc_roof_gcp(area, zone, theta=0.0, roof="gable"):
     return _log_line(area, *curves[zone])
 
 
-def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_dim=None, roof="gable"):
+def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_dim=None, roof="gable", overhang=False):
     """Roof component and cladding pressures (psf, strength level) for a flat roof or a gable
     roof up to 45 degrees: for each effective wind area, the positive pressure and the
     negative pressure in each zone, with the internal pressure sign that adds, not less than
@@ -440,7 +446,15 @@ def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_
         p = {z: qh * KD_CC * (v + gc if z == "positive" else v - gc) for z, v in g.items()}
         d = {z: (max(v, MIN_CC) if z == "positive" else min(v, -MIN_CC)) for z, v in p.items()}
         rows.append(dict(area=A, gcp=g, p=p, design=d))
-    out = dict(qh=qh, Kh=kh, GCpi=gc, figure=fig, zones=zones, rows=rows)
+    if overhang:
+        if fig == "30.3-2A":
+            raise WindError("wind: roof overhangs are built for roofs above the range of Figure 30.3-2A only (its overhang chart is not built)")
+        for x in rows:
+            w = cc_wall_gcp(x["area"], "positive", theta)
+            x["overhang_wall"] = w
+            x["overhang_gcp"] = {z: x["gcp"][z] - w for z in zones}
+            x["overhang"] = {z: min(qh * KD_CC * (v - gc), -MIN_CC) for z, v in x["overhang_gcp"].items()}
+    out = dict(qh=qh, Kh=kh, GCpi=gc, figure=fig, zones=zones, rows=rows, overhang=bool(overhang))
     if fig == "30.3-2A":
         out.update(edge=0.6 * h, corner=0.2 * h)
     else:
