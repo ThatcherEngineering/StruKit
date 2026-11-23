@@ -648,7 +648,7 @@ def wind_pressure_sheet(mark, V, V_source, exposure, exposure_basis, heights, h_
 
 
 def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, across_ridge, along_ridge, theta, enclosure,
-                     enclosure_basis, Kzt, Kzt_source, elevation_ft=None, elevation_source="", roof="gable", parapet=0.0, theta_hip=None):
+                     enclosure_basis, Kzt, Kzt_source, elevation_ft=None, elevation_source="", roof="gable", parapet=0.0, theta_hip=None, overhang=0.0):
     """Design wind pressures on the main wind force resisting system of a rigid building with
     a gable, monoslope or flat roof, ASCE/SEI 7-22 Chapter 27 (directional procedure), for
     each wind direction (see wind.py). across_ridge, along_ridge: plan dimensions; eave: the
@@ -718,6 +718,11 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         if pr:
             out.append(f"parapets, {pr['height']:g} ft high: windward qp {pr['q_windward']:.1f} psf x Kd x 1.5 = {pr['p_windward']:+.1f} psf; "
                        f"leeward qp {pr['q_leeward']:.1f} psf x Kd x -1.0 = {pr['p_leeward']:+.1f} psf (net, Eq. 27.3-3)")
+        if overhang:
+            o = wind.mwfrs_overhang(r, overhang)
+            out.append(f"windward roof overhang, {overhang:g} ft: bottom surface qh Kd G x 0.8 = {o['bottom']:.1f} psf upward; net with the top surface "
+                       + " or ".join(f"{v['net']:+.1f} psf (top Cp {v['Cp']:.2f})" for v in o["values"]))
+            out.append(f"  governing uplift {-o['net']:.1f} psf = {-o['w']:,.0f} lb per ft of eave on the {overhang:g} ft horizontal projection")
         f = (f"horizontal force: windward wall {r['F_windward']:,.0f} + leeward wall {r['F_leeward']:,.0f}"
              + (f" + parapets {pr['F']:,.0f}" if pr else "") + f" = {r['F_walls']:,.0f} lb")
         out.append(f)
@@ -759,7 +764,8 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
          f"Minimum design wind load: {wind.MIN_WALL:g} psf on the wall area and {wind.MIN_ROOF:g} psf on the roof area projected on a "
          "vertical plane normal to the wind (Sect. 27.1.5)."],
         ["the torsional load cases of Figure 27.3-8 (Sect. 27.3.5)",
-         ("roof overhangs (Sect. 27.3.3)" if parapet else "parapets and roof overhangs (Sect. 27.3.3, 27.3.4)"), "components and cladding (Chapter 30)",
+         *([] if (parapet and overhang) else ["parapets (Sect. 27.3.4)"] if overhang else ["roof overhangs (Sect. 27.3.3)"] if parapet
+           else ["parapets and roof overhangs (Sect. 27.3.3, 27.3.4)"]), "components and cladding (Chapter 30)",
          "whether the building is rigid (Sect. 26.2) and its enclosure classification (Sect. 26.12)"])
 
     def panel(t, r, Ld):
@@ -781,6 +787,11 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         sheet.info.append(("Parapets", f"{parapet:g} ft above the top of the windward and leeward walls"))
         sheet.assumptions.append("Parapets: net pressure pp = qp Kd (GCpn), Eq. 27.3-3, qp at the top of the parapet, (GCpn) = +1.5 windward and -1.0 leeward; "
                                  "their force and area are included in the horizontal force and in the minimum.")
+    if overhang:
+        sheet.info.append(("Roof Overhang", f"{overhang:g} ft horizontal projection"))
+        sheet.assumptions.append("Windward roof overhang: positive pressure on the bottom surface with Cp = 0.8 and q = qh, combined with the top surface pressure "
+                                 "of Figure 27.3-1 at the windward edge (Sect. 27.3.3); no internal pressure acts. The horizontal force on the overhang is not "
+                                 "included in the horizontal force.")
     if roof == "hip":
         sheet.assumptions.insert(4, "Hip roof: for each wind direction the roof plane facing the wind takes the windward roof coefficients at its slope, the opposite "
                                     "plane the leeward coefficients, and the planes at the sides the coefficients by distance from the windward edge (Figure 27.3-1). "

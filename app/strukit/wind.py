@@ -90,7 +90,7 @@ Not covered: roof components and cladding on other roof shapes, on gable and hip
 degrees and monoslope roofs over 30 degrees, the parapet provision of Figure 30.3-2A note 5, roof overhangs
 (Sect. 30.7); Parts 2 to 5 of Chapter 30;
 hip, mansard and arched roofs; open buildings; flexible buildings;
-parapets and roof overhangs; the torsional cases of Figure 27.3-8; Chapters 28 and 30.
+the horizontal force on roof overhangs; the torsional cases of Figure 27.3-8; Chapters 28 and 30.
 """
 import math
 
@@ -248,6 +248,27 @@ class Surface:
 
 
 GCPN_WINDWARD, GCPN_LEEWARD = 1.5, -1.0                 # Sect. 27.3.4
+CP_OVERHANG_BOTTOM = 0.8                                # Sect. 27.3.3 (pdf p. 347): bottom surface of a windward roof overhang
+
+
+def mwfrs_overhang(r, width):
+    """Windward roof overhang, Sect. 27.3.3: positive pressure on the bottom surface with Cp = 0.8,
+    combined with the top surface pressure of Figure 27.3-1 at the windward edge. r: a result of
+    mwfrs(); width: horizontal projection of the overhang, ft. Returns the bottom pressure (psf,
+    acting upward), and for each top surface value (Cp, top pressure, net pressure positive
+    downward, net load per foot of eave on the horizontal projection). No internal pressure acts."""
+    if width is None or width <= 0:
+        raise WindError("wind: the roof overhang width must be positive")
+    roof = r["roof"]
+    if r["sloped"]:
+        tops = [x for x in roof if x.name == "windward roof"] or [x for x in roof if x.name == "roof"]
+    else:
+        zoned = [x for x in roof if x.zone]
+        tops = zoned[:1] + [x for x in roof if not x.zone][-1:]
+    bottom = r["qh"] * KD_MWFRS * G_RIGID * CP_OVERHANG_BOTTOM
+    vals = [dict(Cp=x.Cp, top=x.external, net=x.external - bottom, w=(x.external - bottom) * width) for x in tops]
+    return dict(width=width, bottom=bottom, values=vals, net=min(v["net"] for v in vals), w=min(v["w"] for v in vals))
+
 
 
 def mwfrs_hip(V, exposure, h, eave, B, L, enclosure, direction, theta, theta_hip, Kzt=1.0, Ke=1.0, parapet=0.0):
