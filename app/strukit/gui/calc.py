@@ -573,8 +573,10 @@ FORMS = {
                 F("SD1", "SD1", unit="g"), F("S1", "S1", unit="g"), F("TL", "Long-period transition period, TL", unit="s"),
                 F("ground_source", "Where these values come from", "text", help="for example: ASCE 7 Hazard Tool, Site Class D, Risk Category II, with the date"),
                 F("risk", "Risk Category", "select", options=["I", "II", "III", "IV"], help="ASCE 7-22 Table 1.5-1"),
-                F("R", "Response modification coefficient, R", help="ASCE 7-22 Table 12.2-1"),
-                F("R_source", "The system and its line in Table 12.2-1", "text"),
+                F("system", "Seismic force-resisting system", "select", required=False, options=['Bearing wall: light-frame (wood) walls sheathed with wood structural panels', 'Bearing wall: light-frame walls with shear panels of all other materials', 'Bearing wall: special reinforced masonry shear walls', 'Bearing wall: intermediate reinforced masonry shear walls', 'Bearing wall: ordinary reinforced masonry shear walls', 'Building frame: light-frame (wood) walls sheathed with wood structural panels', 'Building frame: steel special concentrically braced frames', 'Building frame: steel ordinary concentrically braced frames', 'Building frame: special reinforced masonry shear walls', 'Moment frame: steel special moment frames', 'Moment frame: steel intermediate moment frames', 'Moment frame: steel ordinary moment frames', 'Cantilevered column: steel ordinary cantilever column systems', 'Cantilevered column: timber frames', 'Steel systems not specifically detailed for seismic resistance', 'other (type R and Cd)'],
+                  help="ASCE 7-22 Table 12.2-1: fills R and Cd and checks the height limit; blank or other = type R below"),
+                F("R", "Other system: R", required=False, help="ASCE 7-22 Table 12.2-1"),
+                F("R_source", "Other system: the system and its line in Table 12.2-1", "text", required=False),
                 F("Ie", "Importance factor, Ie", help="ASCE 7-22 Table 1.5-2"),
                 F("Ie_source", "Where Ie comes from", "text", help="for example: Risk Category II, Table 1.5-2"),
                 F("structure", "Structure type for the period", "select", options=["all other structural systems", "steel moment-resisting frame",
@@ -1322,14 +1324,23 @@ def build(kind, values, project):
                                              r.text("elevation_source", False) or ""), "simple", {}
     if kind == "seismic_elf":
         SDS, SD1, S1, TL, gs = r.num("SDS"), r.num("SD1"), r.num("S1"), r.num("TL"), r.text("ground_source")
-        R, Rs, Ie, Is, st, hn = r.num("R"), r.text("R_source"), r.num("Ie"), r.text("Ie_source"), r.text("structure"), r.num("hn")
+        from .. import seismic as _seis
+        sysn = r.text("system", False)
+        sysn = sysn if sysn in _seis.SYSTEMS else None
+        if sysn:
+            row_ = _seis.SYSTEMS[sysn]
+            R, Rs = row_[1], f"{sysn}, Table 12.2-1 line {row_[0]}"
+        else:
+            R, Rs = r.num("R", True, label="Other system: R"), r.text("R_source")
+        Ie, Is, st, hn = r.num("Ie"), r.text("Ie_source"), r.text("structure"), r.num("hn")
         rk = r.text("risk")
         lv = r.rows("levels")
         if not lv:
             r.miss.append("No level is entered")
         dr = None
-        if any(x.get("de") is not None for x in lv or []) or r.num("Cd", False) is not None:
-            dr = dict(Cd=r.num("Cd", label="Drift: Cd"), Cd_source=r.text("Cd_source"), structure=r.text("drift_type"), de_source=r.text("de_source"),
+        if any(x.get("de") is not None for x in lv or []) or (not sysn and r.num("Cd", False) is not None):
+            dr = dict(Cd=(_seis.SYSTEMS[sysn][3] if sysn else r.num("Cd", label="Drift: Cd")),
+                      Cd_source=(f"Table 12.2-1 line {_seis.SYSTEMS[sysn][0]}" if sysn else r.text("Cd_source")), structure=r.text("drift_type"), de_source=r.text("de_source"),
                       de={str(x["name"]): x.get("de") for x in lv or []})
             for x in lv or []:
                 if x.get("de") is None:
@@ -1341,7 +1352,7 @@ def build(kind, values, project):
         return ws_more.seismic_elf_sheet(mark, SDS, SD1, S1, TL, gs, R, Rs, Ie, Is, st, hn, [(x["name"], x["w"], x["h"], x.get("wp")) for x in lv],
                                          r.num("T", False), r.text("T_source", False) or "", risk=rk, drift=dr,
                                          wall_lines=[(x["name"], x["level"], x["share"]) for x in wl] or None, rho=float(rho) if rho else None,
-                                         rho_source=rho_s or ""), "simple", {}
+                                         rho_source=rho_s or "", system=sysn), "simple", {}
     if kind == "live_load":
         fl, rf = r.rows("floors"), r.rows("roofs")
         if not fl and not rf:

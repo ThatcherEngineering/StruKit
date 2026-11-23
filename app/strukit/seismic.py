@@ -191,3 +191,47 @@ def drift(levels, Cd, Ie, structure, risk):
         out.append(dict(name=nm, hsx=hs, dDE=dDE, drift=abs(dDE - d0), allow=f * hs * 12.0, factor=f))
         h0, d0 = h, dDE
     return out[::-1]
+
+
+# ---- Table 12.2-1 (pdf pp. 173-175, printed sideways; read from 240 dpi page images turned upright) ----
+# name: (line, R, overstrength, Cd, limits for Seismic Design Category B, C, D, E, F in ft; None = not limited;
+#        "NP" = not permitted; a trailing letter is the table footnote that modifies the entry)
+SYSTEMS = {
+    "Bearing wall: light-frame (wood) walls sheathed with wood structural panels": ("A.16", 6.5, 3.0, 4.0, (None, None, 65, 65, 65)),
+    "Bearing wall: light-frame walls with shear panels of all other materials": ("A.18", 2.0, 2.5, 2.0, (None, None, 35, "NP", "NP")),
+    "Bearing wall: special reinforced masonry shear walls": ("A.8", 5.0, 2.5, 3.5, (None, None, 160, 160, 100)),
+    "Bearing wall: intermediate reinforced masonry shear walls": ("A.9", 3.5, 2.5, 2.25, (None, None, "NP", "NP", "NP")),
+    "Bearing wall: ordinary reinforced masonry shear walls": ("A.10", 2.0, 2.5, 1.75, (None, 160, "NP", "NP", "NP")),
+    "Building frame: light-frame (wood) walls sheathed with wood structural panels": ("B.23", 7.0, 2.5, 4.5, (None, None, 65, 65, 65)),
+    "Building frame: steel special concentrically braced frames": ("B.2", 6.0, 2.0, 5.0, (None, None, 160, 160, 100)),
+    "Building frame: steel ordinary concentrically braced frames": ("B.3", 3.25, 2.0, 3.25, (None, None, "35j", "35j", "NPj")),
+    "Building frame: special reinforced masonry shear walls": ("B.17", 5.5, 2.5, 4.0, (None, None, 160, 160, 100)),
+    "Moment frame: steel special moment frames": ("C.1", 8.0, 3.0, 5.5, (None, None, None, None, None)),
+    "Moment frame: steel intermediate moment frames": ("C.3", 4.5, 3.0, 4.0, (None, None, "35k", "NPk", "NPk")),
+    "Moment frame: steel ordinary moment frames": ("C.4", 3.5, 3.0, 3.0, (None, None, "NPl", "NPl", "NPl")),
+    "Cantilevered column: steel ordinary cantilever column systems": ("G.2", 1.25, 1.25, 1.25, (35, 35, "NPl", "NPl", "NPl")),
+    "Cantilevered column: timber frames": ("G.6", 1.5, 1.5, 1.5, (35, 35, 35, "NP", "NP")),
+    "Steel systems not specifically detailed for seismic resistance": ("H", 3.0, 3.0, 3.0, (None, None, "NP", "NP", "NP")),
+}
+
+
+def system(name, category):
+    """Table 12.2-1 row for a system in a Seismic Design Category: dict(line, R, omega, Cd,
+    limit (ft or None), permitted (False where NP), note (footnote letter or ""))."""
+    if name not in SYSTEMS:
+        raise SeismicError("seismic: the system is not one of the Table 12.2-1 rows held")
+    line, R, om, Cd, lim = SYSTEMS[name]
+    out = dict(line=line, R=R, omega=om, Cd=Cd, limit=None, permitted=True, note="")
+    if category in ("A", None):
+        return out
+    v = lim["BCDEF".index(category)]
+    if isinstance(v, str):
+        if v[-1].islower():
+            out["note"], v = v[-1], v[:-1]
+        if v == "NP":
+            out["permitted"] = False
+        else:
+            out["limit"] = float(v)
+    else:
+        out["limit"] = v
+    return out

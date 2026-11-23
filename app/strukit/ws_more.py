@@ -1009,7 +1009,7 @@ def wind_cc_parapet_sheet(mark, V, V_source, exposure, exposure_basis, hp_top, h
 
 
 def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie_source, structure, hn, levels, T_analysis=None,
-                      T_source="", unit="kips", risk=None, drift=None, wall_lines=None, rho=None, rho_source=""):
+                      T_source="", unit="kips", risk=None, drift=None, wall_lines=None, rho=None, rho_source="", system=None):
     """Seismic base shear and story forces, ASCE/SEI 7-22 Sect. 12.8 (see seismic.py).
     levels: [(name, weight, height above the base ft)]."""
     from . import seismic
@@ -1130,6 +1130,25 @@ def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie
                               "the drift limit divided by the redundancy factor for moment frames in Seismic Design Category D, E or F (Sect. 12.12.1.1)",
                               "building separation (Sect. 12.12.2)"]
         r = dict(r, drift=dr)
+    if system:
+        if not cat:
+            raise WorksheetError(f"{mark}: the Risk Category is needed to check the system against Table 12.2-1")
+        try:
+            sy = seismic.system(system, cat[0])
+        except seismic.SeismicError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        note = f", with note {sy['note']} of the table" if sy["note"] else ""
+        if not sy["permitted"] and not sy["note"]:
+            raise WorksheetError(f"{mark}: Table 12.2-1 line {sy['line']} does not permit this system in Seismic Design Category {cat[0]}")
+        if not sy["permitted"]:
+            sheet.rows.append(Row(f"System in Seismic Design Category {cat[0]}", "", 1.0, 0.0, "", f"Table 12.2-1 line {sy['line']}",
+                                  f"not permitted, except as note {sy['note']} of the table allows"))
+        elif sy["limit"] is not None:
+            sheet.rows.append(Row("Structural height", "", hn, sy["limit"], "ft", f"Table 12.2-1 line {sy['line']}",
+                                  f"limit in Seismic Design Category {cat[0]}{note}"))
+        sheet.not_checked = [t for t in sheet.not_checked if "system limits and height limits" not in t]
+        sheet.not_checked.append("the detailing requirements of the system (Chapter 14)" + (f" and note {sy['note']} of Table 12.2-1" if sy["note"] else ""))
+        r = dict(r, system=sy)
     if cat:
         sheet.info.insert(3, ("Category", f"Risk Category {risk}; Seismic Design Category {cat[0]}"))
         r = dict(r, sdc=cat[0])
