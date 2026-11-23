@@ -255,6 +255,25 @@ FORMS = {
                                      F("label", "Note", "text", required=False)]),
                 T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
                                                 F("ratio", "Span /"), F("source", "Source", "text")])]),
+    "builtup_post": dict(
+        title="Built-Up Wood Column", code="2018 NDS", mark="BC",
+        fields=[F("species", "Species", "select",
+                  options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"] + [x for x in sorted(wood.SPECIES) if x not in ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
+                  help="2018 NDS Supplement Table 4A"),
+                F("grade", "Grade", "select", options=["No. 2", "Select Structural", "No. 1 & Btr", "No. 1", "No. 1/ No. 2", "No. 3", "Stud",
+                                                        "Construction", "Standard", "Utility"]),
+                F("size", "Lamination size (nominal)", "select", options=[x for x in wood.SIZES if x.split("x")[0] == "2"]),
+                F("plies", "Number of laminations", "select", options=["2", "3", "4", "5"]),
+                F("fastening", "Fastened together by", "select", options=["nailed", "bolted"], help="NDS 15.3.3 or 15.3.4"),
+                F("height", "Height", unit="ft"),
+                F("lu_d", "Unbraced length, across the lamination face width", unit="ft", required=False, help="blank = full height"),
+                F("lu_stack", "Unbraced length, across the laminations", unit="ft", required=False, help="blank = full height"),
+                F("Ke_d", "Ke, across the face width"), F("Ke_stack", "Ke, across the laminations"),
+                F("k_source", "Ke comes from", "text", help="for example: pinned top and bottom, NDS Appendix G"),
+                F("service", "Moisture", "select", options=["dry service", "wet service"]),
+                F("incised", "Incised", "select", options=["no", "yes"]),
+                F("unit_weight", "Wood unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
+        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)])]),
     "ijoist": dict(
         title="I-Joist", code="2018 NDS, ICC-ES ESR-1336, ESR-1153", mark="J",
         fields=[F("name", "Joist series", "select", options=list(ijoist.NAMES), help="Boise BCI (ESR-1336) or Weyerhaeuser TJI (ESR-1153)"),
@@ -759,6 +778,19 @@ def build(kind, values, project):
         r.done()
         return ws_wood.post(mark, sp, gr, size, H, loads, cb, Ke1, Ke2, ks, wet, inc, r.num("lu1", False), r.num("lu2", False),
                             r.num("unit_weight", False), lateral=lat), "simple", {}
+    if kind == "builtup_post":
+        cb = combos(project, r.miss, "ASD")
+        sp, gr, size, n_, fa, H = r.text("species"), r.text("grade"), r.text("size"), r.text("plies"), r.text("fastening"), r.num("height")
+        Kd, Ks, ks = r.num("Ke_d"), r.num("Ke_stack"), r.text("k_source")
+        wet = {"dry service": False, "wet service": True}.get(r.text("service"))
+        inc = yes(r.text("incised"))
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        r.done()
+        return ws_wood.builtup_post(mark, sp, gr, size, int(n_), fa, H, loads, cb, Kd, Ks, ks, wet, inc, r.num("lu_d", False),
+                                    r.num("lu_stack", False), r.num("unit_weight", False)), "simple", {}
     if kind == "ijoist":
         from .. import ws_ijoist
         cb = combos(project, r.miss, "ASD")
