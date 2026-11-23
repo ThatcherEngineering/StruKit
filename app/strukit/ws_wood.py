@@ -365,7 +365,7 @@ def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_sourc
         rows.append(Row("compression with bending" if lateral else "compression with eccentric load", gb["cb"].name, gb["i3"], 1.0, "",
                         "2018 NDS Eq. 15.4-1" if (ecc and lateral) else ("2018 NDS Eq. 15.4-3" if ecc else "2018 NDS Eq. 3.9-3"),
                         (f"e1 = {e1:.3g} in, e2 = {e2:.3g} in; " if ecc else "")
-                        + f"fc = {gb['fc']:.1f} psi, fb = {gb['fb']:.1f} psi; M = {gb['M'] / 12:,.0f} lb-ft; "
+                        + f"fc = {gb['fc']:.1f} psi" + (f", fb = {gb['fb']:.1f} psi; M = {gb['M'] / 12:,.0f} lb-ft" if lateral else "") + "; "
                         f"CD = {gb['CD']:g} ({gb['cd_case']}, {gb['cd_dur']}); CL = {gb['CL']:.3f}"))
         g4 = max(bent, key=lambda o: o["i4"])
         if g4["i4"] > 0:
