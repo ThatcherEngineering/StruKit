@@ -243,12 +243,25 @@ def test_screen_builds_anchorage_and_names_blank_boxes():
     assert kind == "simple" and any(r.check == "ACI pullout" for r in s.rows)
     assert "1.625 in across flats" in s.blocks[0]["info"][0][1]
     with pytest.raises(calc.Missing) as e:
-        calc.build("base_plate_moment", _typed(anc_tpi="", anc_sdc="", anc_cracked="", cases_lrfd=[]), PROJECT)
+        calc.build("base_plate_moment", _typed(anc_fy="", anc_sdc="", anc_cracked="", cases_lrfd=[]), PROJECT)
     msg = str(e.value)
-    assert "threads per inch is blank" in msg and "Seismic Design Category is blank" in msg
+    assert "Fy" in msg and "Seismic Design Category is blank" in msg
     assert "service load is blank" in msg and "factored (LRFD) load cases" in msg
-    with pytest.raises(calc.Missing, match="one of the two"):
+    with pytest.raises(calc.Missing, match="not both"):
         calc.build("base_plate_moment", _typed(anc_abrg="1.5"), PROJECT)
+
+
+def test_screen_takes_rod_data_from_design_guide_1_tables():
+    from strukit.gui import calc
+    v = _typed(rod_grade="F1554 Gr. 36", rod_Fu="", rod_source="", anc_F="", anc_tpi="", anc_fy="", anc_ductile="")
+    s, _, _ = calc.build("base_plate_moment", v, PROJECT)
+    info = s.blocks[0]["info"][0][1]
+    assert "Abrg = 1.500 in2" in info and "Design Guide 1 Table 4-2" in info and "8 threads per inch" in info
+    assert "Fy = 36 ksi" in info and "ductile" in info
+    assert any("Design Guide 1" in t and "Table 2-2" in t for _, t in s.info)
+    # a diameter outside the table needs the thread and head data typed
+    with pytest.raises(calc.Missing, match="not in the Design Guide 1 table"):
+        calc.build("base_plate_moment", dict(v, rod_d="1.1"), PROJECT)
 
 
 def test_screen_leaves_anchorage_out_when_embedment_is_blank():

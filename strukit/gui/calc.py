@@ -147,15 +147,19 @@ FORMS = {
                 F("sup_B", "Support width", unit="in", required=False)],
         tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="kip"), F("label", "Note", "text", required=False)])]),
     "base_plate_moment": dict(
-        title="Base Plate with Moment", code="AISC 360-22, ACI 318-19", mark="BPM",
+        title="Base Plate with Moment", code="AISC 360-22, AISC Design Guide 1, ACI 318-19", mark="BPM",
         fields=[F("shape", "Column", "shape"), F("N", "Plate length (direction of the moment)", unit="in"),
                 F("B", "Plate width", unit="in"), F("t", "Plate thickness", unit="in"), F("Fy", "Plate Fy", unit="ksi"),
                 F("fc", "Concrete f'c", unit="psi"),
                 F("full", "Plate covers the whole support", "select", options=["yes", "no"]),
                 F("sup_N", "Support length (direction of the moment)", unit="in", required=False),
                 F("sup_B", "Support width", unit="in", required=False),
-                F("rod_d", "Anchor rod diameter", unit="in"), F("rod_Fu", "Anchor rod Fu", unit="ksi"),
-                F("rod_source", "Anchor rod material", "text", help="for example ASTM F1554 Grade 36; where Fu comes from"),
+                F("rod_d", "Anchor rod diameter", unit="in"),
+                F("rod_grade", "Anchor rod grade", "select", options=["F1554 Gr. 36", "F1554 Gr. 55", "F1554 Gr. 105", "other"],
+                  required=False, help="strengths from AISC Design Guide 1 Table 2-2; pick other to type them"),
+                F("rod_Fu", "Anchor rod Fu (grade: other)", unit="ksi", required=False),
+                F("rod_source", "Anchor rod material (grade: other)", "text", required=False,
+                  help="where Fu comes from"),
                 F("n_rods", "Rods on each side"), F("rod_edge", "Rods from the plate end", unit="in"),
                 F("rod_side", "Rods from the plate sides", unit="in"),
                 F("n_shear", "Rods counted on for shear", help="0 = the rods do not carry the base shear"),
@@ -164,11 +168,12 @@ FORMS = {
                   help="ACI 318-19 Chapter 17; leave blank to leave the anchorage in the concrete unchecked"),
                 F("anc_h", "Anchorage: concrete thickness at the rods", unit="in", required=False),
                 F("anc_F", "Anchorage: hex head or nut, width across flats", unit="in", required=False,
-                  help="gives the head bearing area; or type the area in the next box"),
+                  help="leave blank for a heavy hex nut (AISC Design Guide 1 Table 4-2)"),
                 F("anc_abrg", "Anchorage: head bearing area, if not a hex", unit="in2", required=False),
-                F("anc_tpi", "Anchorage: rod threads per inch", required=False),
-                F("anc_fy", "Anchorage: anchor rod Fy", unit="ksi", required=False),
-                F("anc_ductile", "Anchorage: rod steel is ductile (ACI 318 Ch. 2)", "select", options=["yes", "no"], required=False,
+                F("anc_tpi", "Anchorage: rod threads per inch", required=False,
+                  help="leave blank for coarse thread (AISC Design Guide 1 Table 4-1)"),
+                F("anc_fy", "Anchorage: anchor rod Fy (grade: other)", unit="ksi", required=False),
+                F("anc_ductile", "Anchorage: rod steel is ductile (grade: other)", "select", options=["yes", "no"], required=False,
                   help="elongation at least 14 percent and reduction in area at least 30 percent"),
                 F("anc_cracked", "Anchorage: concrete at the rods at service load", "select", options=["cracked", "uncracked"],
                   required=False),
@@ -528,7 +533,15 @@ def build(kind, values, project):
         sup = "full"
         if full is False:
             sup = (r.num("sup_N", label="Support length"), r.num("sup_B", label="Support width"))
-        rod = [r.num("rod_d"), r.num("rod_Fu"), r.text("rod_source"), r.num("n_rods"), r.num("rod_edge"),
+        from .. import anchor_rods as _ar
+        _g = _ar.grade(r.text("rod_grade", False) or "")
+        if _g:
+            _fu, _src = _g[0], _g[3]
+        else:
+            _fu, _src = r.num("rod_Fu", label="Anchor rod Fu"), r.text("rod_source", False)
+            if not _src:
+                r.miss.append("Anchor rod grade is blank (or pick other and type Fu and the material)")
+        rod = [r.num("rod_d"), _fu, _src, r.num("n_rods"), r.num("rod_edge"),
                r.num("rod_side"), r.num("n_shear")]
         cases = r.rows("cases")
         if not cases:
@@ -540,26 +553,37 @@ def build(kind, values, project):
             pick = lambda k, opts: (opts.index(r.text(k, False)) if r.text(k, False) in opts else
                                     r.miss.append(lab(k) + " is blank"))
             F_, ab = r.num("anc_F", False), r.num("anc_abrg", False)
-            if (F_ is None) == (ab is None):
-                r.miss.append("Anchorage: give the hex width across flats or the head bearing area (one of the two)")
-            anc = dict(hef=r.num("anc_hef"), ha=r.num("anc_h", label=lab("anc_h")), nt=r.num("anc_tpi", label=lab("anc_tpi")),
-                       fya=r.num("anc_fy", label=lab("anc_fy")))
-            d_, c_, s_, e_, g_ = (pick("anc_ductile", ["yes", "no"]), pick("anc_cracked", ["cracked", "uncracked"]),
-                                  pick("anc_supp", ["yes", "no"]),
-                                  pick("anc_edge", ["none or smaller than No. 4", "No. 4 or larger",
-                                                    "No. 4 or larger in stirrups at 4 in."]),
-                                  pick("anc_grout", ["yes", "no"]))
+            tab = _ar.size(rod[0]) if rod[0] else None
+            if F_ is not None and ab is not None:
+                r.miss.append("Anchorage: give the hex width across flats or the head bearing area, not both")
+            nt = r.num("anc_tpi", False)
+            if nt is None:
+                nt = tab[0] if tab else r.miss.append(lab("anc_tpi") + " is blank (the rod diameter is not in the "
+                                                        "Design Guide 1 table)")
+            fya = _g[1] if _g else r.num("anc_fy", label=lab("anc_fy"))
+            anc = dict(hef=r.num("anc_hef"), ha=r.num("anc_h", label=lab("anc_h")), nt=nt, fya=fya)
+            d_ = (0 if _g[2] else 1) if _g else pick("anc_ductile", ["yes", "no"])
+            c_, s_, e_, g_ = (pick("anc_cracked", ["cracked", "uncracked"]),
+                              pick("anc_supp", ["yes", "no"]),
+                              pick("anc_edge", ["none or smaller than No. 4", "No. 4 or larger",
+                                                "No. 4 or larger in stirrups at 4 in."]),
+                              pick("anc_grout", ["yes", "no"]))
             sdc = r.text("anc_sdc", False)
             if not sdc:
                 r.miss.append(lab("anc_sdc") + " is blank")
             if None not in (d_, c_, s_, e_, g_):
                 anc.update(ductile=d_ == 0, cracked=c_ == 0, supplementary=s_ == 0, edge_reinf=e_, grout=g_ == 0, sdc=sdc)
-            if F_ is not None and ab is None and rod[0]:
+            if F_ is not None and rod[0]:
                 anc.update(Abrg=_an.hex_bearing_area(F_, rod[0]), head=f"hex head or nut, {F_:g} in across flats")
                 if anc["Abrg"] <= 0:
                     r.miss.append("Anchorage: the hex width across flats is not larger than the rod")
             elif ab is not None:
                 anc.update(Abrg=ab, head="head bearing area typed in")
+            elif tab:
+                anc.update(Abrg=tab[1], head="heavy hex nut, AISC Design Guide 1 Table 4-2")
+            else:
+                r.miss.append("Anchorage: give the hex width across flats or the head bearing area (the rod diameter "
+                              "is not in the Design Guide 1 table)")
             fact = r.rows("cases_lrfd")
             if m == "ASD" and not fact:
                 r.miss.append("Anchorage: enter the factored (LRFD) load cases; ACI 318-19 Chapter 17 is strength design")

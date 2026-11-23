@@ -164,6 +164,6 @@ def test_base_plate_with_moment_on_the_screen():
     assert {x["check"] for x in r["rows"]} >= {"plate thickness", "anchor rod tension", "anchor rod shear", "bearing block length"}
     assert any("Chapter 17" in n for n in r["not_checked"])
     assert calc.results("base_plate_moment", dict(v, t="1.25"), PROJ)["status"] == "FLAG"
-    assert any("Anchor rod material" in m for m in calc.results("base_plate_moment", dict(v, rod_source=""), PROJ)["messages"])
+    assert any("Anchor rod grade" in m for m in calc.results("base_plate_moment", dict(v, rod_source=""), PROJ)["messages"])
     stop = calc.results("base_plate_moment", dict(v, cases=[dict(name="U", P="-50", M="1", V="0")]), PROJ)
     assert stop["state"] == "stopped" and "uplift" in stop["messages"][0]
