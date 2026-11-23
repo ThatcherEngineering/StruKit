@@ -172,3 +172,27 @@ def test_parallam_beam_by_hand():
     assert r["bearing at support"].demand == pytest.approx(406.3, abs=0.1) and r["bearing at support"].capacity == 625
     assert r["deflection, total"].demand == pytest.approx(0.6700 + 0.0547, abs=0.001)
     assert s.title == "PSL Beam" and "ESR-1040" not in " ".join(str(x.source) for x in s.steps)
+
+
+def test_parallam_column_by_hand():
+    # 5.25 x 5.25 Parallam 2.2E WS, 10 ft, pinned, D 6,000 + L 14,000 lb, load typed as centred
+    # note 13: e2 = 5.25/6 + 5 x 100 / 4608 = 0.875 + 0.1085 = 0.9835 in
+    # Emin = 1,118,000; le/d = 22.857; FcE = 0.822 x 1,118,000 / 522.4 = 1,759.0 psi; Fc* = 2,900; c = 0.9
+    spec = scl.column_spec("Parallam PSL", "2.2E WS", 5.25, 5.25, 10.0)
+    assert spec["e2_min"] == pytest.approx(0.9835, abs=0.0005) and spec["Fc"] == 2900 and spec["Fb2"] == 2650
+    assert spec["CV2"] == pytest.approx((12 / 5.25) ** 0.111) and spec["CV2"] < 1.15
+    assert scl.column_spec("Parallam PSL", "1.8E WS", 5.25, 5.25, 10.0)["e2_min"] == 0.0            # Fc 2,500: note 13 not flagged
+    s = ws_wood.lvl_post("PC1", "2.2E WS", 5.25, 5.25, 10, [dict(case="D", P=6000.0), dict(case="L", P=14000.0)], _combos(), 1.0, 1.0,
+                         "pinned top and bottom", product="Parallam PSL")
+    r = {x.check: x for x in s.rows}
+    FcE = 0.822 * 1.118e6 / (120 / 5.25) ** 2
+    a = FcE / 2900
+    CP = (1 + a) / 1.8 - ((1 + a) ** 2 / 3.24 - a / 0.9) ** 0.5
+    fc = 20000 / 27.5625
+    assert r["compression"].demand == pytest.approx(fc) and r["compression"].capacity == pytest.approx(2900 * CP, rel=1e-6)
+    Fb2 = 2650 * (12 / 5.25) ** 0.111
+    hand = (fc / (2900 * CP)) ** 2 + fc * 6 * 0.98351 / 5.25 * (1 + 0.234 * fc / FcE) / (Fb2 * (1 - fc / FcE))
+    assert r["compression with eccentric load"].demand == pytest.approx(hand, rel=1e-4)
+    assert s.title == "PSL Column" and any("note 13" in x for x in s.assumptions)
+    with pytest.raises(Exception, match="thickness"):
+        ws_wood.lvl_post("MC", "2.0E-2900Fb WS", 5.25, 5.25, 10, [dict(case="D", P=1.0)], _combos(), 1, 1, "pinned", product="Microllam LVL")

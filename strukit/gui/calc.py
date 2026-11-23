@@ -288,6 +288,23 @@ FORMS = {
                   help="blank = 0; the manufacturer's column tables use 1/6 of the dimension"),
                 F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
         tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)])]),
+    "wey_post": dict(
+        title="Microllam, Parallam or TimberStrand Column", code="2018 NDS, ICC-ES ESR-1387", mark="LC",
+        fields=[F("grade", "Product and grade", "select", options=['Parallam PSL 1.8E WS', 'Parallam PSL 2.2E WS', 'TimberStrand LSL 1.3E', 'TimberStrand LSL 1.55E', 'Microllam LVL 2.0E-2900Fb WS']
+                  + [f"{p} {g}" for p in scl.WEY for g in scl.WEY[p] if f"{p} {g}" not in ['Parallam PSL 1.8E WS', 'Parallam PSL 2.2E WS', 'TimberStrand LSL 1.3E', 'TimberStrand LSL 1.55E', 'Microllam LVL 2.0E-2900Fb WS']],
+                  help="Weyerhaeuser, ICC-ES ESR-1387 Table 1; use the grade stamped on the product"),
+                F("b", "Section, one side", unit="in", help="one piece"),
+                F("d", "Section, other side", unit="in"),
+                F("height", "Height", unit="ft"),
+                F("lu1", "Unbraced length, larger dimension", unit="ft", required=False, help="blank = full height"),
+                F("lu2", "Unbraced length, smaller dimension", unit="ft", required=False, help="blank = full height"),
+                F("Ke1", "Ke, larger dimension"), F("Ke2", "Ke, smaller dimension"),
+                F("k_source", "Ke comes from", "text", help="for example: pinned top and bottom, NDS Appendix G"),
+                F("e1", "Load eccentricity, parallel to the larger dimension", unit="in", required=False, help="blank = 0"),
+                F("e2", "Load eccentricity, parallel to the smaller dimension", unit="in", required=False,
+                  help="blank = 0; Parallam 1.9E and higher take at least t/6 + 5 L^2 / 4608 (ESR-1387)"),
+                F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
+        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)])]),
     "shear_wall": dict(
         title="Wood Shear Wall", code="SDPWS-2021", mark="SW",
         fields=[F("panel", "Sheathing and nails", "select", options=list(shearwall.PANELS), help="SDPWS Table 4.3A; blocked, one side"),
@@ -753,9 +770,13 @@ def build(kind, values, project):
         if any(ld["kind"] == "area" for ld in loads) and r.num("spacing", False) is None:
             raise Missing(["Joist spacing is blank; an area load in psf needs it"])
         return ws_ijoist.joist(mark, nm, float(dep), span, r.num("spacing", False), loads, cb, dc, bearing, stf, flg), "simple", {}
-    if kind == "lvl_post":
+    if kind in ("lvl_post", "wey_post"):
         cb = combos(project, r.miss, "ASD")
         gr, b_, d_, H = r.text("grade"), r.num("b"), r.num("d"), r.num("height")
+        prod = "Versa-Lam LVL"
+        if kind == "wey_post" and gr:
+            prod = next(p_ for p_ in scl.WEY if gr.startswith(p_ + " "))
+            gr = gr[len(prod) + 1:]
         Ke1, Ke2, ks = r.num("Ke1"), r.num("Ke2"), r.text("k_source")
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
         if not loads:
@@ -763,7 +784,7 @@ def build(kind, values, project):
         cases_used([x["case"] for x in loads], cb, r.miss)
         r.done()
         return ws_wood.lvl_post(mark, gr, b_, d_, H, loads, cb, Ke1, Ke2, ks, r.num("lu1", False), r.num("lu2", False),
-                                r.num("e1", False) or 0.0, r.num("e2", False) or 0.0, r.num("unit_weight", False)), "simple", {}
+                                r.num("e1", False) or 0.0, r.num("e2", False) or 0.0, r.num("unit_weight", False), product=prod), "simple", {}
     if kind in ("wood_beam", "lvl_beam", "glulam_beam", "wey_beam"):
         cb = combos(project, r.miss, "ASD")
         lvl, glu = kind in ("lvl_beam", "wey_beam"), kind == "glulam_beam"

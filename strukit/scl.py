@@ -112,7 +112,7 @@ with open(Path(__file__).parent / "data" / "esr1387_table1.csv", newline="") as 
     for _r in csv.DictReader(_f):
         WEY.setdefault(_r["product"], {})[_r["grade"]] = dict(
             E=float(_r["E_e6"]) * 1e6, Emin=float(_r["Emin_e6"]) * 1e6, Fb=float(_r["Fb_joist"]), Fv=float(_r["Fv_joist"]),
-            Fc_perp=float(_r["Fc_perp_joist"]))
+            Fc_perp=float(_r["Fc_perp_joist"]), Fb_plank=float(_r["Fb_plank"]), Fc=float(_r["Fc"]))
 _WEY_CV = {"Microllam LVL": (0.136, 1.18), "Parallam PSL": (0.111, 1.15), "TimberStrand LSL": (0.092, 1.12)}
 _WEY_T = {"Microllam LVL": (0.75, 3.5), "Parallam PSL": (1.75, 11.0), "TimberStrand LSL": (1.25, 5.5)}
 PRODUCTS = ["Versa-Lam LVL"] + list(WEY)
@@ -155,3 +155,46 @@ def beam_spec(product, grade, ply_thickness, plies, depth):
                 E=v["E"], Emin=v["Emin"], emin_label="Emin", emin_src="ESR-1387 Table 1", emin_note="",
                 CV=min((12.0 / depth) ** x, cap), cv_label=f"CV = (12 / d)^{x:g}", cv_src="ESR-1387 Table 1 note 7",
                 cv_note=f"not more than {cap:g}", fb_note=fb_note, defl_src="ESR-1387 Table 1 note 5", notes=notes)
+
+
+def column_spec(product, grade, d1, d2, lu2_ft):
+    """Everything a one-piece column calculation needs. d1 >= d2, in.; lu2_ft: unbraced
+    length for buckling in the plane of d2 (about the weak axis), ft.
+    Versa-Lam (ESR-1040): plank Fb about either axis with the plank volume factor (note 4).
+    ESR-1387 products: bending about the strong axis uses the joist Fb and CV of note 7
+    (with note 8 for Parallam); bending about the weak axis uses the plank Fb with the
+    plank CV of note 7: Microllam (1.75/t)^0.136 <= 1.0, thickness to 3.5 in.; Parallam
+    (12/t)^0.111 <= 1.15; TimberStrand 1.0.
+    ESR-1387 Table 1 note 13 (Parallam grades with Fc of 2,700 or 2,900 psi): design by
+    NDS Chapter 15 with a minimum eccentricity parallel to the narrow face
+    e2 = t/6 + 5 L^2 / 4608 (t in., L ft)."""
+    if product == "Versa-Lam LVL":
+        v = values(grade)
+        if d2 < 1.5 or d2 > 7.0 or d1 > 48:
+            raise SclError("LVL: the section must be 1.5 to 7 in. thick and not more than 48 in. wide (ESR-1040)")
+        return dict(name=product, report="ICC-ES ESR-1040", source=SOURCE, Fc=v["Fc"], Emin=emin(v["E_app"]),
+                    emin_label="Emin = E [1 - 1.645 (0.10)] (1.03) / 1.66", emin_src="ESR-1040 Table 1 note 6; NDS Eq. D-4",
+                    emin_note=f"apparent E = {v['E_app']:,.0f} psi", Fb1=v["Fb_plank"], CV1=plank_volume_factor(d1),
+                    Fb2=v["Fb_plank"], CV2=plank_volume_factor(d2), fb1_note="plank orientation", fb2_note="plank orientation",
+                    cv_src="ESR-1040 Table 1 note 4", e2_min=0.0, e2_src="",
+                    assumption="Bending from the eccentric load uses the plank-orientation Fb about either axis, with the volume "
+                               "factor of ESR-1040 Table 1 note 4.")
+    if product not in WEY or grade not in WEY[product]:
+        raise SclError(f"{product}: grade '{grade}' is not in ESR-1387 Table 1")
+    v = WEY[product][grade]
+    lo, hi = _WEY_T[product]
+    if not lo <= d2 <= hi:
+        raise SclError(f"{product}: thickness must be {lo:g} to {hi:g} in. (ESR-1387)")
+    x, cap = _WEY_CV[product]
+    Fb1, n1 = v["Fb"], "joist / beam orientation"
+    if product == "Parallam PSL" and d2 < 2.69:
+        Fb1, n1 = Fb1 * 0.93, n1 + "; x 0.93 for thickness under 2.69 in. (note 8)"
+    CV2 = {"Microllam LVL": min((1.75 / d2) ** 0.136, 1.0), "Parallam PSL": min((12.0 / d2) ** 0.111, 1.15), "TimberStrand LSL": 1.0}[product]
+    e2_min, e2_src = 0.0, ""
+    if product == "Parallam PSL" and v["Fc"] >= 2700:
+        e2_min, e2_src = d2 / 6.0 + 5.0 * lu2_ft ** 2 / 4608.0, "ESR-1387 Table 1 note 13: e2 = t/6 + 5 L^2 / 4608"
+    return dict(name=product, report="ICC-ES ESR-1387", source="ICC-ES ESR-1387 Table 1", Fc=v["Fc"], Emin=v["Emin"], emin_label="Emin",
+                emin_src="ESR-1387 Table 1", emin_note="", Fb1=Fb1, CV1=min((12.0 / d1) ** x, cap), Fb2=v["Fb_plank"], CV2=CV2,
+                fb1_note=n1, fb2_note="face / plank orientation", cv_src="ESR-1387 Table 1 note 7", e2_min=e2_min, e2_src=e2_src,
+                assumption="Bending about the strong axis uses the joist-orientation Fb and bending about the weak axis the "
+                           "plank-orientation Fb, each with its volume factor (ESR-1387 Table 1 note 7).")
