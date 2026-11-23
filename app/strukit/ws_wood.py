@@ -758,7 +758,7 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
              L("le1 / d1", Ke1 * lu1 / d1, "", "NDS 3.7.1.3", f"Ke = {Ke1:g}, l = {lu1:g} in, d1 = {d1:g} in"),
              L("le2 / d2", Ke2 * lu2 / d2, "", "NDS 3.7.1.3", f"Ke = {Ke2:g}, l = {lu2:g} in, d2 = {d2:g} in"),
              L("FcE = 0.822 Emin / (le/d)^2", g["st"]["FcE"], "psi", "NDS 3.7.1.5", f"le/d = {g['st']['ratio']:.2f}"),
-             L("CP", g["CP"], "", "NDS Eq. 3.7-1", "c = 0.9 for structural composite lumber")] + ([] if plies == 1 else [
+             ] + ([L("CP", g["CP"], "", "NDS Eq. 3.7-1", "c = 0.9 for structural composite lumber")] if plies == 1 else [
              L("CP across the face width", g["bu"]["cp_face"], "", "NDS Eq. 15.3-1", f"Kf = 1.0; le/d = {g['bu']['le_face'] / face:.2f}"),
              L("CP across the plies", g["bu"]["cp_stack"], "", "NDS Eq. 15.3-1",
                f"Kf = {Kf:g} ({fastening}); le/d = {g['bu']['le_stack'] / b_in:.2f}")]
