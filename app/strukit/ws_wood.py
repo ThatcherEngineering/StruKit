@@ -76,7 +76,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         else:
             ref, CF, grade_note = wood.values(species, grade, size)
             b1, d = wood.SIZES[size]
-            table = "Table 4B" if species == wood.SP else "Table 4A"
+            table = "Table 4B" if species in wood.SP_SPECIES else "Table 4A"
         Cfu = 1.0
         if flat:                                                     # loaded on the wide face: bending about the weak axis
             if timber or plies != 1:

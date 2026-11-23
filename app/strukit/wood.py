@@ -24,7 +24,7 @@ Read from the documents:
                            Southern Pine.
 
 Covered: visually graded dimension lumber 2 to 4 in. thick (Table 4A) as beams and posts,
-and timbers (Table 4D) as posts, allowable stress design. Not covered: Mixed Southern Pine, glued laminated timber, LRFD, notches, built-up columns (NDS 15.3),
+and timbers (Table 4D) as posts, allowable stress design. Not covered: glued laminated timber, LRFD, notches, built-up columns (NDS 15.3),
 temperatures above 100 F.
 
 Units: lb, in, psi.
@@ -143,17 +143,18 @@ def _load_4b():
     out = {}
     with open(os.path.join(_DATA, "nds2018_table4b.csv"), newline="") as f:
         for r in csv.DictReader(f):
-            out[(r["grade"], r["width_class"])] = {k: float(r[k]) for k in ("Fb", "Ft", "Fv", "Fc_perp", "Fc", "E", "Emin")}
+            out[(r["species"], r["grade"], r["width_class"])] = {k: float(r[k]) for k in ("Fb", "Ft", "Fv", "Fc_perp", "Fc", "E", "Emin")}
     return out
 
 
 SP = "SOUTHERN PINE"
-SP_VALUES = _load_4b()                                   # 2018 NDS Supplement Table 4B: (grade, width class) -> values
-SP_GRADES = sorted({g for g, _ in SP_VALUES})
+SP_SPECIES = (SP, "MIXED SOUTHERN PINE")
+SP_VALUES = _load_4b()                                   # 2018 NDS Supplement Table 4B: (species, grade, width class) -> values
+SP_GRADES = sorted({g for _, g, _c in SP_VALUES})
 
 
-def southern_pine_values(grade, size):
-    """Southern Pine dimension lumber, 2018 NDS Supplement Table 4B. The tabulated values carry
+def southern_pine_values(grade, size, species=SP):
+    """Southern Pine and Mixed Southern Pine dimension lumber, 2018 NDS Supplement Table 4B. The tabulated values carry
     the size adjustment by width class; CF = 1.1 on Fb for 4 in. thick, 8 in. and wider; for
     widths over 12 in. the 12 in. values with CF = 0.9 (Table 4B adjustment factors; the 0.9
     also applies to Ft and Fc, which this function leaves to the caller). Returns (values, CF
@@ -164,23 +165,23 @@ def southern_pine_values(grade, size):
     g = "No. 3 and Stud" if grade in ("No. 3", "Stud") else grade
     if g in ("Construction", "Standard", "Utility"):
         if w != 4:
-            raise WoodError(f"wood: Southern Pine {g} grade is listed for members 4 in. wide")
+            raise WoodError(f"wood: {species.title()} {g} grade is listed for members 4 in. wide")
         cls = "4"
     else:
         cls = "2-4" if w <= 4 else "5-6" if w <= 6 else "8" if w == 8 else "10" if w == 10 else "12"
-    if (g, cls) not in SP_VALUES:
-        raise WoodError(f"wood: Southern Pine {grade} is not in {SUPP} Table 4B for a {size}")
+    if (species, g, cls) not in SP_VALUES:
+        raise WoodError(f"wood: {species.title()} {grade} is not in {SUPP} Table 4B for a {size}")
     CF = (1.1 if (t == 4 and w >= 8) else 1.0) * (0.9 if w > 12 else 1.0)
     note = f"Table 4B values for {'4 in. wide' if cls == '4' else cls.replace('-', ' to ') + ' in. wide'}" + ("; wider than 12 in.: 12 in. values with CF = 0.9" if w > 12 else "")
-    return dict(SP_VALUES[(g, cls)]), CF, note
+    return dict(SP_VALUES[(species, g, cls)]), CF, note
 
 
 def values(species, grade, size):
     """Reference design values and the Fb size factor for a species, grade and nominal size.
     A Stud 8 in. and wider takes the No. 3 values and factors (Table 4A adjustment factors).
     Southern Pine: Table 4B (see southern_pine_values)."""
-    if species == SP:
-        return southern_pine_values(grade, size)
+    if species in SP_SPECIES:
+        return southern_pine_values(grade, size, species)
     if (species, grade) not in VALUES:
         raise WoodError(f"wood: {species} {grade} is not in {SUPP} Table 4A")
     if size not in SIZES:
@@ -276,8 +277,8 @@ def timber_class(b, d):
 def post_values(species, grade, size):
     """Reference design values, the Fc size factor, and the table used, for a solid post:
     dimension lumber (Table 4A) or a timber (Table 4D)."""
-    if size in SIZES and species == SP:                    # Table 4B: size adjustment is in the values; 0.9 on Fc for widths over 12 in.
-        ref, _, note = southern_pine_values(grade, size)
+    if size in SIZES and species in SP_SPECIES:                    # Table 4B: size adjustment is in the values; 0.9 on Fc for widths over 12 in.
+        ref, _, note = southern_pine_values(grade, size, species)
         return ref, (0.9 if nominal(size)[1] > 12 else 1.0), SIZES[size], "Table 4B", note
     if size in SIZES:
         ref, _, note = values(species, grade, size)
