@@ -309,3 +309,26 @@ def test_bolted_connection_one_bolt_blank_spacing():
              loads=[dict(case="D", P="300")])
     sheet, _, _ = calc.build("bolted_connection", v, proj)
     assert sheet.connection["Cg"] == 1.0 and "spacing in a row" not in dict(sheet.info)["Layout"]
+
+
+def test_lag_withdrawal_sheet_by_hand(tmp_path):
+    """2 - 3/8 x 4 in. lags through a 1/4 in. steel plate into Douglas Fir-Larch (G 0.50), dry, wind: W = 305 lb/in. (Table 12.2A);
+    thread T = 2.5 in., tip E = 7/32 in.; length in the main member 3.75 in.; pt = 2.5 - 0.219 = 2.281 in. (Table L2: T - E = 2-9/32);
+    W pt = 695.7 lb; capacity 2(695.7)(1.6) = 2,226 lb. A 2 in. screw through 1.5 in.: length in main 0.5 in., pt = 0.5 - 0.219 = 0.281 in."""
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="0.6D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 7")])
+    v = dict(mark="LW1", D="3/8", L="4", n="2", side_t="0.25", main_t="5.5", G_main="0.50", G_main_source="DF-L", service="dry", loads=[dict(case="W", P="1500")])
+    sheet, kind, _ = calc.build("lag_withdrawal", v, proj)
+    c = sheet.connection
+    assert kind == "simple" and c["pt"] == pytest.approx(2.28125) and round(c["W"]) == 305 and c["capacity"] == pytest.approx(2226.2, abs=0.2) and len(sheet.rows) == 1
+    calcsheet._simple_pdf(sheet, str(tmp_path / "l.pdf"), "2026-000", "2018 NDS", "2026-11-23")
+    full, _, _ = calc.build("lag_withdrawal", dict(v, service="wet in service", end_grain="yes", edge="1", end="1", spacing="2", steel="1200", steel_source="AISC 360-22 J3, A307"), proj)
+    assert full.connection["capacity"] == pytest.approx(2226.2 * 0.7 * 0.75, abs=0.2) and [x.check for x in full.rows] == [
+        "Withdrawal of the lag screws", "Tension in the lag screws", "Edge distance", "End distance", "Spacing"]
+    assert full.rows[1].capacity == 2400 and full.rows[3].status != "OK" and full.rows[2].status == "OK"
+    short, _, _ = calc.build("lag_withdrawal", dict(v, L="2", side_t="1.5"), proj)
+    assert short.connection["pt"] == pytest.approx(0.5 - 7 / 32)
+    for bad in (dict(L="6", main_t="3.5"), dict(steel="1200"), dict(G_main_source="")):
+        with pytest.raises(Exception):
+            calc.build("lag_withdrawal", dict(v, **bad), proj)
