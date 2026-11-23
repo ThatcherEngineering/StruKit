@@ -7,7 +7,7 @@ naming the box, and all such messages come back together.
 """
 import re
 
-from .. import calcsheet, scl, shapes, shearwall, snow, wood, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column, ws_wood
+from .. import calcsheet, glulam, scl, shapes, shearwall, snow, wood, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column, ws_wood
 from ..footing import FootingInputError
 from ..steel_beam import SteelInputError
 from ..ws_steel_beam import Combo, DeflCheck, WorksheetError
@@ -211,6 +211,27 @@ FORMS = {
                   [CASE, F("kind", "Type", "select", options=["uniform", "point"]), F("mag", "Load", unit="plf or lb"),
                    F("x", "At (point load)", unit="ft", required=False), F("label", "Note", "text", required=False)],
                   help="leave empty for an axially loaded post")]),
+    "glulam_beam": dict(
+        title="Glulam Beam", code="2018 NDS", mark="GB",
+        fields=[F("stress_class", "Stress class", "select", options=["24F-V4 DF/DF", "24F-1.8E"] + [k for k in glulam.CLASSES if k not in ("24F-V4 DF/DF", "24F-1.8E")],
+                  help="2018 NDS Supplement Table 5A"),
+                F("species", "Species", "select", options=["Douglas Fir or other", "Southern Pine"], help="sets the volume factor exponent"),
+                F("b", "Width", unit="in", help="for example 3.125, 5.125, 5.5, 6.75, 8.75"),
+                F("d", "Depth", unit="in"),
+                F("span", "Span", unit="ft"),
+                F("spacing", "Member spacing", unit="in", required=False, help="needed for area loads in psf"),
+                F("bracing", "Compression edge", "select", options=["supported throughout", "braced at a spacing"]),
+                F("lu", "Brace spacing (unbraced length)", unit="ft", required=False),
+                F("bearing", "Bearing length at each support", unit="in"),
+                F("service", "Moisture", "select", options=["dry service", "wet service"], help="wet: moisture content 16 percent or more"),
+                F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
+        tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point", "area"]),
+                                     F("mag", "Load", unit="plf, lb or psf"),
+                                     F("x1", "From / at", unit="ft", required=False),
+                                     F("x2", "To", unit="ft", required=False),
+                                     F("label", "Note", "text", required=False)]),
+                T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
+                                                F("ratio", "Span /"), F("source", "Source", "text")])]),
     "lvl_post": dict(
         title="LVL Column", code="2018 NDS, ICC-ES ESR-1040", mark="LC",
         fields=[F("grade", "Versa-Lam grade", "select", options=["1.8E 2650", "2.1E 3100", "2.1E 2800", "1.8E 2400"]
@@ -678,18 +699,22 @@ def build(kind, values, project):
         r.done()
         return ws_wood.lvl_post(mark, gr, b_, d_, H, loads, cb, Ke1, Ke2, ks, r.num("lu1", False), r.num("lu2", False),
                                 r.num("e1", False) or 0.0, r.num("e2", False) or 0.0, r.num("unit_weight", False)), "simple", {}
-    if kind in ("wood_beam", "lvl_beam"):
+    if kind in ("wood_beam", "lvl_beam", "glulam_beam"):
         cb = combos(project, r.miss, "ASD")
-        lvl = kind == "lvl_beam"
-        if lvl:
+        lvl, glu = kind == "lvl_beam", kind == "glulam_beam"
+        if glu:
+            gr, sp_, thk, dep, span = r.text("stress_class"), r.text("species"), r.num("b"), r.num("d"), r.num("span")
+        elif lvl:
             gr, thk, dep, plies, span = r.text("grade"), r.num("thickness"), r.num("depth"), r.text("plies"), r.num("span")
         else:
             sp, gr, size, plies, span = r.text("species"), r.text("grade"), r.text("size"), r.text("plies"), r.num("span")
         br, bearing = r.text("bracing"), r.num("bearing")
         lu = r.num("lu", br == "braced at a spacing", label="Brace spacing") if br == "braced at a spacing" else 0.0
-        rep, uw = yes(r.text("repetitive")), r.num("unit_weight", False)
+        uw = r.num("unit_weight", False)
+        rep = None if glu else yes(r.text("repetitive"))
         if not lvl:
             wet = {"dry service": False, "wet service": True}.get(r.text("service"))
+        if not lvl and not glu:
             inc = yes(r.text("incised"))
         loads = []
         for ld in r.rows("loads"):
@@ -712,6 +737,9 @@ def build(kind, values, project):
         r.done()
         if any(ld["kind"] == "area" for ld in loads) and r.num("spacing", False) is None:
             raise Missing(["Member spacing is blank; an area load in psf needs it"])
+        if glu:
+            return ws_wood.glulam_beam(mark, gr, sp_ == "Southern Pine", thk, dep, span, loads, cb, dc, lu or 0.0, bearing, wet, uw,
+                                       spacing_in=r.num("spacing", False)), "simple", {}
         if lvl:
             return ws_wood.lvl_beam(mark, gr, thk, dep, int(plies), span, loads, cb, dc, lu or 0.0, bearing, rep, uw,
                                     spacing_in=r.num("spacing", False)), "simple", {}
