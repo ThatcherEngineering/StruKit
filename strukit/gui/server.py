@@ -21,7 +21,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .. import __version__, shapes
+from .. import __version__, loadcombos, shapes
 from . import calc
 
 APP_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "strukit"
@@ -121,7 +121,7 @@ def api(path, body):
     if path == "/api/info":
         return dict(version=__version__, forms=calc.FORMS, shapes=shapes.labels(),
                     recent=[p for p in load_settings().get("recent", []) if os.path.exists(p)],
-                    today=time.strftime("%Y-%m-%d"))
+                    today=time.strftime("%Y-%m-%d"), combo_sets=loadcombos.SETS)
     if path == "/api/ping":
         _last_ping[0] = time.time(); _pinged[0] = True
         return {}

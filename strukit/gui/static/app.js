@@ -241,10 +241,18 @@ function drawProject(main) {
   const asd = { key: "combos_asd", label: "ASD load combinations", columns: cols,
     help: "Used for steel designed by ASD, and as the service combinations when a footing takes its loads from a column or frame." };
   const lrfd = { key: "combos_lrfd", label: "LRFD load combinations", columns: cols,
-    help: "Used for steel designed by LRFD, and as the factored combinations for concrete. Type each combination the way it is written, for example 1.2D + 1.6S + 0.5W, and give where it comes from; StruKit does not have ASCE 7 on file, so it does not make these up." };
+    help: "Used for steel designed by LRFD, and as the factored combinations for concrete. Type each combination the way it is written, for example 1.2D + 1.0S + 0.5W, and give where it comes from, or fill both lists from a standard." };
+  const fillBtns = Object.keys(INFO.combo_sets || {}).map(name => el("button", { class: "btn", onclick: () => {
+    S.prevCombos = { asd: p.combos_asd, lrfd: p.combos_lrfd };
+    p.combos_asd = INFO.combo_sets[name].ASD.map(r => ({ ...r })); p.combos_lrfd = INFO.combo_sets[name].LRFD.map(r => ({ ...r }));
+    changed(); select("project");
+    toast("Both lists now hold the " + name + " basic combinations. Load case names: D, L, Lr, S, R, W. In " + name + " the snow load S is the strength-level load.", 12000);
+  } }, "Fill both lists from " + name));
+  if (S.prevCombos) fillBtns.push(el("button", { class: "btn", onclick: () => {
+    p.combos_asd = S.prevCombos.asd; p.combos_lrfd = S.prevCombos.lrfd; S.prevCombos = null; changed(); select("project"); } }, "Put back the previous lists"));
   main.append(el("div", { class: "head" }, el("h1", {}, "Project")),
     el("div", { class: "cols" }, el("div", { class: "card" }, el("h2", {}, "Job"), el("div", { class: "grid" }, fs.map(f => field(f, p, () => { changed(); drawFile(); }))),
-      table(asd, p.combos_asd, changed), table(lrfd, p.combos_lrfd, changed)),
+      el("div", { class: "fillbar" }, fillBtns), table(asd, p.combos_asd, changed), table(lrfd, p.combos_lrfd, changed)),
       el("div", { class: "card" }, el("h2", {}, "Members"),
         S.members.length ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Mark", "Type", "Result"].map(t => el("th", {}, t)))),
           el("tbody", {}, S.members.map((m, i) => { const r = R.get(m) || {}; const st = r.state === "done" ? r.status : r.state === "stopped" ? "Stopped" : "Not complete";
