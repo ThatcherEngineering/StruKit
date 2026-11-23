@@ -693,6 +693,22 @@ FORMS = {
                 F("end_grain", "Screws in the end grain of the main member", "select", options=["no", "yes"], required=False)],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Lateral force on the group of screws, by load case; the project's ASD combinations are applied.")]),
+    "screw_withdrawal": dict(
+        title="Wood Screws in Withdrawal", code="NDS 2018", mark="SW",
+        fields=[F("screw", "Wood screw number", "select", options=["#6", "#7", "#8", "#9", "#10", "#12", "#14"], help="NDS Appendix Table L3"),
+                F("length", "Screw length", unit="in"),
+                F("n", "Number of screws"),
+                F("side_kind", "Side member material", "select", options=["wood", "steel"], required=False, help="blank = wood; steel: no head pull-through check"),
+                F("side_t", "Side member thickness", unit="in", help="the piece the screw head is in"),
+                F("G_side", "Side member specific gravity, G", required=False, help="wood side member; NDS Tables 12.3.3A, 12.3.3B"),
+                F("G_side_source", "Where that G comes from", "text", required=False),
+                F("main_t", "Main member thickness", unit="in", help="the piece the threads are in, measured along the screw"),
+                F("G_main", "Main member specific gravity, G"), F("G_main_source", "Where that G comes from", "text"),
+                F("service", "Moisture in service", "select", options=["dry", "wet in service"], help="NDS Table 11.3.3"),
+                F("steel", "Allowable tension of one screw", unit="lb", required=False, help="the steel at the root diameter; NDS 12.2.2.5"),
+                F("steel_source", "Where that allowable tension comes from", "text", required=False)],
+        tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
+                  help="Force pulling the side member off the main member, on the group of screws, by load case; the project's ASD combinations are applied.")]),
     "bolted_connection": dict(
         title="Bolted Connection", code="NDS 2018", mark="BC",
         fields=[F("D", "Bolt diameter", "select", options=["1/2", "5/8", "3/4", "7/8", "1"], unit="in"),
@@ -1499,6 +1515,25 @@ def build(kind, values, project):
             raise Missing(["The wood screw number is one of " + ", ".join(_dowel.WOOD_SCREWS)])
         return ws_more.nailed_connection_sheet(mark, num, _dowel.WOOD_SCREWS[num][0], Lg, ts, Gs, Gss, tm, Gm, Gms, n_, sv, loads, cb,
                                                end_grain=bool(yes(r.text("end_grain", False))), screw=num), "simple", {}
+    if kind == "screw_withdrawal":
+        cb = combos(project, r.miss, "ASD")
+        num, n_, Lg = r.text("screw"), r.num("n"), r.num("length")
+        stl = r.text("side_kind", False) == "steel"
+        ts, tm, Gm, Gms, sv = r.num("side_t"), r.num("main_t"), r.num("G_main"), r.text("G_main_source"), r.text("service")
+        Gs = r.num("G_side", not stl, label="Side member specific gravity, G")
+        Gss = r.text("G_side_source", False) or ""
+        if not stl and not Gss:
+            r.miss.append("Where the side member G comes from is blank")
+        st_ = r.num("steel", False)
+        if st_ is not None and not r.text("steel_source", False):
+            r.miss.append("Where the allowable tension of the screw comes from is blank")
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        r.done()
+        return ws_more.screw_withdrawal_sheet(mark, num, Lg, n_, ts, Gs, Gss, tm, Gm, Gms, sv, loads, cb, steel=st_,
+                                              steel_source=r.text("steel_source", False) or "", steel_side=stl), "simple", {}
     if kind == "nail_withdrawal":
         cb = combos(project, r.miss, "ASD")
         from .. import dowel as _dowel

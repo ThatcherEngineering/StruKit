@@ -415,3 +415,28 @@ def test_wood_screws_against_nds_table_12l(tmp_path):
     calcsheet._simple_pdf(sheet, str(tmp_path / "s.pdf"), "2026-000", "2018 NDS", "2026-11-23")
     with pytest.raises(Exception):
         calc.build("screw_connection", dict(v, length="1.5"), proj)            # penetration 0.75 in. under 6 D = 1.14 in.
+
+
+def test_wood_screw_withdrawal_sheet(tmp_path):
+    """NDS Table 12.2B (lb/in.): G 0.50, #10 = 135; G 0.42, #8 = 82; G 0.55, #14 = 208; G 0.67, #6 = 176 (the equation gives 208.6 and 176.6).
+    Sheet: 4 - #10 x 3 in. screws through a 3/4 in. side member (G 0.50) into G 0.50, dry, wind: T = 2 in.; length in the main member 2.25 in.;
+    pt = 2 in.; W pt = 135.375(2) = 270.75 lb; capacity 4(270.75)(1.6) = 1,732.8 lb. Pull-through: DH 0.363 in., tns 0.75 in. not over 2.5 DH:
+    690 pi (0.363)(0.25)(0.75) = 147.5 lb; 4(147.5)(1.6) = 944.2 lb, which governs."""
+    for G, D, v in ((0.50, 0.190, 135), (0.42, 0.164, 82), (0.55, 0.242, 208), (0.67, 0.138, 176)):
+        assert abs(dowel.wood_screw_withdrawal(G, D) - v) <= 0.7
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="0.6D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 7")])
+    v = dict(mark="SW1", screw="#10", length="3", n="4", side_t="0.75", G_side="0.50", G_side_source="DF-L", main_t="3.5", G_main="0.50", G_main_source="DF-L",
+             service="dry", loads=[dict(case="W", P="1200")])
+    sheet, kind, _ = calc.build("screw_withdrawal", v, proj)
+    assert kind == "simple" and sheet.rows[0].capacity == pytest.approx(1732.8) and sheet.rows[1].capacity == pytest.approx(944.25, abs=0.05)
+    assert sheet.connection["capacity"] == pytest.approx(944.25, abs=0.05) and sheet.connection["pt"] == 2.0
+    calcsheet._simple_pdf(sheet, str(tmp_path / "s.pdf"), "2026-000", "2018 NDS", "2026-11-23")
+    st, _, _ = calc.build("screw_withdrawal", dict(v, side_kind="steel", side_t="0.125", G_side="", G_side_source="", length="1.5", service="wet in service",
+                                                   steel="400", steel_source="manufacturer"), proj)
+    assert [x.check for x in st.rows] == ["Withdrawal of the wood screws", "Tension in the wood screws"] and st.connection["pt"] == pytest.approx(1.0)
+    assert st.rows[0].capacity == pytest.approx(4 * 135.375 * 1.0 * 0.7 * 1.6)
+    for bad in (dict(G_side=""), dict(length="5"), dict(steel="400")):
+        with pytest.raises(Exception):
+            calc.build("screw_withdrawal", dict(v, **bad), proj)
