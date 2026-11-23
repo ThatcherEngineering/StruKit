@@ -408,6 +408,27 @@ FORMS = {
                 F("chord_E", "Deflection: end post E", unit="psi", required=False),
                 F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
         tables=[]),
+    "perforated_wall": dict(
+        title="Perforated Wood Shear Wall", code="SDPWS-2021", mark="PSW",
+        fields=[F("panel", "Sheathing and nails", "select", options=list(shearwall.PANELS), help="SDPWS Table 4.3A; blocked"),
+                F("spacing", "Edge nail spacing", "select", options=["6", "4", "3", "2"], unit="in"),
+                F("panel_type", "Panel", "select", options=["OSB", "plywood"], help="for the shear stiffness Ga"),
+                F("sides", "Panels on", "select", options=["one side", "both sides (same panels and nailing)"]),
+                F("G", "Framing specific gravity, G", help="0.50 for Douglas Fir-Larch; NDS Table 12.3.3A"),
+                F("G_source", "Where G comes from", "text", help="species and the table"),
+                F("h", "Wall height", unit="ft", help="20 ft maximum"),
+                F("length", "Wall length, hold-down to hold-down", unit="ft"),
+                F("load", "Load", "select", options=["wind", "seismic"]),
+                F("V", "Design shear on the wall", unit="lb", help="at the project's design method (ASD or LRFD)"),
+                F("v_source", "Where the shear comes from", "text"),
+                F("holddown", "10d nails: hold-down on the inside face of the end post", "select", options=["yes", "no"], required=False,
+                  help="Table 4.3A note 10"),
+                F("chord_A", "Deflection: end post area", unit="in2", required=False),
+                F("chord_E", "Deflection: end post E", unit="psi", required=False),
+                F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
+        tables=[T("openings", "Openings", [F("x", "From the left end", unit="ft"), F("w", "Width", unit="ft"),
+                                           F("h", "Clear height", unit="ft"), F("sill", "Sill height (0 for a door)", unit="ft", required=False)],
+                  help="a full-height segment is needed at each end of the wall")]),
     "snow": dict(
         title="Roof Snow Load", code="ASCE/SEI 7-22", mark="SN",
         fields=[F("pg", "Ground snow load, pg", unit="psf", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
@@ -954,6 +975,17 @@ def build(kind, values, project):
                                     spacing_in=r.num("spacing", False), product=prod, **cont), "simple", {}
         return ws_wood.beam(mark, sp, gr, size, int(plies), span, loads, cb, dc, lu or 0.0, bearing, wet, inc, rep, uw,
                             spacing_in=r.num("spacing", False), **cont), "simple", {}
+    if kind == "perforated_wall":
+        m = method(project, r.miss)
+        panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")
+        G, gs, h, Lw, load, V, vs = r.num("G"), r.text("G_source"), r.num("h"), r.num("length"), r.text("load"), r.num("V"), r.text("v_source")
+        sides = 2 if (r.text("sides") or "").startswith("both") else 1
+        ops = r.rows("openings")
+        if not ops:
+            r.miss.append("No opening is entered (a wall without openings is a Wood Shear Wall)")
+        r.done()
+        return ws_more.perforated_wall_sheet(mark, panel, int(sp), pt, G, gs, h, Lw, ops, V, load, m, vs, yes(r.text("holddown", False)),
+                                             sides, r.num("chord_E", False), r.num("chord_A", False), r.num("slip", False)), "simple", {}
     if kind == "shear_wall":
         m = method(project, r.miss)
         panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")

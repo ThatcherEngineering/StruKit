@@ -474,3 +474,51 @@ def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, 
                              picture=("shear_wall", dict(h=h, segs=[dict(b=s.b, V=s.V, v=s.v, T=s.T, C=s.C) for s in w.segments], V=V))))
     sheet.wall = w
     return sheet
+
+
+def perforated_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, length, openings, V, load, method, v_source,
+                          holddown_inside=None, sides=1, chord_E=None, chord_A=None, anchor_slip_in=None):
+    """Perforated wood structural panel shear wall, SDPWS-2021 (see shearwall.perforated).
+    openings: dicts x, w, h (clear height), sill (for the drawing; 0 for a door), ft."""
+    for nm, v in (("the source of the framing specific gravity", G_source), ("the source of the design shear", v_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if V is None or V <= 0:
+        raise WorksheetError(f"{mark}: the design shear must be a positive number")
+    try:
+        w = shearwall.perforated(panel, spacing, panel_type, G, h, length, [(o["x"], o["w"], o["h"]) for o in openings], V, load, method,
+                                 holddown_inside, sides, chord_E, chord_A, anchor_slip_in)
+    except shearwall.ShearWallError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    for o in openings:
+        if (o.get("sill") or 0.0) + o["h"] > h + 1e-9:
+            raise WorksheetError(f"{mark}: an opening's sill height plus its clear height is more than the wall height")
+    rows = [Row("shear in the wall", f"{load}, {method}", V, w.capacity, "lb", "SDPWS-2021 4.3.5.6, Eq. 4.3-5, 4.1.4",
+                f"Co = {w.Co:.3f}; sum of segment lengths {w.sum_b:.2f} ft")]
+    info = [("Sheathing", f"wood structural panels, {panel}, {panel_type}, {'both sides' if sides == 2 else 'one side'}, blocked; "
+             f"edge nails at {spacing:g} in; the same sheathing and nailing on all sheathed areas"),
+            ("Framing", f"specific gravity G = {G:g} ({G_source.strip()})"),
+            ("Wall", f"{h:g} ft high, {length:g} ft long; " + str(len(openings)) + " opening(s); full-height segments "
+             + ", ".join(f"{b:g} ft" for _, b, _, _ in w.segments)),
+            ("Design Shear", f"{V:,.0f} lb, {load}, {method} ({v_source.strip()})")]
+    if w.defl is not None:
+        info.append(("Deflection", f"end posts A = {chord_A:g} in2, E = {chord_E:,.0f} psi; anchorage slip {anchor_slip_in:g} in"))
+    text = [f"Hold-down at each end of the wall: tension and compression {w.T:,.0f} lb",
+            f"Bottom plate at full-height sheathing: shear anchorage and uplift {w.v_max:,.0f} plf"]
+    if w.defl is not None:
+        text.append(f"Deflection {w.defl:.2f} in")
+    sheet = SimpleSheet(
+        mark, "Perforated Wood Shear Wall", "Wall", f"{load}, {method}", info, [], [], "Capacity and Forces", w.lines, rows,
+        ["Designed as a perforated shear wall: framing and connections around the openings are not designed for force transfer "
+         "(SDPWS 4.3.2.3).",
+         "Chord forces are from overturning of the wall alone; dead load is not counted against uplift."],
+        ["hold-downs and their connections; dead load resisting uplift", "anchor bolts and plate washers for the shear and uplift "
+         "anchorage (SDPWS 4.3.6.4)", "compression at each end of each segment; end posts and bearing on the plate",
+         "collector over the full length of the wall and its connection to the diaphragm (SDPWS 4.3.2.3)",
+         "construction requirements of SDPWS 4.3.6 and 4.3.7.1"] + ([] if w.defl is not None else ["deflection (SDPWS 4.3.4.2)"]))
+    sheet.blocks.append(dict(title="Wall Forces", head="Wall Forces", steps=[], text=text,
+                             picture=("perforated_wall", dict(h=h, L=length, openings=[dict(x=o["x"], w=o["w"], h=o["h"], sill=o.get("sill") or 0.0)
+                                                                                         for o in openings],
+                                                              segs=[dict(x=x0, b=b, counted=c) for x0, b, _, c in w.segments], V=V, T=w.T))))
+    sheet.wall = w
+    return sheet

@@ -1223,7 +1223,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
     _steps(p, sheet.steps_title, sheet.steps)
     for b in sheet.blocks:
         if b.get("picture"):
-            p.room(230 if b["picture"][0] == "anchorage" else 175)
+            p.room(230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
             p.head(b.get("head") or b["title"] + ": Inputs and Layout")
             for k, v in b.get("info", ()):
                 lines = _split(v, 104)
@@ -1305,6 +1305,8 @@ def _block_picture(c, top, pic):
         return _snow_picture(c, top, d)
     if name == "shear_wall":
         return _shear_wall_picture(c, top, d)
+    if name == "perforated_wall":
+        return _perforated_wall_picture(c, top, d)
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
@@ -1365,6 +1367,38 @@ def _block_picture(c, top, pic):
     low = min(low1, low2)
     _small(c, (LM + RM) / 2, low - 4, "dimensions in inches; to scale; edge distances are measured from the rod centres")
     return low - 8
+
+
+def _perforated_wall_picture(c, top, d):
+    """Elevation of a perforated shear wall to scale: sheathing, openings, the full-height
+    segment lengths, opening widths, the height, the shear and the chord forces."""
+    Lw, h = d["L"], d["h"]
+    sc = min((RM - LM - 130) / Lw, 84.0 / h)
+    _sketch_title(c, LM + 6, top - 4, "ELEVATION")
+    x0, y0 = LM + 50, top - 36 - h * sc
+    W, H = Lw * sc, h * sc
+    c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setFillColorRGB(*memberart.WOOD_FILL)
+    c.rect(x0, y0, W, H, fill=1, stroke=1)
+    c.setFillColorRGB(1, 1, 1); c.setLineWidth(0.6)
+    for o in d["openings"]:
+        c.rect(x0 + o["x"] * sc, y0 + o["sill"] * sc, o["w"] * sc, o["h"] * sc, fill=1, stroke=1)
+    c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.8)
+    c.line(x0 + 2, y0 + H + 6, x0 + W - 2, y0 + H + 6); c.line(x0 + W - 2, y0 + H + 6, x0 + W - 6, y0 + H + 8)
+    c.line(x0 + W - 2, y0 + H + 6, x0 + W - 6, y0 + H + 4)
+    c.setFont(FR, 6.5); c.drawCentredString(x0 + W / 2, y0 + H + 10, f"V = {d['V']:,.0f} lb")
+    marks = [0.0]
+    for o in sorted(d["openings"], key=lambda o: o["x"]):
+        marks += [o["x"], o["x"] + o["w"]]
+    marks.append(Lw)
+    for a, b in zip(marks[:-1], marks[1:]):
+        if b - a > 1e-6:
+            memberart._dim_h(c, x0 + a * sc, x0 + b * sc, y0 - 9, f"{b - a:g}" if (b - a) * sc < 24 else f"{b - a:g} ft", FR, ext_from=y0)
+    memberart._dim_h(c, x0, x0 + W, y0 - 21, f"{Lw:g} ft", FR, ext_from=y0 - 9)
+    memberart._dim_v(c, y0, y0 + H, x0 + W + 8, f"{h:g} ft", FR, ext_from=x0 + W)
+    c.setFont(FR, 6); c.setFillColorRGB(*GREY)
+    c.drawRightString(x0 - 4, y0 + 2, f"T {d['T']:,.0f}"); c.drawString(x0 + W + 4, y0 - 6, f"C {d['T']:,.0f}")
+    _small(c, (LM + RM) / 2, y0 - 41, "to scale; openings shown white; chord forces in lb")
+    return y0 - 47
 
 
 def _shear_wall_picture(c, top, d):
