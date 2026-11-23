@@ -52,3 +52,42 @@ def velocity_pressure(V, exposure, z, Kzt=1.0, Ke=1.0, chapter_28=False):
         raise WindError("wind: Kzt is 1.0 or more")
     k = kz(exposure, z, chapter_28)
     return 0.00256 * k * Kzt * Ke * V ** 2, k
+
+
+# ---- Main wind force resisting system, directional procedure: data read so far -----------
+# ASCE/SEI 7-22 Figure 27.3-1 (pdf pp. 344-345) and Table 26.13-1 (pdf p. 341), read from
+# the page images. Design pressures are not built yet: Eq. 27.3-1 and the directionality
+# factor Kd (Table 26.6-1) still have to be read from the page before they are used.
+GCPI = {"enclosed": 0.18, "partially enclosed": 0.55, "partially open": 0.18, "open": 0.0}      # Table 26.13-1, plus and minus
+WALL_CP_WINDWARD = 0.8                                   # with qz
+WALL_CP_SIDE = -0.7                                      # with qh
+WALL_CP_LEEWARD = ((1.0, -0.5), (2.0, -0.3), (4.0, -0.2))   # L/B -> Cp, with qh; L/B 0 to 1: -0.5; 4 and over: -0.2
+# Roof, wind normal to the ridge, theta 10 degrees and over. Windward: h/L -> {theta: (negative Cp, positive Cp)};
+# None where the figure gives no value of that sign. An "a" value (0.0, for interpolation) is entered as 0.0.
+ROOF_WINDWARD = {
+    0.25: {10: (-0.7, -0.18), 15: (-0.5, 0.0), 20: (-0.3, 0.2), 25: (-0.2, 0.3), 30: (-0.2, 0.3), 35: (0.0, 0.4), 45: (None, 0.4), 60: (None, 0.6)},
+    0.5: {10: (-0.9, -0.18), 15: (-0.7, -0.18), 20: (-0.4, 0.0), 25: (-0.3, 0.2), 30: (-0.2, 0.2), 35: (-0.2, 0.3), 45: (0.0, 0.4), 60: (None, 0.6)},
+    1.0: {10: (-1.3, -0.18), 15: (-1.0, -0.18), 20: (-0.7, -0.18), 25: (-0.5, 0.0), 30: (-0.3, 0.2), 35: (-0.2, 0.2), 45: (0.0, 0.3), 60: (None, 0.6)},
+}
+# over 60 to 80 degrees: 0.01 theta; over 80: 0.8. Leeward: h/L -> {theta: Cp} (20 means 20 and over)
+ROOF_LEEWARD = {0.25: {10: -0.3, 15: -0.5, 20: -0.6}, 0.5: {10: -0.5, 15: -0.5, 20: -0.6}, 1.0: {10: -0.7, 15: -0.6, 20: -0.6}}
+# Roof, wind normal to the ridge with theta under 10 degrees, and wind parallel to the ridge for all theta:
+# h/L -> [(distance from the windward edge as a multiple of h, Cp)], each also with -0.18
+ROOF_PARALLEL = {0.5: (("0 to h/2", -0.9), ("h/2 to h", -0.9), ("h to 2h", -0.5), ("over 2h", -0.3)),
+                 1.0: (("0 to h/2", -1.3), ("over h/2", -0.7))}
+ROOF_PARALLEL_OTHER = -0.18
+# note b: the -1.3 value may be reduced with the area it applies to: 100 ft2 or less 1.0; 250 ft2 0.9; 1,000 ft2 or more 0.8
+
+
+def wall_cp_leeward(L_over_B):
+    """Figure 27.3-1, leeward wall, linear interpolation between L/B values (note 2)."""
+    if L_over_B is None or L_over_B <= 0:
+        raise WindError("wind: L/B must be positive")
+    pts = WALL_CP_LEEWARD
+    if L_over_B <= pts[0][0]:
+        return pts[0][1]
+    if L_over_B >= pts[-1][0]:
+        return pts[-1][1]
+    for (a, ca), (b, cb) in zip(pts[:-1], pts[1:]):
+        if L_over_B <= b:
+            return ca + (cb - ca) * (L_over_B - a) / (b - a)
