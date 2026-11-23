@@ -70,3 +70,21 @@ def test_seismic_sheet_and_form(tmp_path):
         calc.build("seismic_elf", dict(v, levels=[]), dict(job="2026-000", name="Test", method="ASD"))
     with pytest.raises(calc.Missing):
         calc.build("seismic_elf", dict(v, R_source=""), dict(job="2026-000", name="Test", method="ASD"))
+
+
+def test_seismic_load_combinations():
+    """SDS = 0.5, rho = 1.3: Ev = 0.1 D. 6: 1.3D + 1.3E + L + 0.15S; 7: 0.8D + 1.3E; 8: 1.07D + 0.91E;
+    9: 1.0525D + 0.6825E + 0.75L + 0.1S; 10: 0.53D + 0.91E."""
+    from strukit import loadcombos
+    from strukit.gui import calc, server
+    c = loadcombos.seismic(0.5, 1.3)
+    assert [x["expr"] for x in c["LRFD"]] == ["1.3D + 1.3E + 1.0L + 0.15S", "0.8D + 1.3E"]
+    assert [x["expr"] for x in c["ASD"]] == ["1.07D + 0.91E", "1.0525D + 0.6825E + 0.75L + 0.1S", "0.53D + 0.91E"]
+    assert "Sect. 2.3.6, combination 6" in c["LRFD"][0]["source"] and "Sect. 2.4.5, combination 10" in c["ASD"][2]["source"]
+    assert calc.parse_expr(c["ASD"][1]["expr"]) == {"D": 1.0525, "E": 0.6825, "L": 0.75, "S": 0.1}
+    b = loadcombos.seismic(0.3, 1.0, ev=False)
+    assert [x["expr"] for x in b["LRFD"]] == ["1.2D + 1E + 1.0L + 0.15S", "0.9D + 1E"] and b["ASD"][2]["expr"] == "0.6D + 0.7E"
+    with pytest.raises(ValueError):
+        loadcombos.seismic(0.5, 1.2)
+    assert server.api("/api/seismic_combos", dict(sds="0.5", rho="1.3")) == c
+    assert "error" in server.api("/api/seismic_combos", dict(sds="", rho="1.0")) and "error" in server.api("/api/seismic_combos", dict(sds="0.5", rho="2"))

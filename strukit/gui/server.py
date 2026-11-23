@@ -122,6 +122,13 @@ def api(path, body):
         return dict(version=__version__, forms=calc.FORMS, shapes=shapes.labels(),
                     recent=[p for p in load_settings().get("recent", []) if os.path.exists(p)],
                     today=time.strftime("%Y-%m-%d"), combo_sets=loadcombos.SETS)
+    if path == "/api/seismic_combos":
+        try:
+            sds, rho = float(str(body.get("sds", "")).strip()), float(str(body.get("rho", "") or "1.0").strip())
+            return loadcombos.seismic(sds, rho, ev=not body.get("no_ev"))
+        except ValueError as e:
+            msg = str(e)
+            return dict(error=msg if msg.startswith(("SDS", "the redundancy")) else "Type SDS as a number, and the redundancy factor as 1.0 or 1.3.")
     if path == "/api/ping":
         _last_ping[0] = time.time(); _pinged[0] = True
         return {}
