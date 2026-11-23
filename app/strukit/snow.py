@@ -259,8 +259,8 @@ def lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding=None, para
     (h = step_ft, the vertical separation) the leeward drift on the lower structure has the
     height min(hd, (6h - s)/6) and the extent min(6 hd, 6h - s); the windward drift follows
     Sect. 7.7.1 (its permitted truncation is not taken); otherwise no drift is required."""
-    if separation is not None and (parapet or sliding):
-        raise SnowError("snow: a gap between structures is not built together with a parapet or with sliding snow (Sect. 7.9)")
+    if separation is not None and parapet:
+        raise SnowError("snow: a gap between structures does not apply to a parapet")
     if separation is not None and separation <= 0:
         separation = None
     if parapet:
@@ -306,9 +306,13 @@ def lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding=None, para
     s_why = ""
     if sliding:
         lim = 0.25 if sliding["slippery"] else 2.0
-        if sliding["rise_on_12"] > lim:
+        if sliding["rise_on_12"] > lim and separation is not None and not (step_ft / separation > 1.0 and separation < 15.0):
+            # Sect. 7.9, separated structures (pdf pp. 128-129): considered when h/s > 1 and s < 15 ft
+            s_why = ("the gap is 15 ft or more" if separation >= 15.0 else "h / s is not over 1") + " (Sect. 7.9)"
+        elif sliding["rise_on_12"] > lim:
             s_tot = 0.4 * sliding["pf"] * sliding["W"]
-            s_psf, s_ext = s_tot / 15.0, min(15.0, lu_lower)
+            reach = 15.0 - (separation or 0.0)            # separated: extent 15 - s, load per foot of eave 0.4 pf W (15 - s) / 15
+            s_psf, s_ext = s_tot / 15.0, min(reach, lu_lower)
             s_tot = s_psf * s_ext
         else:
             s_why = f"upper roof slope not over {'1/4' if sliding['slippery'] else '2'} on 12"
