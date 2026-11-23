@@ -310,6 +310,12 @@ FORMS = {
                 F("spacing", "Joist spacing", unit="in", required=False, help="needed for area loads in psf"),
                 F("bearing", "Bearing length at each end", unit="in", help="1.5 in. minimum for BCI, 1.75 in. for TJI"),
                 F("stiffeners", "Web stiffeners at the end bearing", "select", options=["no", "yes"]),
+                F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False,
+                  help="lengths of the second and later spans, separated by commas; blank = one span"),
+                F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
+                F("oh_right", "Overhang past the right support", unit="ft", required=False),
+                F("bearing_int", "Bearing length at intermediate supports", unit="in", required=False, help="3.5 in. minimum; needed with more spans"),
+                F("stiffeners_int", "Web stiffeners at intermediate supports", "select", options=["no", "yes"], required=False),
                 F("flange", "Compression flange supported throughout (sheathing)", "select", options=["yes", "no"], help="NDS 7.3.5")],
         tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["area", "uniform", "point"]),
                                      F("mag", "Load", unit="psf, plf or lb"),
@@ -829,7 +835,7 @@ def build(kind, values, project):
             if ld["kind"] in ("uniform", "area"):
                 d = dict(case=ld["case"], kind="uniform", w=ld["mag"]) if ld["kind"] == "uniform" else dict(case=ld["case"], kind="area", q=ld["mag"])
                 if ld["x1"] is not None or ld["x2"] is not None:
-                    d.update(x1_ft=ld["x1"] or 0.0, x2_ft=ld["x2"] if ld["x2"] is not None else span)
+                    d.update(x1_ft=ld["x1"] or 0.0, **({"x2_ft": ld["x2"]} if ld["x2"] is not None else {}))
             else:
                 if ld["x1"] is None:
                     r.miss.append("Loads: a point load needs its location (From / at)")
@@ -844,7 +850,13 @@ def build(kind, values, project):
         r.done()
         if any(ld["kind"] == "area" for ld in loads) and r.num("spacing", False) is None:
             raise Missing(["Joist spacing is blank; an area load in psf needs it"])
-        return ws_ijoist.joist(mark, nm, float(dep), span, r.num("spacing", False), loads, cb, dc, bearing, stf, flg), "simple", {}
+        more = r.nums("more_spans") if r.text("more_spans", False) else None
+        if more and r.num("bearing_int", False) is None:
+            raise Missing(["Bearing length at intermediate supports is blank"])
+        return ws_ijoist.joist(mark, nm, float(dep), span, r.num("spacing", False), loads, cb, dc, bearing, stf, flg,
+                               spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0,
+                               overhang_right=r.num("oh_right", False) or 0.0, bearing_int_in=r.num("bearing_int", False),
+                               stiffeners_int=bool(yes(r.text("stiffeners_int", False)))), "simple", {}
     if kind in ("lvl_post", "wey_post"):
         cb = combos(project, r.miss, "ASD")
         gr, b_, d_, H = r.text("grade"), r.num("b"), r.num("d"), r.num("height")
