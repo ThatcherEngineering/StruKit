@@ -186,7 +186,7 @@ def test_cc_walls_by_hand(tmp_path):
     v = dict(mark="WC1", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
              enclosure_basis="Sect. 26.12", h="20", least="40", theta="22.6", areas="10, 20, 50, 100, 200, 500", Kzt="1.0", Kzt_source="Sect. 26.8.1")
     sheet, kind, _ = calc.build("wind_cc_walls", v, dict(job="2026-000", name="Test", method="ASD"))
-    assert kind == "simple" and len(sheet.blocks[0]["lines"]) == 8
+    assert kind == "simple" and len(sheet.blocks[1]["lines"]) == 8
     calcsheet._simple_pdf(sheet, str(tmp_path / "c.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
 
 
@@ -214,7 +214,7 @@ def test_cc_roof_low_slope_by_hand(tmp_path):
     v = dict(mark="WR1", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
              enclosure_basis="Sect. 26.12", h="20", theta="1.2", areas="10, 20, 50, 100, 200, 500, 1000", Kzt="1.0", Kzt_source="Sect. 26.8.1")
     sheet, kind, _ = calc.build("wind_cc_roof", v, dict(job="2026-000", name="Test", method="ASD"))
-    assert kind == "simple" and len(sheet.blocks[0]["lines"]) == 8
+    assert kind == "simple" and len(sheet.blocks[1]["lines"]) == 8
     calcsheet._simple_pdf(sheet, str(tmp_path / "r.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
 
 
@@ -242,7 +242,7 @@ def test_cc_roof_gable_figures_by_hand(tmp_path):
     v = dict(mark="WR2", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
              enclosure_basis="Sect. 26.12", h="20", theta="22.62", least="40", areas="10, 50, 100", Kzt="1.0", Kzt_source="Sect. 26.8.1")
     sheet, kind, _ = calc.build("wind_cc_roof", v, dict(job="2026-000", name="Test", method="ASD"))
-    assert sheet.wind["figure"] == "30.3-2C" and len(sheet.blocks[0]["lines"]) == 4
+    assert sheet.wind["figure"] == "30.3-2C" and len(sheet.blocks[1]["lines"]) == 4
     calcsheet._simple_pdf(sheet, str(tmp_path / "r.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     with pytest.raises(calc.Missing):
         calc.build("wind_cc_roof", dict(v, least=""), dict(job="2026-000", name="Test", method="ASD"))

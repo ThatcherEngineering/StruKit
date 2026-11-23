@@ -822,6 +822,7 @@ def wind_cc_walls_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, lea
          "Zone 5 is within the distance a of a wall corner; zone 4 is the rest of the wall."],
         ["roof components and cladding (Figures 30.3-2 and on)", "parapets and roof overhangs",
          "the enclosure classification (Sect. 26.12)", "the effective wind area of each component (Sect. 26.2)"])
+    sheet.blocks.append(dict(title="Zones", picture=("wind_zones", dict(kind="wall", a=a))))
     sheet.blocks.append(dict(title="Design Pressures by Effective Wind Area", lines=lines))
     sheet.wind = dict(r)
     return sheet
@@ -888,6 +889,8 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
          f"(GCp) from {fig} by effective wind area (Sect. 26.2).",
          f"Net pressure not less than {wind.MIN_CC:g} psf in either direction (Sect. 30.2.2).", zone_text],
         not_checked)
+    zp = dict(kind="flat", edge=r["edge"], corner=r["corner"]) if "edge" in r else dict(kind="corner" if r["figure"] == "30.3-2D" else "ridge", a=r["a"])
+    sheet.blocks.append(dict(title="Zones", picture=("wind_zones", zp)))
     sheet.blocks.append(dict(title="Design Pressures by Effective Wind Area and Zone", lines=lines))
     sheet.wind = dict(r)
     return sheet
