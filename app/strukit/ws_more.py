@@ -1677,9 +1677,16 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
     if steel:
         if steel not in dowel.STEEL_FE:
             raise WorksheetError(f"{mark}: the steel side plate is one of: " + "; ".join(dowel.STEEL_FE))
-        if grain != "parallel":
-            raise WorksheetError(f"{mark}: with steel side plates the load is parallel to the grain of the main member")
+        if grain == "side":
+            raise WorksheetError(f"{mark}: with steel side plates the load is parallel or perpendicular to the grain of the main member")
         G_side, E_side, side_source = None, 29000000.0, steel
+    steel_perp = bool(steel) and grain == "main"           # no wood member is loaded parallel to grain
+    if not steel_perp:
+        for nm, v in (("the end distance", end), ("the edge distance", edge)):
+            if v is None or v <= 0:
+                raise WorksheetError(f"{mark}: {nm} of the member loaded parallel to grain is needed")
+        if sense not in ("tension", "compression") or wood_type not in ("softwood", "hardwood"):
+            raise WorksheetError(f"{mark}: the load sense (tension or compression) and the wood type (softwood or hardwood) are needed")
     for nm, v in (("the source of the side member values", side_source), ("the source of the main member values", main_source)):
         if not (v or "").strip():
             raise WorksheetError(f"{mark}: {nm} is blank")
@@ -1718,7 +1725,12 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
             r = dowel.lag(D, side_t, G_side, G_main, p_lag, 90.0 if grain == "side" else 0.0, 90.0 if grain == "main" else 0.0, Fes=dowel.STEEL_FE.get(steel))
         else:
             r = dowel.bolt(D, side_t, main_t, G_side, G_main, 90.0 if grain == "side" else 0.0, 90.0 if grain == "main" else 0.0, double=double, Fes=dowel.STEEL_FE.get(steel))
-        cdel, ce, cs = dowel.geometry_parallel(D, end, spacing, n_row, sense, wood_type)
+        if steel_perp:
+            if n_row > 1 and (spacing is None or spacing < 3 * D - 1e-9):
+                raise dowel.DowelError(f"dowel: the spacing in a row is less than the minimum 3 D = {3 * D:g} in. (NDS Table 12.5.1B)")
+            cdel = ce = cs = 1.0
+        else:
+            cdel, ce, cs = dowel.geometry_parallel(D, end, spacing, n_row, sense, wood_type)
         As = side_t * side_w * (2 if double else 1)
         Am = main_t * main_w
         cp = None
@@ -1785,8 +1797,11 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
     steps += [Ln("Z", r["Z"], "lb", "NDS 12.3.1", f"mode {r['mode']} governs; per {fs}"),
               Ln("CM", CM, "", "NDS Table 11.3.3", service + ("; one row parallel to grain (note 2)" if one_row_dry else "")),
               Ln("Cg", f"{Cg:.3f}", "", "NDS Eq. 11.3-1", f"{n_row} in a row at {spacing:g} in.; Es As = {E_side * As:,.0f} lb, Em Am = {E_main * Am:,.0f} lb" + ("; wood to metal" if steel else "") if n_row > 1 else f"one {fs} in a row"),
-              Ln("C-delta, end distance", f"{ce:.3f}", "", "NDS 12.5.1.2(a), Table 12.5.1A", f"{end:g} in. provided; {dowel.END[(sense, wood_type)][1] * D:g} in. for 1.0 ({sense}, {wood_type})"),
-              Ln("C-delta, spacing in a row", f"{cs:.3f}", "", "NDS 12.5.1.2(c), Table 12.5.1B", f"{spacing:g} in. provided; {4 * D:g} in. for 1.0" if n_row > 1 else f"one {fs} in a row"),
+              *([Ln("C-delta, spacing in a row", f"{cs:.3f}", "", "NDS 12.5.1.2(c), Table 12.5.1B",
+                    f"{spacing:g} in. provided, not less than 3 D = {3 * D:g} in.; the spacing for 1.0 is that required for the steel plate" if n_row > 1 else f"one {fs} in a row")]
+                if steel_perp else
+                [Ln("C-delta, end distance", f"{ce:.3f}", "", "NDS 12.5.1.2(a), Table 12.5.1A", f"{end:g} in. provided; {dowel.END[(sense, wood_type)][1] * D:g} in. for 1.0 ({sense}, {wood_type})"),
+                 Ln("C-delta, spacing in a row", f"{cs:.3f}", "", "NDS 12.5.1.2(c), Table 12.5.1B", f"{spacing:g} in. provided; {4 * D:g} in. for 1.0" if n_row > 1 else f"one {fs} in a row")]),
               ]
     if cp is not None:
         steps.append(Ln("C-delta, end distance of the member loaded perpendicular to grain", f"{cp:.3f}", "", "NDS 12.5.1.2(a), Table 12.5.1A",
@@ -1820,7 +1835,9 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
             Row("Edge distance", "", e_min, edge, "in", "NDS Table 12.5.1C", "minimum against the distance provided")]
     if grain != "parallel":
         pname = "side member" + ("s" if double else "") if grain == "side" else "main member"
-        rows[1] = Row(f"Edge distance, {'main member' if grain == 'side' else 'side member' + ('s' if double else '')}", "", e_min, edge, "in", "NDS Table 12.5.1C", "member loaded parallel to grain")
+        rows[-1] = Row(f"Edge distance, {'main member' if grain == 'side' else 'side member' + ('s' if double else '')}", "", e_min, edge, "in", "NDS Table 12.5.1C", "member loaded parallel to grain")
+        if steel_perp:
+            rows.pop()
         rows.append(Row(f"Loaded edge distance, {pname}", "", 4 * D, perp["loaded_edge"], "in", "NDS Table 12.5.1C", "4 D minimum"))
         rows.append(Row(f"Unloaded edge distance, {pname}", "", 1.5 * D, perp["unloaded_edge"], "in", "NDS Table 12.5.1C", "1.5 D minimum"))
         if n_row > 1:
@@ -1858,10 +1875,10 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
             ("Side Plate" + ("s" if double else ""), f"{'2 - ' if double else ''}{side_t:g} x {side_w:g} in. {steel} steel, E = 29,000,000 psi") if steel else
             ("Side Member" + ("s" if double else ""), f"{'2 - ' if double else ''}{side_t:g} x {side_w:g} in., G = {G_side:g}, E = {E_side:,.0f} psi ({side_source.strip()})"),
             ("Main Member", f"{main_t:g} x {main_w:g} in., G = {G_main:g}, E = {E_main:,.0f} psi ({main_source.strip()})"),
-            ("Layout", (f"spacing in a row {spacing:g} in.; " if n_row > 1 and spacing else "") + (f"between rows {row_spacing:g} in.; " if rows_n > 1 else "") + f"end distance {end:g} in.; edge distance {edge:g} in."),
+            ("Layout", (f"spacing in a row {spacing:g} in." + ("" if steel_perp and rows_n == 1 else "; ") if n_row > 1 and spacing else "") + (f"between rows {row_spacing:g} in.; " if rows_n > 1 else "") + ("" if steel_perp else f"end distance {end:g} in.; edge distance {edge:g} in.")),
             ("Conditions", ("load parallel to grain in every member" if grain == "parallel" else
-                            f"load perpendicular to grain in the {grain} member{'s' if (grain == 'side' and double) else ''}, parallel in the other")
-                           + f", {sense}; {wood_type}; {service} service")]
+                            f"load perpendicular to grain in the {grain} member{'s' if (grain == 'side' and double) else ''}" + ("" if steel_perp else ", parallel in the other"))
+                           + ("" if steel_perp else f", {sense}; {wood_type}") + f"; {service} service")]
     if grain != "parallel" and perp.get("Fv") is not None:
         if not (perp.get("Fv_source") or "").strip():
             raise WorksheetError(f"{mark}: the source of Fv for the member loaded perpendicular to grain is blank")
@@ -1892,7 +1909,7 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
           "the root diameter is used in the yield equations and the nominal diameter for the dowel bearing strengths." if lag else
           "Full body diameter bolts with Fyb = 45,000 psi, in holes 1/32 to 1/16 in. larger than the bolt, members in contact, washers under head and nut (NDS 12.1.3)."),
          ("The load acts parallel to the grain of every member" if grain == "parallel" else
-          f"The load acts perpendicular to the grain of the {grain} member{'s' if (grain == 'side' and double) else ''} and parallel to the grain of the other; "
+          f"The load acts perpendicular to the grain of the {grain} member{'s' if (grain == 'side' and double) else ''}" + ("" if steel_perp else " and parallel to the grain of the other") + "; "
           f"a row of {fs}s is a line of {fs}s along the load. For the group action factor the area of the member loaded perpendicular to grain is its "
           f"thickness times the width of the {fs} group (NDS 11.3.6.3)") + f" and through the centroid of the {fs} group; all {fs}s share the load after the group action factor.",
          "Sustained temperature not over 100 degrees F (Ct = 1.0, NDS Table 11.3.4).",
@@ -1904,7 +1921,8 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
         sheet.info.append(info_local)
         sheet.assumptions.append("Member capacities at the connection use Ft and Fv as entered (every adjustment factor except CD applied), times CD of the governing "
                                  "combination, on the gross thickness and the hole diameter stated.")
-    sheet.blocks.append(dict(title="Layout" if grain == "parallel" else "Layout, Member Loaded Parallel to Grain",
+    if not steel_perp:
+      sheet.blocks.append(dict(title="Layout" if grain == "parallel" else "Layout, Member Loaded Parallel to Grain",
                              picture=("bolted", dict(D=D, rows=rows_n, n=n_row, s=spacing, g=row_spacing or 0.0, end=end, edge=edge,
                                                      w=(side_w if grain == "main" else main_w), sense=sense))))
     if grain != "parallel":
