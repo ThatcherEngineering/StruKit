@@ -150,6 +150,7 @@ FORMS = {
                 F("plies", "Number of plies", "select", options=["1", "2", "3", "4", "5", "6"]),
                 F("span", "Span", unit="ft"),
                 F("spacing", "Member spacing (joists and rafters)", unit="in", required=False, help="needed for area loads in psf"),
+                F("rise", "Roof rise in 12 (sloped rafter; spans are horizontal)", required=False, help="blank = level member; dead load is entered along the slope"),
                 F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False,
                   help="lengths of the second and later spans, separated by commas; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
@@ -186,6 +187,7 @@ FORMS = {
                 F("plies", "Number of plies", "select", options=["1", "2", "3", "4"]),
                 F("span", "Span", unit="ft"),
                 F("spacing", "Member spacing (joists and rafters)", unit="in", required=False, help="needed for area loads in psf"),
+                F("rise", "Roof rise in 12 (sloped rafter; spans are horizontal)", required=False, help="blank = level member; dead load is entered along the slope"),
                 F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False,
                   help="lengths of the second and later spans, separated by commas; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
@@ -220,6 +222,7 @@ FORMS = {
                 F("plies", "Number of plies", "select", options=["1", "2", "3", "4"]),
                 F("span", "Span", unit="ft"),
                 F("spacing", "Member spacing (joists and rafters)", unit="in", required=False, help="needed for area loads in psf"),
+                F("rise", "Roof rise in 12 (sloped rafter; spans are horizontal)", required=False, help="blank = level member; dead load is entered along the slope"),
                 F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False,
                   help="lengths of the second and later spans, separated by commas; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
@@ -278,6 +281,7 @@ FORMS = {
                 F("d", "Depth", unit="in"),
                 F("span", "Span", unit="ft"),
                 F("spacing", "Member spacing", unit="in", required=False, help="needed for area loads in psf"),
+                F("rise", "Roof rise in 12 (sloped rafter; spans are horizontal)", required=False, help="blank = level member; dead load is entered along the slope"),
                 F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False,
                   help="lengths of the second and later spans, separated by commas; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
@@ -344,6 +348,7 @@ FORMS = {
                 F("spacing", "Joist spacing", unit="in", required=False, help="needed for area loads in psf"),
                 F("bearing", "Bearing length at each end", unit="in", help="1.5 in. minimum for BCI, 1.75 in. for TJI"),
                 F("stiffeners", "Web stiffeners at the end bearing", "select", options=["no", "yes"]),
+                F("rise", "Roof rise in 12 (sloped rafter; spans are horizontal)", required=False, help="blank = level member; dead load is entered along the slope"),
                 F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False,
                   help="lengths of the second and later spans, separated by commas; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
@@ -950,7 +955,8 @@ def build(kind, values, project):
                                spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0,
                                overhang_right=r.num("oh_right", False) or 0.0, bearing_int_in=r.num("bearing_int", False),
                                stiffeners_int=bool(yes(r.text("stiffeners_int", False))),
-                               snow_partial=not (r.text("snow_partial", False) or "").startswith("not required")), "simple", {}
+                               snow_partial=not (r.text("snow_partial", False) or "").startswith("not required"),
+                    rise_on_12=r.num("rise", False) or 0.0), "simple", {}
     if kind in ("lvl_post", "wey_post"):
         cb = combos(project, r.miss, "ASD")
         gr, b_, d_, H = r.text("grade"), r.num("b"), r.num("d"), r.num("height")
@@ -1022,7 +1028,8 @@ def build(kind, values, project):
         cont = dict(spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0,
                     overhang_right=r.num("oh_right", False) or 0.0, lu_neg_ft=r.num("lu_neg", False),
                     bearing_int_in=r.num("bearing_int", False),
-                    snow_partial=not (r.text("snow_partial", False) or "").startswith("not required"))
+                    snow_partial=not (r.text("snow_partial", False) or "").startswith("not required"),
+                    rise_on_12=r.num("rise", False) or 0.0)
         if glu:
             return ws_wood.glulam_beam(mark, gr, sp_ == "Southern Pine", thk, dep, span, loads, cb, dc, lu or 0.0, bearing, wet, uw,
                                        spacing_in=r.num("spacing", False), **cont), "simple", {}

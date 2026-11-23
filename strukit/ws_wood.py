@@ -10,6 +10,33 @@ from .ws_steel_beam import Row, WorksheetError
 footing_line = Line
 
 
+def _slope(rise_on_12, loads, mark):
+    """Sloped member (rafter): the analysis is on the horizontal projection. Dead load is
+    entered along the slope, so uniform loads of case D are divided by cos(slope) to
+    give load per horizontal foot; other cases are entered on the horizontal projection.
+    Returns cos(slope). Loads are changed in place and keep the value as entered."""
+    if not rise_on_12:
+        return 1.0
+    if rise_on_12 < 0 or rise_on_12 > 24:
+        raise WorksheetError(f"{mark}: the roof rise must be between 0 and 24 on 12")
+    c = 12.0 / math.hypot(12.0, rise_on_12)
+    for ld in loads:
+        if ld.get("case") == "D" and ld.get("kind") == "uniform":
+            ld["w_slope"] = ld["w"]
+            ld["w"] = ld["w"] / c
+            if ld.get("w2") is not None:
+                ld["w2"] = ld["w2"] / c
+    return c
+
+
+SLOPE_ASSUMPTION = ("The member slopes {r:g} on 12 and is analysed on its horizontal projection: dead load, entered along the slope, is "
+                    "divided by the cosine of the slope ({c:.4f}); snow and roof live load are on the horizontal projection. Shear is "
+                    "the component normal to the member (x {c:.4f}); deflection is normal to the member and is compared with the "
+                    "sloped length over the limit ratio.")
+SLOPE_NOT_CHECKED = ["axial force in the sloped member and thrust at its supports", "wind load normal to the roof surface",
+                     "bearing on a sloped seat or birdsmouth cut"]
+
+
 def _diagram_data(o):
     """Shear (lb) and moment (lb-ft) along the span (ft) for one combination."""
     r = o["res"]
@@ -17,7 +44,7 @@ def _diagram_data(o):
 
 
 def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, wet, incised,
-         repetitive, unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True):
+         repetitive, unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True, rise_on_12=0.0):
     """species, grade: as listed in 2018 NDS Supplement Table 4A. size: nominal, "2x10".
     plies: number of pieces side by side, fastened to act together. lu_ft: unbraced length
     of the compression edge (0 when it is supported throughout). bearing_in: bearing
@@ -74,6 +101,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         loads.append(dict(case=self_weight_case, kind="uniform", w=sw, label="self-weight"))
     if not loads:
         raise WorksheetError(f"{mark}: no loads given")
+    cos_s = _slope(rise_on_12, loads, mark)
     by_case = {}
     for ld in loads:
         for k in ("case", "kind"):
@@ -113,7 +141,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
             raise WorksheetError(f"{mark}: {e}")
         Fb_adj = Fb_star * CL
         Fv_adj = ref["Fv"] * CD * f.CM_v * f.Ci_b
-        M, Mneg, V, R, Rint, sense = env.Mpos, env.Mneg, env.V, env.R_end, env.R_int, "positive"
+        M, Mneg, V, R, Rint, sense = env.Mpos, env.Mneg, env.V * cos_s, env.R_end, env.R_int, "positive"
         if not lay.simple and Mneg > 1e-6 * max(M, 1.0):
             if lu_neg_ft is None:
                 raise WorksheetError(f"{mark}: the bottom edge is in compression over a support; give its unbraced length "
@@ -150,7 +178,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         if wd is None:
             continue
         rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k}" if v != 1 else k for k, v in dc.factors.items()),
-                        wd[0], wd[1], "in", dc.source, (f"limit span/{dc.ratio:g}" if lay.simple else f"{wd[2]}, limit {wd[3]}")
+                        wd[0] / cos_s ** 2, wd[1] / cos_s, "in", dc.source, (f"limit span/{dc.ratio:g}" if lay.simple else f"{wd[2]}, limit {wd[3]}")
                         + f"; E' = {E_adj:,.0f} psi"))
     L = footing_line
     st = gb["st"]
@@ -195,12 +223,15 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         if ld["kind"] == "uniform":
             where = f"{ld.get('x1_ft', 0):g} to {ld.get('x2_ft', span_ft):g} ft"
             if "area" in ld:
-                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld.get('w_slope', ld['w']):.1f} plf"
+                                   + (f" along the slope = {ld['w']:.1f} plf of horizontal" if "w_slope" in ld else "") + f"   {where:<14} {ld.get('label', '')}")
                                   if "w2" not in ld else
                                   (f"{ld['case']:<3} area    {ld['area']:.1f} to {ld['area2']:.1f} psf x {spacing_in:g} in = {ld['w']:.1f} to {ld['w2']:.1f} plf   "
                                    f"{where:<14} {ld.get('label', '')}"))
             else:
-                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w2" not in ld else
+                load_lines.append((f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w_slope" not in ld else
+                                   f"{ld['case']:<3} uniform {ld['w_slope']:.1f} plf along the slope = {ld['w']:.1f} plf of horizontal   {where:<14} {ld.get('label', '')}")
+                                  if "w2" not in ld else
                                   f"{ld['case']:<3} tapered {ld['w']:.1f} to {ld['w2']:.1f} plf   {where:<16} {ld.get('label', '')}")
         else:
             load_lines.append(f"{ld['case']:<3} point   {ld['P']:>9.0f} lb    at {ld['x_ft']:g} ft{'':<8} {ld.get('label', '')}")
@@ -219,6 +250,10 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
          "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers"],
         picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=plies, span=span_ft, size=size, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), w2=x.get("w2"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     sheet.not_checked = [x for x in sheet.not_checked if x]
+    if cos_s < 1.0:
+        sheet.assumptions.insert(1, SLOPE_ASSUMPTION.format(r=rise_on_12, c=cos_s))
+        sheet.not_checked[:0] = SLOPE_NOT_CHECKED
+        sheet.info.insert(2, ("Slope", f"{rise_on_12:g} on 12; spans are horizontal; sloped length {lay.total / cos_s:.2f} ft"))
     if not lay.simple:
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
@@ -438,7 +473,7 @@ SUPP_T4A = "2018 NDS Supplement Table 4A"
 
 
 def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, repetitive,
-             unit_weight_pcf=None, self_weight_case="D", spacing_in=None, product="Versa-Lam LVL", spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True):
+             unit_weight_pcf=None, self_weight_case="D", spacing_in=None, product="Versa-Lam LVL", spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True, rise_on_12=0.0):
     """Structural composite lumber beam (Versa-Lam LVL, Microllam LVL, Parallam PSL or
     TimberStrand LSL), joist orientation, simply supported; evaluation report values and
     the 2018 NDS Chapter 8, ASD, dry use. thickness: of one ply, in.; depth, in. Loads as
@@ -484,6 +519,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         loads.append(dict(case=self_weight_case, kind="uniform", w=sw, label="self-weight"))
     if not loads:
         raise WorksheetError(f"{mark}: no loads given")
+    cos_s = _slope(rise_on_12, loads, mark)
     by_case = {}
     for ld in loads:
         for k in ("case", "kind"):
@@ -520,7 +556,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
             raise WorksheetError(f"{mark}: {e}")
         vol = CV if CV > 1 else min(CV, CL)                                  # the lesser of CV and CL when CV <= 1
         Fb_adj = ref["Fb"] * CD * Cr * (CV * CL if CV > 1 else vol)
-        M, Mneg, V, R, Rint, sense = env.Mpos, env.Mneg, env.V, env.R_end, env.R_int, "positive"
+        M, Mneg, V, R, Rint, sense = env.Mpos, env.Mneg, env.V * cos_s, env.R_end, env.R_int, "positive"
         if not lay.simple and Mneg > 1e-6 * max(M, 1.0):
             if lu_neg_ft is None:
                 raise WorksheetError(f"{mark}: the bottom edge is in compression over a support; give its unbraced length "
@@ -555,11 +591,11 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         wd = contbeam.deflection(lay, ref["E"] * I, by_case, dc.factors, dc.ratio, snow_partial)
         if wd is None:
             continue
-        bend = wd[0]
+        bend = wd[0] / cos_s ** 2
         Md = max(abs(wd[4].M_max()[0]), abs(wd[4].M_min()[0]))
         shear = scl.shear_deflection(Md, ref["E"], b, d)
         rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k}" if v != 1 else k for k, v in dc.factors.items()),
-                        bend + shear, wd[1], "in", dc.source + "; " + ref["defl_src"],
+                        bend + shear, wd[1] / cos_s, "in", dc.source + "; " + ref["defl_src"],
                         (f"limit span/{dc.ratio:g}" if lay.simple else f"{wd[2]}, limit {wd[3]}")
                         + f"; bending {bend:.3f} in + shear {shear:.3f} in; E = {ref['E']:,.0f} psi"))
     L = footing_line
@@ -603,12 +639,15 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         if ld["kind"] == "uniform":
             where = f"{ld.get('x1_ft', 0):g} to {ld.get('x2_ft', span_ft):g} ft"
             if "area" in ld:
-                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld.get('w_slope', ld['w']):.1f} plf"
+                                   + (f" along the slope = {ld['w']:.1f} plf of horizontal" if "w_slope" in ld else "") + f"   {where:<14} {ld.get('label', '')}")
                                   if "w2" not in ld else
                                   (f"{ld['case']:<3} area    {ld['area']:.1f} to {ld['area2']:.1f} psf x {spacing_in:g} in = {ld['w']:.1f} to {ld['w2']:.1f} plf   "
                                    f"{where:<14} {ld.get('label', '')}"))
             else:
-                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w2" not in ld else
+                load_lines.append((f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w_slope" not in ld else
+                                   f"{ld['case']:<3} uniform {ld['w_slope']:.1f} plf along the slope = {ld['w']:.1f} plf of horizontal   {where:<14} {ld.get('label', '')}")
+                                  if "w2" not in ld else
                                   f"{ld['case']:<3} tapered {ld['w']:.1f} to {ld['w2']:.1f} plf   {where:<16} {ld.get('label', '')}")
         else:
             load_lines.append(f"{ld['case']:<3} point   {ld['P']:>9.0f} lb    at {ld['x_ft']:g} ft{'':<8} {ld.get('label', '')}")
@@ -628,6 +667,10 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
                      "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers",
                      "bearing on the supporting member"] if x],
         picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}", kind="lvl", loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), w2=x.get("w2"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
+    if cos_s < 1.0:
+        sheet.assumptions.insert(1, SLOPE_ASSUMPTION.format(r=rise_on_12, c=cos_s))
+        sheet.not_checked[:0] = SLOPE_NOT_CHECKED
+        sheet.info.insert(2, ("Slope", f"{rise_on_12:g} on 12; spans are horizontal; sloped length {lay.total / cos_s:.2f} ft"))
     if not lay.simple:
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
@@ -860,7 +903,7 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
 
 
 def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, wet,
-                unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True):
+                unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True, rise_on_12=0.0):
     """Glued laminated timber beam, simply supported, bent about the x-x axis; 2018 NDS
     Chapter 5 and Supplement Table 5A, ASD. b, d in inches. See glulam.py."""
     from . import glulam
@@ -900,6 +943,7 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         loads.append(dict(case=self_weight_case, kind="uniform", w=sw, label="self-weight"))
     if not loads:
         raise WorksheetError(f"{mark}: no loads given")
+    cos_s = _slope(rise_on_12, loads, mark)
     by_case = {}
     for ld in loads:
         for k in ("case", "kind"):
@@ -935,7 +979,7 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         except wood.WoodError as e:
             raise WorksheetError(f"{mark}: {e}")
         Fb_adj = Fb_star * min(CV, CL)
-        M, Mneg, V, R, Rint, sense = env.Mpos, env.Mneg, env.V, env.R_end, env.R_int, "positive"
+        M, Mneg, V, R, Rint, sense = env.Mpos, env.Mneg, env.V * cos_s, env.R_end, env.R_int, "positive"
         if not lay.simple and Mneg > 1e-6 * max(M, 1.0):
             if lu_neg_ft is None:
                 raise WorksheetError(f"{mark}: the bottom edge is in compression over a support; give its unbraced length "
@@ -972,7 +1016,7 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         if wd is None:
             continue
         rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k}" if v != 1 else k for k, v in dc.factors.items()),
-                        wd[0], wd[1], "in", dc.source, (f"limit span/{dc.ratio:g}" if lay.simple else f"{wd[2]}, limit {wd[3]}")
+                        wd[0] / cos_s ** 2, wd[1] / cos_s, "in", dc.source, (f"limit span/{dc.ratio:g}" if lay.simple else f"{wd[2]}, limit {wd[3]}")
                         + f"; Ex' = {E_adj:,.0f} psi"))
     L = footing_line
     st = gb["st"]
@@ -1015,12 +1059,15 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         if ld["kind"] == "uniform":
             where = f"{ld.get('x1_ft', 0):g} to {ld.get('x2_ft', span_ft):g} ft"
             if "area" in ld:
-                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld.get('w_slope', ld['w']):.1f} plf"
+                                   + (f" along the slope = {ld['w']:.1f} plf of horizontal" if "w_slope" in ld else "") + f"   {where:<14} {ld.get('label', '')}")
                                   if "w2" not in ld else
                                   (f"{ld['case']:<3} area    {ld['area']:.1f} to {ld['area2']:.1f} psf x {spacing_in:g} in = {ld['w']:.1f} to {ld['w2']:.1f} plf   "
                                    f"{where:<14} {ld.get('label', '')}"))
             else:
-                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w2" not in ld else
+                load_lines.append((f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w_slope" not in ld else
+                                   f"{ld['case']:<3} uniform {ld['w_slope']:.1f} plf along the slope = {ld['w']:.1f} plf of horizontal   {where:<14} {ld.get('label', '')}")
+                                  if "w2" not in ld else
                                   f"{ld['case']:<3} tapered {ld['w']:.1f} to {ld['w2']:.1f} plf   {where:<16} {ld.get('label', '')}")
         else:
             load_lines.append(f"{ld['case']:<3} point   {ld['P']:>9.0f} lb    at {ld['x_ft']:g} ft{'':<8} {ld.get('label', '')}")
@@ -1036,6 +1083,10 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         ["shear at connections, with Cvr = 0.72 (NDS 5.3.10)", "notches, taper and holes (NDS 5.4, 3.2.3)",
          "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers", "bearing on the supporting member"],
         picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=1, span=span_ft, size=f"{b:g}x{d:g}", kind="glulam", lams=max(int(round(d / 1.5)), 2), loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), w2=x.get("w2"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
+    if cos_s < 1.0:
+        sheet.assumptions.insert(1, SLOPE_ASSUMPTION.format(r=rise_on_12, c=cos_s))
+        sheet.not_checked[:0] = SLOPE_NOT_CHECKED
+        sheet.info.insert(2, ("Slope", f"{rise_on_12:g} on 12; spans are horizontal; sloped length {lay.total / cos_s:.2f} ft"))
     if not lay.simple:
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "

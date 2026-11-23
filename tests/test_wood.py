@@ -315,3 +315,25 @@ def test_post_with_eccentric_load_by_hand():
     assert r["compression"].capacity == pytest.approx(691.4, abs=0.5)
     assert r["compression with eccentric load"].demand == pytest.approx(0.464, abs=0.003)
     assert "15.4-3" in r["compression with eccentric load"].source and "shear" not in r
+
+
+def test_sloped_rafter_by_hand():
+    """2x10 Douglas Fir-Larch No. 2 rafter at 24 in, 6 on 12, horizontal span 12 ft; D 15 psf along the slope, S 30 psf on the
+    horizontal projection. cos = 0.8944. Per rafter: D 30 plf along the slope = 33.54 plf of horizontal; S 60 plf.
+    D + 0.7S: w = 33.54 + 42 = 75.54 plf of horizontal; M = 75.54 x 144 / 8 = 1,359.7 lb-ft; fb = 1,359.7 x 12 / 21.39 = 762.8 psi
+    shear normal to the rafter: 75.54 x 6 x 0.8944 = 405.4 lb; fv = 1.5 x 405.4 / 13.875 = 43.8 psi
+    snow deflection (0.7S = 42 plf): horizontal 5 x 3.5 x 144^4 / (384 x 1.6e6 x 98.93) = 0.1238 in; normal = / cos^2 = 0.1547 in
+    limit: sloped length 12 / 0.8944 = 13.416 ft = 161.0 in / 240 = 0.671 in"""
+    from strukit import ws_wood
+    from strukit.ws_steel_beam import DeflCheck
+    from tests.test_lvl import _combos
+    loads = [dict(case="D", kind="area", q=15.0), dict(case="S", kind="area", q=30.0)]
+    s = ws_wood.beam("R1", "DOUGLAS FIR-LARCH", "No. 2", "2x10", 1, 12, loads, _combos(), [DeflCheck("snow", {"S": 0.7}, 240, "typed")],
+                     0.0, 3.5, False, False, True, spacing_in=24, rise_on_12=6)
+    r = {x.check: x for x in s.rows}
+    assert r["bending"].demand == pytest.approx(762.8, abs=0.5) and r["shear"].demand == pytest.approx(43.8, abs=0.1)
+    assert r["deflection, snow"].demand == pytest.approx(0.1547, abs=0.001) and r["deflection, snow"].capacity == pytest.approx(0.671, abs=0.001)
+    assert r["bearing at support"].demand == pytest.approx(75.54 * 6 / (1.5 * 3.5), abs=0.3)
+    assert any("6 on 12" in a for a in s.assumptions) and any("thrust" in n for n in s.not_checked)
+    flat = ws_wood.beam("R1", "DOUGLAS FIR-LARCH", "No. 2", "2x10", 1, 12, loads, _combos(), [], 0.0, 3.5, False, False, True, spacing_in=24)
+    assert {x.check: x for x in flat.rows}["bending"].demand < r["bending"].demand
