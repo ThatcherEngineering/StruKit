@@ -112,3 +112,51 @@ def test_mwfrs_sheet_and_form(tmp_path):
     v2 = dict(v, enclosure_basis="")
     with pytest.raises(calc.Missing):
         calc.build("wind_mwfrs", v2, dict(job="2026-000", name="Test", method="ASD"))
+
+
+def test_mwfrs_total_force_and_monoslope_by_hand():
+    """Same gable building as above (Ke = 1), wind normal to the ridge, B = 60 ft:
+    windward wall 16.6335(60)(15) + 16.8292(60)(1) = 15,980 lb; leeward 11.0074(960) = 10,567 lb; walls 26,547 lb
+    rise = 20 tan(22.62) = 8.333 ft; roof horizontal = (windward - leeward)(60)(8.333):
+    (-7.653 + 13.209)(500) = 2,778 lb and (2.306 + 13.209)(500) = 7,758 lb; total 34,305 lb
+    minimum 16(960) + 8(500) = 19,360 lb.
+    Wind parallel: gable end wall area 40(16) + 40(8.333)/2 = 806.7 ft2; no roof term.
+    Monoslope, 3 on 12 (14.04 degrees), 40 ft across: rise 10.0 ft. Toward the low eave: the windward roof values
+    -0.9 + 0.2(4.04/5) = -0.738 and -0.18 on the whole roof; leeward wall 26 ft high: 11.0074(60)(26.0) = 17,173 lb;
+    roof suction pulls upwind, so the total is the walls alone. Toward the high eave: the leeward value -0.5 on the
+    whole roof, +11.0074(60)(10.0) = 6,606 lb; no roof area in the minimum (it is behind the high wall)."""
+    import math
+    th = math.degrees(math.atan(5 / 12))
+    r = wind.mwfrs(115, "C", 20, 16, 60, 40, "enclosed", "normal", th)
+    assert r["F_windward"] == pytest.approx(15980, abs=2) and r["F_leeward"] == pytest.approx(10567, abs=2)
+    assert [round(x) for x in r["F_roof"]] == pytest.approx([2778, 7758], abs=2) and r["F_total"] == pytest.approx(34305, abs=3)
+    assert r["F_min"] == pytest.approx(19360) and r["F_design"] == r["F_total"]
+    p = wind.mwfrs(115, "C", 20, 16, 40, 60, "enclosed", "parallel", th)
+    assert p["A_wall"] == pytest.approx(806.67, abs=0.01) and p["F_roof"] == [0.0] and p["F_min"] == pytest.approx(16 * 806.67, abs=1)
+    assert p["windward"][-1].z == pytest.approx(24.333, abs=0.001)
+    tm = math.degrees(math.atan(3 / 12))
+    lo = wind.mwfrs(115, "C", 20, 16, 60, 40, "enclosed", "normal_low", tm, roof="monoslope")
+    assert [round(s.Cp, 3) for s in lo["roof"]] == [-0.739, -0.18] or [round(s.Cp, 3) for s in lo["roof"]] == [-0.738, -0.18]
+    assert lo["F_leeward"] == pytest.approx(11.0074 * 60 * 26.0, abs=2) and lo["F_total"] == lo["F_walls"] and lo["A_roof"] == pytest.approx(600)
+    hi = wind.mwfrs(115, "C", 20, 16, 60, 40, "enclosed", "normal_high", tm, roof="monoslope")
+    assert [s.Cp for s in hi["roof"]] == [-0.5] and hi["F_roof"][0] == pytest.approx(6604, abs=3) and hi["A_roof"] == 0.0
+    assert hi["A_wall"] == pytest.approx(60 * 26.0) and hi["F_total"] == pytest.approx(hi["F_walls"] + hi["F_roof"][0])
+    low = wind.mwfrs(60, "B", 20, 16, 60, 40, "enclosed", "normal", th)      # a low wind speed: the minimum governs
+    assert low["F_design"] == low["F_min"] > low["F_total"]
+    with pytest.raises(wind.WindError):
+        wind.mwfrs(115, "C", 20, 16, 60, 40, "enclosed", "normal", tm, roof="monoslope")
+
+
+def test_mwfrs_monoslope_sheet(tmp_path):
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="WM2", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="partially enclosed",
+             enclosure_basis="Sect. 26.12", across="40", along="60", eave="16", h="21", theta="14.04", roof="monoslope",
+             Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, _, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert len(sheet.blocks) == 4 and [p["shape"] for p in sheet.blocks[0]["picture"][1]["panels"]] == ["mono", "mono", "flat"]
+    assert any("design horizontal force" in t for t in sheet.blocks[1]["lines"])
+    calcsheet._simple_pdf(sheet, str(tmp_path / "m.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    from strukit.ws_steel_beam import WorksheetError
+    with pytest.raises(WorksheetError):
+        calc.build("wind_mwfrs", dict(v, theta="0"), dict(job="2026-000", name="Test", method="ASD"))

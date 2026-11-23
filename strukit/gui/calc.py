@@ -494,7 +494,7 @@ FORMS = {
                 F("elevation_source", "Where the elevation comes from", "text", required=False)],
         tables=[]),
     "wind_mwfrs": dict(
-        title="Wind Pressures, Main System (gable or flat roof)", code="ASCE/SEI 7-22", mark="WM",
+        title="Wind Pressures, Main System (gable, monoslope or flat roof)", code="ASCE/SEI 7-22", mark="WM",
         fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
                 F("V_source", "Where V comes from", "text"),
                 F("exposure", "Exposure category", "select", options=["B", "C", "D"], help="ASCE 7-22 Sect. 26.7"),
@@ -503,7 +503,8 @@ FORMS = {
                 F("enclosure_basis", "Basis of the enclosure classification", "text"),
                 F("across", "Plan dimension across the ridge", unit="ft", help="flat roof: one plan dimension"),
                 F("along", "Plan dimension along the ridge", unit="ft", help="flat roof: the other plan dimension"),
-                F("eave", "Eave height", unit="ft"),
+                F("roof", "Roof", "select", options=["gable or flat", "monoslope"], required=False),
+                F("eave", "Eave height (monoslope: the low eave)", unit="ft"),
                 F("h", "Mean roof height, h", unit="ft", help="the eave height where the roof angle is 10 degrees or less"),
                 F("theta", "Roof angle", unit="degrees", help="0 for a flat roof"),
                 F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
@@ -1118,7 +1119,8 @@ def build(kind, values, project):
         kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")
         r.done()
         return ws_more.wind_mwfrs_sheet(mark, V, vs, ex, eb, h, ev, ac, al, th, en, enb, kzt, ks_, r.num("elevation", False),
-                                        r.text("elevation_source", False) or ""), "simple", {}
+                                        r.text("elevation_source", False) or "",
+                                        roof="monoslope" if (r.text("roof", False) or "").startswith("mono") else "gable"), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
