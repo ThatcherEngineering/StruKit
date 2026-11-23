@@ -1062,10 +1062,16 @@ def _picture(c, top, pic):
         c.setFillColorRGB(*memberart.LVL_FILL)
         c.rect(x0, y, x1 - x0, fl, fill=1, stroke=1); c.rect(x0, y + h - fl, x1 - x0, fl, fill=1, stroke=1)
         c.setFillColorRGB(0.20, 0.22, 0.25)
-        for xx in (x0 + 3, x1 - 3):
+        sup = d.get("supports") or [0.0, d["span"]]
+        sx = [x0 + 3 + (x1 - x0 - 6) * v / d["span"] for v in sup]
+        for xx in sx:
             p_ = c.beginPath(); p_.moveTo(xx, y); p_.lineTo(xx - 4, y - 6); p_.lineTo(xx + 4, y - 6); p_.close()
             c.drawPath(p_, fill=1, stroke=0)
-        memberart._dim_h(c, x0 + 3, x1 - 3, y - 15, f"{d['span']:g} ft", FR, ext_from=y - 6)
+        marks = [x0 + 3] + sx + [x1 - 3]
+        vals = [0.0] + list(sup) + [d["span"]]
+        for (xa, xb), (va, vb) in zip(zip(marks[:-1], marks[1:]), zip(vals[:-1], vals[1:])):
+            if vb - va > 1e-6:
+                memberart._dim_h(c, xa, xb, y - 15, f"{vb - va:g} ft" if xb - xa > 22 else f"{vb - va:g}", FR, ext_from=y - 6)
         _sketch_title(c, 520, top, "SECTION")
         D = max(min(d["d"] * 2.6, 58), 26); fw, fd, wt = D * 0.22 + 4, max(D * 0.11, 3.5), 1.6
         cx, cy = 540, top - 46

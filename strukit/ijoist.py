@@ -16,7 +16,8 @@ Read from the reports and the NDS:
   ESR-1153 Table 3 note 4   interpolation between bearing lengths is permitted (TJI).
                     ESR-1336 Table 3 gives minimum bearing lengths; for BCI the value of
                     the longest tabulated bearing not longer than the one provided is used.
-End reactions only (simple spans).
+Intermediate reactions are tabulated for 3.5 and 5.25 in. bearing, with the same rule
+between bearing lengths. The reference moment applies to positive and negative moment.
 """
 import csv
 from pathlib import Path
@@ -33,7 +34,8 @@ with open(Path(__file__).parent / "data" / "ijoists.csv", newline="") as _f:
         JOISTS[(_r["product"], _r["series"], float(_r["depth"]))] = dict(
             weight=float(_r["weight_plf"]), M=float(_r["M"]), V=float(_r["V"]), EI=float(_r["EI_e6"]) * 1e6, K=float(_r["K_shear_lb"]),
             short=float(_r["short_bearing_in"]), Re_short=num("Re_short"), Re_short_ws=num("Re_short_ws"), Re_35=num("Re_35"),
-            Re_35_ws=num("Re_35_ws"), source=_r["source"])
+            Re_35_ws=num("Re_35_ws"), source=_r["source"], Ri_35=num("Ri_35"), Ri_35_ws=num("Ri_35_ws"), Ri_525=num("Ri_525"),
+            Ri_525_ws=num("Ri_525_ws"))
 NAMES = sorted({f"{p} {s}" for p, s, _ in JOISTS}, key=lambda x: (x.split()[0], x))
 DEPTHS = sorted({d for _, _, d in JOISTS})
 
@@ -63,3 +65,20 @@ def end_reaction(j, bearing_in, stiffeners):
     if j["product"] == "TJI":
         return lo + (hi - lo) * (bearing_in - j["short"]) / (3.5 - j["short"]), f"interpolated between {j['short']:g} and 3.5 in. bearing"
     return lo, f"{j['short']:g} in. bearing"
+
+
+def intermediate_reaction(j, bearing_in, stiffeners):
+    """Reference reaction at an intermediate support for the bearing length."""
+    lo = j["Ri_35_ws"] if stiffeners else j["Ri_35"]
+    hi = j["Ri_525_ws"] if stiffeners else j["Ri_525"]
+    if lo is None or hi is None:
+        raise IJoistError(f"I-joist: {j['product']} {j['series']} {j['depth']:g} in. " +
+                          ("has no tabulated intermediate reaction with web stiffeners" if stiffeners
+                           else "requires web stiffeners at the intermediate bearing"))
+    if bearing_in < 3.5:
+        raise IJoistError("I-joist: the intermediate bearing must be at least 3.5 in.")
+    if bearing_in >= 5.25:
+        return hi, "5.25 in. bearing"
+    if j["product"] == "TJI":
+        return lo + (hi - lo) * (bearing_in - 3.5) / 1.75, "interpolated between 3.5 and 5.25 in. bearing"
+    return lo, "3.5 in. bearing"

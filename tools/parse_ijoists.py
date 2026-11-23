@@ -53,13 +53,16 @@ assert len(rg) == len(fam_order), len(rg)
 react = {}
 for fam, (_, rows) in zip(fam_order, rg):
     for d, t in rows:
-        react[(fam, d)] = ["" if x == "N/A" else x for x in t[:4]]              # 1.5 in no/yes, 3.5 in no/yes
+        v = ["" if x == "N/A" else x for x in t]
+        assert len(v) in (8, 12, 14), (fam, d, v)
+        inter = v[4:8] if len(v) == 8 else v[6:10]                               # intermediate 3.5 in no/yes, 5.25 in no/yes
+        react[(fam, d)] = v[:4] + inter                                          # end 1.5 in no/yes, 3.5 in no/yes
 rows = []
 for ser, fam in KEEP.items():
     for (lab, d), (M, EI, K, V) in sorted(prop.items(), key=lambda kv: kv[0][1]):
         if lab == ser and (ser, d) in WEIGHT:
             r = react[(fam, d)]
-            rows.append(["BCI", ser, d, WEIGHT[(ser, d)], M, V, EI, K * 1e6, 1.5] + r + ["ICC-ES ESR-1336 Tables 2 and 3"])
+            rows.append(["BCI", ser, d, WEIGHT[(ser, d)], M, V, EI, K * 1e6, 1.5] + r[:4] + ["ICC-ES ESR-1336 Tables 2 and 3"] + r[4:])
 
 T = open(sys.argv[2], encoding="utf8").read().split("\n")
 a = next(i for i, x in enumerate(T) if "TABLE 3—REFERENCE DESIGN VALUES FOR TJI" in x)
@@ -75,11 +78,12 @@ for ln in T[a:a + 70]:
         t = ["11.875"] + t
     if ser and len(t) == 16 and re.fullmatch(r"[\d.]+", t[0]):
         d, w, M, V, EI, K = (float(x) for x in t[:6])
-        na = lambda x: "" if x == "NA" else x
-        rows.append(["TJI", ser, d, w, M, V, EI, K * d * 1e5, 1.75, na(t[6]), na(t[7]), na(t[8]), na(t[9]), "ICC-ES ESR-1153 Table 3"])
+        na = lambda x: "" if (x == "NA" or "(" in x) else x      # "(7)": needs a longer bearing than the column heading; left out
+        rows.append(["TJI", ser, d, w, M, V, EI, K * d * 1e5, 1.75, na(t[6]), na(t[7]), na(t[8]), na(t[9]), "ICC-ES ESR-1153 Table 3",
+                     na(t[11]), na(t[12]), na(t[13]), na(t[14])])
 with open("strukit/data/ijoists.csv", "w", newline="") as f:
     w = csv.writer(f)
     w.writerow(["product", "series", "depth", "weight_plf", "M", "V", "EI_e6", "K_shear_lb", "short_bearing_in", "Re_short", "Re_short_ws",
-                "Re_35", "Re_35_ws", "source"])
+                "Re_35", "Re_35_ws", "source", "Ri_35", "Ri_35_ws", "Ri_525", "Ri_525_ws"])
     w.writerows(rows)
 print(len(rows), sum(r[0] == "BCI" for r in rows), sum(r[0] == "TJI" for r in rows))
