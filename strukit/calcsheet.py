@@ -1007,6 +1007,30 @@ def _picture(c, top, pic):
                          ext_from=528 + d["b"] * s_ / 2)
         _small(c, 476, top - 106, "section to scale, dimensions in inches")
         return top - 110
+    if name == "ijoist":
+        _sketch_title(c, 384, top, "ELEVATION")
+        h = max(min(d["d"] * 1.2, 18), 9)
+        x0, x1, y = 384, 384 + 118, top - 26 - h
+        fl = max(h * 0.16, 1.8)
+        c.setLineWidth(0.5); c.setStrokeColorRGB(*memberart.LVL_LINE)
+        c.setFillColorRGB(0.93, 0.87, 0.74); c.rect(x0, y, x1 - x0, h, fill=1, stroke=1)                 # web
+        c.setFillColorRGB(*memberart.LVL_FILL)
+        c.rect(x0, y, x1 - x0, fl, fill=1, stroke=1); c.rect(x0, y + h - fl, x1 - x0, fl, fill=1, stroke=1)
+        c.setFillColorRGB(0.20, 0.22, 0.25)
+        for xx in (x0 + 3, x1 - 3):
+            p_ = c.beginPath(); p_.moveTo(xx, y); p_.lineTo(xx - 4, y - 6); p_.lineTo(xx + 4, y - 6); p_.close()
+            c.drawPath(p_, fill=1, stroke=0)
+        memberart._dim_h(c, x0 + 3, x1 - 3, y - 15, f"{d['span']:g} ft", FR, ext_from=y - 6)
+        _sketch_title(c, 520, top, "SECTION")
+        D = max(min(d["d"] * 2.6, 58), 26); fw, fd, wt = D * 0.22 + 4, max(D * 0.11, 3.5), 1.6
+        cx, cy = 540, top - 46
+        c.setLineWidth(0.6); c.setStrokeColorRGB(*memberart.LVL_LINE)
+        c.setFillColorRGB(0.93, 0.87, 0.74); c.rect(cx - wt / 2, cy - D / 2 + fd * 0.6, wt, D - fd * 1.2, fill=1, stroke=1)
+        c.setFillColorRGB(*memberart.LVL_FILL)
+        c.rect(cx - fw / 2, cy - D / 2, fw, fd, fill=1, stroke=1); c.rect(cx - fw / 2, cy + D / 2 - fd, fw, fd, fill=1, stroke=1)
+        memberart._dim_v(c, cy - D / 2, cy + D / 2, cx + fw / 2 + 7, f"{d['d']:g}", FR, ext_from=cx + fw / 2)
+        _small(c, 476, top - 98, "schematic; depth in inches")
+        return top - 102
     if name == "wood_beam":
         _sketch_title(c, 384, top, "ELEVATION")
         h = max(min(d["d"] * 1.6, 18), 7)
