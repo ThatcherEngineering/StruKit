@@ -301,6 +301,22 @@ FORMS = {
                                      F("label", "Note", "text", required=False)]),
                 T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
                                                 F("ratio", "Span /"), F("source", "Source", "text")])]),
+    "glulam_post": dict(
+        title="Glulam Column", code="2018 NDS", mark="GC",
+        fields=[F("combination", "Combination (Table 5B)", "select", options=["3 (DF L2D)"] + [k for k in glulam.COLUMNS if k != "3 (DF L2D)"],
+                  help="2018 NDS Supplement Table 5B; Combination 3 is Boise's stock column grade"),
+                F("b", "Width (lamination width)", unit="in", help="for example 3.125, 3.5, 5.125, 5.5, 6.75, 8.75"),
+                F("d", "Depth (stack of laminations)", unit="in", help="15 in. maximum"),
+                F("lams", "Number of laminations", help="depth divided by the lamination thickness"),
+                F("height", "Height", unit="ft"),
+                F("lu_d", "Unbraced length, along the depth", unit="ft", required=False, help="blank = full height"),
+                F("lu_b", "Unbraced length, along the width", unit="ft", required=False, help="blank = full height"),
+                F("Ke_d", "Ke, along the depth"), F("Ke_b", "Ke, along the width"),
+                F("k_source", "Ke comes from", "text", help="for example: pinned top and bottom, NDS Appendix G"),
+                F("e_d", "Load eccentricity, along the depth", unit="in", required=False, help="blank = 0"),
+                F("e_b", "Load eccentricity, along the width", unit="in", required=False, help="blank = 0"),
+                F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
+        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)])]),
     "builtup_post": dict(
         title="Built-Up Wood Column", code="2018 NDS", mark="BC",
         fields=[F("species", "Species", "select",
@@ -876,6 +892,17 @@ def build(kind, values, project):
         r.done()
         return ws_wood.post(mark, sp, gr, size, H, loads, cb, Ke1, Ke2, ks, wet, inc, r.num("lu1", False), r.num("lu2", False),
                             r.num("unit_weight", False), lateral=lat, e1_in=r.num("e1", False) or 0.0, e2_in=r.num("e2", False) or 0.0), "simple", {}
+    if kind == "glulam_post":
+        cb = combos(project, r.miss, "ASD")
+        co, b_, d_, n_, H = r.text("combination"), r.num("b"), r.num("d"), r.num("lams"), r.num("height")
+        Kd, Kb, ks = r.num("Ke_d"), r.num("Ke_b"), r.text("k_source")
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        r.done()
+        return ws_wood.glulam_post(mark, co, b_, d_, int(n_), H, loads, cb, Kd, Kb, ks, r.num("lu_d", False), r.num("lu_b", False),
+                                   r.num("e_d", False) or 0.0, r.num("e_b", False) or 0.0, r.num("unit_weight", False)), "simple", {}
     if kind == "builtup_post":
         cb = combos(project, r.miss, "ASD")
         sp, gr, size, n_, fa, H = r.text("species"), r.text("grade"), r.text("size"), r.text("plies"), r.text("fastening"), r.num("height")
