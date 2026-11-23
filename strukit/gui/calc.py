@@ -7,7 +7,7 @@ naming the box, and all such messages come back together.
 """
 import re
 
-from .. import calcsheet, shapes, snow, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column
+from .. import calcsheet, shapes, snow, wood, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column, ws_wood
 from ..footing import FootingInputError
 from ..steel_beam import SteelInputError
 from ..ws_steel_beam import Combo, DeflCheck, WorksheetError
@@ -137,6 +137,32 @@ FORMS = {
                                                F("has_edge", "Edge in load direction", "select", options=["yes", "no"]),
                                                F("count", "How many", required=False, help="2 for a pair of angles")]),
                 T("loads", "Force along the bolt line", [CASE, F("P", "Force", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "wood_beam": dict(
+        title="Wood Beam", code="2018 NDS", mark="WB",
+        fields=[F("species", "Species", "select",
+                  options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"] + [x for x in wood.SPECIES if x not in
+                                                                                 ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
+                  help="2018 NDS Supplement Table 4A (not Southern Pine)"),
+                F("grade", "Grade", "select", options=["Select Structural", "No. 1 & Btr", "No. 1", "No. 2", "No. 1/ No. 2", "No. 3",
+                                                        "Stud", "Construction", "Standard", "Utility"]),
+                F("size", "Size (nominal)", "select", options=list(wood.SIZES)),
+                F("plies", "Number of plies", "select", options=["1", "2", "3", "4", "5", "6"]),
+                F("span", "Span", unit="ft"),
+                F("bracing", "Compression edge", "select", options=["supported throughout", "braced at a spacing"]),
+                F("lu", "Brace spacing (unbraced length)", unit="ft", required=False),
+                F("bearing", "Bearing length at each support", unit="in"),
+                F("service", "Moisture", "select", options=["dry service", "wet service"], help="wet: moisture content above 19 percent for an extended time"),
+                F("incised", "Incised", "select", options=["yes", "no"]),
+                F("repetitive", "Repetitive member", "select", options=["yes", "no"],
+                  help="joists, rafters or similar at 24 in. or less, three or more, joined by sheathing (NDS 4.3.9)"),
+                F("unit_weight", "Wood unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
+        tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point"]),
+                                     F("mag", "Load", unit="plf or lb"),
+                                     F("x1", "From / at", unit="ft", required=False),
+                                     F("x2", "To", unit="ft", required=False),
+                                     F("label", "Note", "text", required=False)]),
+                T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
+                                                F("ratio", "Span /"), F("source", "Source", "text")])]),
     "snow": dict(
         title="Roof Snow Load", code="ASCE/SEI 7-22", mark="SN",
         fields=[F("pg", "Ground snow load, pg", unit="psf", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
@@ -532,6 +558,32 @@ def build(kind, values, project):
                  threads=r.text("threads"), planes=r.num("planes"), deformation=yes(r.text("deformation")))
         r.done()
         return ws_conn.bolt_line(mark, loads, cb, m, plies=plies, **a), "conn", dict(combos=cb)
+    if kind == "wood_beam":
+        cb = combos(project, r.miss, "ASD")
+        sp, gr, size, plies, span = r.text("species"), r.text("grade"), r.text("size"), r.text("plies"), r.num("span")
+        br, bearing = r.text("bracing"), r.num("bearing")
+        lu = r.num("lu", br == "braced at a spacing", label="Brace spacing") if br == "braced at a spacing" else 0.0
+        wet = {"dry service": False, "wet service": True}.get(r.text("service"))
+        inc, rep, uw = yes(r.text("incised")), yes(r.text("repetitive")), r.num("unit_weight", False)
+        loads = []
+        for ld in r.rows("loads"):
+            if ld["kind"] == "uniform":
+                d = dict(case=ld["case"], kind="uniform", w=ld["mag"])
+                if ld["x1"] is not None or ld["x2"] is not None:
+                    d.update(x1_ft=ld["x1"] or 0.0, x2_ft=ld["x2"] if ld["x2"] is not None else span)
+            else:
+                if ld["x1"] is None:
+                    r.miss.append("Loads: a point load needs its location (From / at)")
+                d = dict(case=ld["case"], kind="point", P=ld["mag"], x_ft=ld["x1"])
+            if ld["label"]:
+                d["label"] = ld["label"]
+            loads.append(d)
+        if not loads:
+            r.miss.append("No loads are entered")
+        dc = checks(r.rows("defl"), r.miss, "Deflection limits")
+        cases_used([ld["case"] for ld in loads], cb, r.miss)
+        r.done()
+        return ws_wood.beam(mark, sp, gr, size, int(plies), span, loads, cb, dc, lu or 0.0, bearing, wet, inc, rep, uw), "simple", {}
     if kind == "snow":
         pg, src, risk = r.num("pg"), r.text("pg_source"), r.text("risk")
         rough, expo, therm = r.text("roughness"), r.text("exposure"), r.text("thermal")
