@@ -653,7 +653,8 @@ FORMS = {
                 F("G_main", "Main member specific gravity, G"), F("G_main_source", "Where that G comes from", "text"),
                 F("service", "Moisture", "select", options=["dry", "wet in service", "wet at fabrication, dry in service"], help="NDS Table 11.3.3"),
                 F("end_grain", "Nails in the end grain of the main member", "select", options=["no", "yes"], required=False),
-                F("diaphragm", "Diaphragm construction", "select", options=["no", "yes"], required=False, help="NDS 12.5.3")],
+                F("diaphragm", "Diaphragm construction", "select", options=["no", "yes"], required=False, help="NDS 12.5.3"),
+                F("toe_nail", "Toe-nailed", "select", options=["no", "yes"], required=False, help="driven at 30 degrees through the end of the side member; NDS 12.1.6.3")],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Lateral force on the group of nails, by load case; the project's ASD combinations are applied.")]),
     "bolted_connection": dict(
@@ -1378,7 +1379,8 @@ def build(kind, values, project):
         cases_used([x["case"] for x in loads], cb, r.miss)
         r.done()
         return ws_more.nailed_connection_sheet(mark, nm, D, Lg, ts, Gs, Gss, tm, Gm, Gms, n_, sv, loads, cb,
-                                               end_grain=bool(yes(r.text("end_grain", False))), diaphragm=bool(yes(r.text("diaphragm", False)))), "simple", {}
+                                               end_grain=bool(yes(r.text("end_grain", False))), diaphragm=bool(yes(r.text("diaphragm", False))),
+                                               toe_nail=bool(yes(r.text("toe_nail", False)))), "simple", {}
     if kind == "bolted_connection":
         cb = combos(project, r.miss, "ASD")
         Dt = r.text("D")
