@@ -1,5 +1,5 @@
-"""Wood structural panel diaphragms, SDPWS-2021 Sect. 4.2: unblocked, single span, simply
-supported between two lines of resistance, uniformly loaded.
+"""Wood structural panel diaphragms, SDPWS-2021 Sect. 4.2: unblocked and blocked, single
+span, simply supported between two lines of resistance, uniformly loaded.
 
 Read from the standard (pp. 18-19 and 27 of the document; tables read from the page images):
   Table 4.2C     nominal unit shear capacity vn (plf) and apparent shear stiffness Ga
@@ -7,14 +7,21 @@ Read from the standard (pp. 18-19 and 27 of the document; tables read from the p
                  diaphragm boundaries and supported panel edges, for Case 1 and for Cases 2 to
                  6, by sheathing grade, common nail, panel thickness and the nominal width of
                  the nailed face (2 or 3 in.). ROWS below, all 20 rows.
+  Table 4.2A     blocked diaphragms (document p. 25, read from a 330 dpi page image): vn and Ga
+                 for nail spacing at diaphragm boundaries (all cases), at continuous panel edges
+                 parallel to the load (Cases 3 and 4) and at all panel edges (Cases 5 and 6) of
+                 6, 4, 2-1/2 and 2 in., with 6, 6, 4 and 3 in. at the other panel edges (Cases
+                 1 to 4). BLOCKED below, all 20 rows. Sect. 4.2.8.1.1 item 3: where the spacing
+                 is 2-1/2 in. or less (or 10d nails at 3 in.), framing and blocking at adjoining
+                 panel edges 3 in. nominal with staggered nails.
   Table 4.2C note 2  specific gravity adjustment factor 1 - (0.5 - G), not over 1.
   Sect. 4.1.4    ASD: vn / 2.8 for seismic, vn / 2.0 for wind; LRFD: 0.50 vn for seismic,
                  0.80 vn for wind (shearwall.FACTORS).
-  Table 4.2.2    maximum L/W: unblocked wood structural panel diaphragms 3:1.
+  Table 4.2.2    maximum L/W: wood structural panel diaphragms, unblocked 3:1, blocked 4:1.
   Table 4.2.3    mid-span deflection of a single span, uniformly loaded diaphragm,
                  Eq. 4.2-1: 5 v L^3 / (8 E A W) + 0.25 v L / (1000 Ga) + sum(x Dc) / (2 W).
 Unit shear v = w L / (2 W); chord force T = C = w L^2 / (8 W) (statics).
-Not covered: blocked and high load diaphragms (Tables 4.2A, 4.2B), lumber sheathed
+Not covered: high load diaphragms (Table 4.2B), lumber sheathed
 diaphragms, cantilevered and open front diaphragms (4.2.6), openings, collectors, torsion.
 """
 from .shearwall import FACTORS
@@ -32,6 +39,25 @@ ROWS = {
     ("Sheathing and Single-Floor", "10d", "15/32"): {2: (715, 15, 9.0, 530, 10, 6.0), 3: (810, 12, 8.0, 600, 8.0, 5.5)},
     ("Sheathing and Single-Floor", "10d", "19/32"): {2: (800, 13, 8.5, 600, 8.5, 5.5), 3: (895, 10, 7.5, 670, 7.0, 5.0)},
 }
+# Blocked, Table 4.2A: (grade, nail, thickness): {face width: {boundary nail spacing: (vn, Ga OSB, Ga PLY)}}
+def _b(*v):
+    return {6: v[0:3], 4: v[3:6], 2.5: v[6:9], 2: v[9:12]}
+
+
+BLOCKED = {
+    ("Structural I", "6d", "5/16"): {2: _b(520, 15, 12, 700, 8.5, 7.5, 1050, 12, 10, 1175, 20, 15), 3: _b(590, 12, 9.5, 785, 7.0, 6.0, 1175, 9.5, 8.5, 1330, 17, 13)},
+    ("Structural I", "8d", "3/8"): {2: _b(755, 14, 11, 1010, 9.0, 7.5, 1485, 13, 10, 1680, 21, 15), 3: _b(840, 12, 10, 1120, 7.5, 6.5, 1680, 10, 9.0, 1890, 18, 13)},
+    ("Structural I", "10d", "15/32"): {2: _b(895, 24, 17, 1190, 15, 12, 1790, 20, 15, 2045, 31, 21), 3: _b(1010, 20, 15, 1345, 12, 9.5, 2015, 16, 13, 2295, 26, 18)},
+    ("Sheathing and Single-Floor", "6d", "5/16"): {2: _b(475, 15, 10, 630, 9.0, 7.0, 940, 13, 9.5, 1065, 21, 13), 3: _b(530, 12, 9.0, 700, 7.0, 6.0, 1065, 10, 8.0, 1205, 17, 12)},
+    ("Sheathing and Single-Floor", "6d", "3/8"): {2: _b(520, 13, 9.5, 700, 7.0, 6.0, 1050, 10, 8.0, 1175, 18, 12), 3: _b(590, 10, 8.0, 785, 5.5, 5.0, 1175, 8.5, 7.0, 1330, 14, 10)},
+    ("Sheathing and Single-Floor", "8d", "3/8"): {2: _b(670, 15, 11, 895, 9.5, 7.5, 1345, 13, 9.5, 1525, 21, 13), 3: _b(755, 12, 9.5, 1010, 7.5, 6.0, 1510, 11, 8.5, 1710, 18, 12)},
+    ("Sheathing and Single-Floor", "8d", "7/16"): {2: _b(715, 14, 10, 950, 8.5, 7.0, 1415, 12, 9.5, 1610, 20, 13), 3: _b(800, 11, 9.0, 1065, 7.0, 6.0, 1595, 10, 8.0, 1805, 17, 12)},
+    ("Sheathing and Single-Floor", "8d", "15/32"): {2: _b(755, 13, 9.5, 1010, 7.5, 6.5, 1485, 11, 8.5, 1680, 19, 13), 3: _b(840, 10, 8.5, 1120, 6.0, 5.5, 1680, 9.0, 7.5, 1890, 15, 11)},
+    ("Sheathing and Single-Floor", "10d", "15/32"): {2: _b(810, 25, 15, 1080, 15, 11, 1610, 21, 14, 1835, 33, 18), 3: _b(910, 21, 14, 1205, 12, 9.5, 1820, 17, 12, 2060, 28, 16)},
+    ("Sheathing and Single-Floor", "10d", "19/32"): {2: _b(895, 21, 14, 1190, 13, 9.5, 1790, 18, 12, 2045, 28, 17), 3: _b(1010, 17, 12, 1345, 10, 8.0, 2015, 14, 11, 2295, 24, 15)},
+}
+OTHER_EDGES = {6: 6, 4: 6, 2.5: 4, 2: 3}                 # nail spacing at the other panel edges, Cases 1 to 4
+MAX_RATIO_BLOCKED = 4.0
 PANELS = [f"{g}, {t} in, {n} common" for (g, n, t) in ROWS]
 MAX_RATIO_UNBLOCKED = 3.0
 
@@ -45,6 +71,17 @@ def row(panel):
         if panel == f"{g}, {t} in, {n} common":
             return (g, n, t), v
     raise DiaphragmError("diaphragm: the sheathing and nail choice is not a row of SDPWS Table 4.2C")
+
+
+def blocked(panel, face_in, spacing, panel_type, G, L, W, w, load, method, chord_E=None, chord_A=None, splice=()):
+    """Blocked diaphragm, Table 4.2A. spacing: nail spacing at the boundaries, 6, 4, 2.5 or 2 in."""
+    key, _ = row(panel)
+    if face_in not in (2, 3):
+        raise DiaphragmError("diaphragm: the nominal width of the nailed face is 2 or 3 in.")
+    if spacing not in OTHER_EDGES:
+        raise DiaphragmError("diaphragm: the boundary nail spacing of a blocked diaphragm is 6, 4, 2-1/2 or 2 in.")
+    vn_tab, g_osb, g_ply = BLOCKED[key][face_in][spacing]
+    return _design(key, vn_tab, g_osb, g_ply, MAX_RATIO_BLOCKED, panel_type, G, L, W, w, load, method, chord_E, chord_A, splice)
 
 
 def unblocked(panel, face_in, case, panel_type, G, L, W, w, load, method, chord_E=None, chord_A=None, splice=()):
@@ -67,7 +104,20 @@ def unblocked(panel, face_in, case, panel_type, G, L, W, w, load, method, chord_
         raise DiaphragmError("diaphragm: the load is wind or seismic and the method ASD or LRFD")
     t = r[face_in]
     i = 0 if case == 1 else 3
-    vn_tab, Ga = t[i], t[i + (1 if panel_type == "OSB" else 2)]
+    return _design(key, t[i], t[i + 1], t[i + 2], MAX_RATIO_UNBLOCKED, panel_type, G, L, W, w, load, method, chord_E, chord_A, splice)
+
+
+def _design(key, vn_tab, g_osb, g_ply, ratio_max, panel_type, G, L, W, w, load, method, chord_E, chord_A, splice):
+    if panel_type not in ("OSB", "plywood"):
+        raise DiaphragmError("diaphragm: the panel is OSB or plywood")
+    if G is None or not 0.3 <= G <= 0.75:
+        raise DiaphragmError("diaphragm: the specific gravity of the framing is missing or out of range")
+    for nm, v in (("the span", L), ("the width", W), ("the load", w)):
+        if v is None or v <= 0:
+            raise DiaphragmError(f"diaphragm: {nm} must be positive")
+    if (load, method) not in FACTORS:
+        raise DiaphragmError("diaphragm: the load is wind or seismic and the method ASD or LRFD")
+    Ga = g_osb if panel_type == "OSB" else g_ply
     sg = min(1.0, 1.0 - (0.5 - G))
     txt, fac = FACTORS[(load, method)]
     vn = vn_tab * sg
@@ -75,7 +125,7 @@ def unblocked(panel, face_in, case, panel_type, G, L, W, w, load, method, chord_
     v = w * L / (2.0 * W)
     T = w * L * L / (8.0 * W)
     out = dict(key=key, vn_table=vn_tab, Ga=Ga, sg=sg, vn=vn, factor_text=txt, factor=fac, capacity=cap, v=v, reaction=w * L / 2.0, chord=T,
-               ratio=L / W, ratio_max=MAX_RATIO_UNBLOCKED, defl=None)
+               ratio=L / W, ratio_max=ratio_max, defl=None)
     if chord_E and chord_A:
         b = 5.0 * v * L ** 3 / (8.0 * chord_E * chord_A * W)
         s = 0.25 * v * L / (1000.0 * Ga)
