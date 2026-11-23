@@ -7,7 +7,7 @@ naming the box, and all such messages come back together.
 """
 import re
 
-from .. import calcsheet, shapes, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column
+from .. import calcsheet, shapes, snow, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column
 from ..footing import FootingInputError
 from ..steel_beam import SteelInputError
 from ..ws_steel_beam import Combo, DeflCheck, WorksheetError
@@ -137,6 +137,25 @@ FORMS = {
                                                F("has_edge", "Edge in load direction", "select", options=["yes", "no"]),
                                                F("count", "How many", required=False, help="2 for a pair of angles")]),
                 T("loads", "Force along the bolt line", [CASE, F("P", "Force", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "snow": dict(
+        title="Roof Snow Load", code="ASCE/SEI 7-22", mark="SN",
+        fields=[F("pg", "Ground snow load, pg", unit="psf", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
+                F("pg_source", "Where pg comes from", "text", help="for example: ASCE 7 Hazard Tool, the address, the date looked up"),
+                F("risk", "Risk Category", "select", options=["I", "II", "III", "IV"]),
+                F("roughness", "Surface roughness", "select", options=list(snow.CE), help="ASCE 7-22 Sect. 26.7; Table 7.3-1"),
+                F("exposure", "Exposure of the roof", "select", options=list(snow.EXPOSURES), help="Table 7.3-1"),
+                F("thermal", "Thermal condition", "select", options=list(snow.THERMAL), help="Tables 7.3-2 and 7.3-3"),
+                F("r_roof", "Roof R-value (heated, unventilated roof)", unit="h ft2 F/Btu", required=False),
+                F("roof", "Roof", "select", options=["gable or hip", "monoslope"]),
+                F("rise", "Roof rise in 12", help="for example 6 for a 6 on 12 roof"),
+                F("slippery", "Unobstructed slippery surface", "select", options=["yes", "no"],
+                  help="metal, slate, glass or smooth membrane, with nothing to hold the snow and room below the eaves"),
+                F("W", "Eave to ridge distance, W (horizontal)", unit="ft", help="for a monoslope roof, eave to upper edge"),
+                F("simple", "Gable: simply supported rafters, ridge to eave", "select", options=["yes", "no"], required=False,
+                  help="Sect. 7.6.1; matters for the unbalanced load"),
+                F("W2", "Winter wind parameter, W2 (gable)", required=False, help="from the ASCE 7 Hazard Tool; Fig. 7.6-1"),
+                F("W2_source", "Where W2 comes from (gable)", "text", required=False)],
+        tables=[]),
     "base_plate": dict(
         title="Base Plate", code="AISC 360-22", mark="BP",
         fields=[F("shape", "Column", "shape"), F("N", "Plate length (along column depth)", unit="in"),
@@ -513,6 +532,16 @@ def build(kind, values, project):
                  threads=r.text("threads"), planes=r.num("planes"), deformation=yes(r.text("deformation")))
         r.done()
         return ws_conn.bolt_line(mark, loads, cb, m, plies=plies, **a), "conn", dict(combos=cb)
+    if kind == "snow":
+        pg, src, risk = r.num("pg"), r.text("pg_source"), r.text("risk")
+        rough, expo, therm = r.text("roughness"), r.text("exposure"), r.text("thermal")
+        roof = {"gable or hip": "gable", "monoslope": "monoslope"}.get(r.text("roof"))
+        rise, slip, W = r.num("rise"), yes(r.text("slippery")), r.num("W")
+        r_roof = r.num("r_roof", therm == snow.HEATED, label="Roof R-value")
+        r.done()
+        return ws_more.snow_sheet(mark, pg, src, risk, rough, expo, therm, roof, rise, slip, W, r_roof=r_roof,
+                                  W2=r.num("W2", False), W2_source=r.text("W2_source", False),
+                                  simple_members=yes(r.text("simple", False))), "simple", {}
     if kind == "base_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
