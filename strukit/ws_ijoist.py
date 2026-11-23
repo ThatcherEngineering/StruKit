@@ -63,7 +63,7 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
         M = max(abs(res.M_max()[0]), abs(res.M_min()[0])) / 12.0
         V = abs(res.V_abs_max()[0])
         R = max(abs(v) for v in res.reactions.values())
-        out.append(dict(cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, M=M, V=V, R=R))
+        out.append(dict(res=res, cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, M=M, V=V, R=R))
     gm = max(out, key=lambda o: o["M"] / o["CD"])
     gv = max(out, key=lambda o: o["V"] / o["CD"])
     gr = max(out, key=lambda o: o["R"] / o["CD"])
@@ -118,6 +118,8 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
         ["web holes; concentrated loads on the flange and web stiffeners under them", "bearing on the supporting member",
          "hangers and connections", "blocking, rim and lateral restraint at supports", "floor vibration"],
         picture=("ijoist", dict(d=j["depth"], span=span_ft, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gm["cb"].name)
+    from .ws_wood import _diagram_data
+    sheet.diagram = _diagram_data(gm)
     sheet.code = "2018 NDS, " + j["source"].split(" Table")[0]
     sheet.reactions = {o["cb"].name: o["R"] for o in out}
     return sheet
