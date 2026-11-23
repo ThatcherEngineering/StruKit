@@ -6,7 +6,7 @@ calculations and their sources.
 """
 from dataclasses import dataclass, field
 
-from . import anchorage as anch, base_plate, footing, footing_moment, shapes
+from . import anchorage as anch, base_plate, footing, footing_moment, shapes, snow
 from .ws_steel_beam import Row, WorksheetError
 
 
@@ -371,3 +371,57 @@ def _anchorage(mark, p, N, B, support, fc_psi, rod_d, rod_Fu, n_rods, rod_edge, 
                            picture=("anchorage", dict(N=N, B=B, sup_N=sup[0], sup_B=sup[1], n=n_rods, edge=rod_edge,
                                                       side=rod_side, rod_d=rod_d, hef=a["hef"], ha=a["ha"],
                                                       c_end=c_end, c_side=c_side, s_row=s_row, s_rows=s_rows))))
+
+
+def snow_sheet(mark, pg, pg_source, risk, roughness, exposure, thermal, roof_type, rise_on_12, slippery, W_ft,
+               r_roof=None, W2=None, W2_source=None, simple_members=None):
+    """Roof snow load sheet, ASCE/SEI 7-22 Chapter 7 (see snow.py). pg_source and W2_source
+    say where the site values come from (the ASCE 7 Hazard Tool query, or the
+    jurisdiction's table)."""
+    if not (pg_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the ground snow load is blank")
+    try:
+        r = snow.roof(pg, risk, roughness, exposure, thermal, roof_type, rise_on_12, slippery, W_ft, r_roof, W2,
+                      simple_members)
+    except snow.SnowError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    u = r.unbalanced
+    if u.get("surcharge") and not (W2_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the winter wind parameter W2 is blank")
+    roof_txt = ("gable or hip" if roof_type == "gable" else "monoslope") + f", {rise_on_12:g} on 12 ({r.slope_deg:.1f} deg); " \
+        + (f"eave to ridge W = {W_ft:g} ft" if roof_type == "gable" else f"eave to upper edge W = {W_ft:g} ft") \
+        + "; " + ("unobstructed slippery surface" if slippery else "surface not slippery, or obstructed")
+    info = [("Ground Snow", f"pg = {pg:g} psf, Risk Category {risk} ({pg_source.strip()})"),
+            ("Exposure", f"surface roughness {roughness}; roof {exposure}"),
+            ("Thermal", thermal + (f"; roof R-value {r_roof:g} h ft2 F/Btu" if thermal == snow.HEATED else "")),
+            ("Roof", roof_txt)]
+    if u.get("surcharge"):
+        info.append(("Winter Wind", f"W2 = {W2:g} ({W2_source.strip()})"))
+    loads = [f"Balanced snow load                    {r.balanced:7.1f} psf   on the horizontal projection"
+             + ("   (includes 8 psf rain-on-snow)" if r.rain_on_snow else "")]
+    if r.pm:
+        loads.append(f"Minimum snow load, separate case      {r.pm:7.1f} psf")
+    if u:
+        if u["surcharge"]:
+            loads.append(f"Unbalanced: windward {u['windward']:.1f} psf; leeward {u['leeward']:.1f} psf plus {u['surcharge']:.1f} psf "
+                         f"for {u['extent']:.1f} ft from the ridge")
+        else:
+            loads.append(f"Unbalanced: windward 0 psf; leeward {u['leeward']:.1f} psf")
+    elif roof_type == "gable":
+        loads.append("Unbalanced load not required for this slope (Sect. 7.6.1)")
+    assumptions = ["Snow loads act on the horizontal projection of the roof (Sect. 7.4).",
+                   "The minimum snow load is a separate uniform case; it is not combined with unbalanced, drift or "
+                   "sliding loads (Sect. 7.3.3)."] if r.pm else ["Snow loads act on the horizontal projection of the roof (Sect. 7.4)."]
+    if u:
+        assumptions.append("Balanced and unbalanced loads are separate cases, with the wind from either direction (Sect. 7.6).")
+    sheet = SimpleSheet(
+        mark, "Roof Snow Load", "Site and Roof", "Chapter 7", info, [], [], "Roof Snow Load", r.lines, [],
+        assumptions,
+        ["drifts at roof steps, parapets and projections (Sect. 7.7, 7.8)", "sliding snow from a higher roof (Sect. 7.9)",
+         "partial loading of continuous members (Sect. 7.5)", "ice dams and icicles at eaves (Sect. 7.4.4)",
+         "ponding instability (Sect. 7.11)"])
+    sheet.blocks.append(dict(title="Design Snow Loads", head="Design Snow Loads", steps=[], text=loads,
+                             picture=("snow", dict(roof=roof_type, W=W_ft, rise=rise_on_12, balanced=r.balanced,
+                                                   pm=r.pm, unb=u))))
+    sheet.snow = r
+    return sheet

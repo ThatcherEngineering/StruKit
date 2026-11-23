@@ -1096,20 +1096,26 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
     _steps(p, sheet.steps_title, sheet.steps)
     for b in sheet.blocks:
         if b.get("picture"):
-            p.room(230)
-            p.head(b["title"] + ": Inputs and Layout")
+            p.room(230 if b["picture"][0] == "anchorage" else 175)
+            p.head(b.get("head") or b["title"] + ": Inputs and Layout")
             for k, v in b.get("info", ()):
                 lines = _split(v, 104)
                 p.kv([(k, lines[0])] + [("", t) for t in lines[1:]], kw=86)
+            for t in b.get("text", ()):
+                p.text(t, font=FM, size=8)
             p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
-        _steps(p, b["title"], b["steps"])
-    _summary(p, sheet.rows)
+        if b.get("steps"):
+            _steps(p, b["title"], b["steps"])
+    if sheet.rows:
+        _summary(p, sheet.rows)
     return _closing(p, sheet.assumptions, sheet.not_checked)
 
 
 def _block_picture(c, top, pic):
     """Full-width pictures for the further blocks of a SimpleSheet. Returns the y below."""
     name, d = pic
+    if name == "snow":
+        return _snow_picture(c, top, d)
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
@@ -1169,6 +1175,64 @@ def _block_picture(c, top, pic):
     low2 = yb2 - 12
     low = min(low1, low2)
     _small(c, (LM + RM) / 2, low - 4, "dimensions in inches; to scale; edge distances are measured from the rod centres")
+    return low - 8
+
+
+def _snow_picture(c, top, d):
+    """Balanced and unbalanced snow on the roof profile, loads drawn to one scale."""
+    gable = d["roof"] == "gable"
+    u = d["unb"]
+    panels = [("BALANCED", None)] + ([("UNBALANCED", u)] if u else [])
+    peak_load = max([d["balanced"]] + ([u["leeward"] + u.get("surcharge", 0)] if u else [])) or 1.0
+    k = 34.0 / peak_load                                   # points per psf
+    wpan = 200.0
+    span = 2 * d["W"] if gable else d["W"]
+    sx = 170.0 / span
+    rise_pt = min(d["rise"] / 12.0 * d["W"] * sx, 30.0)
+    low = top
+    for n, (title, ub) in enumerate(panels):
+        x0 = LM + 14 + n * (wpan + 62)
+        _sketch_title(c, x0, top - 4, title)
+        base = top - 22 - 40 - 8 - rise_pt                 # eave line
+        x1 = x0 + span * sx
+        xr = x0 + d["W"] * sx if gable else x1             # ridge or upper edge
+        c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(1.4)
+        if gable:
+            c.line(x0, base, xr, base + rise_pt); c.line(xr, base + rise_pt, x1, base)
+        else:
+            c.line(x0, base, x1, base + rise_pt)
+        datum = base + rise_pt + 8                         # loads are drawn on the horizontal projection
+        c.setLineWidth(0.5); c.setStrokeColorRGB(0.45, 0.50, 0.56); c.line(x0, datum, x1, datum)
+
+        def block(xa, xb, y0, psf, label, above=True):
+            if psf <= 0:
+                return
+            c.setFillColorRGB(0.82, 0.88, 0.95); c.setStrokeColorRGB(0.13, 0.21, 0.32); c.setLineWidth(0.6)
+            c.rect(xa, y0, xb - xa, psf * k, fill=1, stroke=1)
+            c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+            c.drawCentredString((xa + xb) / 2, y0 + psf * k + 2.5 if above else y0 + psf * k / 2 - 2, label)
+
+        if ub is None:
+            block(x0, x1, datum, d["balanced"], f"{d['balanced']:.1f} psf")
+        else:
+            block(x0, xr, datum, ub["windward"], f"{ub['windward']:.1f} psf")
+            block(xr, x1, datum, ub["leeward"], f"{ub['leeward']:.1f} psf", above=not ub.get("surcharge"))
+            if ub.get("surcharge"):
+                xe = xr + ub["extent"] * sx
+                block(xr, xe, datum + ub["leeward"] * k, ub["surcharge"], f"+ {ub['surcharge']:.1f} psf")
+                memberart._dim_h(c, xr, xe, base - 9, f"{ub['extent']:.1f} ft", FR, ext_from=datum)
+            c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+            c.drawString(x0, datum + 38, "wind")
+            c.setStrokeColorRGB(*GREY); c.setLineWidth(0.6); c.line(x0 + 16, datum + 40, x0 + 34, datum + 40)
+            c.line(x0 + 34, datum + 40, x0 + 30, datum + 42); c.line(x0 + 34, datum + 40, x0 + 30, datum + 38)
+        yb = base - (22 if (ub and ub.get("surcharge")) else 9)
+        if gable:
+            memberart._dim_h(c, x0, xr, yb, f"W = {d['W']:g} ft", FR, ext_from=base)
+            memberart._dim_h(c, xr, x1, yb, f"{d['W']:g} ft", FR, ext_from=base)
+        else:
+            memberart._dim_h(c, x0, x1, yb, f"W = {d['W']:g} ft", FR, ext_from=base)
+        low = min(low, yb - 12)
+    _small(c, (LM + RM) / 2, low - 2, "loads in psf on the horizontal projection, drawn to one scale")
     return low - 8
 
 
