@@ -534,3 +534,45 @@ def test_cladding_against_the_published_three_story_example():
     p = rows[192]["p"]
     assert (p["positive"], p["1'"], p["1"], p["2"]) == pytest.approx((18.6, -46.1, -66.2, -88.2), rel=0.01)
     assert rows[192]["edge_positive"] == pytest.approx(43.1, rel=0.01)
+
+
+def test_topographic_factor_against_the_published_examples():
+    """Wind Design Manual (SEAOC/ICC), Design Example 2: 2a escarpment, Exposure D, H = 266 ft, Lh = 320 ft, site 100 ft
+    downwind, z = 33 ft: K1 = 0.475, K2 = 0.95, K3 = 0.85, Kzt = 1.93.  2b/2c hill, H = 660 ft, Lh = 2,100 ft, at the crest,
+    z = 33 ft, K1 = 1.05(0.314) = 0.33, K3 = 0.94, Kzt = 1.72.  Parameters as printed in ASCE/SEI 7-22 Figure 26.8-1."""
+    assert wind.TOPO["2D ridge"] == ({"B": 1.30, "C": 1.45, "D": 1.55}, 3.0, 1.5, 1.5)
+    assert wind.TOPO["2D escarpment"] == ({"B": 0.75, "C": 0.85, "D": 0.95}, 2.5, 1.5, 4.0)
+    assert wind.TOPO["3D axisymmetrical hill"] == ({"B": 0.95, "C": 1.05, "D": 1.15}, 4.0, 1.5, 1.5)
+    a = wind.kzt("2D escarpment", "D", 266, 320, 100, 33, downwind=True)
+    assert a["steep"] and a["L_used"] == 532 and a["K1"] == pytest.approx(0.475)
+    assert a["K2"] == pytest.approx(0.953, abs=0.001) and a["K3"] == pytest.approx(0.856, abs=0.001) and a["Kzt"] == pytest.approx(1.93, abs=0.01)
+    b = wind.kzt("3D axisymmetrical hill", "C", 660, 2100, 0, 33, downwind=False)
+    assert b["K1"] == pytest.approx(0.33, abs=0.001) and b["K2"] == 1.0 and b["K3"] == pytest.approx(0.94, abs=0.002) and b["Kzt"] == pytest.approx(1.72, abs=0.01)
+    # the figure's table (Exposure C multipliers): ridge H/Lh 0.30 -> K1 0.43; x/Lh 1.0 escarpment downwind -> K2 0.75; z/Lh 0.20 ridge -> K3 0.55
+    t = wind.kzt("2D ridge", "C", 30, 100, 0, 20, downwind=False)
+    assert t["K1"] == pytest.approx(0.43, abs=0.006) and t["K3"] == pytest.approx(0.55, abs=0.005)
+    assert wind.kzt("2D escarpment", "C", 30, 100, 100, 0, downwind=True)["K2"] == pytest.approx(0.75)
+    assert wind.kzt("2D ridge", "B", 80, 300, 0, 0, False)["k1_ratio"] == 1.45          # not less than the Exposure C multiplier
+    assert wind.kzt("2D ridge", "C", 800, 1000, 2500, 0, True)["K2"] == 0.0
+    for kw, word in ((dict(H=10, Lh=40), "condition 3"), (dict(H=30, Lh=200), "condition 2"), (dict(H=30, Lh=100, located=False), "condition 1")):
+        r = wind.kzt("2D ridge", "C", kw["H"], kw["Lh"], 0, 15, False, located=kw.get("located", True))
+        assert not r["applies"] and r["Kzt"] == 1.0 and word in r["why"] and r["Kzt_feature"] > 1.0
+    assert not wind.kzt("2D ridge", "B", 50, 150, 0, 15, False)["applies"] and wind.kzt("2D ridge", "B", 60, 150, 0, 15, False)["applies"]
+
+
+def test_topographic_factor_screen_and_sheet(tmp_path):
+    from strukit import calcsheet
+    from strukit.gui import calc
+    v = dict(mark="WT1", shape="2D escarpment", exposure="D", exposure_basis="open water upwind", H="266", Lh="320", geometry_source="topographic section",
+             x="100", side="downwind of the crest", located="yes", heights="0, 33")
+    s, kind, _ = calc.build("wind_kzt", v, {})
+    rows = dict(s.kzt["rows"])
+    assert kind == "simple" and rows[33.0]["Kzt"] == pytest.approx(1.93, abs=0.01) and rows[0.0]["Kzt"] > rows[33.0]["Kzt"]
+    calcsheet.simple_pdf(s, str(tmp_path / "k.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    for extra in (dict(shape="3D axisymmetrical hill", x="0"), dict(shape="2D ridge", side="upwind of the crest"), dict(located="no"), dict(H="10", Lh="200")):
+        t, _, _ = calc.build("wind_kzt", dict(v, **extra), {})
+        calcsheet.simple_pdf(t, str(tmp_path / "k2.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    flat, _, _ = calc.build("wind_kzt", dict(v, located="no"), {})
+    assert not flat.kzt["applies"] and all(r["Kzt"] == 1.0 for _, r in flat.kzt["rows"])
+    assert calc.results("wind_kzt", dict(v, Lh=""), {})["state"] == "incomplete"
+    assert calc.results("wind_kzt", dict(v, heights=""), {})["state"] == "incomplete"
