@@ -1381,6 +1381,97 @@ def nailed_connection_sheet(mark, nail_name, D, length, side_t, G_side, G_side_s
     return sheet
 
 
+def nail_withdrawal_sheet(mark, nail_name, D, length, head, side_t, G_side, G_side_source, main_t, G_main, G_main_source, n, service, loads, combos, toe_nail=False):
+    """Nails loaded in withdrawal from side grain, with head pull-through of the side member,
+    2018 NDS 12.2.3 and 12.2.5 (see dowel.py). Smooth shank carbon steel nails. loads:
+    [dict(case, P lb)], P pulling the side member off the main member; combos: ASD combinations.
+    service: one of the four conditions of Table 11.3.3."""
+    import math as _m
+    from . import dowel, wood
+    for nm, v in (("the source of the side member specific gravity", G_side_source), ("the source of the main member specific gravity", G_main_source),
+                  ("the nail description", nail_name)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    CMs = {"dry": (1.0, 1.0), "wet in service": (0.25, 0.7), "wet at fabrication, dry in service": (0.25, 1.0), "wet at fabrication and in service": (1.0, 0.7)}
+    if service not in CMs:
+        raise WorksheetError(f"{mark}: the service condition is one of: " + "; ".join(CMs))
+    if n is None or n < 1 or int(n) != n:
+        raise WorksheetError(f"{mark}: the number of nails is a whole number, 1 or more")
+    for nm, v in (("the nail diameter", D), ("the nail length", length), ("the side member thickness", side_t), ("the main member thickness", main_t)):
+        if v is None or v <= 0:
+            raise WorksheetError(f"{mark}: {nm} must be positive")
+    if not toe_nail and (head is None or head <= 0):
+        raise WorksheetError(f"{mark}: the nail head diameter is blank")
+    pt = min(length * _m.cos(_m.radians(30.0)) - length / 3.0, main_t) if toe_nail else min(length - side_t, main_t)
+    if pt <= 0:
+        raise WorksheetError(f"{mark}: the nail does not reach the main member")
+    try:
+        W = dowel.nail_withdrawal(G_main, D)
+        pth = None if toe_nail else dowel.pull_through(head, G_side, side_t)
+    except dowel.DowelError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    CMw, CMh = CMs[service]
+    if toe_nail:
+        CMw = 1.0
+    Ctn = 0.67 if toe_nail else 1.0
+    Ln = footing_line
+    steps = [Ln("D", f"{D:g} in", "", "NDS Table L4", f"{nail_name.strip()}, {length:g} in. long"),
+             Ln("W = 1380 G^2.5 D", W, "lb/in", "NDS Eq. 12.2-3", f"G = {G_main:g} ({G_main_source.strip()})"),
+             Ln("penetration into the main member, pt" + (" = L cos 30 - L/3" if toe_nail else ""), f"{pt:.2f} in", "", "NDS 12.2.3.1(c)" + (", Figure 12A" if toe_nail else "")),
+             Ln("W pt", W * pt, "lb", "NDS 12.2.3.1(c)", "one nail")]
+    steps.append(Ln("CM, withdrawal", CMw, "", "NDS Table 11.3.1 note 2, 12.5.4.1" if toe_nail else "NDS Table 11.3.3", "does not apply to toe-nails" if toe_nail else service))
+    if toe_nail:
+        steps.append(Ln("Ctn", Ctn, "", "NDS 12.5.4.1", "toe-nailed connection"))
+    else:
+        steps += [Ln("DH", f"{head:g} in", "", "NDS Table L4", "head diameter"),
+                  Ln("WH = 690 pi DH G^2 tns" if pth["thin"] else "WH = 1725 pi DH^2 G^2", pth["WH"], "lb", f"NDS Eq. {pth['eq']}",
+                     f"G = {G_side:g} ({G_side_source.strip()}); tns = {side_t:g} in. {'not over' if pth['thin'] else 'over'} 2.5 DH = {2.5 * head:.2f} in."),
+                  Ln("CM, pull-through", CMh, "", "NDS Table 11.3.3", service)]
+    base_w = W * pt * CMw * Ctn
+    base_h = pth["WH"] * CMh if pth else None
+    worst = None
+    for cb in combos:
+        P = sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)
+        present = [ld["case"] for ld in loads if cb.factors.get(ld["case"], 0.0) and ld["P"]]
+        if not present or P < 1e-9:
+            continue
+        try:
+            CD, cd_case, cd_dur = wood.load_duration(present)
+        except wood.WoodError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        cap = n * min(base_w, base_h if base_h is not None else base_w) * CD
+        g = dict(name=cb.name, P=P, CD=CD, cd_case=cd_case, cd_dur=cd_dur, cap=cap, source=cb.source)
+        if worst is None or g["P"] / cap > worst["P"] / worst["cap"]:
+            worst = g
+    if worst is None:
+        raise WorksheetError(f"{mark}: no load combination pulls on the connection")
+    CD = worst["CD"]
+    steps += [Ln("CD", CD, "", "NDS Table 2.3.2", f"{worst['cd_case']}, {worst['cd_dur']}; combination {worst['name']}"),
+              Ln("W' pt = W pt CD CM Ct" + (" Ctn" if toe_nail else ""), base_w * CD, "lb", "NDS Table 11.3.1", "Ct = 1.0; one nail")]
+    rows = [Row("Withdrawal of the nails", worst["name"], worst["P"], n * base_w * CD, "lb", "NDS Table 11.3.1, 12.2.3", f"{int(n)} nails")]
+    if pth:
+        steps.append(Ln("W'H = WH CD CM Ct", base_h * CD, "lb", "NDS Table 11.3.1", "Ct = 1.0; one nail"))
+        rows.append(Row("Head pull-through of the side member", worst["name"], worst["P"], n * base_h * CD, "lb", "NDS Table 11.3.1, 12.2.5", f"{int(n)} nails"))
+    info = [("Fastener", f"{int(n)} - {nail_name.strip()} nails, {D:g} in. diameter x {length:g} in. long" + ("" if toe_nail else f", {head:g} in. head")),
+            ("Side Member", f"{side_t:g} in. thick, G = {G_side:g} ({G_side_source.strip()})"),
+            ("Main Member", f"{main_t:g} in. thick, G = {G_main:g} ({G_main_source.strip()})"),
+            ("Conditions", service + ("" if service.endswith("service") else " service") + ("; toe-nailed" if toe_nail else ""))]
+    load_lines = [f"{ld['case']}: {ld['P']:,.0f} lb" + (f"  ({ld['label']})" if ld.get("label") else "") for ld in loads]
+    sheet = SimpleSheet(
+        mark, "Nails in Withdrawal", "Connection", "ASD", info, load_lines, [(f"{worst['name']}", worst["source"])], "Withdrawal Design Value", steps, rows,
+        ["Smooth shank (bright or galvanized) carbon steel nails driven into the side grain of the main member, perpendicular to the wood fibers; load along the nail.",
+         "Sustained temperature not over 100 degrees F (Ct = 1.0, NDS Table 11.3.4).",
+         "All nails share the load equally."]
+        + (["Toe-nails driven at about 30 degrees to the side member and started about one third of the nail length from its end (NDS 12.1.6.3, Figure 12A); "
+            "the penetration into the main member is taken as L cos 30 - L/3."] if toe_nail else []),
+        ["nail spacing, edge and end distances against splitting (NDS 12.1.6.5)", "the members at the connection",
+         "combined lateral and withdrawal loading (NDS 12.4.1)"] + (["head pull-through at the toe-nails"] if toe_nail else []))
+    sheet.blocks.append(dict(title="Section", picture=("toe_nail" if toe_nail else "nailed", dict(side_t=side_t, main_t=main_t, length=length, p=pt, D=D,
+                                                       label=f"{nail_name.strip()}, {D:g} x {length:g} in.", withdrawal=True))))
+    sheet.connection = dict(W=W, pt=pt, WH=pth["WH"] if pth else None, capacity=worst["cap"], demand=worst["P"], CD=CD, CM=CMw)
+    return sheet
+
+
 def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, edge, shear, side_t, side_w, G_side, E_side, side_source,
                             main_t, main_w, G_main, E_main, main_source, sense, wood_type, service, loads, combos, local=None, grain="parallel", perp=None):
     """Bolted wood-to-wood connection loaded parallel to grain in every member (a splice or

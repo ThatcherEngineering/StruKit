@@ -201,3 +201,43 @@ def shear_at_connection(Fv, b, d, de, end):
     if end < 5 * d:
         return 2.0 / 3.0 * Fv * b * de * (de / d) ** 2, "Eq. 3.4-6"
     return 2.0 / 3.0 * Fv * b * de, "Eq. 3.4-7"
+
+
+# ---- NDS 12.2: withdrawal and head pull-through -------------------------------------------------
+# Table L4 head diameters, in. (same order as _L4)
+_L4_HEAD = {"common": (0.266, 0.266, 0.281, 0.312, 0.312, 0.344, 0.406, 0.438, 0.469, 0.5, 0.531),
+            "box": (0.266, 0.266, 0.297, 0.312, 0.312, 0.344, 0.375, 0.375, 0.406, None, None),
+            "sinker": (0.234, 0.250, 0.266, 0.281, 0.312, 0.344, 0.375, 0.406, 0.438, None, 0.5)}
+NAIL_HEADS = {f"{p} {kind}": v for kind, row in _L4_HEAD.items() for p, v in zip(_PENNY, row) if v}
+
+
+def nail_withdrawal(G, D):
+    """Reference withdrawal design value, lb per inch of penetration, of a smooth shank (bright or
+    galvanized) carbon steel nail or spike driven into side grain, NDS Eq. 12.2-3: W = 1380 G^2.5 D.
+    Range of Table 12.2C: G 0.31 to 0.73, D 0.092 to 0.375 in."""
+    if not 0.31 <= G <= 0.73:
+        raise DowelError("nail withdrawal: the specific gravity is from 0.31 to 0.73 (NDS Table 12.2C)")
+    if not 0.092 <= D <= 0.375:
+        raise DowelError("nail withdrawal: the nail diameter is from 0.092 to 0.375 in. (NDS Table 12.2C)")
+    return 1380.0 * G ** 2.5 * D
+
+
+def lag_withdrawal(G, D):
+    """Lag screw reference withdrawal design value, lb per inch of thread penetration (tapered tip
+    excluded) into side grain, NDS Eq. 12.2-1: W = 1800 G^1.5 D^0.75. Range of Table 12.2A:
+    G 0.31 to 0.73, D 1/4 to 1-1/4 in."""
+    if not 0.31 <= G <= 0.73:
+        raise DowelError("lag screw withdrawal: the specific gravity is from 0.31 to 0.73 (NDS Table 12.2A)")
+    if not 0.25 <= D <= 1.25:
+        raise DowelError("lag screw withdrawal: the diameter is from 1/4 to 1-1/4 in. (NDS Table 12.2A)")
+    return 1800.0 * G ** 1.5 * D ** 0.75
+
+
+def pull_through(DH, G, tns):
+    """Reference head pull-through design value, lb, of a fastener with a round head in a wood side
+    member, NDS Eq. 12.2-6a (tns not over 2.5 DH): WH = 690 pi DH G^2 tns; Eq. 12.2-6b: WH = 1725 pi DH^2 G^2."""
+    if DH is None or DH <= 0 or tns is None or tns <= 0:
+        raise DowelError("pull-through: the head diameter and the side member thickness must be positive")
+    thin = tns <= 2.5 * DH
+    WH = 690.0 * math.pi * DH * G ** 2 * tns if thin else 1725.0 * math.pi * DH ** 2 * G ** 2
+    return dict(WH=WH, eq="12.2-6a" if thin else "12.2-6b", thin=thin)

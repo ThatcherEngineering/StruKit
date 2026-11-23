@@ -1602,9 +1602,14 @@ def _nailed_picture(c, top, d):
     t = c.beginPath(); t.moveTo(xn - D * sc / 2, y_top - Lg * sc + D * sc); t.lineTo(xn + D * sc / 2, y_top - Lg * sc + D * sc); t.lineTo(xn, y_top - Lg * sc); t.close()
     c.setFillColorRGB(0.25, 0.27, 0.3); c.drawPath(t, fill=1, stroke=0)
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
-    _arrow(c, x0 - 22, (y_top + y_mid) / 2, x0 - 50, (y_top + y_mid) / 2, head=4)
-    _arrow(c, x0 + 22 + wd, (y_mid + y_bot) / 2, x0 + 50 + wd, (y_mid + y_bot) / 2, head=4)
-    c.setFont(FR, 6.5); c.drawRightString(x0 - 54, (y_top + y_mid) / 2 - 2, "load"); c.drawString(x0 + 54 + wd, (y_mid + y_bot) / 2 - 2, "load")
+    if d.get("withdrawal"):
+        xl = x0 + 8
+        _arrow(c, xl, y_top, xl, y_top + 22, head=4); _arrow(c, xl + 44, y_bot, xl + 44, y_bot - 22, head=4)
+        c.setFont(FR, 6.5); c.drawString(xl + 5, y_top + 14, "load"); c.drawString(xl + 49, y_bot - 18, "load")
+    else:
+        _arrow(c, x0 - 22, (y_top + y_mid) / 2, x0 - 50, (y_top + y_mid) / 2, head=4)
+        _arrow(c, x0 + 22 + wd, (y_mid + y_bot) / 2, x0 + 50 + wd, (y_mid + y_bot) / 2, head=4)
+        c.setFont(FR, 6.5); c.drawRightString(x0 - 54, (y_top + y_mid) / 2 - 2, "load"); c.drawString(x0 + 54 + wd, (y_mid + y_bot) / 2 - 2, "load")
     c.setFillColorRGB(*GREY); c.setFont(FR, 6)
     c.drawString(x0 - 18, (y_top + y_mid) / 2 - 2, "side member"); c.drawString(x0 + 26, y_bot + 3, "main member")
     xr = x0 + 22 + wd + 14
@@ -1612,8 +1617,9 @@ def _nailed_picture(c, top, d):
     memberart._dim_v(c, y_bot, y_mid, xr + 66, f"{tm:g} in", FR, ext_from=xr - 14)
     memberart._dim_v(c, y_top - Lg * sc, y_mid, xn + 24, f"p = {p:.2f} in", FR, ext_from=xn + 2)
     c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawCentredString(xn, y_top + 6, d["label"])
-    _small(c, (LM + RM) / 2, y_bot - 12, "section through one nail, to scale")
-    return y_bot - 18
+    off = 24 if d.get("withdrawal") else 0
+    _small(c, (LM + RM) / 2, y_bot - 12 - off, "section through one nail, to scale")
+    return y_bot - 18 - off
 
 
 def _toe_nail_picture(c, top, d):
@@ -1640,9 +1646,13 @@ def _toe_nail_picture(c, top, d):
     xt, yt = xs1 - Lg * 0.5 * sc, yh - Lg * 0.8660254 * sc
     c.setStrokeColorRGB(0.25, 0.27, 0.3); c.setLineWidth(max(1.0, D * sc)); c.line(xs1, yh, xt, yt)
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
-    _arrow(c, xs0, y_top - 8, xs0 - 28, y_top - 8, head=4)
-    _arrow(c, xm1, (y_mid + y_bot) / 2, xm1 + 28, (y_mid + y_bot) / 2, head=4)
-    c.setFont(FR, 6.5); c.drawRightString(xs0 - 32, y_top - 10, "load"); c.drawString(xm1 + 32, (y_mid + y_bot) / 2 - 2, "load")
+    if d.get("withdrawal"):
+        _arrow(c, xs0 - 10, y_top - 30, xs0 - 10, y_top - 6, head=4); _arrow(c, xm0 + 20, y_bot, xm0 + 20, y_bot - 20, head=4)
+        c.setFont(FR, 6.5); c.drawRightString(xs0 - 14, y_top - 14, "load"); c.drawString(xm0 + 25, y_bot - 16, "load")
+    else:
+        _arrow(c, xs0, y_top - 8, xs0 - 28, y_top - 8, head=4)
+        _arrow(c, xm1, (y_mid + y_bot) / 2, xm1 + 28, (y_mid + y_bot) / 2, head=4)
+        c.setFont(FR, 6.5); c.drawRightString(xs0 - 32, y_top - 10, "load"); c.drawString(xm1 + 32, (y_mid + y_bot) / 2 - 2, "load")
     c.setFillColorRGB(*GREY); c.setFont(FR, 6)
     c.drawRightString(xs0 - 4, y_mid + 12, "side member"); c.drawString(xm0 + 4, y_bot + 3, "main member")
     c.drawString(xs1 + 4, yh + 3, "30 degrees to the side member")
@@ -1650,8 +1660,9 @@ def _toe_nail_picture(c, top, d):
     memberart._dim_v(c, yt, y_mid, xs1 + 22, f"p = {p:.2f} in", FR, ext_from=xt + 2)
     memberart._dim_h(c, xs0, xs1, y_top + 8, f"{ts:g} in", FR, ext_from=y_top)
     c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawCentredString(xc, y_top + 22, d["label"])
-    _small(c, xc, y_bot - 12, f"section through one toe-nail, to scale; main member {tm:g} in thick" + (", not shown full depth" if tmd < tm else ""))
-    return y_bot - 18
+    off = 24 if d.get("withdrawal") else 0
+    _small(c, xc, y_bot - 12 - off, f"section through one toe-nail, to scale; main member {tm:g} in thick" + (", not shown full depth" if tmd < tm else ""))
+    return y_bot - 18 - off
 
 
 def _diaphragm_picture(c, top, d):
