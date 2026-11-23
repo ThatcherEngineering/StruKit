@@ -510,6 +510,21 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     return _closing(p, sheet.assumptions, sheet.not_checked)
 
 
+def _footing_load(c, cx, base, s, W_in, h_in, sup_h_in, label):
+    """Loading on the footing section: the service load down the supported member and the soil
+    pressure it bears on, drawn as arrows (not to a force scale)."""
+    y_top = base + (h_in + sup_h_in) * s
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow_down(c, cx, y_top + 13, y_top + 1.5)
+    c.setFont(FR, 6); c.drawCentredString(cx, y_top + 15.5, label)
+    c.setLineWidth(0.5)
+    n = 7
+    for k in range(n):
+        x = cx - W_in * s / 2 + (k + 0.5) * W_in * s / n
+        _arrow(c, x, base - 8, x, base - 1.5, head=2.5)
+    c.line(cx - W_in * s / 2, base - 8, cx + W_in * s / 2, base - 8)
+
+
 def _footing_pdf(sheet, path, job, code, date, method="Strength design (LRFD)", page=1, pages=1):
     """Write the calc sheet for a ws_footing.FootingSheet (isolated or continuous)."""
     i, res = sheet.inp, sheet.result
@@ -554,22 +569,26 @@ def _footing_pdf(sheet, path, job, code, date, method="Strength design (LRFD)", 
     if iso:
         low = i.get("bottom_layer", "x")
         n_dots = i["n_y"] if low == "x" else i["n_x"]
-        memberart.footing_section(c, sec_cx, base, 110, 76, i["B_ft"] * 12, i["h_in"], i["col_x_in"],
-                                  sheet.supported, i["cover_in"], D[i["bar"]], n_dots, D[i["bar"]],
-                                  plate_w_in=i.get("plate_x_in"),
-                                  soil_depth_in=i.get("soil_depth_ft", 0) * 12)
+        sc_ = memberart.footing_section(c, sec_cx, base, 110, 60, i["B_ft"] * 12, i["h_in"], i["col_x_in"],
+                                        sheet.supported, i["cover_in"], D[i["bar"]], n_dots, D[i["bar"]],
+                                        plate_w_in=i.get("plate_x_in"),
+                                        soil_depth_in=i.get("soil_depth_ft", 0) * 12)
+        _footing_load(c, sec_cx, base, sc_, i["B_ft"] * 12, i["h_in"], max(1.6 * i["h_in"], 12.0) + (0.25 if i.get("plate_x_in") else 0.0),
+                      f"{i['P_service']:,.0f} lb service")
         _sketch_title(c, 516, top, "PLAN", centred=True)
         memberart.footing_plan(c, 516, top - 52, 72, i["B_ft"] * 12, i["L_ft"] * 12, i["col_x_in"],
                                i["col_y_in"], i["n_x"], i["n_y"], i["cover_in"],
                                i.get("plate_x_in"), i.get("plate_y_in"))
-        _small(c, 516, base - 9, "to scale")
+        _small(c, 516, base - 16, "to scale")
     else:
-        memberart.footing_section(c, sec_cx, base, 150, 92, i["W_ft"] * 12, i["h_in"], i["wall_in"],
-                                  "concrete", i["cover_in"], D[i["bar_t"]], i["n_l"], D[i["bar_l"]],
-                                  stem_h_in=i.get("stem_h_in", 0),
-                                  soil_depth_in=i.get("soil_depth_ft", 0) * 12)
-    _small(c, sec_cx, base - 9, "to scale")
-    p.y = min(bottom_left, base - 14) - 2
+        sc_ = memberart.footing_section(c, sec_cx, base, 150, 76, i["W_ft"] * 12, i["h_in"], i["wall_in"],
+                                        "concrete", i["cover_in"], D[i["bar_t"]], i["n_l"], D[i["bar_l"]],
+                                        stem_h_in=i.get("stem_h_in", 0),
+                                        soil_depth_in=i.get("soil_depth_ft", 0) * 12)
+        _footing_load(c, sec_cx, base, sc_, i["W_ft"] * 12, i["h_in"], i.get("stem_h_in", 0) or max(1.6 * i["h_in"], 12.0),
+                      f"{i['P_service_plf']:,.0f} lb/ft service")
+    _small(c, sec_cx, base - 16, "to scale; load and soil pressure arrows are not to a force scale")
+    p.y = min(bottom_left, base - 21) - 2
 
     p.head("Loads")
     u = "lb" if iso else "lb/ft"
