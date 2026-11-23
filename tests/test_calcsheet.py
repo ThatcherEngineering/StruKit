@@ -117,3 +117,20 @@ def test_frame_calc_sheet(tmp_path):
         return
     assert "Frame F2" in t and "Member Summary" in t.title() and "Drift amplification, story 2" in t
     assert "B2-1" in t and "R3" in t and "Base Reactions" in t.title()
+
+
+def test_frame_sheet_draws_every_load_type(tmp_path):
+    """The frame elevation carries its loads: member gravity loads, a sideways member load, joint loads and level loads all print."""
+    from strukit import calcsheet, ws_frame
+    lay = ws_frame.layout([24], [14], "pin", "W10x49", "W16x40")
+    col = next(m.name for m in lay.members if m.role == "column")
+    top = lay.levels[1][0]
+    loads = [dict(case="D", on="beams", w=0.9), dict(case="W", on=col, w=0.2, dir="x"), dict(case="W", level=1, Fx=3.5),
+             dict(case="D", node=top, Fy=-5.0), dict(case="W", node=top, Fx=-1.0, Fy=2.0)]
+    cb = [Combo("D + 0.6W", {"D": 1, "W": 0.6}, "given"), Combo("D", {"D": 1}, "given")]
+    s = ws_frame.run("F3", lay, 50, loads, cb, "ASD", True, {"columns": 14, "beams": 6})
+    path = calcsheet.frame_pdf(s, str(tmp_path / "f.pdf"), "0000-000 TEST", "AISC 360-22", "2026-11-23")
+    t = _text(path)
+    if t is not None:
+        z = t.replace(" ", "")
+        assert "D0.9k/ft" in z and "W0.2k/ft" in z and "W3.5k" in z and "D5k" in z and "W1k" in z and "W2k" in z
