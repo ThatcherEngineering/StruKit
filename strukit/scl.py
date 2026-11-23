@@ -23,10 +23,10 @@ Read from the 2018 NDS:
   3.7.1.5    c = 0.9 in the column stability factor for structural composite lumber
   15.4.1(b)  column with an eccentric axial load, Eq. 15.4-3 and 15.4-4
 
-Beams: joist orientation only (load on the narrow face). Columns: one piece; bending from
-eccentricity uses the plank-orientation Fb about either axis (the lower tabulated value),
-with the plank volume factor (7/d)^(1/5) for depths over 7 in. (Table 1 note 4), because
-the veneer direction in a column section is not an input.
+Beams: joist orientation only (load on the narrow face). Columns: one piece. Veneers lie
+parallel to the wide face, so bending about the strong axis is joist orientation and
+bending about the weak axis is plank orientation; a square section takes the plank values
+about both axes (the lower ones).
 """
 import csv
 from pathlib import Path
@@ -41,7 +41,7 @@ GRADES = {}
 with open(Path(__file__).parent / "data" / "esr1040_table1.csv", newline="") as _f:
     for _r in csv.DictReader(_f):
         GRADES[_r["grade"]] = dict(E=float(_r["E_true_e6"]) * 1e6, E_app=float(_r["E_apparent_e6"]) * 1e6,
-                                   Fb=float(_r["Fb_joist"]), Fb_plank=float(_r["Fb_plank"]), Ft=float(_r["Ft"]), Fc=float(_r["Fc"]),
+                                   Fb=float(_r["Fb_joist"]), Fb_plank=float(_r["Fb_plank"]), Fv_plank=float(_r["Fv_plank"]), Ft=float(_r["Ft"]), Fc=float(_r["Fc"]),
                                    Fc_perp=float(_r["Fc_perp_joist"]), Fv=float(_r["Fv_joist"]))
 
 
@@ -73,22 +73,24 @@ def plank_volume_factor(d):
     return (7.0 / d) ** 0.2 if d > 7.0 else 1.0
 
 
-def eccentric_column(fc, Fc_adj, d1, d2, e1, e2, Fb1_adj, Fb2_adj, FcE1, FcE2, FbE=None):
-    """NDS Eq. 15.4-3 (value to be not more than 1.0) and Eq. 15.4-4 (same) for a column
+def eccentric_column(fc, Fc_adj, d1, d2, e1, e2, Fb1_adj, Fb2_adj, FcE1, FcE2, FbE=None, fb1=0.0, fb2=0.0):
+    """NDS Eq. 15.4-1 (value to be not more than 1.0) and Eq. 15.4-2 (same) for a column
     with an axial load at eccentricity e1 (parallel to the wide face d1) and e2 (parallel
-    to the narrow face d2). FbE is None when lateral buckling does not apply."""
+    to the narrow face d2), and side-load bending stresses fb1 (edgewise, load on the
+    narrow face) and fb2 (flatwise). With no side load these are Eq. 15.4-3 and 15.4-4.
+    FbE is None when lateral buckling does not apply."""
     if fc >= FcE1 or fc >= FcE2:
         return float("inf"), float("inf")
-    m1 = fc * 6 * e1 / d1
+    m1 = fb1 + fc * 6 * e1 / d1
     t = (m1 / FbE) ** 2 if FbE else 0.0
     v = (fc / Fc_adj) ** 2
-    if e1:
-        v += m1 * (1 + 0.234 * fc / FcE1) / (Fb1_adj * (1 - fc / FcE1))
-    if e2:
+    if m1:
+        v += (fb1 + fc * (6 * e1 / d1) * (1 + 0.234 * fc / FcE1)) / (Fb1_adj * (1 - fc / FcE1))
+    if e2 or fb2:
         den = 1 - fc / FcE2 - t
         if den <= 0:
             return float("inf"), fc / FcE2 + t
-        v += fc * (6 * e2 / d2) * (1 + 0.234 * fc / FcE2 + 0.234 * t) / (Fb2_adj * den)
+        v += (fb2 + fc * (6 * e2 / d2) * (1 + 0.234 * fc / FcE2 + 0.234 * t)) / (Fb2_adj * den)
     return v, fc / FcE2 + t
 
 
@@ -172,13 +174,18 @@ def column_spec(product, grade, d1, d2, lu2_ft):
         v = values(grade)
         if d2 < 1.5 or d2 > 7.0 or d1 > 48:
             raise SclError("LVL: the section must be 1.5 to 7 in. thick and not more than 48 in. wide (ESR-1040)")
+        square = abs(d1 - d2) < 1e-9
         return dict(name=product, report="ICC-ES ESR-1040", source=SOURCE, Fc=v["Fc"], Emin=emin(v["E_app"]),
                     emin_label="Emin = E [1 - 1.645 (0.10)] (1.03) / 1.66", emin_src="ESR-1040 Table 1 note 6; NDS Eq. D-4",
-                    emin_note=f"apparent E = {v['E_app']:,.0f} psi", Fb1=v["Fb_plank"], CV1=plank_volume_factor(d1),
-                    Fb2=v["Fb_plank"], CV2=plank_volume_factor(d2), fb1_note="plank orientation", fb2_note="plank orientation",
-                    cv_src="ESR-1040 Table 1 note 4", e2_min=0.0, e2_src="",
-                    assumption="Bending from the eccentric load uses the plank-orientation Fb about either axis, with the volume "
-                               "factor of ESR-1040 Table 1 note 4.")
+                    emin_note=f"apparent E = {v['E_app']:,.0f} psi",
+                    Fb1=v["Fb_plank"] if square else v["Fb"], CV1=plank_volume_factor(d1) if square else (12.0 / d1) ** (1 / 9),
+                    Fb2=v["Fb_plank"], CV2=plank_volume_factor(d2), Fv1=v["Fv_plank"] if square else v["Fv"],
+                    fb1_note="plank orientation" if square else "joist orientation", fb2_note="plank orientation",
+                    cv_src="ESR-1040 Table 1 notes 3 and 4", e2_min=0.0, e2_src="",
+                    assumption=("Bending uses the plank-orientation Fb and Fv about either axis (square section), with the volume "
+                                "factor of ESR-1040 Table 1 note 4." if square else
+                                "Bending about the strong axis uses the joist-orientation Fb and Fv and bending about the weak axis the "
+                                "plank-orientation Fb, each with its volume factor (ESR-1040 Table 1 notes 3 and 4)."))
     if product not in WEY or grade not in WEY[product]:
         raise SclError(f"{product}: grade '{grade}' is not in ESR-1387 Table 1")
     v = WEY[product][grade]
@@ -195,6 +202,7 @@ def column_spec(product, grade, d1, d2, lu2_ft):
         e2_min, e2_src = d2 / 6.0 + 5.0 * lu2_ft ** 2 / 4608.0, "ESR-1387 Table 1 note 13: e2 = t/6 + 5 L^2 / 4608"
     return dict(name=product, report="ICC-ES ESR-1387", source="ICC-ES ESR-1387 Table 1", Fc=v["Fc"], Emin=v["Emin"], emin_label="Emin",
                 emin_src="ESR-1387 Table 1", emin_note="", Fb1=Fb1, CV1=min((12.0 / d1) ** x, cap), Fb2=v["Fb_plank"], CV2=CV2,
+                Fv1=260.0 if (product == "Microllam LVL" and d1 > 24) else v["Fv"],
                 fb1_note=n1, fb2_note="face / plank orientation", cv_src="ESR-1387 Table 1 note 7", e2_min=e2_min, e2_src=e2_src,
                 assumption="Bending about the strong axis uses the joist-orientation Fb and bending about the weak axis the "
                            "plank-orientation Fb, each with its volume factor (ESR-1387 Table 1 note 7).")

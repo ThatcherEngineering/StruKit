@@ -196,3 +196,33 @@ def test_parallam_column_by_hand():
     assert s.title == "PSL Column" and any("note 13" in x for x in s.assumptions)
     with pytest.raises(Exception, match="thickness"):
         ws_wood.lvl_post("MC", "2.0E-2900Fb WS", 5.25, 5.25, 10, [dict(case="D", P=1.0)], _combos(), 1, 1, "pinned", product="Microllam LVL")
+
+
+def test_lvl_column_with_wind_by_hand():
+    # 3.5 x 7.25 Versa-Lam 1.8E 2650 (Versa-Stud size), 12 ft, pinned; strong-axis unbraced 12 ft, weak-axis braced at 4 ft
+    # D 3,000 lb axial; W 60 plf on the narrow face. Combination 0.6D + 0.6W: P = 1,800, w = 36 plf (CD 1.6);
+    # D + 0.6W: P = 3,000, w = 36.
+    # M = 36 x 144 / 8 = 648 lb-ft = 7,776 lb-in; S1 = 3.5 x 7.25^2 / 6 = 30.66; fb1 = 253.6 psi
+    spec = scl.column_spec("Versa-Lam LVL", "1.8E 2650", 7.25, 3.5, 4.0)
+    assert spec["Fb1"] == 2650 and spec["Fv1"] == 285 and spec["CV1"] == pytest.approx((12 / 7.25) ** (1 / 9))
+    sq = scl.column_spec("Versa-Lam LVL", "1.8E 2650", 3.5, 3.5, 8.0)
+    assert sq["Fb1"] == 2400 and sq["Fv1"] == 190
+    s = ws_wood.lvl_post("LC2", "1.8E 2650", 3.5, 7.25, 12, [dict(case="D", P=3000.0)], _combos(), 1.0, 1.0, "pinned top and bottom",
+                         lu2_ft=4.0, lateral=[dict(case="W", kind="uniform", w=60.0)])
+    r = {x.check: x for x in s.rows}
+    Emin = scl.emin(1.7e6)
+    FcE1, FcE2 = 0.822 * Emin / (144 / 7.25) ** 2, 0.822 * Emin / (48 / 3.5) ** 2
+    Fcs = 3000 * 1.6
+    a = min(FcE1, FcE2) / Fcs
+    CP = (1 + a) / 1.8 - ((1 + a) ** 2 / 3.24 - a / 0.9) ** 0.5
+    fc, fb1 = 3000 / 25.375, 7776 / (3.5 * 7.25 ** 2 / 6)
+    # CL: lu = 48 in, lu/d = 6.62 < 7: le = 2.06 lu = 98.88; RB = sqrt(98.88 x 7.25 / 12.25) = 7.650; FbE = 1.2 Emin / 58.52
+    FbE = 1.2 * Emin / (2.06 * 48 * 7.25 / 3.5 ** 2)
+    CV = (12 / 7.25) ** (1 / 9)
+    Fbs = 2650 * 1.6 * CV
+    b_ = (1 + FbE / Fbs) / 1.9
+    CL = b_ - (b_ * b_ - FbE / Fbs / 0.95) ** 0.5
+    hand = (fc / (Fcs * CP)) ** 2 + fb1 / (Fbs * CL * (1 - fc / FcE1))
+    assert r["compression with bending"].demand == pytest.approx(hand, rel=2e-3)
+    assert r["shear"].demand == pytest.approx(1.5 * 216 / 25.375, abs=0.05) and r["shear"].capacity == pytest.approx(285 * 1.6)
+    assert r["stability under bending"].demand == pytest.approx(fc / FcE2 + (fb1 / FbE) ** 2, rel=2e-3)
