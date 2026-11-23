@@ -1374,3 +1374,96 @@ def glulam_post(mark, combination, b, d, laminations, height_ft, loads, combos, 
                                    axial=[f"{x['case']} {x['P']:,.0f} lb" for x in loads])), governing=g["cb"].name)
     sheet.base = {o["cb"].name: o["P"] for o in out}
     return sheet
+
+
+def decking(mark, species, grade, thickness, span_ft, layout, repetitive, wet, loads, combos, defl_checks):
+    """Lumber decking laid flat, per 12 in. of width, 2018 NDS and Supplement Table 4E, ASD.
+    thickness: nominal, 2, 3 or 4 in.; layout: "simple span" or "two equal spans"; loads:
+    [dict(case, q psf, label)]; defl_checks: DeflCheck. Bending M = w L^2 / 8 (at mid-span of
+    a simple span; over the middle support of two equal spans). Deflection: simple span
+    5 w L^4 / (384 E I); two spans: dead load on both spans w L^4 / (185 E I), other loads on
+    one span 0.0092 w L^4 / (E I)."""
+    if not combos:
+        raise WorksheetError(f"{mark}: no ASD load combinations given")
+    if layout not in ("simple span", "two equal spans"):
+        raise WorksheetError(f"{mark}: the layout is a simple span or two equal spans")
+    if span_ft is None or span_ft <= 0:
+        raise WorksheetError(f"{mark}: the span must be positive")
+    try:
+        ref, Fb_ref, CF = wood.decking_values(species, grade, thickness, repetitive)
+    except wood.WoodError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    t = wood.DECKING_T[thickness]
+    b = 12.0
+    S, I = b * t * t / 6, b * t ** 3 / 12
+    Lin = span_ft * 12.0
+    CM_b = (1.0 if Fb_ref * CF <= 1150 else 0.85) if wet else 1.0
+    E_adj = ref["E"] * (0.9 if wet else 1.0)
+    by_case = {}
+    for ld in loads:
+        if not ld.get("case") or ld.get("q") is None:
+            raise WorksheetError(f"{mark}: a load is missing its case or its value")
+        by_case[ld["case"]] = by_case.get(ld["case"], 0.0) + ld["q"]
+    if not by_case:
+        raise WorksheetError(f"{mark}: no loads given")
+    out = []
+    for cb in combos:
+        present = [c for c, v in cb.factors.items() if v and by_case.get(c)]
+        if not present:
+            continue
+        w = sum(cb.factors[c] * by_case[c] for c in present)       # psf = plf on the 12 in. strip
+        if w <= 0:
+            continue
+        try:
+            CD, cd_case, cd_dur = wood.load_duration(present)
+        except wood.WoodError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        M = w * span_ft ** 2 / 8.0 * 12.0
+        Fb_adj = Fb_ref * CD * CM_b * CF
+        out.append(dict(cb=cb, w=w, M=M, fb=M / S, Fb_adj=Fb_adj, CD=CD, cd_case=cd_case, cd_dur=cd_dur))
+    if not out:
+        raise WorksheetError(f"{mark}: no load combination loads the decking")
+    g = max(out, key=lambda o: o["fb"] / o["Fb_adj"])
+    two = layout == "two equal spans"
+    rows = [Row("bending", g["cb"].name, g["fb"], g["Fb_adj"], "psi", "2018 NDS 3.3.1, Table 4.3.1",
+                f"M = {g['M'] / 12:,.0f} lb-ft per ft of width" + (", over the middle support" if two else "") + f"; CD = {g['CD']:g} ({g['cd_case']}, {g['cd_dur']})")]
+    for dc in defl_checks:
+        d = 0.0
+        for c, f in dc.factors.items():
+            q = f * by_case.get(c, 0.0) / 12.0                      # lb/in on the strip
+            if not q:
+                continue
+            k = (5.0 / 384.0) if not two else ((1.0 / 185.0) if c == "D" else 0.0092)
+            d += k * q * Lin ** 4 / (E_adj * I)
+        if d <= 0:
+            continue
+        rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k_}" if v != 1 else k_ for k_, v in dc.factors.items()), d, Lin / dc.ratio, "in",
+                        dc.source, f"span / {dc.ratio:g}"))
+    L = footing_line
+    steps = [L("t", f"{t:g} in", "", "2018 NDS Supplement Table 1A", f"{thickness} in. nominal; a strip 12 in. wide"),
+             L("S = b t^2 / 6", S, "in3", "NDS Eq. 3.3-4"), L("I = b t^3 / 12", I, "in4", "NDS Eq. 3.3-3"),
+             L("(Fb)(Cr)" if repetitive else "Fb", Fb_ref, "psi", "2018 NDS Supplement Table 4E", "repetitive member use" if repetitive else "single member use"),
+             L("CD", g["CD"], "", "NDS Table 2.3.2", f"{g['cd_case']}, {g['cd_dur']}"),
+             L("CM", CM_b, "", "Table 4E adjustment factors", "wet service" if wet else "dry service"),
+             L("CF", CF, "", "Table 4E adjustment factors", f"{thickness} in. thick"),
+             L("Fb' = Fb CD CM CF", g["Fb_adj"], "psi", "NDS Table 4.3.1", "flat use and, where used, Cr are in the tabulated value"),
+             L("w", g["w"], "plf", "", f"{g['cb'].name}, on the 12 in. strip"),
+             L("M = w L^2 / 8", g["M"] / 12.0, "lb-ft", "statics", "over the middle support" if two else "at mid-span"),
+             L("fb = M / S", g["fb"], "psi", "NDS Eq. 3.3-1"),
+             L("E' = E CM", E_adj, "psi", "NDS Table 4.3.1", f"E = {ref['E']:,.0f} psi")]
+    info = [("Decking", f"{thickness} in. nominal ({t:g} in.) {species.title()} {grade}"),
+            ("Span", f"{span_ft:g} ft, {layout}"),
+            ("Conditions", ("wet" if wet else "dry") + " service; " + ("repetitive member use" if repetitive else "single member use"))]
+    load_lines = [f"{ld['case']:<3} {ld['q']:>7.1f} psf" + (f"   {ld['label']}" if ld.get("label") else "") for ld in loads]
+    sheet = SimpleSheet(
+        mark, "Lumber Decking", "Decking", "ASD", info, load_lines, [(c.name, c.source) for c in combos],
+        f"Governing Calculation ({g['cb'].name})", steps, rows,
+        ["Allowable stress design, 2018 NDS. Temperature factor Ct = 1.0 (NDS 2.3.3, sustained temperature to 100 F).",
+         "The decking is checked as a strip 12 in. wide, loaded on its wide face; the compression face is held by the adjacent pieces (CL = 1.0).",
+         ("Two equal spans, continuous over the middle support: M = w L^2 / 8 there; deflection from dead load on both spans, w L^4 / (185 E I), "
+          "and from each other load on one span alone, 0.0092 w L^4 / (E I)." if two else
+          "Simple span: M = w L^2 / 8; deflection 5 w L^4 / (384 E I).")],
+        ["shear (Table 4E lists no shear design value)", "bearing on the supports", "other layups (controlled random, cantilevered pieces)",
+         "fastening of the decking and its use as a diaphragm", "concentrated loads"])
+    sheet.decking = dict(S=S, I=I, Fb_adj=g["Fb_adj"], fb=g["fb"], w=g["w"])
+    return sheet

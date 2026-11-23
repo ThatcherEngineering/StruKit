@@ -179,6 +179,19 @@ FORMS = {
                                      F("label", "Note", "text", required=False)]),
                 T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
                                                 F("ratio", "Span /"), F("source", "Source", "text")])]),
+    "decking": dict(
+        title="Lumber Decking", code="2018 NDS", mark="DK",
+        fields=[F("species", "Species", "select", options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"]
+                  + [x for x in wood.DECKING_SPECIES if x not in ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")], help="2018 NDS Supplement Table 4E"),
+                F("grade", "Grade", "select", options=["Select Dex", "Commercial Dex", "Selected", "Select", "Commercial"]),
+                F("thickness", "Nominal thickness", "select", options=["2", "3", "4"], unit="in"),
+                F("span", "Span", unit="ft"),
+                F("layout", "Layout", "select", options=["simple span", "two equal spans"]),
+                F("repetitive", "Repetitive member use", "select", options=["yes", "no"], help="Table 4E lists (Fb)(Cr) for repetitive use and Fb for single member use"),
+                F("service", "Moisture", "select", options=["dry service", "wet service"])],
+        tables=[T("loads", "Loads", [CASE, F("q", "Load", unit="psf"), F("label", "Note", "text", required=False)]),
+                T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
+                                                F("ratio", "Span /"), F("source", "Source", "text")])]),
     "lvl_beam": dict(
         title="LVL Beam", code="2018 NDS, ICC-ES ESR-1040", mark="LB",
         fields=[F("grade", "Versa-Lam grade", "select", options=["2.1E 2800", "2.1E 3100", "1.8E 2650", "1.7E 2650"]
@@ -1372,6 +1385,17 @@ def build(kind, values, project):
                                     spacing_in=r.num("spacing", False), product=prod, **cont), "simple", {}
         return ws_wood.beam(mark, sp, gr, size, int(plies), span, loads, cb, dc, lu or 0.0, bearing, wet, inc, rep, uw,
                             spacing_in=r.num("spacing", False), flat=bool(yes(r.text("flat", False))), **cont), "simple", {}
+    if kind == "decking":
+        cb = combos(project, r.miss, "ASD")
+        sp, gr, th, span, lay_ = r.text("species"), r.text("grade"), r.text("thickness"), r.num("span"), r.text("layout")
+        rep, wet = yes(r.text("repetitive")), {"dry service": False, "wet service": True}.get(r.text("service"))
+        loads = [dict(case=x["case"], q=x["q"], **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No loads are entered")
+        dc = checks(r.rows("defl"), r.miss, "Deflection limits")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        r.done()
+        return ws_wood.decking(mark, sp, gr, int(th), span, lay_, bool(rep), bool(wet), loads, cb, dc), "simple", {}
     if kind == "perforated_wall":
         m = method(project, r.miss)
         panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")

@@ -101,6 +101,35 @@ def flat_use(size):
     return v
 
 
+def _load_4e():
+    out = {}
+    with open(os.path.join(_DATA, "nds2018_table4e.csv"), newline="") as f:
+        for r in csv.DictReader(f):
+            out[(r["species"], r["grade"])] = {k: (float(r[k]) if r[k] else None) for k in ("Fb", "Fb_rep", "Fc_perp", "E", "Emin")}
+    return out
+
+
+# 2018 NDS Supplement Table 4E, visually graded decking (Redwood and Southern Pine are not in the file).
+# Fb is for flatwise use; Fb_rep = (Fb)(Cr). Size factor on Fb by nominal thickness (Table 4E adjustment factors).
+DECKING = _load_4e()
+DECKING_SPECIES = sorted({k[0] for k in DECKING})
+DECKING_CF = {2: 1.10, 3: 1.04, 4: 1.0}
+DECKING_T = {2: 1.5, 3: 2.5, 4: 3.5}
+
+
+def decking_values(species, grade, thickness, repetitive):
+    """(values, Fb used, CF) for decking of nominal thickness 2, 3 or 4 in."""
+    if (species, grade) not in DECKING:
+        raise WoodError(f"wood: {species} {grade} decking is not in StruKit's {SUPP} Table 4E file")
+    if thickness not in DECKING_CF:
+        raise WoodError("wood: decking is 2, 3 or 4 in. nominal thickness")
+    v = DECKING[(species, grade)]
+    Fb = v["Fb_rep"] if repetitive else v["Fb"]
+    if Fb is None:
+        raise WoodError(f"wood: Table 4E lists no single member bending value for {species} {grade} decking")
+    return dict(v), Fb, DECKING_CF[thickness]
+
+
 def grades(species):
     return [g for (s, g) in VALUES if s == species]
 
