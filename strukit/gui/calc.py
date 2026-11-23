@@ -188,6 +188,29 @@ FORMS = {
                                      F("label", "Note", "text", required=False)]),
                 T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
                                                 F("ratio", "Span /"), F("source", "Source", "text")])]),
+    "wey_beam": dict(
+        title="Microllam, Parallam or TimberStrand Beam", code="2018 NDS, ICC-ES ESR-1387", mark="LB",
+        fields=[F("grade", "Product and grade", "select", options=['Microllam LVL 2.0E-2900Fb WS', 'Parallam PSL 2.2E WS', 'Parallam PSL 2.0E WS', 'TimberStrand LSL 1.55E', 'TimberStrand LSL 1.3E']
+                  + [f"{p} {g}" for p in scl.WEY for g in scl.WEY[p] if f"{p} {g}" not in ['Microllam LVL 2.0E-2900Fb WS', 'Parallam PSL 2.2E WS', 'Parallam PSL 2.0E WS', 'TimberStrand LSL 1.55E', 'TimberStrand LSL 1.3E']],
+                  help="Weyerhaeuser, ICC-ES ESR-1387 Table 1; use the grade stamped on the product"),
+                F("thickness", "Thickness of one ply", unit="in", help="Microllam 1.75; Parallam 3.5, 5.25 or 7; TimberStrand 1.75 or 3.5"),
+                F("depth", "Depth", unit="in", help="for example 9.5, 11.875, 14, 16, 18"),
+                F("plies", "Number of plies", "select", options=["1", "2", "3", "4"]),
+                F("span", "Span", unit="ft"),
+                F("spacing", "Member spacing (joists and rafters)", unit="in", required=False, help="needed for area loads in psf"),
+                F("bracing", "Compression edge", "select", options=["supported throughout", "braced at a spacing"]),
+                F("lu", "Brace spacing (unbraced length)", unit="ft", required=False),
+                F("bearing", "Bearing length at each support", unit="in"),
+                F("repetitive", "Repetitive member", "select", options=["yes", "no"],
+                  help="joists, studs or similar at 24 in. or less, three or more, joined by sheathing (NDS 8.3.7)"),
+                F("unit_weight", "Unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
+        tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point", "area"]),
+                                     F("mag", "Load", unit="plf, lb or psf"),
+                                     F("x1", "From / at", unit="ft", required=False),
+                                     F("x2", "To", unit="ft", required=False),
+                                     F("label", "Note", "text", required=False)]),
+                T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
+                                                F("ratio", "Span /"), F("source", "Source", "text")])]),
     "wood_post": dict(
         title="Wood Post", code="2018 NDS", mark="WP",
         fields=[F("species", "Species", "select",
@@ -699,9 +722,9 @@ def build(kind, values, project):
         r.done()
         return ws_wood.lvl_post(mark, gr, b_, d_, H, loads, cb, Ke1, Ke2, ks, r.num("lu1", False), r.num("lu2", False),
                                 r.num("e1", False) or 0.0, r.num("e2", False) or 0.0, r.num("unit_weight", False)), "simple", {}
-    if kind in ("wood_beam", "lvl_beam", "glulam_beam"):
+    if kind in ("wood_beam", "lvl_beam", "glulam_beam", "wey_beam"):
         cb = combos(project, r.miss, "ASD")
-        lvl, glu = kind == "lvl_beam", kind == "glulam_beam"
+        lvl, glu = kind in ("lvl_beam", "wey_beam"), kind == "glulam_beam"
         if glu:
             gr, sp_, thk, dep, span = r.text("stress_class"), r.text("species"), r.num("b"), r.num("d"), r.num("span")
         elif lvl:
@@ -741,8 +764,12 @@ def build(kind, values, project):
             return ws_wood.glulam_beam(mark, gr, sp_ == "Southern Pine", thk, dep, span, loads, cb, dc, lu or 0.0, bearing, wet, uw,
                                        spacing_in=r.num("spacing", False)), "simple", {}
         if lvl:
+            prod = "Versa-Lam LVL"
+            if kind == "wey_beam":
+                prod = next(p_ for p_ in scl.WEY if gr.startswith(p_ + " "))
+                gr = gr[len(prod) + 1:]
             return ws_wood.lvl_beam(mark, gr, thk, dep, int(plies), span, loads, cb, dc, lu or 0.0, bearing, rep, uw,
-                                    spacing_in=r.num("spacing", False)), "simple", {}
+                                    spacing_in=r.num("spacing", False), product=prod), "simple", {}
         return ws_wood.beam(mark, sp, gr, size, int(plies), span, loads, cb, dc, lu or 0.0, bearing, wet, inc, rep, uw,
                             spacing_in=r.num("spacing", False)), "simple", {}
     if kind == "shear_wall":

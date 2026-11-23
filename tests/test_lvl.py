@@ -126,3 +126,49 @@ def test_lvl_column_sheet():
     s2 = ws_wood.lvl_post("LC1", "1.8E 2650", 3.5, 3.5, 8, [dict(case="D", P=2000.0), dict(case="L", P=5000.0)], _combos(), 1.0, 1.0,
                           "pinned top and bottom", e2_in=3.5 / 6)
     assert {x.check: x for x in s2.rows}["compression with eccentric load"].demand > 1.0
+
+
+# ---- Weyerhaeuser products, ESR-1387 ----------------------------------------------------
+# References: the CV table printed under ESR-1387 Table 1 note 7 (values at each depth),
+# the deflection formula of note 5, and hand calculations. No manufacturer load table is
+# on file for these products yet.
+def test_esr_1387_values_and_notes():
+    assert len(scl.WEY["Microllam LVL"]) == 20 and len(scl.WEY["Parallam PSL"]) == 10 and len(scl.WEY["TimberStrand LSL"]) == 17
+    m = scl.beam_spec("Microllam LVL", "2.0E-2900Fb WS", 1.75, 2, 11.875)
+    assert (m["Fb"], m["Fv"], m["Fc_perp"], m["E"]) == (2900, 285, 750, 2.0e6) and m["Emin"] == pytest.approx(1.017e6)
+    assert scl.beam_spec("Microllam LVL", "2.0E-2900Fb WS", 1.75, 2, 30)["Fv"] == 260                       # note 11
+    p = scl.beam_spec("Parallam PSL", "2.2E WS", 3.5, 1, 11.875)
+    assert (p["Fb"], p["Fv"], p["Fc_perp"]) == (2900, 290, 625) and p["Emin"] == pytest.approx(1.118e6)
+    assert scl.beam_spec("Parallam PSL", "2.2E WS", 1.75, 2, 11.875)["Fb"] == pytest.approx(2900 * 0.93)   # note 8
+    t = scl.beam_spec("TimberStrand LSL", "1.55E", 3.5, 1, 9.25)
+    assert (t["Fb"], t["Fv"], t["Fc_perp"], t["E"]) == (2325, 525, 900, 1.55e6)
+    assert scl.beam_spec("TimberStrand LSL", "1.6E", 1.75, 1, 9.25)["Fc_perp"] == 900                       # note 21
+    assert scl.beam_spec("TimberStrand LSL", "1.3E", 1.75, 1, 9.25)["Fc_perp"] == 670                       # note 15
+    with pytest.raises(scl.SclError):
+        scl.beam_spec("Microllam LVL", "2.0E-2900Fb WS", 5.25, 1, 12)
+
+
+def test_esr_1387_volume_factor_table():
+    table = {"Microllam LVL": {3.5: 1.18, 5.5: 1.11, 7.25: 1.07, 9.25: 1.04, 9.5: 1.03, 12: 1.00, 14: 0.98, 16: 0.96, 18: 0.95, 20: 0.93, 24: 0.91, 48: 0.83},
+             "Parallam PSL": {3.5: 1.15, 5.5: 1.09, 7.25: 1.06, 9.25: 1.03, 9.5: 1.03, 12: 1.00, 14: 0.98, 16: 0.97, 18: 0.96, 20: 0.94, 24: 0.93, 48: 0.86, 54: 0.85},
+             "TimberStrand LSL": {3.5: 1.12, 5.5: 1.07, 7.25: 1.05, 9.25: 1.02, 9.5: 1.02, 12: 1.00, 14: 0.99, 16: 0.97, 18: 0.96, 20: 0.95, 24: 0.94, 48: 0.88}}
+    g = {"Microllam LVL": ("1.9E WS", 1.75), "Parallam PSL": ("2.0E WS", 3.5), "TimberStrand LSL": ("1.55E", 3.5)}
+    for prod, rows in table.items():
+        for d, cv in rows.items():
+            assert scl.beam_spec(prod, g[prod][0], g[prod][1], 1, d)["CV"] == pytest.approx(cv, abs=0.0051)
+
+
+def test_parallam_beam_by_hand():
+    # 5.25 x 14 Parallam 2.2E WS, 16 ft, D 400 + L 800 plf, braced, bearing 4.5 in
+    # M = 1,200 x 256 / 8 = 38,400 lb-ft; S = 171.5; fb = 2,686.9 psi; CV = (12/14)^0.111 = 0.9830; Fb' = 2,850.8 psi
+    # V = 9,600; fv = 1.5 x 9,600 / 73.5 = 195.9 against 290; bearing 9,600 / (5.25 x 4.5) = 406.3 against 625
+    # deflection (note 5): 270 x 1,200 x 16^4 / (2.2e6 x 5.25 x 14^3) + 28.8 x 1,200 x 256 / (2.2e6 x 5.25 x 14) = 0.6700 + 0.0547
+    loads = [dict(case="D", kind="uniform", w=400.0), dict(case="L", kind="uniform", w=800.0)]
+    s = ws_wood.lvl_beam("PB1", "2.2E WS", 5.25, 14, 1, 16, loads, _combos(), [DeflCheck("total", {"D": 1, "L": 1}, 240, "typed")],
+                         0.0, 4.5, False, product="Parallam PSL")
+    r = {x.check: x for x in s.rows}
+    assert r["bending"].demand == pytest.approx(2686.9, abs=0.2) and r["bending"].capacity == pytest.approx(2850.8, abs=0.5)
+    assert r["shear"].demand == pytest.approx(195.9, abs=0.1) and r["shear"].capacity == 290
+    assert r["bearing at support"].demand == pytest.approx(406.3, abs=0.1) and r["bearing at support"].capacity == 625
+    assert r["deflection, total"].demand == pytest.approx(0.6700 + 0.0547, abs=0.001)
+    assert s.title == "PSL Beam" and "ESR-1040" not in " ".join(str(x.source) for x in s.steps)
