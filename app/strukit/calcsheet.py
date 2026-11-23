@@ -1225,7 +1225,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
                    230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
-            if b["picture"][0] == "wind_mwfrs":
+            if b["picture"][0] in ("wind_mwfrs", "wind_zones"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
             p.head(b.get("head") or b["title"] + ": Inputs and Layout")
@@ -1337,6 +1337,8 @@ def _block_picture(c, top, pic):
         return _snow_drift_picture(c, top, d)
     if name == "wind_mwfrs":
         return _wind_mwfrs_picture(c, top, d)
+    if name == "wind_zones":
+        return _wind_zones_picture(c, top, d)
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
@@ -1488,6 +1490,82 @@ def _wind_mwfrs_picture(c, top, d):
     ybase = y - 112
     _small(c, (LM + RM) / 2, ybase - 30, "sections to scale; external pressure q Kd G Cp in psf, + toward the surface, - away from it; windward wall value at its top")
     return ybase - 36
+
+
+def _wind_zones_picture(c, top, d):
+    """Key plan of the component and cladding zones, not to scale, with the zone widths
+    dimensioned. d["kind"]: "wall" (elevation), "flat" (Figure 30.3-2A), "ridge" (2B, 2C) or
+    "corner" (2D)."""
+    kind = d["kind"]
+    W, H = (230.0, 70.0) if kind == "wall" else (170.0, 116.0)
+    x0 = (LM + RM) / 2 - W / 2
+    y1 = top - 22
+    y0 = y1 - H
+    x1 = x0 + W
+
+    def tag(x, y, t):
+        c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*INK); c.setLineWidth(0.5); c.circle(x, y, 5.2, fill=1, stroke=1)
+        c.setFillColorRGB(*INK); c.setFont(FB, 6.5); c.drawCentredString(x, y - 2.2, t)
+
+    def dash(xa, ya, xb, yb):
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5); c.setDash(3, 2); c.line(xa, ya, xb, yb); c.setDash()
+
+    c.setStrokeColorRGB(*INK); c.setLineWidth(1.0); c.setFillColorRGB(0.96, 0.97, 0.99)
+    c.rect(x0, y0, W, H, fill=1, stroke=1)
+    if kind == "wall":
+        a = 30.0
+        dash(x0 + a, y0, x0 + a, y1); dash(x1 - a, y0, x1 - a, y1)
+        tag(x0 + a / 2, (y0 + y1) / 2, "5"); tag(x1 - a / 2, (y0 + y1) / 2, "5"); tag((x0 + x1) / 2, (y0 + y1) / 2, "4")
+        memberart._dim_h(c, x0, x0 + a, y0 - 9, f"a = {d['a']:.1f} ft", FR, ext_from=y0)
+        memberart._dim_h(c, x1 - a, x1, y0 - 9, f"a = {d['a']:.1f} ft", FR, ext_from=y0)
+        note = "wall elevation; zone 5 at each corner of the building, zone 4 between; not to scale"
+    elif kind == "flat":
+        e, k = 20.0, 8.0
+        for n in (1, 2):
+            c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5); c.setDash(3, 2)
+            c.rect(x0 + n * e, y0 + n * e, W - 2 * n * e, H - 2 * n * e, fill=0, stroke=1); c.setDash()
+        for cx, sx in ((x0, 1), (x1, -1)):
+            for cy, sy in ((y0, 1), (y1, -1)):
+                dash(cx + sx * e, cy + sy * k, cx + sx * k, cy + sy * k); dash(cx + sx * k, cy + sy * k, cx + sx * k, cy + sy * e)
+                tag(cx + sx * 4, cy + sy * 4, "3")
+        tag((x0 + x1) / 2, (y0 + y1) / 2, "1'"); tag((x0 + x1) / 2, y1 - 1.5 * e, "1"); tag((x0 + x1) / 2, y1 - 0.5 * e, "2")
+        tag(x0 + 0.5 * e, (y0 + y1) / 2, "2"); tag(x0 + 1.5 * e, (y0 + y1) / 2, "1")
+        memberart._dim_h(c, x0, x0 + e, y0 - 9, "", FR, ext_from=y0)
+        memberart._dim_h(c, x0 + e, x0 + 2 * e, y0 - 9, "", FR, ext_from=y0)
+        c.setFillColorRGB(*INK); c.setFont(FR, 6)
+        c.drawString(x0 + 2 * e + 4, y0 - 11, f"0.6h = {d['edge']:.1f} ft each")
+        memberart._dim_v(c, y1 - k, y1, x1 + 9, f"0.2h = {d['corner']:.1f} ft", FR, ext_from=x1)
+        memberart._dim_v(c, y0, y0 + e, x1 + 9, f"0.6h = {d['edge']:.1f} ft", FR, ext_from=x1)
+        note = "roof plan; not to scale"
+    else:
+        a = 18.0
+        xm = (x0 + x1) / 2
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.9); c.line(xm, y0, xm, y1)
+        dash(x0, y0 + a, x1, y0 + a); dash(x0, y1 - a, x1, y1 - a)
+        if kind == "ridge":
+            dash(xm - a, y0, xm - a, y1); dash(xm + a, y0, xm + a, y1)
+            for yy in (y0 + a / 2, y1 - a / 2):
+                tag(xm - a / 2, yy, "3"); tag(xm + a / 2, yy, "3"); tag(x0 + (W / 2 - a) / 2, yy, "2"); tag(x1 - (W / 2 - a) / 2, yy, "2")
+            tag(xm - a / 2, (y0 + y1) / 2, "2"); tag(xm + a / 2, (y0 + y1) / 2, "2")
+            tag(x0 + (W / 2 - a) / 2, (y0 + y1) / 2, "1"); tag(x1 - (W / 2 - a) / 2, (y0 + y1) / 2, "1")
+            memberart._dim_h(c, xm - a, xm, y1 + 8, "", FR, ext_from=y1); memberart._dim_h(c, xm, xm + a, y1 + 8, "", FR, ext_from=y1)
+            c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawString(xm + a + 4, y1 + 6, f"a = {d['a']:.1f} ft each side of the ridge")
+        else:
+            for cx, sx in ((x0, 1), (x1, -1)):
+                for cy, sy in ((y0, 1), (y1, -1)):
+                    dash(cx + sx * a, cy, cx + sx * a, cy + sy * a); tag(cx + sx * a / 2, cy + sy * a / 2, "3")
+            for yy in (y0 + a / 2, y1 - a / 2):
+                tag(x0 + W / 4 + a / 2, yy, "2"); tag(x1 - W / 4 - a / 2, yy, "2")
+            tag(x0 + W / 4, (y0 + y1) / 2, "1"); tag(x1 - W / 4, (y0 + y1) / 2, "1")
+            memberart._dim_h(c, x0, x0 + a, y1 + 8, "", FR, ext_from=y1)
+            c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawString(x0 + a + 4, y1 + 6, f"a = {d['a']:.1f} ft")
+        memberart._dim_v(c, y0, y0 + a, x1 + 9, f"a = {d['a']:.1f} ft", FR, ext_from=x1)
+        c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+        c.drawCentredString(xm, y0 - 8, "ridge"); c.drawRightString(x0 - 5, (y0 + y1) / 2 - 2, "eave"); c.drawString(x1 + 5, (y0 + y1) / 2 - 2, "eave")
+        c.drawCentredString(x0 + W / 4, y0 - 8, "gable end")
+        note = "roof plan; not to scale"
+    _small(c, (LM + RM) / 2, y0 - 26, note)
+    return y0 - 32
 
 
 def _snow_drift_picture(c, top, d):
