@@ -175,3 +175,17 @@ _L4 = {"common": ((2, 0.113), (2.25, 0.113), (2.5, 0.131), (3, 0.148), (3.25, 0.
        "box": ((2, 0.099), (2.25, 0.099), (2.5, 0.113), (3, 0.128), (3.25, 0.128), (3.5, 0.135), (4, 0.148), (4.5, 0.148), (5, 0.162), None, None),
        "sinker": ((1.875, 0.092), (2.125, 0.099), (2.375, 0.113), (2.875, 0.120), (3.125, 0.135), (3.25, 0.148), (3.75, 0.177), (4.25, 0.192), (4.75, 0.207), None, (5.75, 0.244))}
 NAILS = {f"{p} {kind}": v for kind, row in _L4.items() for p, v in zip(_PENNY, row) if v}
+
+
+def row_spacing_min_perp(D, l):
+    """Minimum spacing between rows for a member loaded perpendicular to grain, NDS Table
+    12.5.1D: 2.5 D where l/D is 2 or less, (5 l + 10 D) / 8 between, 5 D where l/D is 6 or more."""
+    r = l / D
+    return 2.5 * D if r <= 2 else 5.0 * D if r >= 6 else (5.0 * l + 10.0 * D) / 8.0
+
+
+def geometry_perp_member(D, end_perp):
+    """End distance factor of a member loaded perpendicular to grain, NDS Table 12.5.1A: 2 D minimum, 4 D for 1.0."""
+    if end_perp < 2 * D - 1e-9:
+        raise DowelError(f"dowel: the end distance of the member loaded perpendicular to grain, {end_perp:g} in., is less than 2 D = {2 * D:g} in. (NDS Table 12.5.1A)")
+    return min(1.0, end_perp / (4 * D))

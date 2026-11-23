@@ -661,7 +661,7 @@ FORMS = {
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Lateral force on the group of nails, by load case; the project's ASD combinations are applied.")]),
     "bolted_connection": dict(
-        title="Bolted Connection (load parallel to grain)", code="NDS 2018", mark="BC",
+        title="Bolted Connection", code="NDS 2018", mark="BC",
         fields=[F("D", "Bolt diameter", "select", options=["1/2", "5/8", "3/4", "7/8", "1"], unit="in"),
                 F("shear", "Shear", "select", options=["single", "double"], help="double: a main member between two side members"),
                 F("rows", "Rows of bolts"), F("n_row", "Bolts in a row"),
@@ -669,7 +669,12 @@ FORMS = {
                 F("row_spacing", "Spacing between rows", unit="in", required=False),
                 F("end", "End distance", unit="in", help="bolt to the end of the member, along the grain"),
                 F("edge", "Edge distance", unit="in", help="outer row to the edge of the member"),
-                F("sense", "Load in the members", "select", options=["tension", "compression"], help="tension: the bolts bear toward the member end"),
+                F("grain", "Load direction to the grain", "select", required=False, options=["parallel in every member", "perpendicular in the side member(s)", "perpendicular in the main member"],
+                  help="blank = parallel in every member"),
+                F("p_loaded", "Perpendicular member: loaded edge distance", unit="in", required=False, help="bolt to the edge the load pushes toward; 4 D minimum"),
+                F("p_unloaded", "Perpendicular member: unloaded edge distance", unit="in", required=False),
+                F("p_end", "Perpendicular member: end distance", unit="in", required=False, help="bolts to the end of that member, along its grain"),
+                F("sense", "Load in the member loaded parallel to grain", "select", options=["tension", "compression"], help="tension: the bolts bear toward the member end"),
                 F("wood_type", "Wood", "select", options=["softwood", "hardwood"]),
                 F("side_t", "Side member thickness", unit="in"), F("side_w", "Side member width", unit="in"),
                 F("G_side", "Side member specific gravity, G"), F("E_side", "Side member E", unit="psi"), F("side_source", "Where the side member values come from", "text"),
@@ -1407,6 +1412,13 @@ def build(kind, values, project):
         if not loads:
             r.miss.append("No load is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
+        gt = r.text("grain", False) or ""
+        gr = "side" if "side" in gt else "main" if "main member" in gt else "parallel"
+        pp = None
+        if gr != "parallel":
+            pp = dict(loaded_edge=r.num("p_loaded", True, label="Perpendicular member: loaded edge distance"),
+                      unloaded_edge=r.num("p_unloaded", True, label="Perpendicular member: unloaded edge distance"),
+                      end=r.num("p_end", True, label="Perpendicular member: end distance"))
         loc = None
         lv = {k: r.num(k, False) for k in ("Ft_main", "Fv_main", "Ft_side", "Fv_side")}
         if any(v is not None for v in lv.values()):
@@ -1418,7 +1430,7 @@ def build(kind, values, project):
             loc = dict(lv, source=r.text("local_source", False) or "", hole=r.num("hole", False))
         r.done()
         return ws_more.bolted_connection_sheet(mark, D, rn, nr, sp, rs, end, edge, sh, st, sw, Gs, Es, ss, mt, mw, Gm, Em, ms, sense, wt, sv, loads, cb,
-                                               local=loc), "simple", {}
+                                               local=loc, grain=gr, perp=pp), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
