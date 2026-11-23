@@ -180,7 +180,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         f"Governing Calculation ({gb['cb'].name})", steps, rows, assumptions,
         ["notches (NDS 3.2.3, 3.4.3.2)", "fastening of the plies to each other" if plies > 1 else None,
          "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers"],
-        picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=size)), governing=gb["cb"].name)
+        picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=size, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     sheet.not_checked = [x for x in sheet.not_checked if x]
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
     return sheet
@@ -359,7 +359,7 @@ def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_sourc
         (["bending from eccentric load (NDS 15.4)", "bending about the weak axis"] if lateral else
          ["bending from eccentric or lateral load (NDS 3.9)"])
         + ["bearing on the end grain and on the supporting member (NDS 3.10)", "connections at the top and base"],
-        picture=("wood_post", dict(b=bb, d=dd, height=height_ft, size=size)), governing=g["cb"].name)
+        picture=("wood_post", dict(b=bb, d=dd, height=height_ft, size=size, axial=[f"{x['case']} {x['P']:,.0f} lb" for x in loads], lateral=[dict(x) for x in lateral])), governing=g["cb"].name)
     sheet.base = {o["cb"].name: o["P"] for o in out}
     sheet.governing = max(out, key=lambda o: o["ratio"])["cb"].name
     return sheet
@@ -527,7 +527,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         [x for x in ["notches and holes (NDS 8.4.1; manufacturer's limits)", "fastening of the plies to each other" if plies > 1 else None,
                      "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers",
                      "bearing on the supporting member"] if x],
-        picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}", kind="lvl")), governing=gb["cb"].name)
+        picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}", kind="lvl", loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
     return sheet
 
@@ -703,7 +703,7 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
         f"Governing Calculation ({g['cb'].name})", steps, rows, assumptions,
         (["deflection under lateral load", "lateral load on the wide face"] if lateral else ["bending from lateral load (NDS 15.4.1(a))"]) + ["bearing on the end grain and on the supporting member (NDS 3.10)",
          "connections at the top and base"],
-        picture=("wood_post", dict(b=b_in, d=d_in, height=height_ft, size=f"{d2:g}x{d1:g}", kind="lvl")), governing=g["cb"].name)
+        picture=("wood_post", dict(b=b_in, d=d_in, height=height_ft, size=f"{d2:g}x{d1:g}", kind="lvl", axial=[f"{x['case']} {x['P']:,.0f} lb" for x in loads], lateral=[dict(x) for x in lateral])), governing=g["cb"].name)
     sheet.base = {o["cb"].name: o["P"] for o in out}
     sheet.governing = max(out, key=lambda o: o["ratio"])["cb"].name
     return sheet
@@ -853,6 +853,6 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         f"Governing Calculation ({gb['cb'].name})", steps, rows, assumptions,
         ["shear at connections, with Cvr = 0.72 (NDS 5.3.10)", "notches, taper and holes (NDS 5.4, 3.2.3)",
          "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers", "bearing on the supporting member"],
-        picture=("wood_beam", dict(b=b, d=d, plies=1, span=span_ft, size=f"{b:g}x{d:g}", kind="glulam", lams=max(int(round(d / 1.5)), 2))), governing=gb["cb"].name)
+        picture=("wood_beam", dict(b=b, d=d, plies=1, span=span_ft, size=f"{b:g}x{d:g}", kind="glulam", lams=max(int(round(d / 1.5)), 2), loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
     return sheet

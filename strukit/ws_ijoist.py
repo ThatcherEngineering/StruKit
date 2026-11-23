@@ -117,7 +117,7 @@ def joist(mark, name, depth, span_ft, spacing_in, loads, combos, defl_checks, be
          f"Joist weight {j['weight']:g} plf added to load case D."],
         ["web holes; concentrated loads on the flange and web stiffeners under them", "bearing on the supporting member",
          "hangers and connections", "blocking, rim and lateral restraint at supports", "floor vibration"],
-        picture=("ijoist", dict(d=j["depth"], span=span_ft)), governing=gm["cb"].name)
+        picture=("ijoist", dict(d=j["depth"], span=span_ft, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gm["cb"].name)
     sheet.code = "2018 NDS, " + j["source"].split(" Table")[0]
     sheet.reactions = {o["cb"].name: o["R"] for o in out}
     return sheet
