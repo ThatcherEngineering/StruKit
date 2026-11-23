@@ -829,8 +829,8 @@ def wind_cc_walls_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, lea
 
 
 def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, enclosure, enclosure_basis, areas,
-                       Kzt, Kzt_source, elevation_ft=None, elevation_source="", least_dim=None):
-    """Wind pressures on roof components and cladding, flat roofs and gable roofs up to 45
+                       Kzt, Kzt_source, elevation_ft=None, elevation_source="", least_dim=None, roof="gable"):
+    """Wind pressures on roof components and cladding, flat roofs, gable roofs up to 45 degrees and monoslope roofs up to 30
     degrees, buildings with h of 60 ft or less, ASCE/SEI 7-22 Chapter 30 Part 1 (see wind.py).
     h: the mean roof height (the eave height at 10 degrees or less)."""
     for nm, v in (("the source of the basic wind speed", V_source), ("the basis of the exposure category", exposure_basis),
@@ -842,7 +842,7 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
     Ke = wind.ke(elevation_ft) if elevation_ft is not None else 1.0
     L = footing_line
     try:
-        r = wind.cc_roof(V, exposure, h, enclosure, areas, theta, Kzt, Ke, least_dim=least_dim)
+        r = wind.cc_roof(V, exposure, h, enclosure, areas, theta, Kzt, Ke, least_dim=least_dim, roof=roof)
     except wind.WindError as e:
         raise WorksheetError(f"{mark}: {e}")
     qh, gc, fig = r["qh"], r["GCpi"], "Figure " + r["figure"]
@@ -857,7 +857,11 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
              L("GCpi", gc, "", "Table 26.13-1", f"{enclosure} building; plus and minus")]
     if "a" in r:
         steps += [L("a", r["a"], "ft", fig, f"width of the edge zones; least horizontal dimension {least_dim:g} ft")]
-        zone_text = ("Zone 2: within a of a gable end. Zone 3: at each eave corner, a by a. Zone 1: the rest of the roof." if r["figure"] == "30.3-2D" else
+        zone_text = ("Zones 3' and 2': along the high eave, 2a wide, zone 3' for 4a from each end; zone 2' also along each sloping edge, 2a wide. "
+                     "Zone 3: at each low eave corner, 2a by 2a. Zone 2: along the low eave, a wide. Zone 1: the rest of the roof." if r["figure"] == "30.3-5A" else
+                     "Zones 3 and 2: along the high eave, 2a wide, zone 3 for 4a from each end. Zone 2 also along the other three edges, a wide. "
+                     "Zone 1: the rest of the roof." if r["figure"] == "30.3-5B" else
+                     "Zone 2: within a of a gable end. Zone 3: at each eave corner, a by a. Zone 1: the rest of the roof." if r["figure"] == "30.3-2D" else
                      "Zone 2: within a of a gable end, and within a of the ridge on each side. Zone 3: where those meet, at each end of the ridge. "
                      "Zone 1: the rest of the roof.")
     else:
@@ -876,10 +880,10 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
             ("Topography", f"Kzt = {Kzt:g} ({Kzt_source.strip()})"),
             ("Elevation", f"{elevation_ft:,.0f} ft above sea level ({elevation_source.strip()})" if elevation_ft is not None else "Ke taken as 1.0"),
             ("Enclosure", f"{enclosure} ({enclosure_basis.strip()})"),
-            ("Building", f"{hname} h = {h:g} ft; " + ("flat roof" if not theta > 0 else f"gable roof at {theta:g} degrees"))]
+            ("Building", f"{hname} h = {h:g} ft; " + ("flat roof" if not theta > 0 else f"{roof} roof at {theta:g} degrees"))]
     not_checked = ["roof overhangs (Sect. 30.7)", "wall components and cladding (Figure 30.3-1)",
                    "the enclosure classification (Sect. 26.12)", "the effective wind area of each component (Sect. 26.2)"]
-    if theta <= 7:
+    if r["figure"] == "30.3-2A":
         not_checked.insert(0, "a parapet 3 ft or higher around the roof (Figure 30.3-2A, note 5)")
     sheet = SimpleSheet(
         mark, "Wind Pressures, Roof Components and Cladding", "Site and Building", "Chapter 30, Part 1", info, [], [],
@@ -889,7 +893,7 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
          f"(GCp) from {fig} by effective wind area (Sect. 26.2).",
          f"Net pressure not less than {wind.MIN_CC:g} psf in either direction (Sect. 30.2.2).", zone_text],
         not_checked)
-    zp = dict(kind="flat", edge=r["edge"], corner=r["corner"]) if "edge" in r else dict(kind="corner" if r["figure"] == "30.3-2D" else "ridge", a=r["a"])
+    zp = dict(kind="flat", edge=r["edge"], corner=r["corner"]) if "edge" in r else dict(kind={"30.3-2D": "corner", "30.3-5A": "mono_a", "30.3-5B": "mono_b"}.get(r["figure"], "ridge"), a=r["a"])
     sheet.blocks.append(dict(title="Zones", picture=("wind_zones", zp)))
     sheet.blocks.append(dict(title="Design Pressures by Effective Wind Area and Zone", lines=lines))
     sheet.wind = dict(r)

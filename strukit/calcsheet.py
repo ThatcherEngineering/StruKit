@@ -1537,6 +1537,33 @@ def _wind_zones_picture(c, top, d):
         memberart._dim_v(c, y1 - k, y1, x1 + 9, f"0.2h = {d['corner']:.1f} ft", FR, ext_from=x1)
         memberart._dim_v(c, y0, y0 + e, x1 + 9, f"0.6h = {d['edge']:.1f} ft", FR, ext_from=x1)
         note = "roof plan; not to scale"
+    elif kind in ("mono_a", "mono_b"):
+        a = 13.0
+        A5 = kind == "mono_a"
+        t = 2 * a if A5 else a                               # depth of the strips along the sloping edges
+        dash(x0 + 2 * a, y0, x0 + 2 * a, y1)                  # high eave strip, 2a wide
+        dash(x0, y0 + 4 * a, x0 + 2 * a, y0 + 4 * a); dash(x0, y1 - 4 * a, x0 + 2 * a, y1 - 4 * a)
+        dash(x0 + 2 * a, y0 + t, x1 - a, y0 + t); dash(x0 + 2 * a, y1 - t, x1 - a, y1 - t)
+        dash(x1 - a, y0 + t, x1 - a, y1 - t)
+        hi3, hi2 = ("3'", "2'") if A5 else ("3", "2")
+        tag(x0 + a, y0 + 2 * a, hi3); tag(x0 + a, y1 - 2 * a, hi3); tag(x0 + a, (y0 + y1) / 2, hi2)
+        tag(x1 - a / 2, (y0 + y1) / 2, "2"); tag((x0 + 2 * a + x1 - a) / 2, (y0 + y1) / 2, "1")
+        if A5:
+            dash(x1 - 2 * a, y0, x1 - 2 * a, y0 + t); dash(x1 - 2 * a, y1 - t, x1 - 2 * a, y1)
+            tag(x1 - a, y0 + a, "3"); tag(x1 - a, y1 - a, "3")
+            tag((x0 + 2 * a + x1 - 2 * a) / 2, y0 + a, "2'"); tag((x0 + 2 * a + x1 - 2 * a) / 2, y1 - a, "2'")
+            memberart._dim_h(c, x1 - 2 * a, x1, y1 + 8, "", FR, ext_from=y1)
+            c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawString(x1 + 4, y1 + 6, f"2a = {2 * d['a']:.1f} ft")
+        else:
+            tag((x0 + 2 * a + x1) / 2, y0 + a / 2, "2"); tag((x0 + 2 * a + x1) / 2, y1 - a / 2, "2")
+        memberart._dim_h(c, x0, x0 + 2 * a, y1 + 8, "", FR, ext_from=y1)
+        c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawRightString(x0 - 4, y1 + 6, f"2a = {2 * d['a']:.1f} ft")
+        memberart._dim_v(c, y0, y0 + t, x1 + 9, f"{'2a' if A5 else 'a'} = {(2 if A5 else 1) * d['a']:.1f} ft", FR, ext_from=x1)
+        memberart._dim_h(c, x1 - a, x1, y0 - 9, f"a = {d['a']:.1f} ft", FR, ext_from=y0)
+        c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+        c.drawRightString(x0 - 5, (y0 + y1) / 2 - 2, "high eave"); c.drawString(x1 + 5, (y0 + y1) / 2 - 2, "low eave")
+        c.saveState(); c.translate(x0 - 5, y0 + 2 * a); c.rotate(90); c.drawCentredString(0, 0, f"4a = {4 * d['a']:.1f} ft"); c.restoreState()
+        note = "roof plan; not to scale"
     else:
         a = 18.0
         xm = (x0 + x1) / 2

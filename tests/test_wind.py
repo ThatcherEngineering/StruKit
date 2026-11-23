@@ -246,3 +246,30 @@ def test_cc_roof_gable_figures_by_hand(tmp_path):
     calcsheet._simple_pdf(sheet, str(tmp_path / "r.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     with pytest.raises(calc.Missing):
         calc.build("wind_cc_roof", dict(v, least=""), dict(job="2026-000", name="Test", method="ASD"))
+
+
+def test_cc_roof_monoslope(tmp_path):
+    """Figures 30.3-5A and 5B end values as read (every line runs from 10 to 100 ft2), and by hand at 30 ft2 on a
+    roof at 14 degrees (5B): zone 3: -2.9 + 0.9 log(3) = -2.471; zone 2: -1.6 + 0.4 log(3) = -1.409."""
+    g, F = wind.cc_roof_gcp, wind.cc_roof_figure
+    assert [F(t, "monoslope") for t in (0, 3, 3.5, 10, 10.5, 30)] == ["30.3-2A"] * 2 + ["30.3-5A"] * 2 + ["30.3-5B"] * 2
+    ends = {5: {"positive": (0.3, 0.2), "1": (-1.1, -1.1), "2": (-1.3, -1.2), "2'": (-1.6, -1.5), "3": (-1.8, -1.2), "3'": (-2.6, -1.6)},
+            20: {"positive": (0.4, 0.3), "1": (-1.3, -1.1), "2": (-1.6, -1.2), "3": (-2.9, -2.0)}}
+    for th, zs in ends.items():
+        for z, (v10, v100) in zs.items():
+            assert g(4, z, th, "monoslope") == v10 and g(100, z, th, "monoslope") == pytest.approx(v100) and g(900, z, th, "monoslope") == pytest.approx(v100)
+    assert g(30, "3", 14, "monoslope") == pytest.approx(-2.471, abs=0.001) and g(30, "2", 14, "monoslope") == pytest.approx(-1.409, abs=0.001)
+    with pytest.raises(wind.WindError):
+        F(35, "monoslope")
+    r = wind.cc_roof(115, "C", 20, "enclosed", [30], theta=2, roof="monoslope")
+    assert r["figure"] == "30.3-2A" and "edge" in r
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="WR3", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
+             enclosure_basis="Sect. 26.12", h="21", theta="14.04", roof="monoslope", least="40", areas="10, 30, 100", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    for th, fig, kind in (("14.04", "30.3-5B", "mono_b"), ("6", "30.3-5A", "mono_a")):
+        sheet, _, _ = calc.build("wind_cc_roof", dict(v, theta=th), dict(job="2026-000", name="Test", method="ASD"))
+        assert sheet.wind["figure"] == fig and sheet.blocks[0]["picture"][1]["kind"] == kind
+        calcsheet._simple_pdf(sheet, str(tmp_path / f"{kind}.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    with pytest.raises(calc.Missing):
+        calc.build("wind_cc_roof", dict(v, theta="6", least=""), dict(job="2026-000", name="Test", method="ASD"))

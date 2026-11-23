@@ -52,8 +52,16 @@ Components and cladding, buildings with h of 60 ft or less (Chapter 30, Part 1),
                  zone 2 within a of a gable end; zone 3 at each eave corner, a by a; zone 1 the
                  rest. a as for walls; h is the mean roof height (the eave height at 10 degrees
                  or less).
-Not covered: roof components and cladding on hip, monoslope and other roof shapes and on gable
-roofs over 45 degrees, the parapet provision of Figure 30.3-2A note 5, roof overhangs
+  Figures 30.3-5A, 5B  (GCp) for monoslope roofs over 3 to 10 and over 10 to 30 degrees (pdf
+                 pp. 389-390, read from 330 dpi page images; every line runs from 10 to 100 ft2).
+                 5A: zones 2' and 3' along the high eave in a strip 2a wide (3' for 4a from each
+                 end) and 2' along each sloping edge 2a wide; zone 3 at each low eave corner,
+                 2a by 2a; zone 2 along the low eave, a wide; zone 1 the rest. 5B: zones 2 and 3
+                 along the high eave in a strip 2a wide (3 for 4a from each end); zone 2 along
+                 the other three edges, a wide; zone 1 the rest. At 3 degrees or less Figure
+                 30.3-2A applies.
+Not covered: roof components and cladding on hip and other roof shapes, on gable roofs over 45
+degrees and monoslope roofs over 30 degrees, the parapet provision of Figure 30.3-2A note 5, roof overhangs
 (Sect. 30.7); Parts 2 to 5 of Chapter 30;
 hip, mansard and arched roofs; open buildings; flexible buildings;
 parapets and roof overhangs; the torsional cases of Figure 27.3-8; Chapters 28 and 30.
@@ -376,8 +384,22 @@ ROOF_GCP = {
 }
 
 
-def cc_roof_figure(theta):
-    """The figure for a gable (or flat) roof at theta degrees."""
+ROOF_GCP_MONO = {
+    "30.3-5A": dict(lo=3, hi=10, zones=("1", "2", "2'", "3", "3'"),
+                    curves={"positive": (10, 0.3, 100, 0.2), "1": (10, -1.1, 100, -1.1), "2": (10, -1.3, 100, -1.2), "2'": (10, -1.6, 100, -1.5),
+                            "3": (10, -1.8, 100, -1.2), "3'": (10, -2.6, 100, -1.6)}),
+    "30.3-5B": dict(lo=10, hi=30, zones=("1", "2", "3"),
+                    curves={"positive": (10, 0.4, 100, 0.3), "1": (10, -1.3, 100, -1.1), "2": (10, -1.6, 100, -1.2), "3": (10, -2.9, 100, -2.0)}),
+}
+ROOF_GCP_ALL = dict(ROOF_GCP, **ROOF_GCP_MONO)
+
+
+def cc_roof_figure(theta, roof="gable"):
+    """The figure for a gable (or flat) or monoslope roof at theta degrees."""
+    if roof == "monoslope":
+        if theta is None or theta < 0 or theta > 30:
+            raise WindError("wind: roof components and cladding are built for monoslope roofs up to 30 degrees")
+        return "30.3-2A" if theta <= 3 else "30.3-5A" if theta <= 10 else "30.3-5B"
     if theta is None or theta < 0 or theta > 45:
         raise WindError("wind: roof components and cladding are built for flat roofs and gable roofs up to 45 degrees")
     for name, f in ROOF_GCP.items():
@@ -385,17 +407,17 @@ def cc_roof_figure(theta):
             return name
 
 
-def cc_roof_gcp(area, zone, theta=0.0):
-    """(GCp) for a flat roof or a gable roof, Figures 30.3-2A to 2D."""
+def cc_roof_gcp(area, zone, theta=0.0, roof="gable"):
+    """(GCp) for a flat, gable or monoslope roof, Figures 30.3-2A to 2D, 5A and 5B."""
     if area is None or area <= 0:
         raise WindError("wind: the effective wind area must be positive")
-    curves = ROOF_GCP[cc_roof_figure(theta)]["curves"]
+    curves = ROOF_GCP_ALL[cc_roof_figure(theta, roof)]["curves"]
     if zone not in curves:
-        raise WindError(f"wind: zone {zone} is not a zone of a roof at {theta:g} degrees")
+        raise WindError(f"wind: zone {zone} is not a zone of a {roof} roof at {theta:g} degrees")
     return _log_line(area, *curves[zone])
 
 
-def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_dim=None):
+def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_dim=None, roof="gable"):
     """Roof component and cladding pressures (psf, strength level) for a flat roof or a gable
     roof up to 45 degrees: for each effective wind area, the positive pressure and the
     negative pressure in each zone, with the internal pressure sign that adds, not less than
@@ -404,22 +426,22 @@ def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_
         raise WindError("wind: the enclosure is enclosed, partially enclosed or partially open (open buildings are not covered)")
     if h is None or h <= 0 or h > 60:
         raise WindError("wind: this procedure is for a roof height of 60 ft or less")
-    fig = cc_roof_figure(theta)
-    zones = ROOF_GCP[fig]["zones"]
-    if theta > 7 and (least_dim is None or least_dim <= 0):
-        raise WindError("wind: the least horizontal dimension of the building is needed for a roof over 7 degrees")
+    fig = cc_roof_figure(theta, roof)
+    zones = ROOF_GCP_ALL[fig]["zones"]
+    if fig != "30.3-2A" and (least_dim is None or least_dim <= 0):
+        raise WindError("wind: the least horizontal dimension of the building is needed for this roof")
     if not areas:
         raise WindError("wind: list at least one effective wind area")
     gc = GCPI[enclosure]
     qh, kh = velocity_pressure(V, exposure, h, Kzt, Ke)
     rows = []
     for A in sorted(set(areas)):
-        g = {z: cc_roof_gcp(A, z, theta) for z in ("positive",) + zones}
+        g = {z: cc_roof_gcp(A, z, theta, roof) for z in ("positive",) + zones}
         p = {z: qh * KD_CC * (v + gc if z == "positive" else v - gc) for z, v in g.items()}
         d = {z: (max(v, MIN_CC) if z == "positive" else min(v, -MIN_CC)) for z, v in p.items()}
         rows.append(dict(area=A, gcp=g, p=p, design=d))
     out = dict(qh=qh, Kh=kh, GCpi=gc, figure=fig, zones=zones, rows=rows)
-    if theta <= 7:
+    if fig == "30.3-2A":
         out.update(edge=0.6 * h, corner=0.2 * h)
     else:
         out.update(a=cc_a(least_dim, h, theta))
