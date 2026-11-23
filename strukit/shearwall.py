@@ -202,3 +202,117 @@ def line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_in
         if s.defl is not None:
             L.append(Line(f"segment {i}: deflection", s.defl, "in", "SDPWS Eq. 4.3-1", f"Ga = {Ga:g} kips/in"))
     return WallLine(vn_t, Ga, sg, nail, fac, txt, out, V, total, L, cub, sides)
+
+
+# ---- Perforated shear walls, SDPWS-2021 4.3.2.3, 4.3.3.4, 4.3.4.2, 4.3.5.6, 4.3.6.1.3 ----
+# Read from the standard (equations and Table 4.3.5.6 from the page images):
+#   4.3.2.3    a full-height segment at each end; height not over 20 ft; nominal unit shear
+#              capacity not over 2,435 plf, single- or double-sided; uniform top and bottom
+#   4.3.3.4    segments over 3.5:1 are left out of the sum of b_i; a segment over 2:1 counts
+#              as b_i x 2 b_i / h; 4.3.3.2 and the exceptions of 4.3.5.5.1 do not apply
+#   Eq. 4.3-5  Vn = vn Co (sum of b_i)
+#   Eq. 4.3-6  Co = A_wall / (3 A_o + A_fhs), not more than 1.0; A_fhs is all full-height
+#              sheathing regardless of aspect ratio; A_o = opening width x clear height
+#   Eq. 4.3-8  T = C = V h / (Co x sum of b_i) at each end of the wall
+#   4.3.6.4.1.1, 4.3.6.4.2.1  maximum unit shear v_max = V / (Co x sum of b_i) for the
+#              in-plane shear anchorage, and the same value as a uniform uplift on the
+#              bottom plate at full-height sheathing
+#   4.3.4.2    deflection by Eq. 4.3-1 with v = v_max and b = sum of b_i
+@dataclass
+class Perforated:
+    segments: list               # (x0, length, h/b, counted length) of each full-height segment
+    A_wall: float
+    A_o: float
+    A_fhs: float
+    Co: float
+    sum_b: float
+    vn: float                    # nominal unit shear capacity used, plf
+    capacity: float              # design capacity, lb
+    v_max: float
+    T: float
+    defl: float
+    Ga: float
+    lines: list = field(default_factory=list)
+
+
+def perforated(panel, spacing, panel_type, G, h, length, openings, V, load, method, holddown_inside=None, sides=1,
+               chord_E=None, chord_A=None, anchor_slip_in=None):
+    """openings: list of (x from the left end, width, clear height), ft. Blocked wood
+    structural panels on one side or the same panels on both sides."""
+    key = panel_key(panel)
+    if spacing not in SPACINGS or (load, method) not in FACTORS or panel_type not in ("OSB", "plywood") or sides not in (1, 2):
+        raise ShearWallError("shear wall: check the nail spacing, the load, the method, the panel type and the number of sides")
+    if G is None or not 0.2 < G < 1.0:
+        raise ShearWallError("shear wall: the specific gravity of the framing is missing or out of range")
+    if h is None or h <= 0 or length is None or length <= 0:
+        raise ShearWallError("shear wall: the wall height and length must be positive")
+    if h > 20:
+        raise ShearWallError("shear wall: a perforated shear wall is limited to 20 ft high (SDPWS 4.3.2.3)")
+    ops = sorted((float(x), float(w), float(ho)) for x, w, ho in openings)
+    if not ops:
+        raise ShearWallError("shear wall: a perforated shear wall has at least one opening")
+    segs, at = [], 0.0
+    for x, w, ho in ops:
+        if w <= 0 or ho <= 0 or ho > h + 1e-9:
+            raise ShearWallError("shear wall: every opening needs a positive width and a clear height not more than the wall height")
+        if x < at - 1e-9:
+            raise ShearWallError("shear wall: the openings overlap")
+        if x - at > 1e-9:
+            segs.append((at, x - at))
+        at = x + w
+    if at > length + 1e-9:
+        raise ShearWallError("shear wall: an opening runs past the end of the wall")
+    if length - at > 1e-9:
+        segs.append((at, length - at))
+    if ops[0][0] <= 1e-9 or at >= length - 1e-9:
+        raise ShearWallError("shear wall: a full-height segment is needed at each end of a perforated shear wall (SDPWS 4.3.2.3)")
+    vn_t, ga_osb, ga_ply = TABLE_4_3A[key][SPACINGS.index(spacing)]
+    Ga = (ga_osb if panel_type == "OSB" else ga_ply) * sides
+    sg = min(1.0, 1.0 - (0.5 - G))
+    nail = 1.0
+    if key[2] == "10d":
+        if holddown_inside is None:
+            raise ShearWallError("shear wall: with 10d nails, say whether the hold-down is on the inside face of the end post "
+                                 "(Table 4.3A note 10)")
+        nail = 0.92 if holddown_inside else 1.0
+    vn_calc = vn_t * sg * nail * sides
+    vn = min(vn_calc, 2435.0)
+    rows, sum_b = [], 0.0
+    for x0, b in segs:
+        r = h / b
+        counted = 0.0 if r > 3.5 + 1e-9 else (b * 2 * b / h if r > 2 else b)
+        rows.append((x0, b, r, counted)); sum_b += counted
+    if rows[0][3] <= 0 or rows[-1][3] <= 0:
+        raise ShearWallError("shear wall: the segment at each end of a perforated shear wall must be within the 3.5 aspect ratio "
+                             "limit (SDPWS 4.3.2.3, 4.3.3.4)")
+    A_wall, A_o, A_fhs = length * h, sum(w * ho for _, w, ho in ops), sum(b for _, b in segs) * h
+    Co = min(A_wall / (3 * A_o + A_fhs), 1.0)
+    txt, fac = FACTORS[(load, method)]
+    cap = vn * Co * sum_b * fac
+    v_max = V / (Co * sum_b)
+    T = V * h / (Co * sum_b)
+    d = None
+    if chord_E and chord_A and anchor_slip_in is not None:
+        d = 8 * v_max * h ** 3 / (chord_E * chord_A * sum_b) + v_max * h / (1000 * Ga) + h * anchor_slip_in / sum_b
+    L = [Line("vn", vn_t, "plf", "SDPWS Table 4.3A", f"{panel}, edge nails at {spacing} in"),
+         Line("specific gravity factor, 1 - (0.5 - G)", sg, "", "Table 4.3A note 3", f"G = {G:g}")]
+    if key[2] == "10d":
+        L.append(Line("10d nail factor", nail, "", "Table 4.3A note 10",
+                      "hold-down on the inside face of the end post" if holddown_inside else "hold-down not on the inside face"))
+    if sides == 2:
+        L.append(Line("panels on both sides", 2.0, "", "SDPWS 4.3.5.4.1", "the same panels and nailing on each side"))
+    L.append(Line("vn used", vn, "plf", "SDPWS 4.3.2.3", "not more than 2,435 plf" + ("; limit governs" if vn < vn_calc else "")))
+    for i, (x0, b, r, c) in enumerate(rows, 1):
+        note = "not counted, h/b over 3.5" if c == 0 else (f"counted as b x 2b/h = {c:.2f} ft" if r > 2 else f"counted as {c:g} ft")
+        L.append(Line(f"segment {i}: h/b", r, "", "SDPWS 4.3.3.4", f"b = {b:g} ft; {note}"))
+    L += [Line("sum of b_i", sum_b, "ft", "SDPWS 4.3.3.4"),
+          Line("A_wall = L h", A_wall, "ft2", "SDPWS Eq. 4.3-6"), Line("A_o", A_o, "ft2", "SDPWS Eq. 4.3-6", "opening widths x clear heights"),
+          Line("A_fhs", A_fhs, "ft2", "SDPWS Eq. 4.3-6", "all full-height sheathing"),
+          Line("Co = A_wall / (3 A_o + A_fhs)", Co, "", "SDPWS Eq. 4.3-6", "not more than 1.0"),
+          Line("design factor", fac, "", "SDPWS 4.1.4", f"{load}, {method}: nominal {txt}"),
+          Line("design capacity = vn Co (sum of b_i) x factor", cap, "lb", "SDPWS Eq. 4.3-5, 4.1.4"),
+          Line("v_max = V / (Co x sum of b_i)", v_max, "plf", "SDPWS 4.3.6.4.1.1", "in-plane shear anchorage; uplift on the bottom plate"),
+          Line("T = C = V h / (Co x sum of b_i)", T, "lb", "SDPWS Eq. 4.3-8", "at each end of the wall")]
+    if d is not None:
+        L.append(Line("deflection", d, "in", "SDPWS Eq. 4.3-1, 4.3.4.2", f"v = v_max, b = sum of b_i; Ga = {Ga:g} kips/in"))
+    return Perforated(rows, A_wall, A_o, A_fhs, Co, sum_b, vn, cap, v_max, T, d, Ga, L)

@@ -142,3 +142,44 @@ def test_awc_slide_factor_tables():
         assert sw.line(P, 6, "OSB", G, 8, [8], 100, "wind", "ASD").sg_factor == pytest.approx(f)
     for b, f in ((4, 1.00), (3.2, 0.80), (2.7, 0.67), (2.3, 0.57)):
         assert sw.line(P, 6, "OSB", 0.5, 8, [b], 100, "wind", "ASD").segments[0].reduction == pytest.approx(f, abs=0.006)
+
+
+# ---- perforated shear walls -----------------------------------------------------------
+def test_co_matches_table_4_3_5_6():
+    # Table 4.3.5.6 (percent full-height sheathing, percent openings) -> Co
+    table = {(10, 30): 1.00, (10, 40): 0.77, (10, 90): 0.36, (20, 30): 0.91, (20, 50): 0.59, (30, 40): 0.67, (40, 60): 0.45,
+             (50, 20): 0.91, (50, 30): 0.71, (50, 50): 0.50, (60, 20): 0.83, (70, 30): 0.63, (80, 10): 0.91, (90, 10): 0.83, (100, 0): 1.00}
+    for (fhs, ao), co in table.items():
+        # a 100 ft x 10 ft wall with one opening placed to give these percentages (the rest is sheathing above and below)
+        assert min(1000 / (3 * ao * 10 + fhs * 10), 1.0) == pytest.approx(co, abs=0.006)
+
+
+def test_perforated_wall_by_hand():
+    # 8 ft high, 24 ft long, openings: 4 ft wide x 4 ft high at 6 ft, and 3 ft wide x 6.67 ft at 16 ft
+    # segments: 6 ft, 6 ft (10 to 16), 5 ft (19 to 24): all 2:1 or less -> sum b = 17 ft
+    # A_wall = 192; A_o = 16 + 20 = 36.0; A_fhs = 136; Co = 192 / (108.03 + 136) = 0.7868
+    # 15/32 sheathing 8d at 4 in: vn = 1,065; wind ASD: 1,065 x 0.7868 x 17 / 2 = 7,122 lb
+    w = sw.perforated(P, 4, "OSB", 0.5, 8, 24, [(6, 4, 4), (16, 3, 6.67)], 5000, "wind", "ASD", chord_E=1.6e6, chord_A=16.5, anchor_slip_in=0.1)
+    Co = 192 / (3 * (16 + 3 * 6.67) + 136)
+    assert [round(s[1], 3) for s in w.segments] == [6, 6, 5] and w.sum_b == pytest.approx(17)
+    assert w.Co == pytest.approx(Co) and w.capacity == pytest.approx(1065 * Co * 17 / 2)
+    assert w.v_max == pytest.approx(5000 / (Co * 17)) and w.T == pytest.approx(5000 * 8 / (Co * 17))
+    v = w.v_max
+    assert w.defl == pytest.approx(8 * v * 512 / (1.6e6 * 16.5 * 17) + v * 8 / 19000 + 8 * 0.1 / 17, abs=1e-4)
+
+
+def test_perforated_wall_rules():
+    # a narrow pier between openings: 2 ft at 8 ft high is 4:1, not counted, but still full-height sheathing in A_fhs
+    w = sw.perforated(P, 4, "OSB", 0.5, 8, 20, [(6, 3, 4), (11, 3, 4)], 1000, "wind", "ASD")
+    assert w.segments[1][3] == 0.0 and w.sum_b == pytest.approx(12) and w.A_fhs == pytest.approx(14 * 8)
+    # a 3 ft end segment at 8 ft (2.67:1) counts as 3 x 2(3)/8 = 2.25 ft
+    w = sw.perforated(P, 4, "OSB", 0.5, 8, 16, [(3, 4, 4)], 1000, "wind", "ASD")
+    assert w.segments[0][3] == pytest.approx(2.25)
+    # the 2,435 plf limit: Structural I 15/32 10d at 2 in on both sides
+    w = sw.perforated("Structural I, 15/32 in, 10d common", 2, "OSB", 0.5, 8, 16, [(6, 4, 4)], 1000, "wind", "ASD", holddown_inside=False, sides=2)
+    assert w.vn == 2435
+    for kw, msg in ((dict(openings=[(0, 4, 4)]), "each end"), (dict(openings=[(12, 4, 4)]), "each end"), (dict(h=21), "20 ft"),
+                    (dict(openings=[(6, 4, 4), (8, 4, 4)]), "overlap"), (dict(openings=[(2, 4, 4)]), "3.5")):
+        a = dict(h=8, openings=[(6, 4, 4)]); a.update(kw)
+        with pytest.raises(sw.ShearWallError, match=msg):
+            sw.perforated(P, 4, "OSB", 0.5, a["h"], 16, a["openings"], 1000, "wind", "ASD")
