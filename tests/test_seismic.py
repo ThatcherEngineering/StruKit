@@ -145,3 +145,26 @@ def test_story_drift_by_hand(tmp_path):
         calc.build("seismic_elf", dict(v, levels=[dict(name="Roof", w="60", h="20", de="0.22"), dict(name="Floor", w="90", h="10")]), dict(job="2026-000", name="Test", method="ASD"))
     with pytest.raises(calc.Missing):
         calc.build("seismic_elf", dict(v, Cd_source=""), dict(job="2026-000", name="Test", method="ASD"))
+
+
+def test_wall_line_shears(tmp_path):
+    """Two-story case (story shears 5.27 kips below the roof, 9.23 below the floor), rho = 1.3: line A takes 50 percent of each:
+    roof story QE 2.64, rho QE 3.43, 0.7 rho QE 2.40 kips; floor story 4.62, 6.00, 4.20 kips."""
+    from strukit.gui import calc
+    from strukit import calcsheet
+    from strukit.ws_steel_beam import WorksheetError
+    v = dict(mark="EQ3", SDS="0.40", SD1="0.12", S1="0.08", TL="4", ground_source="ASCE 7 Hazard Tool, Site Class D", risk="II",
+             R="6.5", R_source="Table 12.2-1", Ie="1.0", Ie_source="Table 1.5-2", structure="all other structural systems", hn="20",
+             rho="1.3", rho_source="Sect. 12.3.4.2",
+             levels=[dict(name="Roof", w="60", h="20"), dict(name="Floor", w="90", h="10")],
+             lines=[dict(name="A", level="Roof", share="50"), dict(name="B", level="roof", share="50"), dict(name="A", level="Floor", share="50")])
+    sheet, _, _ = calc.build("seismic_elf", v, dict(job="2026-000", name="Test", method="ASD"))
+    L = sheet.seismic["lines"]
+    assert [round(x["QE"], 2) for x in L] == [2.64, 2.64, 4.62] and L[0]["Eh"] == pytest.approx(3.43, abs=0.01) and L[0]["asd"] == pytest.approx(2.40, abs=0.01)
+    assert L[2]["Eh"] == pytest.approx(6.00, abs=0.01) and L[2]["asd"] == pytest.approx(4.20, abs=0.01)
+    assert any("Roof 100 percent; Floor 50 percent" in t for t in sheet.assumptions)
+    calcsheet._simple_pdf(sheet, str(tmp_path / "l.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    with pytest.raises(WorksheetError):
+        calc.build("seismic_elf", dict(v, lines=[dict(name="A", level="Attic", share="50")]), dict(job="2026-000", name="Test", method="ASD"))
+    with pytest.raises(calc.Missing):
+        calc.build("seismic_elf", dict(v, rho=""), dict(job="2026-000", name="Test", method="ASD"))

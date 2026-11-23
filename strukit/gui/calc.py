@@ -585,11 +585,16 @@ FORMS = {
                 F("Cd_source", "Drift: where Cd comes from", "text", required=False),
                 F("drift_type", "Drift: structure type for the limit", "select", required=False, options=["four stories or less, finishes designed for the drift",
                   "all other structures", "masonry cantilever shear walls", "other masonry shear walls"], help="Table 12.12-1"),
-                F("de_source", "Drift: where the elastic displacements come from", "text", required=False, help="for example: shear wall sheets SW1 to SW4, or the frame analysis")],
+                F("de_source", "Drift: where the elastic displacements come from", "text", required=False, help="for example: shear wall sheets SW1 to SW4, or the frame analysis"),
+                F("rho", "Wall lines: redundancy factor", "select", options=["1.0", "1.3"], required=False, help="ASCE 7-22 Sect. 12.3.4; needed when wall lines are listed"),
+                F("rho_source", "Wall lines: basis of the redundancy factor", "text", required=False)],
         tables=[T("levels", "Levels", [F("name", "Level", "text"), F("w", "Effective seismic weight", unit="kips"),
                                        F("h", "Height above the base", unit="ft"),
                                        F("wp", "Diaphragm weight, wpx", unit="kips", required=False, help="blank = the level weight"),
-                                       F("de", "Elastic displacement", unit="in", required=False, help="under the design seismic forces; for the drift check")])]),
+                                       F("de", "Elastic displacement", unit="in", required=False, help="under the design seismic forces; for the drift check")]),
+                T("lines", "Wall or frame lines", [F("name", "Line", "text"), F("level", "Story below level", "text", help="a level name from the Levels table"),
+                                                  F("share", "Share of the story shear", unit="%")],
+                  help="Optional. Each line's share of the story shear, for the shear wall or frame sheets.")]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1242,9 +1247,14 @@ def build(kind, values, project):
             for x in lv or []:
                 if x.get("de") is None:
                     r.miss.append(f"Levels: the elastic displacement of {x['name']} is blank")
+        wl = r.rows("lines")
+        rho = r.text("rho", bool(wl)) if wl else None
+        rho_s = r.text("rho_source", bool(wl)) if wl else ""
         r.done()
         return ws_more.seismic_elf_sheet(mark, SDS, SD1, S1, TL, gs, R, Rs, Ie, Is, st, hn, [(x["name"], x["w"], x["h"], x.get("wp")) for x in lv],
-                                         r.num("T", False), r.text("T_source", False) or "", risk=rk, drift=dr), "simple", {}
+                                         r.num("T", False), r.text("T_source", False) or "", risk=rk, drift=dr,
+                                         wall_lines=[(x["name"], x["level"], x["share"]) for x in wl] or None, rho=float(rho) if rho else None,
+                                         rho_source=rho_s or ""), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
