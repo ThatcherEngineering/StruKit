@@ -290,6 +290,7 @@ def test_lag_screws_against_nds_table_12j(tmp_path):
     c = sheet.connection
     assert kind == "simple" and sheet.title == "Lag Screw Connection" and c["capacity"] == pytest.approx(3 * 394.22 * c["Cg"] * 1.15, abs=0.5) and 0.975 < c["Cg"] < 0.985
     assert sheet.connection_lag["p"] == pytest.approx(3.1875) and [x.check for x in sheet.rows][:2] == ["Load on the lag screws", "Penetration into the main member"]
+    assert [b["picture"][0] for b in sheet.blocks] == ["bolted", "lag"] and sheet.blocks[1]["picture"][1]["lateral"]
     assert not any("bolt" in (x.check + x.note).lower() for x in sheet.rows) and not any("bolt" in t.lower() for t in sheet.assumptions)
     calcsheet._simple_pdf(sheet, str(tmp_path / "l.pdf"), "2026-000", "2018 NDS", "2026-11-23")
     with pytest.raises(Exception):
