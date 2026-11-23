@@ -1226,7 +1226,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
                    230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
-            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "nailed", "bolted", "bolted_perp"):
+            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "nailed", "toe_nail", "bolted", "bolted_perp"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
             p.head(b.get("head") or b["title"] + ": Inputs and Layout")
@@ -1346,6 +1346,8 @@ def _block_picture(c, top, pic):
         return _diaphragm_picture(c, top, d)
     if name == "nailed":
         return _nailed_picture(c, top, d)
+    if name == "toe_nail":
+        return _toe_nail_picture(c, top - 8, d)
     if name == "bolted":
         return _bolted_picture(c, top, d)
     if name == "bolted_perp":
@@ -1611,6 +1613,44 @@ def _nailed_picture(c, top, d):
     memberart._dim_v(c, y_top - Lg * sc, y_mid, xn + 24, f"p = {p:.2f} in", FR, ext_from=xn + 2)
     c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawCentredString(xn, y_top + 6, d["label"])
     _small(c, (LM + RM) / 2, y_bot - 12, "section through one nail, to scale")
+    return y_bot - 18
+
+
+def _toe_nail_picture(c, top, d):
+    """Toe-nail (NDS Figure 12A), to scale: the side member standing on the main member, one
+    nail at 30 degrees to the side member started L/3 from its end, with L/3, the penetration
+    and the member thicknesses dimensioned."""
+    ts, tm, Lg, p, D = d["side_t"], d["main_t"], d["length"], d["p"], d["D"]
+    hs = max(Lg * 0.75, Lg / 3.0 + 0.6)                   # height of the side member shown, in
+    tmd = min(tm, max(p + 0.5, 1.5))                      # depth of the main member shown, in
+    sc = min(30.0, 96.0 / (hs + tmd), 120.0 / max(ts, 1.0))
+    xc = (LM + RM) / 2
+    y_top = top - 24
+    y_mid = y_top - hs * sc                               # top of the main member
+    y_bot = y_mid - tmd * sc
+    xs0, xs1 = xc - ts * sc / 2, xc + ts * sc / 2
+    xm0, xm1 = xs0 - 60, xs1 + 60
+    c.setFillColorRGB(0.93, 0.87, 0.74); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    c.rect(xm0, y_bot, xm1 - xm0, tmd * sc, fill=1, stroke=(0 if tmd < tm else 1))
+    if tmd < tm:                                          # main member deeper than shown: open at the bottom
+        c.line(xm0, y_mid, xm1, y_mid); c.line(xm0, y_mid, xm0, y_bot); c.line(xm1, y_mid, xm1, y_bot)
+    c.rect(xs0, y_mid, ts * sc, hs * sc, fill=1, stroke=0)
+    c.line(xs0, y_mid, xs0, y_top); c.line(xs1, y_mid, xs1, y_top); c.line(xs0, y_mid, xs1, y_mid)
+    yh = y_mid + Lg / 3.0 * sc                            # nail head, on the face of the side member
+    xt, yt = xs1 - Lg * 0.5 * sc, yh - Lg * 0.8660254 * sc
+    c.setStrokeColorRGB(0.25, 0.27, 0.3); c.setLineWidth(max(1.0, D * sc)); c.line(xs1, yh, xt, yt)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow(c, xs0, y_top - 8, xs0 - 28, y_top - 8, head=4)
+    _arrow(c, xm1, (y_mid + y_bot) / 2, xm1 + 28, (y_mid + y_bot) / 2, head=4)
+    c.setFont(FR, 6.5); c.drawRightString(xs0 - 32, y_top - 10, "load"); c.drawString(xm1 + 32, (y_mid + y_bot) / 2 - 2, "load")
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+    c.drawRightString(xs0 - 4, y_mid + 12, "side member"); c.drawString(xm0 + 4, y_bot + 3, "main member")
+    c.drawString(xs1 + 4, yh + 3, "30 degrees to the side member")
+    memberart._dim_v(c, y_mid, yh, xs1 + 22, f"L/3 = {Lg / 3.0:.2f} in", FR, ext_from=xs1 + 2)
+    memberart._dim_v(c, yt, y_mid, xs1 + 22, f"p = {p:.2f} in", FR, ext_from=xt + 2)
+    memberart._dim_h(c, xs0, xs1, y_top + 8, f"{ts:g} in", FR, ext_from=y_top)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawCentredString(xc, y_top + 22, d["label"])
+    _small(c, xc, y_bot - 12, f"section through one toe-nail, to scale; main member {tm:g} in thick" + (", not shown full depth" if tmd < tm else ""))
     return y_bot - 18
 
 

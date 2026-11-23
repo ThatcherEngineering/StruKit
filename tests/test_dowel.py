@@ -172,7 +172,10 @@ def test_toe_nailed_connection_by_hand():
     z = dowel.lateral(0.131, 2.5 / 3, p - 0.131, 3350, 3350, 100000)
     assert c["p"] == pytest.approx(1.332, abs=0.001) and c["lm"] == pytest.approx(1.201, abs=0.001) and c["Z"] == pytest.approx(z["Z"])
     assert sheet.rows[0].capacity == pytest.approx(3 * z["Z"] * 1.6 * 0.83) and 60 < z["Z"] < 82          # Table 12N: 82 lb at full side thickness
-    assert not sheet.blocks and any("Toe-nails driven" in t for t in sheet.assumptions)
+    assert sheet.blocks[0]["picture"][0] == "toe_nail" and any("Toe-nails driven" in t for t in sheet.assumptions)
+    from strukit import calcsheet
+    import tempfile, os
+    calcsheet._simple_pdf(sheet, os.path.join(tempfile.mkdtemp(), "t.pdf"), "2026-000", "2018 NDS", "2026-11-23")
 
 
 def test_bolted_connection_perpendicular_to_grain():
