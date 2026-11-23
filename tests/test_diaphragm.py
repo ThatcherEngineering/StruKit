@@ -40,7 +40,7 @@ def test_diaphragm_sheet_and_form(tmp_path):
     from strukit import calcsheet
     assert calc.FORMS["diaphragm"]["fields"][0]["options"] == dp.PANELS
     proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 5a")])
-    v = dict(mark="DI1", panel="Sheathing and Single-Floor, 7/16 in, 8d common", face="2", case="Case 1", panel_type="OSB", G="0.42", G_source="SPF, NDS Table 12.3.3A",
+    v = dict(mark="DI1", panel="Sheathing and Single-Floor, 7/16 in, 8d common", face="2", edges="unblocked", case="Case 1", panel_type="OSB", G="0.42", G_source="SPF, NDS Table 12.3.3A",
              L="40", W="24", load="wind", w="200", w_source="sheet WM1, 0.6 W", chord_A="16.5", chord_E="1400000", defl_limit="0.5", defl_limit_source="project criteria",
              splices=[dict(x="10", slip="0.03")])
     sheet, kind, _ = calc.build("diaphragm", v, proj)
@@ -51,3 +51,35 @@ def test_diaphragm_sheet_and_form(tmp_path):
     assert long["state"] == "done" and long["status"] == "FLAG"                     # L/W = 3.33 over 3
     with pytest.raises(calc.Missing):
         calc.build("diaphragm", dict(v, w_source=""), proj)
+
+
+def test_blocked_diaphragm_table_and_by_hand(tmp_path):
+    """Table 4.2A spot values, patterns across the table, and by hand: 15/32 Structural I, 10d, 3 in. face, nails at 4 in., seismic LRFD,
+    G = 0.50: 0.50(1345) = 672.5 plf; 60 ft span, 30 ft deep, 900 plf: v = 900 plf; chord 900(3600)/(240) = 13,500 lb."""
+    B = dp.BLOCKED
+    assert set(B) == set(dp.ROWS)
+    assert B[("Structural I", "6d", "5/16")][2][6] == (520, 15, 12) and B[("Structural I", "10d", "15/32")][3][2] == (2295, 26, 18)
+    assert B[("Sheathing and Single-Floor", "8d", "7/16")][2][2.5] == (1415, 12, 9.5) and B[("Sheathing and Single-Floor", "6d", "3/8")][3][4] == (785, 5.5, 5.0)
+    assert B[("Sheathing and Single-Floor", "10d", "19/32")][3][2.5] == (2015, 14, 11) and B[("Sheathing and Single-Floor", "8d", "15/32")][3][2] == (1890, 15, 11)
+    for k, r in B.items():
+        for f in (2, 3):
+            v = [r[f][s][0] for s in (6, 4, 2.5, 2)]
+            assert v == sorted(v) and 1.32 <= v[1] / v[0] <= 1.35 and 1.95 <= v[2] / v[0] <= 2.03 and 2.2 <= v[3] / v[0] <= 2.3
+            assert r[f][6][0] > dp.ROWS[k][f][0]                         # blocked at 6 in. is above unblocked Case 1
+        assert all(r[3][s][0] > r[2][s][0] for s in (6, 4, 2.5, 2))
+    r = dp.blocked("Structural I, 15/32 in, 10d common", 3, 4, "OSB", 0.50, 60, 30, 900, "seismic", "LRFD")
+    assert r["capacity"] == pytest.approx(672.5) and r["v"] == pytest.approx(900) and r["chord"] == pytest.approx(13500) and r["ratio_max"] == 4.0 and r["Ga"] == 12
+    with pytest.raises(dp.DiaphragmError):
+        dp.blocked("Structural I, 15/32 in, 10d common", 3, 3, "OSB", 0.50, 60, 30, 900, "seismic", "LRFD")
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.0E", source="ASCE/SEI 7-22 Sect. 2.3.6")])
+    v = dict(mark="DI2", panel="Structural I, 15/32 in, 10d common", face="3", edges="blocked", spacing="2-1/2", panel_type="OSB", G="0.50", G_source="DF-L",
+             L="60", W="30", load="seismic", w="900", w_source="sheet EQ1")
+    sheet, _, _ = calc.build("diaphragm", v, proj)
+    assert sheet.rows[0].capacity == pytest.approx(0.5 * 2015) and sheet.rows[1].capacity == 4.0 and any("3 in. nominal" in t for t in sheet.assumptions)
+    calcsheet._simple_pdf(sheet, str(tmp_path / "b.pdf"), "2026-000", "SDPWS-2021", "2026-11-23")
+    with pytest.raises(calc.Missing):
+        calc.build("diaphragm", dict(v, spacing=""), proj)
+    with pytest.raises(calc.Missing):
+        calc.build("diaphragm", dict(v, edges="unblocked"), proj)                 # the layout case is needed

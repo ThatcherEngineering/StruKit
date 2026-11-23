@@ -609,14 +609,18 @@ FORMS = {
                     F("source", "Source of Lo", "text"), F("AT", "Tributary area", unit="ft2"), F("F", "Roof rise", unit="in/ft")],
                   help="ASCE 7-22 Sect. 4.8.2.")]),
     "diaphragm": dict(
-        title="Wood Diaphragm (unblocked)", code="SDPWS-2021", mark="DI",
+        title="Wood Diaphragm", code="SDPWS-2021", mark="DI",
         fields=[F("panel", "Sheathing and nails", "select", options=["Structural I, 5/16 in, 6d common", "Structural I, 3/8 in, 8d common", "Structural I, 15/32 in, 10d common",
                   "Sheathing and Single-Floor, 5/16 in, 6d common", "Sheathing and Single-Floor, 3/8 in, 6d common", "Sheathing and Single-Floor, 3/8 in, 8d common",
                   "Sheathing and Single-Floor, 7/16 in, 8d common", "Sheathing and Single-Floor, 15/32 in, 8d common",
                   "Sheathing and Single-Floor, 15/32 in, 10d common", "Sheathing and Single-Floor, 19/32 in, 10d common"],
-                  help="SDPWS Table 4.2C; unblocked, nails at 6 in. at boundaries and supported panel edges"),
+                  help="SDPWS Tables 4.2A (blocked) and 4.2C (unblocked)"),
+                F("edges", "Panel edges", "select", options=["unblocked", "blocked"]),
+                F("spacing", "Blocked: nail spacing at the boundaries", "select", options=["6", "4", "2-1/2", "2"], unit="in", required=False,
+                  help="Table 4.2A; other panel edges at 6, 6, 4 and 3 in."),
                 F("face", "Nominal width of the nailed face", "select", options=["2", "3"], unit="in", help="framing at adjoining panel edges and boundaries"),
-                F("case", "Panel layout", "select", options=["Case 1", "Cases 2 to 6"], help="SDPWS Table 4.2C figure; Case 1: continuous panel joints perpendicular to the framing, load perpendicular to them"),
+                F("case", "Unblocked: panel layout", "select", options=["Case 1", "Cases 2 to 6"], required=False,
+                  help="SDPWS Table 4.2C figure; Case 1: continuous panel joints perpendicular to the framing, load perpendicular to them"),
                 F("panel_type", "Panel", "select", options=["OSB", "plywood"], help="for the shear stiffness Ga"),
                 F("G", "Framing specific gravity, G", help="0.50 for Douglas Fir-Larch; NDS Table 12.3.3A"),
                 F("G_source", "Where G comes from", "text"),
@@ -1299,13 +1303,21 @@ def build(kind, values, project):
         return ws_more.live_load_sheet(mark, fl, rf), "simple", {}
     if kind == "diaphragm":
         m = method(project, r.miss)
-        panel, face, case, pt = r.text("panel"), r.text("face"), r.text("case"), r.text("panel_type")
+        blk = r.text("edges") == "blocked"
+        panel, face, pt = r.text("panel"), r.text("face"), r.text("panel_type")
+        case = r.text("case", not blk)
+        if not blk and not case:
+            pass
+        spc = r.text("spacing", False)
+        if blk and not spc:
+            r.miss.append("Blocked: nail spacing at the boundaries is blank")
         G, gs, L_, W_, load, w, ws = r.num("G"), r.text("G_source"), r.num("L"), r.num("W"), r.text("load"), r.num("w"), r.text("w_source")
         sp = r.rows("splices")
         r.done()
         return ws_more.diaphragm_sheet(mark, panel, int(face), 1 if case == "Case 1" else 2, pt, G, gs, L_, W_, w, ws, load, m,
                                        r.num("chord_E", False), r.num("chord_A", False), [(x["x"], x["slip"]) for x in sp],
-                                       r.num("defl_limit", False), r.text("defl_limit_source", False) or ""), "simple", {}
+                                       r.num("defl_limit", False), r.text("defl_limit_source", False) or "", blocked=blk,
+                                       spacing=({"2-1/2": 2.5}.get(spc) or float(spc)) if blk else None), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
