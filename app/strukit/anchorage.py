@@ -77,9 +77,13 @@ def _rootfc(fc):
     return math.sqrt(fc)
 
 
-def tension_breakout(hef, fc, nx, sx, ny, sy, cx1, cx2, cy1, cy2, psi_c):
+def tension_breakout(hef, fc, nx, sx, ny, sy, cx1, cx2, cy1, cy2, psi_c, deep_eq_for_groups=False):
     """Ncbg (lb) of an nx by ny rectangle of rods acting as one group. cx1, cx2, cy1, cy2:
-    edge distances from the outer rods. Returns (N, detail dict)."""
+    edge distances from the outer rods. Returns (N, detail dict).
+    deep_eq_for_groups: use Eq. 17.6.2.2.3 for a group with 11 to 25 in. embedment. The Code
+    words that equation for a single anchor; AISC Design Guide 1 (3rd Ed.) Example 4.7-11
+    uses it for a row of two rods. Off by default (the lower value); detail["alt"] carries
+    the value the other reading gives."""
     close = [c for c in (cx1, cx2, cy1, cy2) if c < 1.5 * hef]
     h = hef
     if len(close) >= 3:                                   # 17.6.2.1.2
@@ -91,12 +95,15 @@ def tension_breakout(hef, fc, nx, sx, ny, sy, cx1, cx2, cy1, cy2, psi_c):
     A = min(A, n * Aco)                                   # 17.6.2.1.1
     cmin = min(cx1, cx2, cy1, cy2)
     psi_ed = 1.0 if cmin >= 1.5 * h else 0.7 + 0.3 * cmin / (1.5 * h)      # Eq. 17.6.2.4.1
-    if n == 1 and 11 <= h <= 25:
-        Nb, eq = 16 * _rootfc(fc) * h ** (5 / 3), "Eq. 17.6.2.2.3"
+    Nb1, Nb3 = 24 * _rootfc(fc) * h ** 1.5, 16 * _rootfc(fc) * h ** (5 / 3)
+    deep = 11 <= h <= 25
+    if deep and (n == 1 or deep_eq_for_groups):
+        Nb, eq = Nb3, "Eq. 17.6.2.2.3"
     else:
-        Nb, eq = 24 * _rootfc(fc) * h ** 1.5, "Eq. 17.6.2.2.1, kc = 24"
+        Nb, eq = Nb1, "Eq. 17.6.2.2.1, kc = 24"
     N = A / Aco * psi_ed * psi_c * Nb
-    return N, dict(hef=h, ANc=A, ANco=Aco, psi_ed=psi_ed, Nb=Nb, eq=eq, n=n)
+    alt = A / Aco * psi_ed * psi_c * Nb3 if (deep and eq.endswith("kc = 24")) else None
+    return N, dict(hef=h, ANc=A, ANco=Aco, psi_ed=psi_ed, Nb=Nb, eq=eq, n=n, alt=alt)
 
 
 def shear_breakout(ca1, n, s, c2a, c2b, ha, da, hef, fc, psi_c, parallel=False):
@@ -187,9 +194,10 @@ def check(da, nt, futa, fya, ductile, hef, Abrg, fc, ha, n, s_row, s_rows, c_end
                f"phi = {phi_c:g}")]
     M.append(Mode("Ncb", "breakout, tension", "tension", phi_c, N / 1000, share,
                   "ACI 318-19 17.6.2; Table 17.5.3(b)", who))
-    if d["n"] > 1 and 11 <= d["hef"] <= 25:
-        notes.append("Breakout of the row uses Eq. 17.6.2.2.1. Eq. 17.6.2.2.3 gives a higher value for embedment from "
-                     "11 to 25 in., but the Code words it for a single rod, so it is not used for the group.")
+    if d["alt"]:
+        notes.append(f"Breakout of the row uses Eq. 17.6.2.2.1 ({N / 1000:.1f} kip nominal). Eq. 17.6.2.2.3, for embedment "
+                     f"from 11 to 25 in., would give {d['alt'] / 1000:.1f} kip; the Code words it for a single rod, while "
+                     "AISC Design Guide 1 Example 4.7-11 applies it to a row. The lower value is used.")
     Np = psi_cP * 8 * Abrg * fc / 1000                    # Eq. 17.6.3.1, 17.6.3.2.2a
     L.append(Line("Npn = psi_c,P 8 Abrg f'c", Np, "kip", "Eq. 17.6.3.1, 17.6.3.2.2a", f"psi_c,P = {psi_cP:g}; phi = {phi_p:g}"))
     M.append(Mode("Npn", "pullout", "tension", phi_p, Np, 1.0 / n,

@@ -92,25 +92,33 @@ class MomentCase:
     t_req: float                 # plate thickness required, in
     t_govern: str
     uplift: bool
+    x: float = 0.0               # rod line to the centre of the column flange, in (DG1 Eq. 4-61)
+    b_eff: float = 0.0           # plate width resisting the rod tension, in
 
 
-def moment_case(name, P, M, d, bf, N, B, f_rod, fp_avail, Fy_plate, method, n_rods, rod_gauge_ok=True):
-    """One load case on a base plate with moment, by equilibrium.
+def moment_case(name, P, M, d, bf, N, B, f_rod, fp_avail, Fy_plate, method, n_rods, tf=0.0):
+    """One load case on a base plate with moment: AISC Design Guide 1, 3rd Ed. (2024),
+    Sect. 4.3.7.
 
-    Model (the rectangular-bearing-block model used in practice; AISC Design Guide 1,
-    which describes it, is not on file, so it is built here from statics and stated on the
-    sheet): the concrete bears on the plate at a uniform stress over a length Y from the
-    compression edge. While the load stays inside the plate enough for bearing alone to
-    balance it, Y = N - 2e and the stress is P / (B Y). Beyond that the stress is the
-    available bearing stress fp_avail (AISC 360-22 J8) and the rods on the far side, at
-    f_rod from the plate centre, take tension T:
-        sum of moments about the rod line:  q Y (f + N/2 - Y/2) = M + P f,  q = fp B
-        sum of vertical forces:             T = q Y - P
-    P is compression positive (kips), M in kip-in. Plate bending: cantilever strips at
-    0.95 d and 0.8 bf (Manual Eq. 14-2, 14-3 as printed in Design Example J.6) under the
-    bearing stress, and the strip between the tension rods and the column flange under
-    the rod tension, with Mn = Fy Z, Z = t^2/4 per unit width (AISC 360-22 Eq. F11-1, as
-    used in Design Example K.9)."""
+    The concrete bears on the plate at a uniform stress over a length Y from the
+    compression edge (Fig. 4-7, 4-8). Low moment, e = M/P <= e_crit = N/2 - P/(2 q_max)
+    (Eq. 4-40): Y = N - 2e (Eq. 4-42), stress P/(B Y) (Eq. 4-44), no rod tension. Large
+    moment: the stress is fp_avail (AISC 360-22 J8), and with the rods at f_rod from the
+    plate centre
+        q_max Y (f + N/2 - Y/2) - P (e + f) = 0      (Eq. 4-56; solved by Eq. 4-58)
+        T = q_max Y - P                               (Eq. 4-55)
+    No real solution (Eq. 4-59 not met) means the plate is too small.
+    P is compression positive (kips), M in kip-in.
+    Plate bending per unit width, Mn = Fy t^2 / 4 (Eq. 4-49; phi 0.90, Omega 1.67):
+      bearing side: cantilevers m and n (Eq. 4-10, 4-11): fp m^2/2 for Y >= m, else
+        fp Y (m - Y/2) (Eq. 4-47, 4-48); n used in place of m with fp n^2/2 (note to
+        Eq. 4-52);
+      tension side: Mpl = T x / b, x = f - d/2 + tf/2 (Eq. 4-60, 4-61). Eq. 4-60 uses the
+        full plate width B. Here b is the lesser of B and the width from a 45 degree
+        distribution from each rod to the flange (2x per rod), which Sect. 4.3.2 (item 4)
+        and Appendix B give as the conservative effective width.
+    A case with no axial compression and with moment is solved by the same two equations
+    (the guide's Sect. 4.3.6); net uplift with too little moment to bear is not covered."""
     M = abs(M)
     q = fp_avail * B                                    # kip/in at the available bearing stress
     arm = f_rod + N / 2
@@ -140,11 +148,12 @@ def moment_case(name, P, M, d, bf, N, B, f_rod, fp_avail, Fy_plate, method, n_ro
         cands.append((Mb, "bearing side, cantilever m"))
     if n > 0:
         cands.append((fb * n * n / 2, "bearing side, cantilever n"))
-    x = f_rod - 0.95 * d / 2                              # rod line to the bending line at the flange
+    x = f_rod - d / 2 + tf / 2                            # DG1 Eq. 4-61
+    width = B
     if T > 0 and x > 0:
-        width = min(B, n_rods * 2 * x)                    # each rod spreads at 45 degrees to the flange
+        width = min(B, n_rods * 2 * x)                    # 45 degree distribution, DG1 Sect. 4.3.2 item 4
         cands.append((T * x / width, "tension side, rods to column flange"))
     Mpl, gov = max(cands) if cands else (0.0, "none")
     k = 0.90 if method == "LRFD" else 1 / 1.67
     t_req = math.sqrt(4 * Mpl / (k * Fy_plate))
-    return MomentCase(name, e, Y, fb, T, t_req, gov, uplift)
+    return MomentCase(name, e, Y, fb, T, t_req, gov, uplift, x, width)
