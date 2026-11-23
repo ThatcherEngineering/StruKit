@@ -131,7 +131,7 @@ def check_eccentric(B_ft, L_ft, h_in, fc, fy, col_x_in, col_y_in, bar, n_x, n_y,
     v.update(q_max_psf=qmax, q_min_psf=qmin, e_service_in=abs(e), bearing_in=a)
     if not kern:
         notes.append("Under service load the resultant is outside the middle third: part of the footing "
-                     "lifts off the soil. Many soils reports and codes limit this.")
+                     "lifts off the soil.")
     if ot is not None:
         if ot_required is not None:
             checks.append(Check("overturning", ot_required, ot[0], "", ot[1]["name"],
