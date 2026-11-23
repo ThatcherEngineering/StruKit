@@ -541,7 +541,7 @@ FORMS = {
                 F("roof", "Roof", "select", options=["gable or flat", "monoslope"], required=False),
                 F("theta", "Roof angle", unit="degrees", help="0 for a flat roof; gable roofs up to 45 degrees, monoslope roofs up to 30"),
                 F("least", "Least horizontal dimension of the building", unit="ft", required=False, help="needed for a gable roof over 7 degrees or a monoslope roof over 3"),
-                F("overhang", "Roof overhangs", "select", options=["no", "yes"], required=False, help="gable roofs over 7 degrees, monoslope roofs over 3"),
+                F("overhang", "Roof overhangs", "select", options=["no", "yes"], required=False),
                 F("areas", "Effective wind areas", "text", "ft2", help="separated by commas, for example 10, 20, 50, 100, 200, 500, 1000"),
                 F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
                 F("Kzt_source", "Where Kzt comes from", "text"),

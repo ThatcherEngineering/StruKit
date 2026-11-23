@@ -897,11 +897,13 @@ def wind_cc_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, en
     sheet.blocks.append(dict(title="Zones", picture=("wind_zones", zp)))
     sheet.blocks.append(dict(title="Design Pressures by Effective Wind Area and Zone", lines=lines))
     if r["overhang"]:
-        ol = [f"{'area ft2':>9}  wall +{'':>4}(GCp):" + "".join(f"{z:>7}" for z in zs) + f"   p psf:" + "".join(f"{z:>8}" for z in zs)]
+        chart = r["figure"] == "30.3-2A"
+        ol = [f"{'area ft2':>9}  {'      ' if chart else 'wall +'}{'':>4}(GCp):" + "".join(f"{z:>7}" for z in zs) + f"   p psf:" + "".join(f"{z:>8}" for z in zs)]
         for x in r["rows"]:
-            ol.append(f"{x['area']:>9g}{x['overhang_wall']:>8.2f}{'':>10}" + "".join(f"{x['overhang_gcp'][z]:>7.2f}" for z in zs)
+            ol.append(f"{x['area']:>9g}" + (f"{'':>8}" if chart else f"{x['overhang_wall']:>8.2f}") + f"{'':>10}" + "".join(f"{x['overhang_gcp'][z]:>7.2f}" for z in zs)
                       + f"{'':>9}" + "".join(f"{x['overhang'][z]:>8.1f}" for z in zs))
         sheet.blocks.append(dict(title="Roof Overhangs: Uplift by Effective Wind Area and Zone", lines=ol, after=[
+            "p = qh Kd [(GCp) - (GCpi)], Eq. 30.7-1. (GCp) from the overhang chart of Figure 30.3-2A, which includes both surfaces (note 6)." if chart else
             "p = qh Kd [(GCp) - (GCpi)], Eq. 30.7-1. (GCp) = the roof zone value on the top surface less the positive wall value of Figure 30.3-1 "
             "on the bottom surface, for the same effective wind area (Sect. 30.7)."]))
         sheet.not_checked = [t for t in sheet.not_checked if not t.startswith("roof overhangs")] + ["downward pressure on roof overhangs"]
