@@ -822,6 +822,33 @@ FORMS = {
                 F("washer_away", "Washer bearing: 3 in. or more from the member end", "select", options=["no", "yes"], required=False, help="yes: the bearing area factor Cb is taken; NDS 3.10.4")],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Force pulling the lag screws out, on the group, by load case; the project's ASD combinations are applied.")]),
+    "rain_load": dict(
+        title="Rain Load", code="ASCE/SEI 7-22", mark="RN",
+        fields=[F("risk", "Risk category", "select", options=["I", "II", "III", "IV"], help="sets the design storm, ASCE 7-22 Table 8.2-1"),
+                F("i", "Rainfall intensity, 15 minute storm", unit="in/hr", help="for the return period of the risk category; ASCE 7 Hazard Tool or NOAA Atlas 14"),
+                F("i_source", "Where the intensity comes from", "text"),
+                F("A", "Roof area draining to each secondary drain or scupper", unit="ft2"),
+                F("ds", "Static head, ds", unit="in", help="depth of water on the undeflected roof up to the inlet of the secondary drain or scupper"),
+                F("ds_source", "Where the static head comes from", "text", help="for example: scupper invert 2 in. above the low point"),
+                F("head_type", "Hydraulic head", "select", options=["channel scupper", "typed in"], help="typed in: from drain test data or ASCE 7-22 Tables C8.2-1 to C8.2-3"),
+                F("scupper_w", "Channel scupper: width", unit="in", required=False),
+                F("dh", "Typed in: hydraulic head, dh", unit="in", required=False),
+                F("dh_source", "Typed in: where dh comes from", "text", required=False),
+                F("pond_type", "Ponding head", "select", options=["from the bay stiffness", "typed in"], help="bay stiffness: AISC Design Guide 40 amplified first-order analysis"),
+                F("D", "Bay: dead load", unit="psf", required=False),
+                F("D_source", "Bay: where the dead load comes from", "text", required=False),
+                F("Lp", "Bay: span of the primary members (girders)", unit="ft", required=False),
+                F("Ls", "Bay: span of the secondary members (joists or beams)", unit="ft", required=False),
+                F("S", "Bay: spacing of the secondary members", unit="ft", required=False),
+                F("primary", "Bay: primary member", "select", required=False, options=["structural steel member", "open web steel joist or joist girder", "effective moment of inertia entered", "other material"]),
+                F("Ip", "Bay: primary member moment of inertia", unit="in4", required=False),
+                F("Ep", "Bay: primary member E (other material)", unit="psi", required=False),
+                F("secondary", "Bay: secondary member", "select", required=False, options=["structural steel member", "open web steel joist or joist girder", "effective moment of inertia entered", "other material"]),
+                F("Is", "Bay: secondary member moment of inertia", unit="in4", required=False),
+                F("Es", "Bay: secondary member E (other material)", unit="psi", required=False),
+                F("dp", "Typed in: ponding head, dp", unit="in", required=False),
+                F("dp_source", "Typed in: where dp comes from", "text", required=False)],
+        tables=[]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1690,6 +1717,27 @@ def build(kind, values, project):
         r.done()
         return ws_more.bolted_connection_sheet(mark, D, rn, nr, sp, rs, end, edge, sh, st, sw, Gs, Es, ss, mt, mw, Gm, Em, ms, sense, wt, sv, loads, cb,
                                                local=loc, grain=gr, perp=pp, lag=lagd, steel=stl), "simple", {}
+    if kind == "rain_load":
+        risk, i, i_s, A, ds, ds_s = r.text("risk"), r.num("i"), r.text("i_source"), r.num("A"), r.num("ds"), r.text("ds_source")
+        if (r.text("head_type") or "") == "channel scupper":
+            head = dict(scupper=r.num("scupper_w", True, label="Channel scupper: width"))
+        else:
+            head = dict(dh=r.num("dh", True, label="Typed in: hydraulic head"), source=r.text("dh_source", True))
+        bay = dp = None
+        D, D_s, dp_s = None, "", ""
+        if (r.text("pond_type") or "") == "from the bay stiffness":
+            D, D_s = r.num("D", True, label="Bay: dead load"), r.text("D_source", True)
+            bay = dict(Lp=r.num("Lp", True, label="Bay: primary span"), Ls=r.num("Ls", True, label="Bay: secondary span"),
+                       S=r.num("S", True, label="Bay: secondary spacing"), primary=r.text("primary", True), secondary=r.text("secondary", True),
+                       Ip=r.num("Ip", True, label="Bay: primary moment of inertia"), Is=r.num("Is", True, label="Bay: secondary moment of inertia"),
+                       Ep=r.num("Ep", False), Es=r.num("Es", False))
+            for k, nm in (("p", "primary"), ("s", "secondary")):
+                if bay[nm] == "other material" and bay["E" + k] is None:
+                    r.miss.append(f"Bay: {nm} member E (other material) is blank")
+        else:
+            dp, dp_s = r.num("dp", True, label="Typed in: ponding head"), r.text("dp_source", True)
+        r.done()
+        return ws_more.rain_load_sheet(mark, risk, i, i_s, A, ds, ds_s, head, D=D, D_source=D_s or "", bay=bay, dp=dp, dp_source=dp_s or ""), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")

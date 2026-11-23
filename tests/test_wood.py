@@ -461,6 +461,9 @@ def test_lumber_decking_by_hand(tmp_path):
     calcsheet.simple_pdf(s, str(tmp_path / "d.pdf"), "Job", "2018 NDS", "Nov 23, 2026")
     two, _, _ = calc.build("decking", dict(v, layout="two equal spans"), proj)
     assert two.rows[0].demand == pytest.approx(600.0) and two.rows[1].demand == pytest.approx(0.198, abs=0.001)
+    assert s.picture[0] == "wood_beam" and s.picture[1]["supports"] == [0.0, 10.0] and two.picture[1]["supports"] == [0.0, 10.0, 20.0]
+    assert two.picture[1]["d"] == 2.5 and [x["w"] for x in two.picture[1]["loads"]] == [15.0, 50.0]
+    calcsheet.simple_pdf(two, str(tmp_path / "d2.pdf"), "Job", "2018 NDS", "Nov 23, 2026")
     single, _, _ = calc.build("decking", dict(v, repetitive="no", service="wet service"), proj)
     assert single.rows[0].capacity == pytest.approx(1750 * 1.15 * 0.85 * 1.04)
     assert calc.results("decking", dict(v, span=""), proj)["state"] == "incomplete"

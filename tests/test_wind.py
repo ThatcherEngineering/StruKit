@@ -479,3 +479,58 @@ def test_mwfrs_overhang_by_hand():
     sheet, _, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
     assert any("governing uplift 23.5 psf = 47 lb per ft" in t for t in sheet.blocks[1]["lines"]) and "parapets (Sect. 27.3.4)" in sheet.not_checked
     assert any("Sect. 27.3.3" in t for t in sheet.assumptions)
+
+
+def test_mwfrs_against_the_published_three_story_example():
+    """Wind Design Manual Based on the 2018 IBC and ASCE/SEI 7-16 (SEAOC/ICC), Design Example 8A,
+    Tables 8A-1, 8A-2 and 8A-4: 145 mph, Exposure C, h = 45 ft, flat roof, 74'-8" by 146'-8",
+    enclosed, 3 ft parapet.  The example rounds Kh to 1.07 from the ASCE 7-16 formula; ASCE 7-22
+    gives 1.065, so pressures agree to within 1 percent."""
+    book = {"normal": dict(lee_cp=-0.50, lee=(-29.6, -12.0), roof=((-0.98, -49.6, -32.0), (-0.86, -44.6, -27.0), (-0.54, -31.3, -13.7))),
+            "parallel": dict(lee_cp=-0.31, lee=None, roof=((-0.90, None, None), (-0.90, None, None), (-0.50, None, None), (-0.30, None, None)))}
+    for d, B, L in (("normal", 146.667, 74.667), ("parallel", 74.667, 146.667)):
+        r = wind.mwfrs(145, "C", 45, 45, B, L, "enclosed", d, theta=0.0, parapet=3.0)
+        assert r["qh"] * wind.KD_MWFRS == pytest.approx(49.0, rel=0.01)
+        top = r["windward"][-1]
+        assert (top.p_pos_internal, top.p_neg_internal) == pytest.approx((24.5, 42.1), rel=0.01)
+        assert (r["side"].p_pos_internal, r["side"].p_neg_internal) == pytest.approx((-38.0, -20.3), rel=0.01)
+        assert r["leeward"].Cp == pytest.approx(book[d]["lee_cp"], abs=0.005)
+        if book[d]["lee"]:
+            assert (r["leeward"].p_pos_internal, r["leeward"].p_neg_internal) == pytest.approx(book[d]["lee"], rel=0.01)
+        zones = [s for s in r["roof"] if s.zone]
+        assert len(zones) == len(book[d]["roof"])
+        for s, (cp, p1, p2) in zip(zones, book[d]["roof"]):
+            assert s.Cp == pytest.approx(cp, abs=0.005)
+            if p1 is not None:
+                assert (s.p_pos_internal, s.p_neg_internal) == pytest.approx((p1, p2), rel=0.01)
+        other = [s for s in r["roof"] if not s.zone][0]
+        assert (other.p_pos_internal, other.p_neg_internal) == pytest.approx((-16.3, 1.3), abs=0.15)
+        assert r["parapet"]["p_windward"] == pytest.approx(73.5, rel=0.01)
+        assert r["parapet"]["p_leeward"] == pytest.approx(-49.0, rel=0.01)
+
+
+def test_cladding_against_the_published_three_story_example():
+    """Wind Design Manual Based on the 2018 IBC and ASCE/SEI 7-16 (SEAOC/ICC), Design Example 8B,
+    Tables 8B-2, 8B-3, 8B-5, 8B-6 and 8B-7 (same building as Example 8A; parapet over 3 ft).
+    Coefficients agree to the two decimals printed; pressures to within 1 percent (Kh 1.07 against 1.065)."""
+    w = wind.cc_walls(145, "C", 45, 74.667, "enclosed", [75, 114, 10, 17], theta=0.0)
+    assert w["a"] == pytest.approx(7.5, abs=0.05)
+    rows = {r["area"]: r for r in w["rows"]}
+    book = {75: (0.76, -0.85, -0.98), 114: (0.73, -0.82, -0.92), 10: (0.90, -0.99, -1.26), 17: (0.86, -0.95, -1.19)}
+    for area, (pos, z4, z5) in book.items():
+        g = rows[area]["gcp"]
+        assert (g["positive"], g[4], g[5]) == pytest.approx((pos, z4, z5), abs=0.005)
+    assert (rows[75]["p"]["positive"], rows[75]["p"][4], rows[75]["p"][5]) == pytest.approx((46.1, -50.5, -56.9), rel=0.01)
+    assert (rows[114]["p"]["positive"], rows[114]["p"][4], rows[114]["p"][5]) == pytest.approx((44.6, -49.0, -54.0), rel=0.01)
+
+    c = wind.cc_roof(145, "C", 45, "enclosed", [192, 10], theta=0.0, least_dim=74.667, parapet=True)
+    assert (c["edge"], c["corner"]) == pytest.approx((27.0, 9.0))
+    rows = {r["area"]: r for r in c["rows"]}
+    g = rows[192]["gcp"]
+    assert (g["positive"], g["1'"], g["1"], g["2"], g["3"]) == pytest.approx((0.20, -0.76, -1.17, -1.62, -1.62), abs=0.005)
+    assert rows[192]["edge_positive_gcp"] == pytest.approx(0.70, abs=0.005)
+    g = rows[10]["gcp"]
+    assert (g["positive"], g["1'"], g["1"], g["2"], g["3"]) == pytest.approx((0.30, -0.90, -1.70, -2.30, -2.30), abs=0.005)
+    p = rows[192]["p"]
+    assert (p["positive"], p["1'"], p["1"], p["2"]) == pytest.approx((18.6, -46.1, -66.2, -88.2), rel=0.01)
+    assert rows[192]["edge_positive"] == pytest.approx(43.1, rel=0.01)
