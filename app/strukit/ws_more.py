@@ -1939,6 +1939,8 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
                                  "design values are combined by NDS Eq. 12.4-1. The force entered is the resultant.")
         sheet.info.append(("Load Angle", f"{alpha:g} degrees between the wood surface and the load"))
     if lag:
+        sheet.blocks.append(dict(title="Section", picture=("lag", dict(D=D, L=lag["L"], side_t=side_t, main_t=main_t, T=th["T"], E=th["E"], pt=p_lag, washer=wash,
+                                                                       steel_side=bool(steel), lateral=True, label=f"{D:g} x {lag['L']:g} in. lag screw"))))
         sheet.connection_lag = dict(th, p=p_lag, comb=comb)
     sheet.connection = dict(r, Zp=base * worst["CD"], n=n, Cg=Cg, Cdelta=cdel, CM=CM, capacity=worst["cap"], demand=worst["P"], edge_min=e_min)
     return sheet

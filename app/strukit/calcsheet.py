@@ -1665,17 +1665,28 @@ def _lag_picture(c, top, d):
     while k < y_thr - 0.5:
         c.line(xc - D * sc / 2, k, xc + D * sc / 2, min(k + pitch * 0.6, y_thr)); k += pitch
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
-    _arrow(c, x0 + 14, y_top, x0 + 14, y_top + 22, head=4); _arrow(c, x0 + wd - 14, y_bot, x0 + wd - 14, y_bot - 20, head=4)
-    c.setFont(FR, 6.5); c.drawString(x0 + 19, y_top + 14, "load"); c.drawRightString(x0 + wd - 19, y_bot - 16, "load")
+    lat = d.get("lateral")
+    if lat:
+        ys = (y_top + y_mid) / 2
+        _arrow(c, x0, ys, x0 - 28, ys, head=4); _arrow(c, x0 + wd, (y_mid + y_bot) / 2, x0 + wd + 28, (y_mid + y_bot) / 2, head=4)
+        c.setFont(FR, 6.5); c.drawRightString(x0 - 32, ys - 2, "load"); c.drawString(x0 + wd + 32, (y_mid + y_bot) / 2 - 2, "load")
+    else:
+        _arrow(c, x0 + 14, y_top, x0 + 14, y_top + 22, head=4); _arrow(c, x0 + wd - 14, y_bot, x0 + wd - 14, y_bot - 20, head=4)
+        c.setFont(FR, 6.5); c.drawString(x0 + 19, y_top + 14, "load"); c.drawRightString(x0 + wd - 19, y_bot - 16, "load")
     c.setFillColorRGB(*GREY); c.setFont(FR, 6)
-    c.drawRightString(x0 - 4, (y_top + y_mid) / 2 - 2, "side plate" if d.get("steel_side") else "side member"); c.drawString(x0 + 4, y_bot + 3, "main member")
+    c.drawString(x0 + 4, y_top + 3, "side plate" if d.get("steel_side") else "side member") if lat else \
+        c.drawRightString(x0 - 4, (y_top + y_mid) / 2 - 2, "side plate" if d.get("steel_side") else "side member")
+    c.drawRightString(x0 + wd - 4, y_bot + 3, "main member")
     y_pt_top = y_tip + E * sc + pt * sc
-    memberart._dim_v(c, y_mid, y_top, x0 + wd + 16, f"{ts:g} in", FR, ext_from=x0 + wd)
-    memberart._dim_v(c, y_tip + E * sc, y_pt_top, xc + D * sc / 2 + 18, f"pt = {pt:.2f} in", FR, ext_from=xc + D * sc / 2 + 1)
+    memberart._dim_v(c, y_mid, y_top, x0 + wd + (44 if lat else 16), f"{ts:g} in", FR, ext_from=x0 + wd)
+    if lat:
+        memberart._dim_v(c, y_tip + E * sc, y_mid, xc + D * sc / 2 + 18, f"p = {pt:.2f} in", FR, ext_from=xc + D * sc / 2 + 1)
+    else:
+        memberart._dim_v(c, y_tip + E * sc, y_pt_top, xc + D * sc / 2 + 18, f"pt = {pt:.2f} in", FR, ext_from=xc + D * sc / 2 + 1)
     c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawRightString(xc - D * sc / 2 - 6, y_tip + E * sc / 2 - 2, f"tapered tip E = {E:.2f} in")
     c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawCentredString(xc, y_head + 0.5 * D * sc + 26, d["label"])
-    _small(c, xc, y_bot - 34, f"section through one lag screw, to scale; threads shaded; main member {tm:g} in thick" + (", not shown full depth" if tmd < tm else ""))
-    return y_bot - 40
+    _small(c, xc, y_bot - (14 if lat else 34), f"section through one lag screw, to scale; threads shaded; main member {tm:g} in thick" + (", not shown full depth" if tmd < tm else ""))
+    return y_bot - (20 if lat else 40)
 
 
 def _toe_nail_picture(c, top, d):
