@@ -86,3 +86,26 @@ def test_blocked_diaphragm_table_and_by_hand(tmp_path):
         calc.build("diaphragm", dict(v, spacing=""), proj)
     with pytest.raises(calc.Missing):
         calc.build("diaphragm", dict(v, edges="unblocked"), proj)                 # the layout case is needed
+
+
+def test_collector_force_by_hand(tmp_path):
+    """Line 40 ft long, 8,000 lb: vd = 200 plf. One 10 ft wall at the end: vw = 800 plf; force at the wall end = 200(30) = 6,000 lb.
+    Two 8 ft walls at 10 and 30 ft: vw = 500 plf; force 200(10) = 2,000 lb at 10 ft; 2,000 + (200 - 500)(8) = -400 lb at 18 ft;
+    -400 + 200(12) = 2,000 lb at 30 ft; -400 lb at 38 ft; 0 at 40 ft. A wall the full length: no collector force."""
+    from strukit import diaphragm, calcsheet
+    from strukit.gui import calc
+    r = diaphragm.collector(40, 8000, [(0, 10)])
+    assert r["vd"] == 200 and r["vw"] == 800 and r["Fmax"] == pytest.approx(6000) and r["points"][-1] == (40, 0.0)
+    r = diaphragm.collector(40, 8000, [(30, 8), (10, 8)])
+    assert [(x, round(F)) for x, F in r["points"]] == [(0.0, 0), (10.0, 2000), (18.0, -400), (30.0, 2000), (38.0, -400), (40, 0)] and r["Fmax"] == 2000
+    assert diaphragm.collector(40, 8000, [(0, 40)])["Fmax"] == 0
+    for bad in ([], [(35, 10)], [(0, 10), (5, 10)], [(-1, 5)]):
+        with pytest.raises(diaphragm.DiaphragmError):
+            diaphragm.collector(40, 8000, bad)
+    proj = dict(job="2026-000", name="Test", method="ASD")
+    v = dict(mark="CL1", line_name="grid A", W="40", R="8000", level="seismic, strength level", R_source="DI1", walls=[dict(start="10", length="8"), dict(start="30", length="8")])
+    sheet, kind, _ = calc.build("collector", v, proj)
+    assert kind == "simple" and sheet.collector["Fmax"] == 2000 and sheet.blocks[0]["picture"][0] == "collector" and len(sheet.blocks[1]["lines"]) == 7
+    calcsheet._simple_pdf(sheet, str(tmp_path / "c.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    assert calc.results("collector", v, proj)["state"] == "done"
+    assert calc.results("collector", dict(v, walls=[]), proj)["state"] == "incomplete" and calc.results("collector", dict(v, level=""), proj)["state"] == "incomplete"

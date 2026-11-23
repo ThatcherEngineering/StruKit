@@ -132,3 +132,39 @@ def _design(key, vn_tab, g_osb, g_ply, ratio_max, panel_type, G, L, W, w, load, 
         c = sum(x * d for x, d in splice) / (2.0 * W)
         out.update(defl=b + s + c, defl_bending=b, defl_shear=s, defl_splice=c)
     return out
+
+
+def collector(W, R, segments):
+    """Axial force along a collector (drag strut) on a line of resistance. W: length of the line
+    (the diaphragm dimension along it), ft; R: force the diaphragm delivers to the line, lb, taken
+    as uniform along the line (vd = R / W); segments: [(start ft, length ft)] of the wall or frame
+    lengths on the line, which take R in proportion to their length (vw = R / sum of lengths).
+    The force at x is the running sum of (vd - vw inside a segment); it is zero at both ends.
+    Returns dict(vd, vw, Lw, points [(x, F)], Fmax, x_max). The sign of F reverses with the load."""
+    if W is None or W <= 0 or R is None or R <= 0:
+        raise DiaphragmError("collector: the line length and the force on the line must be positive")
+    segs = sorted((float(a), float(b)) for a, b in segments)
+    if not segs:
+        raise DiaphragmError("collector: enter at least one wall length on the line")
+    end = 0.0
+    for a, b in segs:
+        if b <= 0 or a < -1e-9 or a + b > W + 1e-6:
+            raise DiaphragmError(f"collector: a wall length runs outside the line (0 to {W:g} ft)")
+        if a < end - 1e-6:
+            raise DiaphragmError("collector: two wall lengths overlap")
+        end = a + b
+    Lw = sum(b for a, b in segs)
+    vd, vw = R / W, R / Lw
+    pts, x, F = [(0.0, 0.0)], 0.0, 0.0
+    for a, b in segs:
+        if a > x + 1e-9:
+            F += vd * (a - x); x = a
+            pts.append((x, F))
+        F += (vd - vw) * b; x = a + b
+        pts.append((x, F))
+    if x < W - 1e-9:
+        F += vd * (W - x)
+        pts.append((W, F))
+    pts[-1] = (pts[-1][0], 0.0 if abs(pts[-1][1]) < 1e-6 * R else pts[-1][1])
+    xm, Fm = max(pts, key=lambda p_: abs(p_[1]))
+    return dict(vd=vd, vw=vw, Lw=Lw, points=pts, Fmax=abs(Fm), x_max=xm, segments=segs, full=abs(Lw - W) < 1e-6)
