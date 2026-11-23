@@ -1226,7 +1226,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
                    230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
-            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "nailed"):
+            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "nailed", "bolted"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
             p.head(b.get("head") or b["title"] + ": Inputs and Layout")
@@ -1346,6 +1346,8 @@ def _block_picture(c, top, pic):
         return _diaphragm_picture(c, top, d)
     if name == "nailed":
         return _nailed_picture(c, top, d)
+    if name == "bolted":
+        return _bolted_picture(c, top, d)
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
@@ -1497,6 +1499,44 @@ def _wind_mwfrs_picture(c, top, d):
     ybase = y - 112
     _small(c, (LM + RM) / 2, ybase - 30, "sections to scale; external pressure q Kd G Cp in psf, + toward the surface, - away from it; windward wall value at its top")
     return ybase - 36
+
+
+def _bolted_picture(c, top, d):
+    """Face of the main member at its end, to scale: the bolts, the end distance, the spacing
+    in a row, the spacing between rows and the edge distance dimensioned; the load arrow."""
+    D, R, n, sp, g, end, edge, w = d["D"], d["rows"], d["n"], d["s"], d["g"], d["end"], d["edge"], d["w"]
+    Lshow = end + (n - 1) * (sp or 0) + max(3 * D, 3.0)
+    sc = min(230.0 / Lshow, 70.0 / w)
+    x_end = (LM + RM) / 2 - Lshow * sc / 2                 # the member end at the left
+    y0 = top - 26 - w * sc
+    y1 = y0 + w * sc
+    x_far = x_end + Lshow * sc
+    c.setFillColorRGB(0.93, 0.87, 0.74); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    pth = c.beginPath(); pth.moveTo(x_far, y1); pth.lineTo(x_end, y1); pth.lineTo(x_end, y0); pth.lineTo(x_far, y0); c.drawPath(pth, fill=1, stroke=1)
+    c.setDash(2, 2); c.line(x_far, y0, x_far, y1); c.setDash()
+    group = (R - 1) * g
+    yb = [y1 - (edge + k * g) * sc for k in range(R)]       # the first row at the entered edge distance from the top edge
+    c.setFillColorRGB(1, 1, 1)
+    for y in yb:
+        for k in range(n):
+            c.circle(x_end + (end + k * (sp or 0)) * sc, y, max(1.6, D * sc / 2), fill=1, stroke=1)
+    memberart._dim_h(c, x_end, x_end + end * sc, y0 - 9, f"{end:g} in", FR, ext_from=y0)
+    if n > 1:
+        memberart._dim_h(c, x_end + end * sc, x_end + (end + sp) * sc, y0 - 9, f"{sp:g} in", FR, ext_from=y0)
+    xr = x_far + 10
+    memberart._dim_v(c, yb[0], y1, xr, f"{edge:g} in", FR, ext_from=x_far)
+    if R > 1:
+        memberart._dim_v(c, yb[1], yb[0], xr + 34, f"{g:g} in", FR, ext_from=x_far)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    xa = x_far + 84
+    if d["sense"] == "tension":
+        _arrow(c, xa, (y0 + y1) / 2, xa + 26, (y0 + y1) / 2, head=4)
+    else:
+        _arrow(c, xa + 26, (y0 + y1) / 2, xa, (y0 + y1) / 2, head=4)
+    c.setFont(FR, 6.5); c.drawString(xa, (y0 + y1) / 2 + 5, d["sense"])
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawRightString(x_end - 4, (y0 + y1) / 2 - 2, "member end")
+    _small(c, (LM + RM) / 2, y0 - 28, "face of the main member at the connection, to scale")
+    return y0 - 34
 
 
 def _nailed_picture(c, top, d):

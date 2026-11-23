@@ -118,3 +118,33 @@ def group_action(D, n, s, Es_As, Em_Am, metal=False):
     m = u - math.sqrt(u * u - 1.0)
     R = min(Es_As / Em_Am, Em_Am / Es_As)
     return min(1.0, m * (1 - m ** (2 * n)) / (n * ((1 + R * m ** n) * (1 + m) - 1 + m ** (2 * n))) * (1 + R) / (1 - m))
+
+
+# ---- Geometry, load parallel to grain in every member (NDS 12.5.1; document pp. 89-91, page images) ----
+# Table 12.5.1A end distance (C-delta 0.5, C-delta 1.0): compression 2D, 4D; tension, softwoods 3.5D, 7D; hardwoods 2.5D, 5D.
+# Table 12.5.1B spacing in a row: minimum 3D, 4D for C-delta 1.0. Table 12.5.1C edge distance: 1.5D where l/D is 6 or
+# less, otherwise the greater of 1.5D and half the row spacing. Table 12.5.1D spacing between rows: 1.5D.
+# Sect. 12.5.1.3: the distance between the outermost rows not over 5 in. unless detailed for shrinkage.
+END = {("tension", "softwood"): (3.5, 7.0), ("tension", "hardwood"): (2.5, 5.0), ("compression", "softwood"): (2.0, 4.0), ("compression", "hardwood"): (2.0, 4.0)}
+
+
+def geometry_parallel(D, end, spacing, n_in_row, sense="tension", wood="softwood"):
+    """Geometry factor for load parallel to grain: (C-delta, by end distance, by spacing).
+    Raises where a distance is under the minimum for C-delta = 0.5."""
+    lo, full = END[(sense, wood)]
+    if end < lo * D - 1e-9:
+        raise DowelError(f"dowel: the end distance {end:g} in. is less than the minimum {lo:g} D = {lo * D:g} in. (NDS Table 12.5.1A)")
+    ce = min(1.0, end / (full * D))
+    cs = 1.0
+    if n_in_row > 1:
+        if spacing is None or spacing < 3 * D - 1e-9:
+            raise DowelError(f"dowel: the spacing in a row is less than the minimum 3 D = {3 * D:g} in. (NDS Table 12.5.1B)")
+        cs = min(1.0, spacing / (4 * D))
+    return min(ce, cs), ce, cs
+
+
+def edge_minimum(D, lm, ls_total, row_spacing=None):
+    """Minimum edge distance, load parallel to grain, NDS Table 12.5.1C."""
+    if min(lm, ls_total) / D <= 6 or not row_spacing:
+        return 1.5 * D
+    return max(1.5 * D, row_spacing / 2.0)
