@@ -1202,7 +1202,26 @@ def _picture(c, top, pic):
         c.setFillColorRGB(*BLUE); c.setFont(FM, 6.5)
         c.drawString(x0 + W + 3, base - 2 - k * d["qmax"], f"{d['qmax']:,.0f} psf")
         c.drawRightString(x0 + W - a - 3, base - 9, f"{d['qmin']:,.0f} psf")
-        _small(c, 470, base - 32, "section to scale; soil pressure for the governing service case")
+        sc = d.get("case")
+        if sc:                                               # loading of the governing service case on the section (not to a force scale)
+            import math as _m
+            y_ftg = base + d["h"] * s
+            y_top = y_ftg + (max(1.6 * d["h"], 12.0) + (0.25 if d.get("plate") else 0.0)) * s
+            c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+            _arrow_down(c, 470, y_top + 12, y_top + 1.5)
+            c.setFont(FR, 6); c.drawRightString(470 - 4, y_top + 6, f"P {sc['P']:,.0f} lb")
+            if sc["M"]:
+                r_ = 7.0                                     # moment toward the edge with the larger pressure (the right)
+                c.setLineWidth(0.8); c.arc(470 + 6 - r_, y_top + 4 - r_, 470 + 6 + r_, y_top + 4 + r_, 135, -180)
+                ex, ey = 470 + 6 + r_ * _m.cos(_m.radians(-45)), y_top + 4 + r_ * _m.sin(_m.radians(-45))
+                t_ = c.beginPath(); t_.moveTo(ex - 1.2, ey - 3.6); t_.lineTo(ex - 3.4, ey + 1.0); t_.lineTo(ex + 1.6, ey + 0.2); t_.close()
+                c.drawPath(t_, fill=1, stroke=0)
+                c.drawString(470 + 16, y_top + 6, f"M {sc['M']:,.0f} lb-ft")
+            if sc["V"]:
+                xs_ = 470 - d["col"] * s / 2
+                _arrow(c, xs_ - 22, y_ftg + 4, xs_ - 2, y_ftg + 4, head=3)
+                c.drawRightString(xs_ - 24, y_ftg + 2, f"V {sc['V']:,.0f} lb")
+        _small(c, 470, base - 32, "section to scale; loads and soil pressure for the governing service case" + (f", {sc['name']}" if sc else ""))
         return base - 36
     return top
 

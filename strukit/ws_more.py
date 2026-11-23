@@ -132,7 +132,7 @@ def footing_moment_sheet(mark, soil_source, supported, limits_source="", **inp):
         picture=("footing_moment", dict(B=i["B_ft"] * 12, h=i["h_in"], col=i["col_x_in"], plate=i.get("plate_x_in"),
                                         supported=supported, cover=i["cover_in"], db=footing.BAR_DIA[i["bar"]],
                                         n=i["n_y"], soil=i.get("soil_depth_ft", 0) * 12, qmax=v["q_max_psf"],
-                                        qmin=v["q_min_psf"], bearing=v["bearing_in"])))
+                                        qmin=v["q_min_psf"], bearing=v["bearing_in"], case=v.get("service_case"))))
 
 
 def footing_line(label, value, unit, source, note=""):

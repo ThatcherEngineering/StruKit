@@ -129,6 +129,7 @@ def check_eccentric(B_ft, L_ft, h_in, fc, fy, col_x_in, col_y_in, bar, n_x, n_y,
                         + (f"(inside the middle third, B/6 = {B / 6:.2f} in); minimum pressure {qmin:.0f} psf" if kern else
                            f"(outside the middle third, B/6 = {B / 6:.2f} in); soil bears on {a:.1f} in of the {B:.0f} in width")))
     v.update(q_max_psf=qmax, q_min_psf=qmin, e_service_in=abs(e), bearing_in=a)
+    v.update(service_case=dict(name=c["name"], P=c["P"], M=abs(c["M"]), V=abs(c["V"])))
     if not kern:
         notes.append("Under service load the resultant is outside the middle third: part of the footing "
                      "lifts off the soil.")
