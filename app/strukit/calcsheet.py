@@ -992,6 +992,21 @@ def conn_pdf(sheet, path, job, code, date, page=1, pages=None, combos=()):
 def _picture(c, top, pic):
     """Pictures for SimpleSheet members (base plate, footing with moment)."""
     name, d = pic
+    if name == "wood_post":
+        _sketch_title(c, 400, top, "ELEVATION")
+        wpt = max(min(d["d"] * 1.8, 16), 7)
+        c.saveState(); c.translate(430 + wpt / 2, top - 96); c.rotate(90)
+        memberart.wood_elevation(c, 0, 0, 78, wpt, 1)
+        c.restoreState()
+        memberart._dim_v(c, top - 96, top - 18, 430 + wpt / 2 + 8, f"{d['height']:g} ft", FR, ext_from=430 + wpt / 2)
+        _sketch_title(c, 505, top, "SECTION")
+        s_ = memberart.wood_section(c, 528, top - 50, 46, 46, d["b"], d["d"], 1)
+        memberart._dim_h(c, 528 - d["b"] * s_ / 2, 528 + d["b"] * s_ / 2, top - 50 - d["d"] * s_ / 2 - 8, f"{d['b']:g}", FR,
+                         ext_from=top - 50 - d["d"] * s_ / 2)
+        memberart._dim_v(c, top - 50 - d["d"] * s_ / 2, top - 50 + d["d"] * s_ / 2, 528 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,
+                         ext_from=528 + d["b"] * s_ / 2)
+        _small(c, 476, top - 106, "section to scale, dimensions in inches")
+        return top - 110
     if name == "wood_beam":
         _sketch_title(c, 384, top, "ELEVATION")
         h = max(min(d["d"] * 1.6, 18), 7)

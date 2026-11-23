@@ -163,6 +163,24 @@ FORMS = {
                                      F("label", "Note", "text", required=False)]),
                 T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
                                                 F("ratio", "Span /"), F("source", "Source", "text")])]),
+    "wood_post": dict(
+        title="Wood Post", code="2018 NDS", mark="WP",
+        fields=[F("species", "Species", "select",
+                  options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"] + [x for x in wood.SPECIES if x not in
+                                                                                 ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
+                  help="timbers 5x5 and larger: Douglas Fir-Larch, Hem-Fir and Spruce-Pine-Fir only"),
+                F("grade", "Grade", "select", options=["Select Structural", "No. 1 & Btr", "No. 1", "No. 2", "No. 1/ No. 2", "No. 3",
+                                                        "Stud", "Construction", "Standard", "Utility"]),
+                F("size", "Size (nominal)", "select", options=[x for x in wood.SIZES if x.split("x")[0] in ("3", "4")] + list(wood.TIMBER_SIZES)),
+                F("height", "Height", unit="ft"),
+                F("lu1", "Unbraced length, larger dimension", unit="ft", required=False, help="blank = full height"),
+                F("lu2", "Unbraced length, smaller dimension", unit="ft", required=False, help="blank = full height"),
+                F("Ke1", "Ke, larger dimension"), F("Ke2", "Ke, smaller dimension"),
+                F("k_source", "Ke comes from", "text", help="for example: pinned top and bottom, NDS Appendix G"),
+                F("service", "Moisture", "select", options=["dry service", "wet service"]),
+                F("incised", "Incised", "select", options=["yes", "no"]),
+                F("unit_weight", "Wood unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
+        tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)])]),
     "snow": dict(
         title="Roof Snow Load", code="ASCE/SEI 7-22", mark="SN",
         fields=[F("pg", "Ground snow load, pg", unit="psf", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
@@ -558,6 +576,19 @@ def build(kind, values, project):
                  threads=r.text("threads"), planes=r.num("planes"), deformation=yes(r.text("deformation")))
         r.done()
         return ws_conn.bolt_line(mark, loads, cb, m, plies=plies, **a), "conn", dict(combos=cb)
+    if kind == "wood_post":
+        cb = combos(project, r.miss, "ASD")
+        sp, gr, size, H = r.text("species"), r.text("grade"), r.text("size"), r.num("height")
+        Ke1, Ke2, ks = r.num("Ke1"), r.num("Ke2"), r.text("k_source")
+        wet = {"dry service": False, "wet service": True}.get(r.text("service"))
+        inc = yes(r.text("incised"))
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        r.done()
+        return ws_wood.post(mark, sp, gr, size, H, loads, cb, Ke1, Ke2, ks, wet, inc, r.num("lu1", False), r.num("lu2", False),
+                            r.num("unit_weight", False)), "simple", {}
     if kind == "wood_beam":
         cb = combos(project, r.miss, "ASD")
         sp, gr, size, plies, span = r.text("species"), r.text("grade"), r.text("size"), r.text("plies"), r.num("span")

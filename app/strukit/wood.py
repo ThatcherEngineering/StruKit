@@ -13,9 +13,17 @@ Read from the documents:
   Supplement Table 4A      reference design values, and its adjustment factors
                            (size factor CF, wet service factor CM)
 
-Covered: visually graded dimension lumber 2 to 4 in. thick (Table 4A), loaded on its
-narrow face, allowable stress design. Not covered: Southern Pine (Table 4B), timbers
-(Table 4D), glued laminated timber, LRFD, flat use, notches, temperatures above 100 F.
+  NDS 3.6, 3.7             columns; column stability factor CP (Eq. 3.7-1, c = 0.8 for sawn
+                           lumber, FcE = 0.822 Emin' / (le/d)^2, le/d not over 50)
+  Supplement Table 4D      timbers 5 x 5 and larger: Douglas Fir-Larch, Hem-Fir and
+                           Spruce-Pine-Fir, grades Select Structural, No. 1 and No. 2, typed
+                           from the table (the other species and the dense grades are not in
+                           StruKit's file), and its wet service factors
+
+Covered: visually graded dimension lumber 2 to 4 in. thick (Table 4A) as beams and posts,
+and timbers (Table 4D) as posts, allowable stress design. Not covered: Southern Pine
+(Table 4B), glued laminated timber, LRFD, flat use, notches, built-up columns (NDS 15.3),
+temperatures above 100 F.
 
 Units: lb, in, psi.
 """
@@ -45,6 +53,23 @@ def _load():
 
 
 VALUES, SIZES = _load()
+
+
+def _load_timbers():
+    vals, secs = {}, {}
+    with open(os.path.join(_DATA, "nds2018_table4d.csv"), newline="") as f:
+        for r in csv.DictReader(f):
+            vals[(r["species"], r["classification"], r["grade"])] = {k: float(r[k]) for k in ("Fb", "Ft", "Fv", "Fc_perp", "Fc", "E", "Emin")}
+    with open(os.path.join(_DATA, "nds2018_table1b.csv"), newline="") as f:
+        for r in csv.DictReader(f):
+            if r["group"] == "post and timber":
+                secs[r["nominal"]] = (float(r["b"]), float(r["d"]))
+    return vals, secs
+
+
+TIMBER_VALUES, TIMBER_SIZES = _load_timbers()
+# Table 4A size factors for Fc: nominal width -> factor (Select Structural to No. 3)
+_CF_C_MAIN = {2: 1.15, 3: 1.15, 4: 1.15, 5: 1.1, 6: 1.1, 8: 1.05, 10: 1.0, 12: 1.0, 14: 0.9, 16: 0.9}
 SPECIES = sorted({k[0] for k in VALUES})
 
 # NDS Table 2.3.2: load case -> (CD, duration)
@@ -152,3 +177,50 @@ def factors(Fb, CF, wet, incised, repetitive):
     CM_b = (1.0 if Fb * CF <= 1150 else 0.85) if wet else 1.0
     return Factors(CM_b, 0.97 if wet else 1.0, 0.67 if wet else 1.0, 0.9 if wet else 1.0,
                    0.80 if incised else 1.0, 0.95 if incised else 1.0, 1.15 if repetitive else 1.0)
+
+
+def timber_class(b, d):
+    """NDS 4.1.3: Beams and Stringers are 5 in. or more thick with the width more than 2 in.
+    greater than the thickness; Posts and Timbers are 5 x 5 and larger with the width not
+    more than 2 in. greater than the thickness (nominal dimensions)."""
+    return "Beams and Stringers" if abs(d - b) > 2 else "Posts and Timbers"
+
+
+def post_values(species, grade, size):
+    """Reference design values, the Fc size factor, and the table used, for a solid post:
+    dimension lumber (Table 4A) or a timber (Table 4D)."""
+    if size in SIZES:
+        ref, _, note = values(species, grade, size)
+        t, w = nominal(size)
+        g = "No. 3" if (grade == "Stud" and w >= 8) else grade
+        if g in _MAIN:
+            CF = _CF_C_MAIN[w]
+        elif g == "Stud":
+            CF = 1.05 if w <= 4 else 1.0
+        elif g in ("Construction", "Standard"):
+            CF = 1.0
+        else:                                              # Utility
+            CF = 1.0 if w == 4 else 0.6
+        return ref, CF, SIZES[size], "Table 4A", note
+    if size in TIMBER_SIZES:
+        t, w = nominal(size)
+        cls = timber_class(t, w)
+        if (species, cls, grade) not in TIMBER_VALUES:
+            raise WoodError(f"wood: {species} {grade} {cls} is not in StruKit's {SUPP} Table 4D file "
+                            "(Douglas Fir-Larch, Hem-Fir, Spruce-Pine-Fir; Select Structural, No. 1, No. 2)")
+        return dict(TIMBER_VALUES[(species, cls, grade)]), 1.0, TIMBER_SIZES[size], "Table 4D, " + cls, ""
+    raise WoodError(f"wood: {size} is not a size in {SUPP} Table 1B")
+
+
+def column_stability(Fc_star, Emin_adj, le1, d1, le2, d2):
+    """CP by NDS Eq. 3.7-1 for a solid rectangular sawn lumber column (c = 0.8). le1/d1 and
+    le2/d2 are the two slenderness ratios; the larger governs (3.7.1.3)."""
+    r = max(le1 / d1, le2 / d2)
+    if r > 50:
+        raise WoodError(f"wood: slenderness ratio le/d = {r:.1f} exceeds 50 (NDS 3.7.1.4)")
+    if r <= 0:
+        return 1.0, dict(ratio=0.0, FcE=float("inf"))
+    FcE = 0.822 * Emin_adj / r ** 2
+    a, c = FcE / Fc_star, 0.8
+    CP = (1 + a) / (2 * c) - math.sqrt(((1 + a) / (2 * c)) ** 2 - a / c)
+    return CP, dict(ratio=r, FcE=FcE)
