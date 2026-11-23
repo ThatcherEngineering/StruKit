@@ -282,7 +282,7 @@ def test_lag_screws_against_nds_table_12j(tmp_path):
         dowel.lag(0.5, 1.5, 0.5, 0.5, 1.9)
     from strukit.gui import calc
     from strukit import calcsheet
-    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3")])
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="test combination, not a code combination")])
     v = dict(mark="LC1", D="1/2", L="5", rows="1", n_row="3", spacing="4", end="6", edge="2.75", sense="tension", wood_type="softwood",
              side_t="1.5", side_w="5.5", G_side="0.50", E_side="1600000", side_source="DF-L No. 2", main_t="3.5", main_w="5.5", G_main="0.50", E_main="1600000",
              main_source="DF-L No. 2", service="dry", loads=[dict(case="D", P="300"), dict(case="S", P="700")])
@@ -303,7 +303,7 @@ def test_lag_screws_against_nds_table_12j(tmp_path):
 def test_bolted_connection_one_bolt_blank_spacing():
     """One bolt in a row with the spacing left blank (failed with an internal error in builds before 0.90.0)."""
     from strukit.gui import calc
-    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3")])
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="test combination, not a code combination")])
     v = dict(mark="BC9", D="1/2", shear="single", rows="1", n_row="1", end="6", edge="2.75", sense="tension", wood_type="softwood", side_t="1.5", side_w="5.5",
              G_side="0.50", E_side="1600000", side_source="DF-L", main_t="3.5", main_w="5.5", G_main="0.50", E_main="1600000", main_source="DF-L", service="dry",
              loads=[dict(case="D", P="300")])
@@ -376,7 +376,7 @@ def test_lag_combined_lateral_and_withdrawal_by_hand(tmp_path):
     import math
     from strukit.gui import calc
     from strukit import calcsheet
-    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3")])
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="test combination, not a code combination")])
     v = dict(mark="LC2", D="1/2", L="5", rows="1", n_row="1", end="6", edge="2.75", sense="tension", wood_type="softwood", alpha="30",
              side_t="1.5", side_w="5.5", G_side="0.50", E_side="1600000", side_source="DF-L No. 2", main_t="3.5", main_w="5.5", G_main="0.50", E_main="1600000",
              main_source="DF-L No. 2", service="dry", loads=[dict(case="D", P="300"), dict(case="S", P="200")])
@@ -403,7 +403,7 @@ def test_wood_screws_against_nds_table_12l(tmp_path):
         dowel.wood_screw("#10", 0.75, 0.5, 0.5, penetration=1.0)
     from strukit.gui import calc
     from strukit import calcsheet
-    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3")])
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="test combination, not a code combination")])
     v = dict(mark="WS1", screw="#10", length="3", n="4", side_t="0.75", G_side="0.50", G_side_source="DF-L", main_t="3.5", G_main="0.50", G_main_source="DF-L",
              service="dry", loads=[dict(case="D", P="100"), dict(case="S", P="250")])
     sheet, kind, _ = calc.build("screw_connection", v, proj)
