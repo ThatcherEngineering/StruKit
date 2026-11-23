@@ -226,3 +226,26 @@ def test_lvl_column_with_wind_by_hand():
     assert r["compression with bending"].demand == pytest.approx(hand, rel=2e-3)
     assert r["shear"].demand == pytest.approx(1.5 * 216 / 25.375, abs=0.05) and r["shear"].capacity == pytest.approx(285 * 1.6)
     assert r["stability under bending"].demand == pytest.approx(fc / FcE2 + (fb1 / FbE) ** 2, rel=2e-3)
+
+
+def test_built_up_lvl_column_by_hand():
+    # (3) 1.75 x 5.5 Versa-Lam 1.8E 2650 (Versa-Stud size), nailed, 10 ft, pinned: stack 5.25 in, face 5.5 in
+    # Emin = 881,302 (apparent E 1.7e6); Fc* = 3,000 (D + L); c = 0.9
+    # across the face: le/d = 120 / 5.5 = 21.82 -> CP1; across the plies: 120 / 5.25 = 22.86 -> 0.6 x CP2; one ply le/t = 68.6 > 50
+    import math
+    Emin = scl.emin(1.7e6)
+    def cp(r):
+        a = 0.822 * Emin / r ** 2 / 3000
+        return (1 + a) / 1.8 - math.sqrt(((1 + a) / 1.8) ** 2 - a / 0.9)
+    loads = [dict(case="D", P=4000.0), dict(case="L", P=8000.0)]
+    s = ws_wood.lvl_post("LC3", "1.8E 2650", 1.75, 5.5, 10, loads, _combos(), 1.0, 1.0, "pinned", plies=3, fastening="nailed")
+    r = s.rows[0]
+    assert r.demand == pytest.approx(12000 / (5.25 * 5.5)) and r.capacity == pytest.approx(3000 * min(cp(120 / 5.5), 0.6 * cp(120 / 5.25)), rel=1e-6)
+    b = ws_wood.lvl_post("LC3", "1.8E 2650", 1.75, 5.5, 10, loads, _combos(), 1.0, 1.0, "pinned", plies=3, fastening="bolted")
+    assert b.rows[0].capacity == pytest.approx(3000 * min(cp(120 / 5.5), 0.75 * cp(120 / 5.25)), rel=1e-6)
+    one = ws_wood.lvl_post("LC3", "1.8E 2650", 5.25, 5.5, 10, loads, _combos(), 1.0, 1.0, "pinned")
+    assert one.rows[0].capacity == pytest.approx(3000 * cp(120 / 5.25), rel=1e-6) and one.rows[0].capacity > b.rows[0].capacity
+    for kw, msg in ((dict(fastening=None), "nailed or bolted"), (dict(e2_in=0.5), "axial load only")):
+        a = dict(fastening="nailed", e2_in=0.0); a.update(kw)
+        with pytest.raises(Exception, match=msg):
+            ws_wood.lvl_post("LC3", "1.8E 2650", 1.75, 5.5, 10, loads, _combos(), 1.0, 1.0, "pinned", plies=3, **a)
