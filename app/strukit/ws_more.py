@@ -6,7 +6,7 @@ calculations and their sources.
 """
 from dataclasses import dataclass, field
 
-from . import anchorage as anch, base_plate, footing, footing_moment, shapes, snow
+from . import anchorage as anch, base_plate, footing, footing_moment, shapes, shearwall, snow
 from .ws_steel_beam import Row, WorksheetError
 
 
@@ -424,4 +424,45 @@ def snow_sheet(mark, pg, pg_source, risk, roughness, exposure, thermal, roof_typ
                              picture=("snow", dict(roof=roof_type, W=W_ft, rise=rise_on_12, balanced=r.balanced,
                                                    pm=r.pm, unb=u))))
     sheet.snow = r
+    return sheet
+
+
+def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, V, load, method, v_source, holddown_inside=None,
+                     arm_offset_in=0.0, chord_E=None, chord_A=None, anchor_slip_in=None):
+    """Wood structural panel shear wall line, SDPWS-2021 Sect. 4.3 (see shearwall.py).
+    V is the design shear on the line at the level of `method`; v_source says where it
+    comes from. G_source says where the framing specific gravity comes from."""
+    for nm, v in (("the source of the framing specific gravity", G_source), ("the source of the design shear", v_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if V is None or V <= 0:
+        raise WorksheetError(f"{mark}: the design shear must be a positive number")
+    try:
+        w = shearwall.line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_inside, arm_offset_in,
+                           chord_E, chord_A, anchor_slip_in)
+    except shearwall.ShearWallError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    rows = [Row("shear in the wall line", f"{load}, {method}", V, w.capacity, "lb", "SDPWS-2021 4.1.4, Table 4.3A, 4.3.5.5.1",
+                f"nominal {w.design_text}; sum of {len(w.segments)} segment(s)")]
+    info = [("Sheathing", f"wood structural panels, {panel}, {panel_type}, one side, blocked; edge nails at {spacing:g} in"),
+            ("Framing", f"specific gravity G = {G:g} ({G_source.strip()})"),
+            ("Wall", f"{h:g} ft high; full-height segments " + ", ".join(f"{b:g} ft" for b in lengths)),
+            ("Design Shear", f"{V:,.0f} lb, {load}, {method} ({v_source.strip()})"),
+            ("Overturning", f"moment arm = segment length less {arm_offset_in:g} in" if arm_offset_in else "moment arm = segment length")]
+    if chord_E and chord_A and anchor_slip_in is not None:
+        info.append(("Deflection", f"end posts A = {chord_A:g} in2, E = {chord_E:,.0f} psi; anchorage slip {anchor_slip_in:g} in"))
+    text = [f"Segment {i}: {s.b:>5g} ft   shear {s.V:>7,.0f} lb ({s.v:>4.0f} plf)   chord tension and compression {s.T:>7,.0f} lb"
+            + (f"   deflection {s.defl:.2f} in" if s.defl is not None else "") for i, s in enumerate(w.segments, 1)]
+    sheet = SimpleSheet(
+        mark, "Wood Shear Wall", "Wall Line", f"{load}, {method}", info, [], [], "Capacity and Forces", w.lines, rows,
+        ["Individual full-height segments; the shear is shared in proportion to the design capacities of the segments "
+         "(SDPWS 4.3.5.5.1, exception 1).",
+         "Chord forces are from overturning of each segment alone; dead load is not counted against uplift."],
+        ["dead load resisting uplift; hold-down and its connection", "anchor bolts and plate washers (SDPWS 4.3.6.4.3)",
+         "end posts in tension and compression; bearing on the plate", "collectors and the connection to the diaphragm",
+         "construction requirements of SDPWS 4.3.6 and 4.3.7.1, including 3 in. framing at close nailing"]
+        + ([] if w.segments[0].defl is not None else ["deflection (SDPWS 4.3.4)"]))
+    sheet.blocks.append(dict(title="Segment Forces", head="Segment Forces", steps=[], text=text,
+                             picture=("shear_wall", dict(h=h, segs=[dict(b=s.b, V=s.V, v=s.v, T=s.T) for s in w.segments], V=V))))
+    sheet.wall = w
     return sheet
