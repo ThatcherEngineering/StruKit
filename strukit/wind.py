@@ -63,9 +63,8 @@ Components and cladding, buildings with h of 60 ft or less (Chapter 30, Part 1),
   Sect. 30.7     roof overhangs (pdf p. 396): p = qh Kd [(GCp) - (GCpi)], Eq. 30.7-1, with (GCp)
                  the sum of the top surface (the roof zone's value) and the bottom surface (the
                  adjacent wall's value for the same effective wind area). Built for uplift:
-                 the roof's negative value less the wall's positive value. For gable roofs at
-                 7 degrees or less the standard gives a separate overhang chart in Figure
-                 30.3-2A; that chart is not built.
+                 the roof's negative value less the wall's positive value. For roofs in the
+                 range of Figure 30.3-2A its overhang chart is used (OVERHANG_GCP_7 below).
 Not covered: roof components and cladding on hip and other roof shapes, on gable roofs over 45
 degrees and monoslope roofs over 30 degrees, the parapet provision of Figure 30.3-2A note 5, roof overhangs
 (Sect. 30.7); Parts 2 to 5 of Chapter 30;
@@ -374,6 +373,23 @@ ROOF_GCP_7 = {"positive": (10, 0.3, 100, 0.2), "1'": (100, -0.9, 1000, -0.4), "1
 ROOF_ZONES_7 = ("1'", "1", "2", "3")
 
 
+# Figure 30.3-2A, overhang chart (both surfaces included, note 6), read from the 330 dpi page image: zones 1 and 1'
+# -1.7 at 10 ft2, -1.6 at 100, then down to 500; zone 2 -2.3 at 10 through -1.6 at 100 to 500; zone 3 -3.2 at 10
+# straight to 500. The chart prints two end values at 500 ft2, -1.1 and -1.0, and the scan does not show which line
+# takes which; -1.1 is used for every zone (the larger suction).
+OVERHANG_GCP_7 = {"1'": ((10, -1.7), (100, -1.6), (500, -1.1)), "1": ((10, -1.7), (100, -1.6), (500, -1.1)),
+                  "2": ((10, -2.3), (100, -1.6), (500, -1.1)), "3": ((10, -3.2), (500, -1.1))}
+
+
+def _log_points(area, pts):
+    if area <= pts[0][0]:
+        return pts[0][1]
+    for (a1, v1), (a2, v2) in zip(pts[:-1], pts[1:]):
+        if area <= a2:
+            return _log_line(area, a1, v1, a2, v2)
+    return pts[-1][1]
+
+
 def _log_line(area, a1, v1, a2, v2):
     f = min(1.0, max(0.0, (math.log10(area) - math.log10(a1)) / (math.log10(a2) - math.log10(a1))))
     return v1 + (v2 - v1) * f
@@ -447,12 +463,14 @@ def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_
         d = {z: (max(v, MIN_CC) if z == "positive" else min(v, -MIN_CC)) for z, v in p.items()}
         rows.append(dict(area=A, gcp=g, p=p, design=d))
     if overhang:
-        if fig == "30.3-2A":
-            raise WindError("wind: roof overhangs are built for roofs above the range of Figure 30.3-2A only (its overhang chart is not built)")
         for x in rows:
-            w = cc_wall_gcp(x["area"], "positive", theta)
-            x["overhang_wall"] = w
-            x["overhang_gcp"] = {z: x["gcp"][z] - w for z in zones}
+            if fig == "30.3-2A":
+                x["overhang_wall"] = None
+                x["overhang_gcp"] = {z: _log_points(x["area"], OVERHANG_GCP_7[z]) for z in zones}
+            else:
+                w = cc_wall_gcp(x["area"], "positive", theta)
+                x["overhang_wall"] = w
+                x["overhang_gcp"] = {z: x["gcp"][z] - w for z in zones}
             x["overhang"] = {z: min(qh * KD_CC * (v - gc), -MIN_CC) for z, v in x["overhang_gcp"].items()}
     out = dict(qh=qh, Kh=kh, GCpi=gc, figure=fig, zones=zones, rows=rows, overhang=bool(overhang))
     if fig == "30.3-2A":

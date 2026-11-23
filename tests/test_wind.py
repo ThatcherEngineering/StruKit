@@ -284,12 +284,18 @@ def test_cc_roof_overhang_by_hand(tmp_path):
     assert x["overhang_wall"] == pytest.approx(0.877, abs=0.001)
     assert [round(x["overhang_gcp"][z], 3) for z in ("3", "2", "1")] == pytest.approx([-3.219, -2.664, -2.167], abs=0.002)
     assert x["overhang"]["3"] == pytest.approx(-88.0, abs=0.1)
-    with pytest.raises(wind.WindError):
-        wind.cc_roof(115, "C", 20, "enclosed", [50], theta=5, overhang=True)
+    # Figure 30.3-2A overhang chart: values at the break points, and zone 3 at 100 ft2: -3.2 + 2.1/log(50) = -1.964
+    f = wind.cc_roof(115, "C", 20, "enclosed", [5, 10, 100, 500, 2000], theta=5, overhang=True)["rows"]
+    assert [x["overhang_gcp"]["1"] for x in f] == pytest.approx([-1.7, -1.7, -1.6, -1.1, -1.1])
+    assert [x["overhang_gcp"]["2"] for x in f] == pytest.approx([-2.3, -2.3, -1.6, -1.1, -1.1]) and f[0]["overhang_gcp"]["1'"] == -1.7
+    assert [round(x["overhang_gcp"]["3"], 3) for x in f] == pytest.approx([-3.2, -3.2, -1.964, -1.1, -1.1]) and f[0]["overhang_wall"] is None
     from strukit.gui import calc
     from strukit import calcsheet
     v = dict(mark="WR4", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
              enclosure_basis="Sect. 26.12", h="20", theta="18", least="40", overhang="yes", areas="10, 50, 100", Kzt="1.0", Kzt_source="Sect. 26.8.1")
     sheet, _, _ = calc.build("wind_cc_roof", v, dict(job="2026-000", name="Test", method="ASD"))
     assert len(sheet.blocks) == 3 and "downward pressure on roof overhangs" in sheet.not_checked
+    flat, _, _ = calc.build("wind_cc_roof", dict(v, theta="2", least=""), dict(job="2026-000", name="Test", method="ASD"))
+    assert len(flat.blocks) == 3 and "wall +" not in flat.blocks[2]["lines"][0]
+    calcsheet._simple_pdf(flat, str(tmp_path / "of.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     calcsheet._simple_pdf(sheet, str(tmp_path / "o.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
