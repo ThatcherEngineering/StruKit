@@ -368,6 +368,7 @@ def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_sourc
         if pts or dist or ((e1 or e2) and P > 0):
             if pts or dist:
                 res = bm.solve(Hin, [0.0, Hin], ref["E"] * d2 * d1 ** 3 / 12, pts, dist)
+                o["res"] = res
                 o["M"] = max(abs(res.M_max()[0]), abs(res.M_min()[0]))
                 o["V"] = abs(res.V_abs_max()[0])
             fb = o["M"] / S1
@@ -459,8 +460,8 @@ def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_sourc
         load_lines.append(f"{ld['case']:<3} lateral uniform {ld['w']:>7.1f} plf   {ld.get('label', '')}" if ld["kind"] == "uniform" else
                           f"{ld['case']:<3} lateral point {ld['P']:>9,.0f} lb at {ld['x_ft']:g} ft   {ld.get('label', '')}")
     assumptions = ["Allowable stress design, 2018 NDS. Temperature factor Ct = 1.0 (NDS 2.3.3, sustained temperature to 100 F).",
-                   ("The axial load acts at the eccentricity entered; bending toward the wide face uses the edgewise Fb with no flat "
-                    "use increase." if ecc else "The axial load acts along the centre of the post.") + (" Lateral load bends the post about its strong axis; "
+                   ("The axial load acts at the eccentricity entered; bending toward the wide face uses the edgewise Fb "
+                    "(Cfu = 1.0)." if ecc else "The axial load acts along the centre of the post.") + (" Lateral load bends the post about its strong axis; "
                    "the post spans simply between its base and its top." if lateral else ("" if ecc else " No bending is considered.")),
                    f"Self-weight {sw:,.0f} lb (unit weight {unit_weight_pcf:g} pcf) added to load case {self_weight_case}." if sw is not None
                    else "Self-weight is not added separately."]
@@ -471,6 +472,9 @@ def post(mark, species, grade, size, height_ft, loads, combos, Ke1, Ke2, k_sourc
          if lateral else ([] if ecc else ["bending from eccentric or lateral load (NDS 3.9)"]))
         + ["bearing on the end grain and on the supporting member (NDS 3.10)", "connections at the top and base"],
         picture=("wood_post", dict(b=bb, d=dd, height=height_ft, size=size, axial=[f"{x['case']} {x['P']:,.0f} lb" for x in loads], lateral=[dict(x) for x in lateral])), governing=g["cb"].name)
+    _lat = [o for o in out if o.get("res") is not None]
+    if _lat:                                               # shear and moment from the lateral load, combination with the largest moment
+        sheet.diagram = dict(_diagram_data(max(_lat, key=lambda o: abs(o.get("M", 0.0)))), note="lateral load; base at the left")
     sheet.base = {o["cb"].name: o["P"] for o in out}
     sheet.governing = max(out, key=lambda o: o["ratio"])["cb"].name
     return sheet
@@ -774,8 +778,10 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
                 else:
                     pts.append(bm.PointLoad(ld["x_ft"] * 12.0, cb.factors[c] * ld["P"]))
         Mlat = Vlat = 0.0
+        res_lat = None
         if pts or dist:
             res = bm.solve(Hin, [0.0, Hin], 1.0e9, pts, dist)
+            res_lat = res
             Mlat, Vlat = max(abs(res.M_max()[0]), abs(res.M_min()[0])), abs(res.V_abs_max()[0])
         try:
             CD, cd_case, cd_dur = wood.load_duration(present)
@@ -807,6 +813,7 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
                                                     o["FbE"] if (e1 or Mlat) else None, fb1=o["fb1"])
             if o["i3"] == float("inf"):
                 raise WorksheetError(f"{mark}: {cb.name}: the axial stress reaches the buckling stress; the column is too slender")
+        o["res"] = res_lat
         o["ratio"] = max(fc / o["Fc_adj"], o["i3"])
         out.append(o)
     if not out:
@@ -905,6 +912,9 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
         (["deflection under lateral load", "lateral load on the wide face"] if lateral else ["bending from lateral load (NDS 15.4.1(a))"]) + ["bearing on the end grain and on the supporting member (NDS 3.10)",
          "connections at the top and base"],
         picture=("wood_post", dict(b=b_in, d=d_in, height=height_ft, size=f"{d2:g}x{d1:g}", kind="lvl", plies=plies if b_in >= 0 else 1, axial=[f"{x['case']} {x['P']:,.0f} lb" for x in loads], lateral=[dict(x) for x in lateral])), governing=g["cb"].name)
+    _lat = [o for o in out if o.get("res") is not None]
+    if _lat:                                               # shear and moment from the lateral load, combination with the largest moment
+        sheet.diagram = dict(_diagram_data(max(_lat, key=lambda o: abs(o.get("M", 0.0)))), note="lateral load; base at the left")
     sheet.base = {o["cb"].name: o["P"] for o in out}
     sheet.governing = max(out, key=lambda o: o["ratio"])["cb"].name
     return sheet
