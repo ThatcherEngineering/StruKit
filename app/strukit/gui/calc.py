@@ -710,6 +710,32 @@ FORMS = {
                 F("hole", "Tear-out: bolt hole diameter", unit="in", required=False, help="blank = bolt diameter + 1/16 in.")],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Force along the members, by load case; the project's ASD combinations are applied.")]),
+    "lag_connection": dict(
+        title="Lag Screw Connection (lateral)", code="NDS 2018", mark="LC",
+        fields=[F("D", "Lag screw diameter", "select", options=["1/4", "5/16", "3/8", "7/16", "1/2", "5/8", "3/4", "7/8", "1"], unit="in"),
+                F("L", "Lag screw length", "select", options=["1", "1-1/2", "2", "2-1/2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"], unit="in", help="NDS Appendix Table L2"),
+                F("washer", "Washer thickness under the head", unit="in", required=False, help="blank = none deducted from the penetration"),
+                F("rows", "Rows of lag screws"), F("n_row", "Lag screws in a row"),
+                F("spacing", "Spacing in a row", unit="in", required=False, help="along the grain; 4 D for the full value"),
+                F("row_spacing", "Spacing between rows", unit="in", required=False),
+                F("end", "End distance", unit="in", help="lag screw to the end of the member, along the grain"),
+                F("edge", "Edge distance", unit="in", help="outer row to the edge of the member"),
+                F("grain", "Load direction to the grain", "select", required=False, options=["parallel in every member", "perpendicular in the side member(s)", "perpendicular in the main member"],
+                  help="blank = parallel in every member"),
+                F("p_loaded", "Perpendicular member: loaded edge distance", unit="in", required=False, help="lag screw to the edge the load pushes toward; 4 D minimum"),
+                F("p_unloaded", "Perpendicular member: unloaded edge distance", unit="in", required=False),
+                F("p_end", "Perpendicular member: end distance", unit="in", required=False, help="lag screws to the end of that member, along its grain"),
+                F("p_Fv", "Perpendicular member: Fv", unit="psi", required=False, help="with every adjustment factor except CD; fill to check shear at the connection (NDS 3.4.3.3)"),
+                F("p_Fv_source", "Perpendicular member: where Fv comes from", "text", required=False),
+                F("sense", "Load in the member loaded parallel to grain", "select", options=["tension", "compression"], help="tension: the lag screws bear toward the member end"),
+                F("wood_type", "Wood", "select", options=["softwood", "hardwood"]),
+                F("side_t", "Side member thickness", unit="in"), F("side_w", "Side member width", unit="in"),
+                F("G_side", "Side member specific gravity, G"), F("E_side", "Side member E", unit="psi"), F("side_source", "Where the side member values come from", "text"),
+                F("main_t", "Main member thickness", unit="in"), F("main_w", "Main member width", unit="in"),
+                F("G_main", "Main member specific gravity, G"), F("E_main", "Main member E", unit="psi"), F("main_source", "Where the main member values come from", "text"),
+                F("service", "Moisture", "select", options=["dry", "wet in service", "wet at fabrication, dry in service"], help="NDS Table 11.3.3")],
+        tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
+                  help="Force along the members, by load case; the project's ASD combinations are applied.")]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1440,11 +1466,16 @@ def build(kind, values, project):
         cases_used([x["case"] for x in loads], cb, r.miss)
         r.done()
         return ws_more.nail_withdrawal_sheet(mark, nm, D, Lg, hd, ts, Gs, Gss, tm, Gm, Gms, n_, sv, loads, cb, toe_nail=toe), "simple", {}
-    if kind == "bolted_connection":
+    if kind in ("bolted_connection", "lag_connection"):
         cb = combos(project, r.miss, "ASD")
         Dt = r.text("D")
-        D = {"1/2": 0.5, "5/8": 0.625, "3/4": 0.75, "7/8": 0.875, "1": 1.0}.get(Dt)
-        sh, rn, nr, end, edge, sense, wt = r.text("shear"), r.num("rows"), r.num("n_row"), r.num("end"), r.num("edge"), r.text("sense"), r.text("wood_type")
+        islag = kind == "lag_connection"
+        D = {"1/4": 0.25, "5/16": 0.3125, "3/8": 0.375, "7/16": 0.4375, "1/2": 0.5, "5/8": 0.625, "3/4": 0.75, "7/8": 0.875, "1": 1.0}.get(Dt)
+        lagd = None
+        if islag:
+            Lt = r.text("L")
+            lagd = dict(L={"1": 1.0, "1-1/2": 1.5, "2": 2.0, "2-1/2": 2.5}.get(Lt) or (float(Lt) if Lt and Lt.isdigit() else None), washer=r.num("washer", False))
+        sh, rn, nr, end, edge, sense, wt = ("single" if islag else r.text("shear")), r.num("rows"), r.num("n_row"), r.num("end"), r.num("edge"), r.text("sense"), r.text("wood_type")
         sp = r.num("spacing", bool(nr and nr > 1), label="Spacing in a row")
         rs = r.num("row_spacing", bool(rn and rn > 1), label="Spacing between rows")
         st, sw, Gs, Es, ss = r.num("side_t"), r.num("side_w"), r.num("G_side"), r.num("E_side"), r.text("side_source")
@@ -1464,7 +1495,7 @@ def build(kind, values, project):
             if pp["Fv"] is not None and not pp["Fv_source"]:
                 r.miss.append("Perpendicular member: where Fv comes from is blank")
         loc = None
-        lv = {k: r.num(k, False) for k in ("Ft_main", "Fv_main", "Ft_side", "Fv_side")}
+        lv = {k: (None if islag else r.num(k, False)) for k in ("Ft_main", "Fv_main", "Ft_side", "Fv_side")}
         if any(v is not None for v in lv.values()):
             for k, lab in (("Ft_main", "main member Ft"), ("Fv_main", "main member Fv"), ("Ft_side", "side member Ft"), ("Fv_side", "side member Fv")):
                 if lv[k] is None:
@@ -1474,7 +1505,7 @@ def build(kind, values, project):
             loc = dict(lv, source=r.text("local_source", False) or "", hole=r.num("hole", False))
         r.done()
         return ws_more.bolted_connection_sheet(mark, D, rn, nr, sp, rs, end, edge, sh, st, sw, Gs, Es, ss, mt, mw, Gm, Em, ms, sense, wt, sv, loads, cb,
-                                               local=loc, grain=gr, perp=pp), "simple", {}
+                                               local=loc, grain=gr, perp=pp, lag=lagd), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")

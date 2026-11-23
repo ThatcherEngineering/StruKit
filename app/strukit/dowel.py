@@ -51,14 +51,17 @@ def nail_fyb(D):
     raise DowelError("dowel: nail bending yield strength is given for diameters up to 0.273 in.")
 
 
-def rd(D, mode, theta=0.0):
+def rd(D, mode, theta=0.0, nominal=None):
+    """Reduction term Rd, NDS Table 12.3.1B. nominal: the nominal diameter of a threaded fastener
+    whose root diameter D is under 1/4 in.; where it is 1/4 in. or more, Rd = KD K-theta (note 1)."""
     if D < 0.25:
-        return 2.2 if D <= 0.17 else 10.0 * D + 0.5
+        kd = 2.2 if D <= 0.17 else 10.0 * D + 0.5
+        return kd * (1.0 + 0.25 * theta / 90.0) if nominal is not None and nominal >= 0.25 else kd
     k = 1.0 + 0.25 * theta / 90.0
     return {"Im": 4.0, "Is": 4.0, "II": 3.6}.get(mode, 3.2) * k
 
 
-def lateral(D, ls, lm, Fes, Fem, Fyb, double=False, theta=0.0):
+def lateral(D, ls, lm, Fes, Fem, Fyb, double=False, theta=0.0, nominal=None):
     """Reference lateral design value Z, lb, for one fastener: the least yield mode.
     ls, lm: dowel bearing lengths in the side and main member, in. theta: the largest angle
     of load to grain of either member (for Rd). Returns dict(Z, mode, modes)."""
@@ -69,7 +72,7 @@ def lateral(D, ls, lm, Fes, Fem, Fyb, double=False, theta=0.0):
     k1 = (math.sqrt(Re + 2 * Re ** 2 * (1 + Rt + Rt ** 2) + Rt ** 2 * Re ** 3) - Re * (1 + Rt)) / (1 + Re)
     k2 = -1 + math.sqrt(2 * (1 + Re) + 2 * Fyb * (1 + 2 * Re) * D ** 2 / (3 * Fem * lm ** 2))
     k3 = -1 + math.sqrt(2 * (1 + Re) / Re + 2 * Fyb * (2 + Re) * D ** 2 / (3 * Fem * ls ** 2))
-    R = lambda m: rd(D, m, theta)
+    R = lambda m: rd(D, m, theta, nominal)
     n = 2.0 if double else 1.0
     modes = {"Im": D * lm * Fem / R("Im"), "Is": n * D * ls * Fes / R("Is"),
              "IIIs": n * k3 * D * ls * Fem / ((2 + Re) * R("IIIs")),
@@ -241,3 +244,41 @@ def pull_through(DH, G, tns):
     thin = tns <= 2.5 * DH
     WH = 690.0 * math.pi * DH * G ** 2 * tns if thin else 1725.0 * math.pi * DH ** 2 * G ** 2
     return dict(WH=WH, eq="12.2-6a" if thin else "12.2-6b", thin=thin)
+
+
+# ---- Lag screws: NDS Appendix Table L2 (reduced body diameter and full-body), Table 12J notes ----
+LAG_DR = {0.25: 0.173, 0.3125: 0.227, 0.375: 0.265, 0.4375: 0.328, 0.5: 0.371, 0.625: 0.471, 0.75: 0.579, 0.875: 0.683, 1.0: 0.780}
+LAG_E = {0.25: 5 / 32, 0.3125: 3 / 16, 0.375: 7 / 32, 0.4375: 9 / 32, 0.5: 5 / 16, 0.625: 13 / 32, 0.75: 0.5, 0.875: 19 / 32, 1.0: 11 / 16}
+LAG_MIN_LENGTH = {0.25: 1.0, 0.3125: 1.0, 0.375: 1.0, 0.4375: 1.0, 0.5: 1.0, 0.625: 2.0, 0.75: 3.0, 0.875: 3.0, 1.0: 3.0}
+LAG_LENGTHS = (1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0)
+
+
+def lag_fyb(D):
+    """Table 12J note 2: 70,000 psi for 1/4 in., 60,000 psi for 5/16 in., 45,000 psi for 3/8 in. and larger."""
+    return 70000.0 if D == 0.25 else 60000.0 if D == 0.3125 else 45000.0
+
+
+def lag_thread(D, L):
+    """Minimum thread length T, tapered tip E and unthreaded body length S of a standard hex lag
+    screw, in. (Table L2: T = the lesser of 6 in. and L/2 + 1/2 in.; 3/4 in. for a 1 in. screw)."""
+    if D not in LAG_DR:
+        raise DowelError("lag screw: the diameter is 1/4, 5/16, 3/8, 7/16, 1/2, 5/8, 3/4, 7/8 or 1 in.")
+    if L not in LAG_LENGTHS or L < LAG_MIN_LENGTH[D]:
+        raise DowelError(f"lag screw: Table L2 lists this diameter in lengths of {LAG_MIN_LENGTH[D]:g} in. and over: " + ", ".join(f"{x:g}" for x in LAG_LENGTHS if x >= LAG_MIN_LENGTH[D]))
+    T = 0.75 if L == 1.0 else min(6.0, L / 2.0 + 0.5)
+    return dict(T=T, E=LAG_E[D], S=L - T, Dr=LAG_DR[D])
+
+
+def lag(D, side_t, G_side, G_main, penetration, theta_side=0.0, theta_main=0.0):
+    """Single shear lag screw, wood side member, side grain. The yield equations and Rd use the
+    root diameter Dr (NDS 12.3.7.1(c)); the dowel bearing strengths use the nominal diameter D (as
+    Table 12J is built). penetration: into the main member, tapered tip excluded, not less
+    than 4 D (12.1.4.6); taken as the dowel bearing length lm."""
+    if D not in LAG_DR:
+        raise DowelError("lag screw: the diameter is 1/4, 5/16, 3/8, 7/16, 1/2, 5/8, 3/4, 7/8 or 1 in.")
+    if penetration is None or penetration < 4.0 * D - 1e-9:
+        raise DowelError(f"lag screw: the penetration into the main member, tip excluded, is less than 4 D = {4 * D:g} in. (NDS 12.1.4.6)")
+    Dr, Fyb = LAG_DR[D], lag_fyb(D)
+    Fes, Fem = fe(G_side, D, theta_side), fe(G_main, D, theta_main)
+    r = lateral(Dr, side_t, penetration, Fes, Fem, Fyb, False, max(theta_side, theta_main), nominal=D)
+    return dict(r, Dr=Dr, Fyb=Fyb, Fes=Fes, Fem=Fem, lm=penetration)
