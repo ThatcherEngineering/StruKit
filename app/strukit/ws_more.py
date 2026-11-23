@@ -1375,9 +1375,8 @@ def nailed_connection_sheet(mark, nail_name, D, length, side_t, G_side, G_side_s
             "the penetration into the main member is the projection of the nail along the side member, L cos 30 - L/3."] if toe_nail else []),
         ["nail spacing, edge and end distances against splitting (NDS 12.1.6.5)", "the members at the connection: net section, shear at the connection (NDS 3.4.3.3) and local stresses (NDS 11.1.2, Appendix E)",
          "withdrawal and combined lateral and withdrawal loading"] + ([] if toe_nail else ["toe-nailed connections (NDS 12.1.6.3, 12.5.4)"]))
-    if not toe_nail:
-        sheet.blocks.append(dict(title="Section", picture=("nailed", dict(side_t=side_t, main_t=main_t, length=length, p=p, D=D,
-                                                                          label=f"{nail_name.strip()}, {D:g} x {length:g} in."))))
+    sheet.blocks.append(dict(title="Section", picture=("toe_nail" if toe_nail else "nailed", dict(side_t=side_t, main_t=main_t, length=length, p=p, D=D,
+                                                                      label=f"{nail_name.strip()}, {D:g} x {length:g} in."))))
     sheet.connection = dict(r, Zp=base * worst["CD"], n=int(n), capacity=worst["cap"], demand=worst["P"], CM=CM)
     return sheet
 
