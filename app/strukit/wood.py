@@ -24,8 +24,7 @@ Read from the documents:
                            Southern Pine.
 
 Covered: visually graded dimension lumber 2 to 4 in. thick (Table 4A) as beams and posts,
-and timbers (Table 4D) as posts, allowable stress design. Not covered: Southern Pine posts,
-Mixed Southern Pine, glued laminated timber, LRFD, notches, built-up columns (NDS 15.3),
+and timbers (Table 4D) as posts, allowable stress design. Not covered: Mixed Southern Pine, glued laminated timber, LRFD, notches, built-up columns (NDS 15.3),
 temperatures above 100 F.
 
 Units: lb, in, psi.
@@ -248,6 +247,9 @@ def timber_class(b, d):
 def post_values(species, grade, size):
     """Reference design values, the Fc size factor, and the table used, for a solid post:
     dimension lumber (Table 4A) or a timber (Table 4D)."""
+    if size in SIZES and species == SP:                    # Table 4B: size adjustment is in the values; 0.9 on Fc for widths over 12 in.
+        ref, _, note = southern_pine_values(grade, size)
+        return ref, (0.9 if nominal(size)[1] > 12 else 1.0), SIZES[size], "Table 4B", note
     if size in SIZES:
         ref, _, note = values(species, grade, size)
         t, w = nominal(size)
