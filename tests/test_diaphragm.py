@@ -47,6 +47,9 @@ def test_diaphragm_sheet_and_form(tmp_path):
     assert kind == "simple" and [r.check for r in sheet.rows] == ["Unit shear", "Aspect ratio L/W", "Mid-span deflection"]
     assert sheet.rows[0].demand == pytest.approx(166.7, abs=0.05) and sheet.rows[0].capacity == pytest.approx(296.7) and sheet.rows[2].demand == pytest.approx(0.214, abs=0.002)
     calcsheet._simple_pdf(sheet, str(tmp_path / "d.pdf"), "2026-000", "SDPWS-2021", "2026-11-23")
+    from strukit.gui import server
+    assert server.api("/api/diaphragm_reaction", dict(values=v, project=proj)) == dict(reaction=4000.0, load="wind")
+    assert "error" in server.api("/api/diaphragm_reaction", dict(values=dict(v, w=""), project=proj))
     long = calc.results("diaphragm", dict(v, L="80"), proj)
     assert long["state"] == "done" and long["status"] == "FLAG"                     # L/W = 3.33 over 3
     with pytest.raises(calc.Missing):

@@ -169,9 +169,27 @@ function drawResults(m) {
 }
 
 // ---------------------------------------------------------------- loads from another member
+function fillFromDiaphragmBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "diaphragm");
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose a diaphragm"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + (x.values.load || "") + " diaphragm")));
+  const go = el("button", { class: "btn", onclick: async () => {
+    if (pick.value === "") return toast("Choose the diaphragm first.");
+    const s = S.members[+pick.value];
+    let got;
+    try { got = await post("/api/diaphragm_reaction", { values: s.values, project: S.project }); } catch (e) { return toast(e.message, 12000); }
+    Object.assign(m.values, { V: String(Math.round(got.reaction)), load: got.load || m.values.load,
+      v_source: "reaction of diaphragm " + (s.values.mark || "") + " (w L / 2), at " + S.project.method + " level" });
+    changed(); drawMain();
+    toast("Shear " + Math.round(got.reaction).toLocaleString() + " lb from one end of " + (s.values.mark || "the diaphragm") + ". Add the shear from any wall above and from a diaphragm on the other side of this line.", 12000);
+  } }, "Fill Shear");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the shear from a diaphragm reaction"), pick, go);
+}
+
 function fillWallBar(m, changed) {
   const src = S.members.filter(x => x.kind === "seismic_elf" && (x.values.lines || []).some(r => (r.name || "").trim()));
-  if (!src.length) return el("div", { class: "fill small" }, "A seismic shear can be filled in from a Seismic Base Shear sheet once it lists its wall or frame lines.");
+  if (!src.length) return el("div", {}, fillFromDiaphragmBar(m, changed) ||
+    el("div", { class: "fill small" }, "The shear can be filled in from a diaphragm sheet, or from a Seismic Base Shear sheet once it lists its wall or frame lines."));
   const pick = el("select", {}, el("option", { value: "" }, "choose a seismic sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
   const line = el("select", { style: "display:none" });
   let got = null;
@@ -193,7 +211,7 @@ function fillWallBar(m, changed) {
       v_source: "sheet " + (s.values.mark || "seismic") + ", line " + r.line + ", story below " + r.level + ": " + (asd ? "0.7 rho QE" : "rho QE") });
     changed(); drawMain();
   } }, "Fill Shear");
-  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the seismic shear from"), pick, line, go);
+  return el("div", {}, el("div", { class: "fill" }, el("span", { class: "small" }, "Take the seismic shear from"), pick, line, go), fillFromDiaphragmBar(m, changed));
 }
 
 function fillDiaphragmBar(m, changed) {

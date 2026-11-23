@@ -158,6 +158,14 @@ def api(path, body):
                         "Type the two heights of the wall tributary to the diaphragm (above ground, ft) first.")
         except Exception as e:
             return dict(error=f"The wind sheet stopped: {e}")
+    if path == "/api/diaphragm_reaction":
+        try:
+            sheet, _, _ = calc.build("diaphragm", body.get("values") or {}, body.get("project") or {})
+        except calc.Missing as e:
+            return dict(error="The diaphragm sheet is not complete: " + "; ".join(e.items))
+        except Exception as e:
+            return dict(error=f"The diaphragm sheet stopped: {e}")
+        return dict(reaction=sheet.diaphragm["reaction"], load=(body.get("values") or {}).get("load"))
     if path == "/api/ping":
         _last_ping[0] = time.time(); _pinged[0] = True
         return {}
