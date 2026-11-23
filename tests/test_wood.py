@@ -437,3 +437,30 @@ def test_posts_with_lateral_load_carry_shear_and_moment_diagrams(tmp_path):
     calcsheet.simple_pdf(s, str(tmp_path / "p.pdf"), "Job", "2018 NDS", "Nov 23, 2026")
     plain = ws_wood.post("P", "DOUGLAS FIR-LARCH", "No. 2", "6x6", 10, [dict(case="D", P=2000)], cs, 1, 1, "pinned", False, False)
     assert getattr(plain, "diagram", None) is None
+
+
+def test_lumber_decking_by_hand(tmp_path):
+    """2018 NDS Supplement Table 4E, values read from the Supplement: Douglas Fir-Larch Select Dex: Fb 1,750, (Fb)(Cr) 2,000, Fc_perp 625,
+    E 1,800,000; Hem-Fir Commercial: 1,150 / 1,350 / 405 / 1,400,000; Balsam Fir Select: repetitive 1,650 only. Size factors 1.10 (2 in.),
+    1.04 (3 in.), 1.0 (4 in.). 3 in. Select Dex, 10 ft simple span, D 15 psf + 0.7(50) S: w = 50 plf on 12 in.; M = 625 lb-ft;
+    S = 12(2.5^2)/6 = 12.5 in3; fb = 600 psi; Fb' = 2,000(1.15)(1.04) = 2,392 psi. Snow deflection, 35 plf: 5(2.917)(120^4)/(384(1.8e6)(15.625))
+    = 0.280 in. Two equal spans: same moment; snow on one span 0.0092(2.917)(120^4)/(1.8e6 x 15.625) = 0.198 in."""
+    from strukit import calcsheet, wood
+    from strukit.gui import calc
+    assert wood.DECKING[("DOUGLAS FIR-LARCH", "Select Dex")] == dict(Fb=1750, Fb_rep=2000, Fc_perp=625, E=1800000, Emin=660000)
+    assert wood.DECKING[("HEM-FIR", "Commercial")]["Fb_rep"] == 1350 and wood.DECKING[("BALSAM FIR", "Select")]["Fb"] is None
+    assert not any("REDWOOD" in k[0] for k in wood.DECKING) and wood.DECKING_CF == {2: 1.10, 3: 1.04, 4: 1.0}
+    with pytest.raises(wood.WoodError):
+        wood.decking_values("BALSAM FIR", "Select", 2, False)
+    proj = dict(method="ASD", combos_asd=[dict(expr="D + 0.7S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3")])
+    v = dict(mark="DK1", species="DOUGLAS FIR-LARCH", grade="Select Dex", thickness="3", span="10", layout="simple span", repetitive="yes", service="dry service",
+             loads=[dict(case="D", q="15", label=""), dict(case="S", q="50", label="")], defl=[dict(label="snow", expr="0.7S", ratio="240", source="typed in")])
+    s, kind, _ = calc.build("decking", v, proj)
+    assert kind == "simple" and s.rows[0].demand == pytest.approx(600.0) and s.rows[0].capacity == pytest.approx(2392.0)
+    assert s.rows[1].demand == pytest.approx(0.280, abs=0.001) and s.rows[1].capacity == pytest.approx(0.5)
+    calcsheet.simple_pdf(s, str(tmp_path / "d.pdf"), "Job", "2018 NDS", "Nov 23, 2026")
+    two, _, _ = calc.build("decking", dict(v, layout="two equal spans"), proj)
+    assert two.rows[0].demand == pytest.approx(600.0) and two.rows[1].demand == pytest.approx(0.198, abs=0.001)
+    single, _, _ = calc.build("decking", dict(v, repetitive="no", service="wet service"), proj)
+    assert single.rows[0].capacity == pytest.approx(1750 * 1.15 * 0.85 * 1.04)
+    assert calc.results("decking", dict(v, span=""), proj)["state"] == "incomplete"
