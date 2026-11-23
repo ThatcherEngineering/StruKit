@@ -686,6 +686,76 @@ def _draw_frame(c, lay, x0, y0, w, h, band=3.2, labels=True, light=False):
     return xy, s
 
 
+def _frame_loads(c, lay, xy, loads):
+    """The loads on the frame elevation, by load case: distributed member loads as rows of
+    arrows with their value in kip/ft, joint and level loads as single arrows in kips.
+    Arrows are not to a force scale; cases on the same member stack outward."""
+    import math as _m
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC)
+    stack, jstack = {}, {}
+    for ld in loads:
+        if ld.get("auto"):
+            continue
+        if "on" in ld:
+            names = list(lay.names(ld["on"]))
+            side = ld.get("dir", "gravity") == "x"
+            ends = []
+            for name in names:
+                m = next(x for x in lay.members if x.name == name)
+                (x1, y1), (x2, y2) = xy(m.i), xy(m.j)
+                k = stack.get(name, 0); stack[name] = k + 1
+                Lp = _m.hypot(x2 - x1, y2 - y1)
+                n = max(2, int(Lp / 16))
+                c.setLineWidth(0.5)
+                if side:                                   # sideways load on a member: arrows from the left
+                    off = 9 + 11 * k
+                    for q in range(n + 1):
+                        f = q / n
+                        px, py = x1 + (x2 - x1) * f, y1 + (y2 - y1) * f
+                        _arrow(c, px - off - 7, py, px - off, py, head=2.2)
+                    ends.append((min(x1, x2) - off - 9, (y1 + y2) / 2 - 2))
+                else:                                      # gravity: arrows down onto the member
+                    off = 8 + 11 * k
+                    if Lp >= 14:
+                        for q in range(n + 1):
+                            f = q / n
+                            px, py = x1 + (x2 - x1) * f, y1 + (y2 - y1) * f
+                            _arrow_down(c, px, py + off + 7, py + off)
+                    c.line(x1, y1 + off + 7, x2, y2 + off + 7)
+                    xl, yl = (x1, y1) if x1 <= x2 else (x2, y2)
+                    ends.append((xl - 3, yl + off + 5))
+            if ends:                                       # one label for the load, at its left end
+                lx, ly = min(ends)
+                c.setFont(FR, 5.5); c.drawRightString(lx, ly, f"{ld['case']} {ld['w']:g} k/ft")
+        else:
+            node = ld["node"] if "node" in ld else lay.levels[ld["level"]][0]
+            if node not in lay.nodes:
+                continue
+            x, y = xy(node)
+            k = jstack.get(node, 0); jstack[node] = k + 1
+            fx, fy = ld.get("Fx", 0.0), ld.get("Fy", 0.0)
+            c.setLineWidth(0.9); c.setFont(FR, 5.5)
+            xs_all = [xy(n_)[0] for n_ in lay.nodes]
+            left = x <= (min(xs_all) + max(xs_all)) / 2      # loads are drawn on the outer side of the joint
+            sgn = -1 if left else 1
+            if fx:
+                yk = y + 3 - 8 * jstack.setdefault((node, "x"), 0); jstack[(node, "x")] += 1
+                if (fx > 0) == left:                         # pushing toward the frame
+                    _arrow(c, x + sgn * 26, yk, x + sgn * 6, yk, head=3)
+                else:                                        # pulling away from it
+                    _arrow(c, x + sgn * 6, yk, x + sgn * 26, yk, head=3)
+                (c.drawRightString if left else c.drawString)(x + sgn * 28, yk - 2, f"{ld['case']} {abs(fx):g} k")
+            if fy:
+                xa = x + sgn * (9 + 11 * jstack.setdefault((node, "y"), 0)); jstack[(node, "y")] += 1
+                y0_, y1_ = y + 22, y + 33
+                if fy < 0:
+                    _arrow_down(c, xa, y1_, y0_)
+                else:
+                    _arrow(c, xa, y0_, xa, y1_, head=3)
+                c.drawCentredString(xa + sgn * 4 * (jstack[(node, "y")] - 1), y1_ + 2 + 7 * (jstack[(node, "y")] - 1), f"{ld['case']} {abs(fy):g} k")
+    c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK)
+
+
 def _moment_on_frame(c, sheet, x0, y0, w, h):
     """Bending moment diagram of the governing combination, drawn on the frame on the
     tension side of each member."""
@@ -742,8 +812,9 @@ def _frame_pdf(sheet, path, job, code, date, page=1, pages=1):
     p.text(f"Fy = {sheet.Fy:g} ksi; section properties from the AISC Shapes Database v16.0")
     bottom_left = p.y
     _sketch_title(c, 338, top, "ELEVATION")
-    _draw_frame(c, lay, 338, top - 104, 220, 88)
-    _small(c, 448, top - 118, "to scale; member depth not to scale")
+    xy_, _s = _draw_frame(c, lay, 368, top - 104, 150, 50)
+    _frame_loads(c, lay, xy_, sheet.loads)
+    _small(c, 448, top - 118, "frame to scale; member depth and load arrows not to scale; loads in kips and kip/ft")
     p.y = min(bottom_left, top - 122) - 2
 
     p.head("Loads")
