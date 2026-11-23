@@ -11,13 +11,14 @@ footing_line = Line
 
 
 def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, wet, incised,
-         repetitive, unit_weight_pcf=None, self_weight_case="D"):
+         repetitive, unit_weight_pcf=None, self_weight_case="D", spacing_in=None):
     """species, grade: as listed in 2018 NDS Supplement Table 4A. size: nominal, "2x10".
     plies: number of pieces side by side, fastened to act together. lu_ft: unbraced length
     of the compression edge (0 when it is supported throughout). bearing_in: bearing
     length at each support. unit_weight_pcf: wood unit weight for self-weight, or None to
-    leave self-weight out. loads: dict(case, kind "uniform"|"point", w plf or P lb, x1_ft,
-    x2_ft or x_ft, label). defl_checks: ws_steel_beam.DeflCheck."""
+    leave self-weight out. loads: dict(case, kind "uniform"|"point"|"area", w plf, P lb or
+    q psf, x1_ft, x2_ft or x_ft, label). An area load is carried over the member spacing
+    spacing_in (joists and rafters). defl_checks: ws_steel_beam.DeflCheck."""
     if not combos:
         raise WorksheetError(f"{mark}: no ASD load combinations given")
     if plies not in (1, 2, 3, 4, 5, 6):
@@ -47,6 +48,11 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         f = wood.factors(ref["Fb"], CF, wet, incised, repetitive)
     E_adj, Emin_adj = ref["E"] * f.CM_E * f.Ci_E, ref["Emin"] * f.CM_E * f.Ci_E
     loads = [dict(x) for x in loads]
+    for ld in loads:
+        if ld.get("kind") == "area":
+            if not spacing_in or spacing_in <= 0:
+                raise WorksheetError(f"{mark}: an area load needs the member spacing")
+            ld.update(kind="uniform", w=ld["q"] * spacing_in / 12.0, area=ld["q"])
     sw = None
     if unit_weight_pcf:
         sw = unit_weight_pcf * A / 144.0
@@ -145,7 +151,8 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
     sp = species.title().replace("Fir-Larch", "Fir-Larch")
     info = [("Member", f"({plies}) {size} {sp} {grade}" + (f" ({grade_note})" if grade_note else "") + (f"; {table}" if timber else "")),
             ("Size", f"{b:g} in x {d:g} in dressed" + (f" ({plies} plies of {b1:g} in)" if plies > 1 else "")),
-            ("Span", f"{span_ft:g} ft, simply supported; bearing length {bearing_in:g} in at each support"),
+            ("Span", f"{span_ft:g} ft, simply supported; bearing length {bearing_in:g} in at each support"
+             + (f"; members at {spacing_in:g} in on centre" if spacing_in else "")),
             ("Bracing", "compression edge supported throughout its length" if lu_ft <= 0 else
              f"compression edge braced at {lu_ft:g} ft; ends held against rotation"),
             ("Conditions", ("wet service" if wet else "dry service") + "; " + ("incised" if incised else "not incised") + "; "
@@ -154,7 +161,10 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
     for ld in loads:
         if ld["kind"] == "uniform":
             where = f"{ld.get('x1_ft', 0):g} to {ld.get('x2_ft', span_ft):g} ft"
-            load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}")
+            if "area" in ld:
+                load_lines.append(f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+            else:
+                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}")
         else:
             load_lines.append(f"{ld['case']:<3} point   {ld['P']:>9.0f} lb    at {ld['x_ft']:g} ft{'':<8} {ld.get('label', '')}")
     assumptions = ["Allowable stress design, 2018 NDS. Temperature factor Ct = 1.0 (NDS 2.3.3, sustained temperature to 100 F).",
