@@ -189,3 +189,15 @@ def geometry_perp_member(D, end_perp):
     if end_perp < 2 * D - 1e-9:
         raise DowelError(f"dowel: the end distance of the member loaded perpendicular to grain, {end_perp:g} in., is less than 2 D = {2 * D:g} in. (NDS Table 12.5.1A)")
     return min(1.0, end_perp / (4 * D))
+
+
+def shear_at_connection(Fv, b, d, de, end):
+    """Adjusted design shear of a bending member at a bolted connection, NDS 3.4.3.3 (document
+    pp. 18-19, page images): within 5 d of the member end Vr' = (2/3) Fv' b de (de/d)^2,
+    Eq. 3.4-6; otherwise Vr' = (2/3) Fv' b de, Eq. 3.4-7. de = the depth less the distance
+    from the unloaded edge to the centre of the nearest bolt. Returns (Vr', equation)."""
+    if de <= 0 or de > d:
+        raise DowelError("dowel: the effective depth at the connection is between 0 and the member depth")
+    if end < 5 * d:
+        return 2.0 / 3.0 * Fv * b * de * (de / d) ** 2, "Eq. 3.4-6"
+    return 2.0 / 3.0 * Fv * b * de, "Eq. 3.4-7"

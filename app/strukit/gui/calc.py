@@ -674,6 +674,8 @@ FORMS = {
                 F("p_loaded", "Perpendicular member: loaded edge distance", unit="in", required=False, help="bolt to the edge the load pushes toward; 4 D minimum"),
                 F("p_unloaded", "Perpendicular member: unloaded edge distance", unit="in", required=False),
                 F("p_end", "Perpendicular member: end distance", unit="in", required=False, help="bolts to the end of that member, along its grain"),
+                F("p_Fv", "Perpendicular member: Fv", unit="psi", required=False, help="with every adjustment factor except CD; fill to check shear at the connection (NDS 3.4.3.3)"),
+                F("p_Fv_source", "Perpendicular member: where Fv comes from", "text", required=False),
                 F("sense", "Load in the member loaded parallel to grain", "select", options=["tension", "compression"], help="tension: the bolts bear toward the member end"),
                 F("wood_type", "Wood", "select", options=["softwood", "hardwood"]),
                 F("side_t", "Side member thickness", unit="in"), F("side_w", "Side member width", unit="in"),
@@ -1418,7 +1420,10 @@ def build(kind, values, project):
         if gr != "parallel":
             pp = dict(loaded_edge=r.num("p_loaded", True, label="Perpendicular member: loaded edge distance"),
                       unloaded_edge=r.num("p_unloaded", True, label="Perpendicular member: unloaded edge distance"),
-                      end=r.num("p_end", True, label="Perpendicular member: end distance"))
+                      end=r.num("p_end", True, label="Perpendicular member: end distance"),
+                      Fv=r.num("p_Fv", False), Fv_source=r.text("p_Fv_source", False) or "")
+            if pp["Fv"] is not None and not pp["Fv_source"]:
+                r.miss.append("Perpendicular member: where Fv comes from is blank")
         loc = None
         lv = {k: r.num(k, False) for k in ("Ft_main", "Fv_main", "Ft_side", "Fv_side")}
         if any(v is not None for v in lv.values()):

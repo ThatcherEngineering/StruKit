@@ -1509,9 +1509,29 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
             ("Conditions", ("load parallel to grain in every member" if grain == "parallel" else
                             f"load perpendicular to grain in the {grain} member{'s' if (grain == 'side' and double) else ''}, parallel in the other")
                            + f", {sense}; {wood_type}; {service} service")]
+    if grain != "parallel" and perp.get("Fv") is not None:
+        if not (perp.get("Fv_source") or "").strip():
+            raise WorksheetError(f"{mark}: the source of Fv for the member loaded perpendicular to grain is blank")
+        bp_ = side_t * (2 if double else 1) if grain == "side" else main_t
+        dp_ = side_w if grain == "side" else main_w
+        de_ = dp_ - perp["unloaded_edge"]
+        try:
+            Vr, eq = dowel.shear_at_connection(perp["Fv"] * worst["CD"], bp_, dp_, de_, perp["end"])
+        except dowel.DowelError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        steps.append(Ln("Vr' = (2/3) Fv' b de" + (" (de/d)^2" if eq == "Eq. 3.4-6" else ""), Vr, "lb", "NDS 3.4.3.3, " + eq,
+                        f"Fv' = {perp['Fv'] * worst['CD']:,.0f} psi, b = {bp_:g} in., d = {dp_:g} in., de = {de_:g} in.; connection {perp['end']:g} in. from the member end (5 d = {5 * dp_:g} in.)"))
+        rows.append(Row("Shear at the connection, " + ("side member" + ("s" if double else "") if grain == "side" else "main member"), worst["name"], worst["P"], Vr, "lb",
+                        "NDS 3.4.3.3, " + eq, "member loaded perpendicular to grain"))
+        shear_done = True
+    else:
+        shear_done = False
     if grain != "parallel":
         info.append(("Perpendicular Member", f"loaded edge {perp['loaded_edge']:g} in.; unloaded edge {perp['unloaded_edge']:g} in.; end distance {perp['end']:g} in."))
-        not_checked.insert(0, "shear in the member loaded perpendicular to grain at the connection (NDS 3.4.3.3)")
+        if shear_done:
+            info.append(("Shear", f"Fv before CD = {perp['Fv']:,.0f} psi ({perp['Fv_source'].strip()})"))
+        else:
+            not_checked.insert(0, "shear in the member loaded perpendicular to grain at the connection (NDS 3.4.3.3)")
     load_lines = [f"{ld['case']}: {ld['P']:,.0f} lb" + (f"  ({ld['label']})" if ld.get("label") else "") for ld in loads]
     sheet = SimpleSheet(
         mark, "Bolted Connection", "Connection", "ASD", info, load_lines, [(worst["name"], worst["source"])], "Lateral Design Value", steps, rows,
@@ -1521,7 +1541,9 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
           "a row of bolts is a line of bolts along the load. For the group action factor the area of the member loaded perpendicular to grain is its "
           "thickness times the width of the bolt group (NDS 11.3.6.3)") + " and through the centroid of the bolt group; all bolts share the load after the group action factor.",
          "Sustained temperature not over 100 degrees F (Ct = 1.0, NDS Table 11.3.4).",
-         "E and the gross areas of the members are used for the group action factor as entered."],
+         "E and the gross areas of the members are used for the group action factor as entered."]
+        + (["The shear in the member loaded perpendicular to grain at the connection is taken as the whole load on the connection; Fv as entered "
+            "(every adjustment factor except CD applied) times CD of the governing combination."] if shear_done else []),
         not_checked)
     if info_local:
         sheet.info.append(info_local)
