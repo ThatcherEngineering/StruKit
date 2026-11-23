@@ -101,3 +101,20 @@ def bolt(D, side_t, main_t, G_side, G_main, theta_side=0.0, theta_main=0.0, doub
         raise DowelError("dowel: bolts from 1/4 to 1 in. diameter")
     r = lateral(D, side_t, main_t, fe(G_side, D, theta_side), fe(G_main, D, theta_main), BOLT_FYB, double, max(theta_side, theta_main))
     return dict(r, Fes=fe(G_side, D, theta_side), Fem=fe(G_main, D, theta_main), Fyb=BOLT_FYB)
+
+
+def group_action(D, n, s, Es_As, Em_Am, metal=False):
+    """Group action factor Cg, NDS Eq. 11.3-1, for n fasteners in a row at spacing s (in.).
+    Es_As, Em_Am: E times gross area of the side member(s) and of the main member, lb.
+    gamma = 180,000 D^1.5 wood to wood, 270,000 D^1.5 wood to metal. Cg = 1.0 for D under 1/4 in."""
+    if n is None or n < 1 or int(n) != n:
+        raise DowelError("dowel: the number of fasteners in a row is a whole number, 1 or more")
+    if D < 0.25 or n == 1:
+        return 1.0
+    if s is None or s <= 0 or Es_As <= 0 or Em_Am <= 0:
+        raise DowelError("dowel: the spacing and the member stiffnesses must be positive")
+    gamma = (270000.0 if metal else 180000.0) * D ** 1.5
+    u = 1.0 + gamma * s / 2.0 * (1.0 / Em_Am + 1.0 / Es_As)
+    m = u - math.sqrt(u * u - 1.0)
+    R = min(Es_As / Em_Am, Em_Am / Es_As)
+    return min(1.0, m * (1 - m ** (2 * n)) / (n * ((1 + R * m ** n) * (1 + m) - 1 + m ** (2 * n))) * (1 + R) / (1 - m))

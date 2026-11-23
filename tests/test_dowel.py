@@ -57,3 +57,16 @@ def test_nailed_connection_sheet(tmp_path):
         calc.build("nailed_connection", dict(v, length="2.25"), proj)                 # 0.75 in. penetration, under 6 D
     with pytest.raises(calc.Missing):
         calc.build("nailed_connection", dict(v, loads=[]), proj)
+
+
+@pytest.mark.parametrize("ratio, As, n, Cg", [(0.5, 5, 2, 0.98), (0.5, 5, 8, 0.55), (0.5, 12, 6, 0.81), (0.5, 64, 12, 0.82), (0.5, 28, 5, 0.93),
+                                              (1.0, 5, 4, 0.91), (1.0, 5, 12, 0.45), (1.0, 20, 9, 0.82), (1.0, 40, 10, 0.87), (1.0, 64, 7, 0.96)])
+def test_group_action_against_table_11_3_6a(ratio, As, n, Cg):
+    """NDS Table 11.3.6A: D = 1 in., s = 4 in., E = 1,400,000 psi, wood side members."""
+    E = 1.4e6
+    assert dowel.group_action(1.0, n, 4.0, E * As, E * As / ratio) == pytest.approx(Cg, abs=0.006)
+
+
+def test_group_action_edges():
+    assert dowel.group_action(0.148, 12, 3, 1e7, 1e7) == 1.0 and dowel.group_action(0.75, 1, 3, 1e7, 1e7) == 1.0
+    assert dowel.group_action(0.75, 6, 3, 1.4e6 * 12, 1.4e6 * 24, metal=True) < dowel.group_action(0.75, 6, 3, 1.4e6 * 12, 1.4e6 * 24)
