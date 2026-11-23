@@ -10,11 +10,23 @@ Written as the standard gives them, with the full live load factor in strength
 combinations 3a and 4a (Exception 1 to Sect. 2.3.1 permits 0.5 for some occupancies; it is
 not applied here).
 
+Seismic (function seismic): Sect. 2.3.6 combinations 6 and 7 and Sect. 2.4.5 combinations 8
+to 10 (pdf pp. 69-70, confirmed against the page images), with Eh = rho QE (Eq. 12.4-3) and
+Ev = 0.2 SDS D (Eq. 12.4-4a, pdf pp. 182-183) written into the dead load factor:
+  6.  (1.2 + 0.2 SDS) D + rho QE + L + 0.15 S        7.  (0.9 - 0.2 SDS) D + rho QE
+  8.  (1.0 + 0.14 SDS) D + 0.7 rho QE
+  9.  (1.0 + 0.105 SDS) D + 0.525 rho QE + 0.75 L + 0.1 S
+  10. (0.6 - 0.14 SDS) D + 0.7 rho QE
+Load case E holds QE, the effect of the horizontal seismic forces; enter it with both signs
+where the force reverses. Ev may be taken as zero in Seismic Design Category B
+(Sect. 12.4.2.2, exception 2a): ev=False. The full live load factor is kept in combination 6
+(Exception 1 to Sect. 2.3.6 permits 0.5 for some occupancies; not applied).
+
 Not included: flood (2.3.2, 2.4.2), atmospheric ice (2.3.3, 2.4.3), self-straining forces
-(2.3.4, 2.4.4), seismic load effects (2.3.6, 2.4.5), tornado loads WT, fluid loads F and
+(2.3.4, 2.4.4), seismic load effects with overstrength, tornado loads WT, fluid loads F and
 lateral earth pressure H.
 
-Load case names: D dead, L live, Lr roof live, S snow, R rain, W wind.
+Load case names: D dead, L live, Lr roof live, S snow, R rain, W wind, E horizontal seismic (QE).
 """
 
 STANDARD = "ASCE/SEI 7-22"
@@ -49,3 +61,24 @@ ASD = _expand("2.4.1", [
 ])
 
 SETS = {STANDARD: dict(ASD=ASD, LRFD=LRFD)}
+
+
+def _n(x):
+    return f"{x:.4f}".rstrip("0").rstrip(".")
+
+
+def seismic(SDS, rho=1.0, ev=True):
+    """The seismic load combinations for a project: dict(ASD=[...], LRFD=[...]) of
+    dict(expr, source), with Ev and the redundancy factor written into the factors."""
+    if SDS is None or SDS < 0:
+        raise ValueError("SDS must be zero or more")
+    if rho not in (1.0, 1.3):
+        raise ValueError("the redundancy factor is 1.0 or 1.3 (Sect. 12.3.4)")
+    v = 0.2 * SDS if ev else 0.0
+    tail = f"; Ev = {'0.2 SDS D' if ev else '0'}, SDS = {_n(SDS)}; Eh = rho QE, rho = {_n(rho)} (Sect. 12.4.2)"
+    lrfd = [("6", f"{_n(1.2 + v)}D + {_n(rho)}E + 1.0L + 0.15S"), ("7", f"{_n(0.9 - v)}D + {_n(rho)}E")]
+    asd = [("8", f"{_n(1.0 + 0.7 * v)}D + {_n(0.7 * rho)}E"),
+           ("9", f"{_n(1.0 + 0.525 * v)}D + {_n(0.525 * rho)}E + 0.75L + 0.1S"),
+           ("10", f"{_n(0.6 - 0.7 * v)}D + {_n(0.7 * rho)}E")]
+    return dict(LRFD=[dict(expr=e, source=_src("2.3.6", no) + tail) for no, e in lrfd],
+                ASD=[dict(expr=e, source=_src("2.4.5", no) + tail) for no, e in asd])

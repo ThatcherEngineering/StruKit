@@ -248,11 +248,24 @@ function drawProject(main) {
     changed(); select("project");
     toast("Both lists now hold the " + name + " basic combinations. Load case names: D, L, Lr, S, R, W. In " + name + " the snow load S is the strength-level load.", 12000);
   } }, "Fill both lists from " + name));
+  const seis = [{ key: "seismic_sds", label: "SDS (for the seismic combinations)", type: "text", required: false, help: "from the ASCE 7 Hazard Tool; used only by the button below" },
+    { key: "seismic_rho", label: "Redundancy factor", type: "select", options: ["1.0", "1.3"], required: false, help: "ASCE 7-22 Sect. 12.3.4" },
+    { key: "seismic_no_ev", label: "Vertical seismic effect Ev", type: "select", options: ["0.2 SDS D", "zero (Seismic Design Category B)"], required: false, help: "ASCE 7-22 Sect. 12.4.2.2" }];
+  fillBtns.push(el("button", { class: "btn", onclick: async () => {
+    let r;
+    try { r = await post("/api/seismic_combos", { sds: p.seismic_sds || "", rho: p.seismic_rho || "1.0", no_ev: (p.seismic_no_ev || "").startsWith("zero") }); }
+    catch (e) { toast(e.message, 9000); return; }
+    S.prevCombos = { asd: p.combos_asd, lrfd: p.combos_lrfd };
+    const keep = rows => (rows || []).filter(c => !/Sect\. 2\.(3\.6|4\.5),/.test(c.source || ""));
+    p.combos_asd = keep(p.combos_asd).concat(r.ASD); p.combos_lrfd = keep(p.combos_lrfd).concat(r.LRFD);
+    changed(); select("project");
+    toast("The seismic combinations are added to both lists. Load case E is the effect of the horizontal seismic forces; enter it with both signs where the force reverses.", 12000);
+  } }, "Add the ASCE/SEI 7-22 seismic combinations"));
   if (S.prevCombos) fillBtns.push(el("button", { class: "btn", onclick: () => {
     p.combos_asd = S.prevCombos.asd; p.combos_lrfd = S.prevCombos.lrfd; S.prevCombos = null; changed(); select("project"); } }, "Put back the previous lists"));
   main.append(el("div", { class: "head" }, el("h1", {}, "Project")),
     el("div", { class: "cols" }, el("div", { class: "card" }, el("h2", {}, "Job"), el("div", { class: "grid" }, fs.map(f => field(f, p, () => { changed(); drawFile(); }))),
-      el("div", { class: "fillbar" }, fillBtns), table(asd, p.combos_asd, changed), table(lrfd, p.combos_lrfd, changed)),
+      el("div", { class: "grid" }, seis.map(f => field(f, p, changed))), el("div", { class: "fillbar" }, fillBtns), table(asd, p.combos_asd, changed), table(lrfd, p.combos_lrfd, changed)),
       el("div", { class: "card" }, el("h2", {}, "Members"),
         S.members.length ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Mark", "Type", "Result"].map(t => el("th", {}, t)))),
           el("tbody", {}, S.members.map((m, i) => { const r = R.get(m) || {}; const st = r.state === "done" ? r.status : r.state === "stopped" ? "Stopped" : "Not complete";
