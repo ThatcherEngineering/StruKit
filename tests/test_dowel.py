@@ -364,7 +364,7 @@ def test_steel_side_plates_against_nds_tables_12b_and_12k(tmp_path):
     lg, _, _ = calc.build("lag_connection", dict(v, D="1/2", L="4", n_row="2", end="4", main_t="5.5"), proj)
     assert lg.connection["Z"] == pytest.approx(517.2, abs=0.1) and lg.connection_lag["p"] == pytest.approx(3.4375)
     with pytest.raises(Exception):
-        calc.build("bolted_connection", dict(v, grain="perpendicular in the main member", p_loaded="3", p_unloaded="2", p_end="12"), proj)
+        calc.build("bolted_connection", dict(v, grain="perpendicular in the side member(s)", p_loaded="3", p_unloaded="2", p_end="12"), proj)
     with pytest.raises(calc.Missing):
         calc.build("bolted_connection", dict(v, side_steel="wood"), proj)
 
@@ -440,3 +440,31 @@ def test_wood_screw_withdrawal_sheet(tmp_path):
     for bad in (dict(G_side=""), dict(length="5"), dict(steel="400")):
         with pytest.raises(Exception):
             calc.build("screw_withdrawal", dict(v, **bad), proj)
+
+
+def test_steel_side_plate_main_member_perpendicular(tmp_path):
+    """Hanger plate: 1/4 in. A36 plate on a 4x10 Douglas Fir-Larch beam (3.5 x 9.25 in.), 2 - 3/4 in. bolts in one row along the load at 3 in.,
+    load perpendicular to the beam grain. Z = 680 lb (NDS Table 12B, tm 3-1/2 in., 3/4 in., G 0.50, perpendicular); the equations give 681.5 lb.
+    Capacity 2(681.5)(Cg 0.9965)(1.0) = 1,358 lb, D + L. Shear at the connection: de = 9.25 - 2.25 = 7 in.; connection 12 in. from the end
+    (under 5 d): Vr' = (2/3)(180)(3.5)(7)(7/9.25)^2 = 1,683.7 lb. No end distance, edge distance, load sense or wood type is needed."""
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + L", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 2")])
+    v = dict(mark="BC6", D="3/4", shear="single", rows="1", n_row="2", spacing="3", side_steel="ASTM A36 steel plate", side_t="0.25", side_w="3",
+             grain="perpendicular in the main member", p_loaded="4", p_unloaded="2.25", p_end="12", p_Fv="180", p_Fv_source="NDS Supplement Table 4A",
+             main_t="3.5", main_w="9.25", G_main="0.50", E_main="1600000", main_source="DF-L", service="dry", loads=[dict(case="D", P="300"), dict(case="L", P="700")])
+    sheet, _, _ = calc.build("bolted_connection", v, proj)
+    c = sheet.connection
+    assert c["Z"] == pytest.approx(681.5, abs=0.1) and c["Cdelta"] == 1.0 and c["capacity"] == pytest.approx(2 * 681.45 * c["Cg"], abs=0.5) and 0.99 < c["Cg"] < 1.0
+    names = [x.check for x in sheet.rows]
+    assert names == ["Load on the bolts", "Loaded edge distance, main member", "Unloaded edge distance, main member",
+                     "Distance between outer bolts across the grain, main member", "Shear at the connection, main member"]
+    assert sheet.rows[-1].capacity == pytest.approx(1683.7, abs=0.2) and [b["title"] for b in sheet.blocks] == ["Layout, Member Loaded Perpendicular to Grain"]
+    assert dict(sheet.info)["Layout"] == "spacing in a row 3 in." and "parallel" not in dict(sheet.info)["Conditions"]
+    calcsheet._simple_pdf(sheet, str(tmp_path / "h.pdf"), "2026-000", "2018 NDS", "2026-11-23")
+    lg, _, _ = calc.build("lag_connection", dict(v, D="1/2", L="3"), proj)
+    assert lg.connection["Z"] == pytest.approx(dowel.lag(0.5, 0.25, None, 0.5, 3 - 0.25 - 0.3125, 0, 90, Fes=87000.0)["Z"])
+    with pytest.raises(Exception):
+        calc.build("bolted_connection", dict(v, spacing="2"), proj)              # under 3 D
+    with pytest.raises(calc.Missing):
+        calc.build("bolted_connection", dict(v, side_steel="wood", G_side="0.5", E_side="1600000", side_source="DF-L"), proj)   # wood side: end distance needed

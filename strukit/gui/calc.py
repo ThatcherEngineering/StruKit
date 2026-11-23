@@ -719,8 +719,8 @@ FORMS = {
                 F("rows", "Rows of bolts"), F("n_row", "Bolts in a row"),
                 F("spacing", "Spacing in a row", unit="in", required=False, help="along the grain; 4 D for the full value"),
                 F("row_spacing", "Spacing between rows", unit="in", required=False),
-                F("end", "End distance", unit="in", help="bolt to the end of the member, along the grain"),
-                F("edge", "Edge distance", unit="in", help="outer row to the edge of the member"),
+                F("end", "End distance", unit="in", required=False, help="bolt to the end of the member loaded parallel to grain; not used with a steel plate on a main member loaded perpendicular"),
+                F("edge", "Edge distance", unit="in", required=False, help="outer row to the edge of the member loaded parallel to grain"),
                 F("grain", "Load direction to the grain", "select", required=False, options=["parallel in every member", "perpendicular in the side member(s)", "perpendicular in the main member"],
                   help="blank = parallel in every member"),
                 F("p_loaded", "Perpendicular member: loaded edge distance", unit="in", required=False, help="bolt to the edge the load pushes toward; 4 D minimum"),
@@ -728,9 +728,9 @@ FORMS = {
                 F("p_end", "Perpendicular member: end distance", unit="in", required=False, help="bolts to the end of that member, along its grain"),
                 F("p_Fv", "Perpendicular member: Fv", unit="psi", required=False, help="with every adjustment factor except CD; fill to check shear at the connection (NDS 3.4.3.3)"),
                 F("p_Fv_source", "Perpendicular member: where Fv comes from", "text", required=False),
-                F("sense", "Load in the member loaded parallel to grain", "select", options=["tension", "compression"], help="tension: the bolts bear toward the member end"),
-                F("wood_type", "Wood", "select", options=["softwood", "hardwood"]),
-                F("side_steel", "Side member material", "select", required=False, options=["wood", "ASTM A36 steel plate", "ASTM A653 Grade 33 steel sheet"], help="blank = wood; steel: load parallel to the grain of the main member"),
+                F("sense", "Load in the member loaded parallel to grain", "select", options=["tension", "compression"], required=False, help="tension: the bolts bear toward the member end"),
+                F("wood_type", "Wood", "select", options=["softwood", "hardwood"], required=False),
+                F("side_steel", "Side member material", "select", required=False, options=["wood", "ASTM A36 steel plate", "ASTM A653 Grade 33 steel sheet"], help="blank = wood"),
                 F("side_t", "Side member thickness", unit="in"), F("side_w", "Side member width", unit="in"),
                 F("G_side", "Side member specific gravity, G", required=False, help="wood side members"), F("E_side", "Side member E", unit="psi", required=False, help="wood side members"),
                 F("side_source", "Where the side member values come from", "text", required=False, help="wood side members"),
@@ -753,8 +753,8 @@ FORMS = {
                 F("rows", "Rows of lag screws"), F("n_row", "Lag screws in a row"),
                 F("spacing", "Spacing in a row", unit="in", required=False, help="along the grain; 4 D for the full value"),
                 F("row_spacing", "Spacing between rows", unit="in", required=False),
-                F("end", "End distance", unit="in", help="lag screw to the end of the member, along the grain"),
-                F("edge", "Edge distance", unit="in", help="outer row to the edge of the member"),
+                F("end", "End distance", unit="in", required=False, help="lag screw to the end of the member loaded parallel to grain; not used with a steel plate on a main member loaded perpendicular"),
+                F("edge", "Edge distance", unit="in", required=False, help="outer row to the edge of the member loaded parallel to grain"),
                 F("grain", "Load direction to the grain", "select", required=False, options=["parallel in every member", "perpendicular in the side member(s)", "perpendicular in the main member"],
                   help="blank = parallel in every member"),
                 F("p_loaded", "Perpendicular member: loaded edge distance", unit="in", required=False, help="lag screw to the edge the load pushes toward; 4 D minimum"),
@@ -762,9 +762,9 @@ FORMS = {
                 F("p_end", "Perpendicular member: end distance", unit="in", required=False, help="lag screws to the end of that member, along its grain"),
                 F("p_Fv", "Perpendicular member: Fv", unit="psi", required=False, help="with every adjustment factor except CD; fill to check shear at the connection (NDS 3.4.3.3)"),
                 F("p_Fv_source", "Perpendicular member: where Fv comes from", "text", required=False),
-                F("sense", "Load in the member loaded parallel to grain", "select", options=["tension", "compression"], help="tension: the lag screws bear toward the member end"),
-                F("wood_type", "Wood", "select", options=["softwood", "hardwood"]),
-                F("side_steel", "Side member material", "select", required=False, options=["wood", "ASTM A36 steel plate", "ASTM A653 Grade 33 steel sheet"], help="blank = wood; steel: load parallel to the grain of the main member"),
+                F("sense", "Load in the member loaded parallel to grain", "select", options=["tension", "compression"], required=False, help="tension: the lag screws bear toward the member end"),
+                F("wood_type", "Wood", "select", options=["softwood", "hardwood"], required=False),
+                F("side_steel", "Side member material", "select", required=False, options=["wood", "ASTM A36 steel plate", "ASTM A653 Grade 33 steel sheet"], help="blank = wood"),
                 F("side_t", "Side member thickness", unit="in"), F("side_w", "Side member width", unit="in"),
                 F("G_side", "Side member specific gravity, G", required=False, help="wood side members"), F("E_side", "Side member E", unit="psi", required=False, help="wood side members"),
                 F("side_source", "Where the side member values come from", "text", required=False, help="wood side members"),
@@ -1582,11 +1582,18 @@ def build(kind, values, project):
         if islag:
             Lt = r.text("L")
             lagd = dict(L={"1": 1.0, "1-1/2": 1.5, "2": 2.0, "2-1/2": 2.5}.get(Lt) or (float(Lt) if Lt and Lt.isdigit() else None), washer=r.num("washer", False), alpha=r.num("alpha", False))
-        sh, rn, nr, end, edge, sense, wt = ("single" if islag else r.text("shear")), r.num("rows"), r.num("n_row"), r.num("end"), r.num("edge"), r.text("sense"), r.text("wood_type")
-        sp = r.num("spacing", bool(nr and nr > 1), label="Spacing in a row")
-        rs = r.num("row_spacing", bool(rn and rn > 1), label="Spacing between rows")
         stl = r.text("side_steel", False) or ""
         stl = "ASTM A36" if "A36" in stl else "ASTM A653 Grade 33" if "A653" in stl else None
+        par = not (stl and "main member" in (r.text("grain", False) or ""))        # a wood member is loaded parallel to grain
+        sh, rn, nr = ("single" if islag else r.text("shear")), r.num("rows"), r.num("n_row")
+        end, edge = r.num("end", par, label="End distance"), r.num("edge", par, label="Edge distance")
+        sense, wt = r.text("sense", False), r.text("wood_type", False)
+        if par and not sense:
+            r.miss.append("Load in the member loaded parallel to grain is blank")
+        if par and not wt:
+            r.miss.append("Wood (softwood or hardwood) is blank")
+        sp = r.num("spacing", bool(nr and nr > 1), label="Spacing in a row")
+        rs = r.num("row_spacing", bool(rn and rn > 1), label="Spacing between rows")
         st, sw = r.num("side_t"), r.num("side_w")
         Gs, Es = r.num("G_side", not stl, label="Side member specific gravity, G"), r.num("E_side", not stl, label="Side member E")
         ss = r.text("side_source", False)
