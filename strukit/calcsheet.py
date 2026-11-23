@@ -1257,7 +1257,7 @@ def _beam_load_rows(loads):
 
 def _beam_loads_height(loads):
     pts, uni = _beam_load_rows(loads or [])
-    return (16 if pts else 0) + 12 * len(uni) + (3 if (pts or uni) else 0)
+    return (16 if pts else 0) + sum(12 if ld.get("w2") is None else 14 for ld in uni) + (3 if (pts or uni) else 0)
 
 
 def _beam_loads(c, x0, x1, y, span, loads):
@@ -1288,13 +1288,26 @@ def _beam_loads(c, x0, x1, y, span, loads):
         xa = x0 + (x1 - x0) * ld.get("x1_ft", 0.0) / span
         xb = x0 + (x1 - x0) * ld.get("x2_ft", span) / span
         c.setLineWidth(0.45)
-        c.line(xa, yy + 5, xb, yy + 5)
+        w2 = ld.get("w2")
+        if w2 is None:
+            ha = hb_ = 5.0
+        else:
+            m_ = max(abs(ld["w"]), abs(w2)) or 1.0
+            ha, hb_ = 1.2 + 6.3 * abs(ld["w"]) / m_, 1.2 + 6.3 * abs(w2) / m_
+        c.line(xa, yy + ha, xb, yy + hb_)
         n = max(int((xb - xa) / 9), 2)
         for i in range(n + 1):
-            _arrow_down(c, xa + (xb - xa) * i / n, yy + 5, yy, head=1.5)
+            hh = ha + (hb_ - ha) * i / n
+            if hh > 2.6:
+                _arrow_down(c, xa + (xb - xa) * i / n, yy + hh, yy, head=1.5)
         c.setFont(FR, 5.5)
-        c.drawCentredString((xa + xb) / 2, yy + 6.5, f"{ld['case']} {ld['w']:,.0f} plf" if ld["w"] >= 20 else f"{ld['case']} {ld['w']:.1f} plf")
-        yy += 12
+        fmt = lambda v: f"{v:,.0f}" if abs(v) >= 20 else f"{v:.1f}"
+        if w2 is None:
+            c.drawCentredString((xa + xb) / 2, yy + 6.5, f"{ld['case']} {fmt(ld['w'])} plf")
+        else:                                              # label over the low half of the taper, clear of the sloping line
+            xl_ = xa + (xb - xa) * (0.75 if ha >= hb_ else 0.25)
+            c.drawCentredString(xl_, yy + (ha + hb_) / 2 + 2.5, f"{ld['case']} {fmt(ld['w'])} to {fmt(w2)} plf")
+        yy += 12 if w2 is None else 14
     c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK)
 
 

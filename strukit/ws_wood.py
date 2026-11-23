@@ -66,6 +66,8 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
             if not spacing_in or spacing_in <= 0:
                 raise WorksheetError(f"{mark}: an area load needs the member spacing")
             ld.update(kind="uniform", w=ld["q"] * spacing_in / 12.0, area=ld["q"])
+            if ld.get("q2") is not None:
+                ld.update(w2=ld["q2"] * spacing_in / 12.0, area2=ld["q2"])
     sw = None
     if unit_weight_pcf:
         sw = unit_weight_pcf * A / 144.0
@@ -193,9 +195,13 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         if ld["kind"] == "uniform":
             where = f"{ld.get('x1_ft', 0):g} to {ld.get('x2_ft', span_ft):g} ft"
             if "area" in ld:
-                load_lines.append(f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                                  if "w2" not in ld else
+                                  (f"{ld['case']:<3} area    {ld['area']:.1f} to {ld['area2']:.1f} psf x {spacing_in:g} in = {ld['w']:.1f} to {ld['w2']:.1f} plf   "
+                                   f"{where:<14} {ld.get('label', '')}"))
             else:
-                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}")
+                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w2" not in ld else
+                                  f"{ld['case']:<3} tapered {ld['w']:.1f} to {ld['w2']:.1f} plf   {where:<16} {ld.get('label', '')}")
         else:
             load_lines.append(f"{ld['case']:<3} point   {ld['P']:>9.0f} lb    at {ld['x_ft']:g} ft{'':<8} {ld.get('label', '')}")
     assumptions = ["Allowable stress design, 2018 NDS. Temperature factor Ct = 1.0 (NDS 2.3.3, sustained temperature to 100 F).",
@@ -211,7 +217,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         f"Governing Calculation ({gb['cb'].name})", steps, rows, assumptions,
         ["notches (NDS 3.2.3, 3.4.3.2)", "fastening of the plies to each other" if plies > 1 else None,
          "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers"],
-        picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=plies, span=span_ft, size=size, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
+        picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=plies, span=span_ft, size=size, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), w2=x.get("w2"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     sheet.not_checked = [x for x in sheet.not_checked if x]
     if not lay.simple:
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
@@ -450,6 +456,8 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
             if not spacing_in or spacing_in <= 0:
                 raise WorksheetError(f"{mark}: an area load needs the member spacing")
             ld.update(kind="uniform", w=ld["q"] * spacing_in / 12.0, area=ld["q"])
+            if ld.get("q2") is not None:
+                ld.update(w2=ld["q2"] * spacing_in / 12.0, area2=ld["q2"])
     sw = None
     if unit_weight_pcf:
         sw = unit_weight_pcf * A / 144.0
@@ -575,9 +583,13 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         if ld["kind"] == "uniform":
             where = f"{ld.get('x1_ft', 0):g} to {ld.get('x2_ft', span_ft):g} ft"
             if "area" in ld:
-                load_lines.append(f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                                  if "w2" not in ld else
+                                  (f"{ld['case']:<3} area    {ld['area']:.1f} to {ld['area2']:.1f} psf x {spacing_in:g} in = {ld['w']:.1f} to {ld['w2']:.1f} plf   "
+                                   f"{where:<14} {ld.get('label', '')}"))
             else:
-                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}")
+                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w2" not in ld else
+                                  f"{ld['case']:<3} tapered {ld['w']:.1f} to {ld['w2']:.1f} plf   {where:<16} {ld.get('label', '')}")
         else:
             load_lines.append(f"{ld['case']:<3} point   {ld['P']:>9.0f} lb    at {ld['x_ft']:g} ft{'':<8} {ld.get('label', '')}")
     assumptions = ["Allowable stress design, 2018 NDS Chapter 8, with reference design values from " + ref["report"] + ". "
@@ -595,7 +607,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         [x for x in ["notches and holes (NDS 8.4.1; manufacturer's limits)", "fastening of the plies to each other" if plies > 1 else None,
                      "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers",
                      "bearing on the supporting member"] if x],
-        picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}", kind="lvl", loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
+        picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}", kind="lvl", loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), w2=x.get("w2"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     if not lay.simple:
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
@@ -860,6 +872,8 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
             if not spacing_in or spacing_in <= 0:
                 raise WorksheetError(f"{mark}: an area load needs the member spacing")
             ld.update(kind="uniform", w=ld["q"] * spacing_in / 12.0, area=ld["q"])
+            if ld.get("q2") is not None:
+                ld.update(w2=ld["q2"] * spacing_in / 12.0, area2=ld["q2"])
     sw = None
     if unit_weight_pcf:
         sw = unit_weight_pcf * A / 144.0
@@ -981,9 +995,13 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         if ld["kind"] == "uniform":
             where = f"{ld.get('x1_ft', 0):g} to {ld.get('x2_ft', span_ft):g} ft"
             if "area" in ld:
-                load_lines.append(f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                load_lines.append((f"{ld['case']:<3} area    {ld['area']:>9.1f} psf x {spacing_in:g} in = {ld['w']:.1f} plf   {where:<14} {ld.get('label', '')}")
+                                  if "w2" not in ld else
+                                  (f"{ld['case']:<3} area    {ld['area']:.1f} to {ld['area2']:.1f} psf x {spacing_in:g} in = {ld['w']:.1f} to {ld['w2']:.1f} plf   "
+                                   f"{where:<14} {ld.get('label', '')}"))
             else:
-                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}")
+                load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}" if "w2" not in ld else
+                                  f"{ld['case']:<3} tapered {ld['w']:.1f} to {ld['w2']:.1f} plf   {where:<16} {ld.get('label', '')}")
         else:
             load_lines.append(f"{ld['case']:<3} point   {ld['P']:>9.0f} lb    at {ld['x_ft']:g} ft{'':<8} {ld.get('label', '')}")
     assumptions = ["Allowable stress design, 2018 NDS Chapter 5. Temperature factor Ct = 1.0 (NDS 2.3.3, sustained temperature to 100 F).",
@@ -997,7 +1015,7 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         f"Governing Calculation ({gb['cb'].name})", steps, rows, assumptions,
         ["shear at connections, with Cvr = 0.72 (NDS 5.3.10)", "notches, taper and holes (NDS 5.4, 3.2.3)",
          "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers", "bearing on the supporting member"],
-        picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=1, span=span_ft, size=f"{b:g}x{d:g}", kind="glulam", lams=max(int(round(d / 1.5)), 2), loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
+        picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=1, span=span_ft, size=f"{b:g}x{d:g}", kind="glulam", lams=max(int(round(d / 1.5)), 2), loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), w2=x.get("w2"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     if not lay.simple:
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "

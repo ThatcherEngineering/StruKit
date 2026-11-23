@@ -98,3 +98,26 @@ def test_partial_snow_on_two_spans_by_hand():
     assert bal.Mpos / 12 == pytest.approx(703.1, abs=0.2) and bal.n == 1
     assert par.Mpos / 12 == pytest.approx(406.25 ** 2 / 200, rel=1e-4) and par.n == 3
     assert par.Mneg / 12 == pytest.approx(1250, rel=1e-5)                    # balanced still governs over the support
+
+
+def test_tapered_load_statics_and_patterns():
+    # triangular load from w at the left support to zero at the right, simple span: R_left = wL/3, M max = wL^2 / (9 sqrt 3)
+    lay = cb.layout(12)
+    e = cb.envelope(lay, 1e9, {"S": [dict(kind="uniform", w=300.0, w2=0.0)]}, {"S": 1.0})
+    assert e.R_end == pytest.approx(300 * 12 / 3, rel=1e-4) and e.Mpos / 12 == pytest.approx(300 * 144 / (9 * 3 ** 0.5), rel=1e-3)
+    # cut at a support: a load tapering over two 10 ft spans keeps its total and its shape
+    lay2 = cb.layout(None, [10, 10])
+    pieces = cb._pieces(lay2, dict(kind="uniform", w=200.0, w2=0.0))
+    assert [(round(p["w"], 3), round(p["w2"], 3)) for _, p in pieces] == [(200.0, 100.0), (100.0, 0.0)]
+
+
+def test_joist_under_a_drift_by_hand():
+    # 2x10 DF-L No. 2 at 16 in, 12 ft, D 15 psf, S balanced 28 psf plus a drift surcharge 60.5 psf at the wall to zero at 12 ft
+    # per joist: D 20 plf, S 37.33 plf, drift 80.67 plf to 0. Combination D + 0.7S:
+    #   uniform 20 + 26.13 = 46.13 plf; triangle 56.47 plf at the left
+    #   R_left = 46.13 x 6 + 56.47 x 12 / 3 = 276.8 + 225.9 = 502.7 lb
+    loads = [dict(case="D", kind="area", q=15.0), dict(case="S", kind="area", q=28.0), dict(case="S", kind="area", q=60.5, q2=0.0)]
+    s = ws_wood.beam("J", "DOUGLAS FIR-LARCH", "No. 2", "2x10", 1, 12, loads, _combos(), [], 0.0, 1.5, False, False, True, spacing_in=16)
+    r = {x.check: x for x in s.rows}
+    assert r["bearing at support"].demand == pytest.approx(502.7 / (1.5 * 1.5), rel=2e-3)
+    assert any("60.5 to 0.0 psf" in t for t in s.load_lines)

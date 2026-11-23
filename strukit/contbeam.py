@@ -16,6 +16,9 @@ Statics only (beam.py does the analysis). What is read from a standard:
              perpendicular to the ridge of a gable roof sloped 1/2 on 12 to 7 on 12; the
              caller says whether it applies.
 
+A uniform load may carry "w2": it then varies in a straight line from w at its start to
+w2 at its end (a snow drift on a joist or rafter).
+
 Units in: ft, plf, lb. Units out: lb, lb-in, in.
 """
 from dataclasses import dataclass
@@ -102,7 +105,9 @@ def _pieces(lay, ld):
         for i, (x0, x1, _, _) in enumerate(segs):
             lo, hi = max(a, x0), min(b, x1)
             if hi - lo > 1e-9:
-                out.append((i, dict(kind="uniform", w=ld["w"], x1_ft=lo, x2_ft=hi)))
+                w1, w2 = ld["w"], ld.get("w2", ld["w"])
+                at = lambda x: w1 + (w2 - w1) * (x - a) / (b - a)
+                out.append((i, dict(kind="uniform", w=at(lo), w2=at(hi), x1_ft=lo, x2_ft=hi)))
     else:
         for i, (x0, x1, _, _) in enumerate(segs):
             if x0 - 1e-9 <= ld["x_ft"] <= x1 + 1e-9:
@@ -115,8 +120,8 @@ def _solve(lay, EI, items):
     pts, dist = [], []
     for fac, ld in items:
         if ld["kind"] == "uniform":
-            w = fac * ld["w"] / 12.0
-            dist.append(bm.DistLoad(ld.get("x1_ft", 0.0) * 12, ld.get("x2_ft", lay.total) * 12, w, w))
+            dist.append(bm.DistLoad(ld.get("x1_ft", 0.0) * 12, ld.get("x2_ft", lay.total) * 12, fac * ld["w"] / 12.0,
+                                    fac * ld.get("w2", ld["w"]) / 12.0))
         else:
             pts.append(bm.PointLoad(ld["x_ft"] * 12, fac * ld["P"]))
     if not pts and not dist:
