@@ -92,6 +92,9 @@ ROOF_LEEWARD = {0.25: {10: -0.3, 15: -0.5, 20: -0.6}, 0.5: {10: -0.5, 15: -0.5, 
 ROOF_PARALLEL = {0.5: (("0 to h/2", -0.9), ("h/2 to h", -0.9), ("h to 2h", -0.5), ("over 2h", -0.3)),
                  1.0: (("0 to h/2", -1.3), ("over h/2", -0.7))}
 ROOF_PARALLEL_OTHER = -0.18
+# Monoslope roofs (Figure 27.3-1 diagrams, pdf p. 344, read from the page image; not built yet): wind normal to
+# the ridge blowing toward the low eave wall puts the windward roof Cp on the whole roof; blowing toward the high
+# eave wall puts the leeward roof Cp on the whole roof. Wind parallel to the ridge: the same zones as a gable roof.
 # note b: the -1.3 value may be reduced with the area it applies to: 100 ft2 or less 1.0; 250 ft2 0.9; 1,000 ft2 or more 0.8
 
 
