@@ -2,7 +2,7 @@
 Loads in plf and lb, span in ft. See wood.py for the provisions used."""
 import math
 
-from . import beam as bm, wood
+from . import beam as bm, contbeam, wood
 from .steel_beam import Line
 from .ws_more import SimpleSheet
 from .ws_steel_beam import Row, WorksheetError
@@ -17,7 +17,7 @@ def _diagram_data(o):
 
 
 def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, wet, incised,
-         repetitive, unit_weight_pcf=None, self_weight_case="D", spacing_in=None):
+         repetitive, unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None):
     """species, grade: as listed in 2018 NDS Supplement Table 4A. size: nominal, "2x10".
     plies: number of pieces side by side, fastened to act together. lu_ft: unbraced length
     of the compression edge (0 when it is supported throughout). bearing_in: bearing
@@ -29,8 +29,15 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         raise WorksheetError(f"{mark}: no ASD load combinations given")
     if plies not in (1, 2, 3, 4, 5, 6):
         raise WorksheetError(f"{mark}: the number of plies must be 1 to 6")
-    if span_ft is None or span_ft <= 0 or bearing_in is None or bearing_in <= 0:
-        raise WorksheetError(f"{mark}: span and bearing length must be positive")
+    if bearing_in is None or bearing_in <= 0:
+        raise WorksheetError(f"{mark}: the bearing length must be positive")
+    try:
+        lay = contbeam.layout(span_ft, spans, overhang_left, overhang_right)
+    except (ValueError, TypeError) as e:
+        raise WorksheetError(f"{mark}: {e}")
+    span_ft = lay.total                                   # loads and the picture run over the whole member
+    L_cv = max(lay.spans + [2 * lay.left, 2 * lay.right])
+    bearing_int_in = bearing_int_in or bearing_in
     timber = size in wood.TIMBER_SIZES
     try:
         if timber:
@@ -89,9 +96,10 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
     out = []
     for cb in combos:
         present = [c for c, v in cb.factors.items() if v and c in by_case]
-        res = run(cb.factors)
-        if res is None:
+        env = contbeam.envelope(lay, E_adj * I, by_case, cb.factors)
+        if env is None:
             continue
+        res = env.res_pos
         try:
             CD, cd_case, cd_dur = wood.load_duration(present)
         except wood.WoodError as e:
@@ -103,11 +111,20 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
             raise WorksheetError(f"{mark}: {e}")
         Fb_adj = Fb_star * CL
         Fv_adj = ref["Fv"] * CD * f.CM_v * f.Ci_b
-        M = max(abs(res.M_max()[0]), abs(res.M_min()[0]))
-        V = abs(res.V_abs_max()[0])
-        R = max(abs(v) for v in res.reactions.values())
-        out.append(dict(res=res, cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
-                        Fv_adj=Fv_adj, M=M, V=V, R=R, fb=M / S, fv=1.5 * V / A, reactions=dict(res.reactions)))
+        M, Mneg, V, R, Rint, sense = env.Mpos, env.Mneg, env.V, env.R_end, env.R_int, "positive"
+        if not lay.simple and Mneg > 1e-6 * max(M, 1.0):
+            if lu_neg_ft is None:
+                raise WorksheetError(f"{mark}: the bottom edge is in compression over a support; give its unbraced length "
+                                     "there (0 when it is braced)")
+            try:
+                CLn, stn = wood.beam_stability(Fb_star, Emin_adj, lu_neg_ft * 12.0, b, d)
+            except wood.WoodError as e:
+                raise WorksheetError(f"{mark}: {e}")
+            Fb_neg, Fbs_n = Fb_star * CLn, Fb_star
+            if Mneg / Fb_neg > M / Fb_adj:
+                M, Fb_adj, Fb_star, CL, st, sense, res = Mneg, Fb_neg, Fbs_n, CLn, stn, "negative", env.res_neg
+        out.append(dict(res=res, sense=sense, Rint=Rint, Rmin=env.R_min, lu_used=(lu_neg_ft if sense == "negative" else lu_ft), cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
+                        Fv_adj=Fv_adj, M=M, V=V, R=R, fb=M / S, fv=1.5 * V / A, reactions=dict(env.reactions)))
     if not out:
         raise WorksheetError(f"{mark}: no load combination loads this beam")
     Fperp_adj = ref["Fc_perp"] * f.CM_perp
@@ -116,19 +133,23 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
     gr = max(out, key=lambda o: o["R"])
     fac_txt = lambda o: f"CD = {o['CD']:g} ({o['cd_case']}, {o['cd_dur']})"
     rows = [Row("bending", gb["cb"].name, gb["fb"], gb["Fb_adj"], "psi", "2018 NDS 3.3.1, Table 4.3.1",
-                f"M = {gb['M'] / 12:,.0f} lb-ft; {fac_txt(gb)}; CL = {gb['CL']:.3f}"),
+                f"M = {gb['M'] / 12:,.0f} lb-ft" + (" (negative, over a support)" if gb["sense"] == "negative" else "") + f"; {fac_txt(gb)}; CL = {gb['CL']:.3f}"),
             Row("shear", gv["cb"].name, gv["fv"], gv["Fv_adj"], "psi", "2018 NDS 3.4.1, 3.4.2, Table 4.3.1",
                 f"V = {gv['V']:,.0f} lb at the support; {fac_txt(gv)}"),
             Row("bearing at support", gr["cb"].name, gr["R"] / (b * bearing_in), Fperp_adj, "psi",
                 "2018 NDS 3.10.2, Table 4.3.1",
                 f"reaction {gr['R']:,.0f} lb on {b:g} in x {bearing_in:g} in; Cb = 1.0 at the end of a member")]
+    if len(lay.spans) > 1:
+        gi = max(out, key=lambda o: o["Rint"])
+        rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), Fperp_adj, "psi", rows[-1].source,
+                        f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = 1.0"))
     for dc in defl_checks:
-        res = run(dc.factors)
-        if res is None:
+        wd = contbeam.deflection(lay, E_adj * I, by_case, dc.factors, dc.ratio)
+        if wd is None:
             continue
-        dl = max(abs(res.defl_max()[0]), abs(res.defl_min()[0]))
         rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k}" if v != 1 else k for k, v in dc.factors.items()),
-                        dl, Lin / dc.ratio, "in", dc.source, f"limit span/{dc.ratio:g}; E' = {E_adj:,.0f} psi"))
+                        wd[0], wd[1], "in", dc.source, (f"limit span/{dc.ratio:g}" if lay.simple else f"{wd[2]}, limit {wd[3]}")
+                        + f"; E' = {E_adj:,.0f} psi"))
     L = footing_line
     st = gb["st"]
     steps = [L("b x d", b, "in", f"{SUPP_T1B}", f"{plies} x {b1:g} in wide, d = {d:g} in" if plies > 1 else f"d = {d:g} in"),
@@ -140,7 +161,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
              L("Ci", f.Ci_b, "", "NDS Table 4.3.8", "incised" if incised else "not incised"),
              L("Cr", f.Cr, "", "NDS 4.3.9", "repetitive member" if repetitive else "not a repetitive member")]
     if "RB" in st:
-        steps += [L("le", st["le"], "in", "NDS Table 3.3.3, note 1", f"lu = {lu_ft * 12:g} in"),
+        steps += [L("le", st["le"], "in", "NDS Table 3.3.3, note 1", f"lu = {gb['lu_used'] * 12:g} in"),
                   L("RB = sqrt(le d / b^2)", st["RB"], "", "NDS Eq. 3.3-5"),
                   L("Emin'", Emin_adj, "psi", "NDS Table 4.3.1"),
                   L("FbE = 1.20 Emin' / RB^2", st["FbE"], "psi", "NDS 3.3.3.8"),
@@ -157,10 +178,14 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
     sp = species.title().replace("Fir-Larch", "Fir-Larch")
     info = [("Member", f"({plies}) {size} {sp} {grade}" + (f" ({grade_note})" if grade_note else "") + (f"; {table}" if timber else "")),
             ("Size", f"{b:g} in x {d:g} in dressed" + (f" ({plies} plies of {b1:g} in)" if plies > 1 else "")),
-            ("Span", f"{span_ft:g} ft, simply supported; bearing length {bearing_in:g} in at each support"
+            ("Span", lay.describe() + f"; bearing length {bearing_in:g} in at each " + ("end support" if len(lay.spans) > 1 else "support")
+             + (f", {bearing_int_in:g} in at interior supports" if len(lay.spans) > 1 else "")
              + (f"; members at {spacing_in:g} in on centre" if spacing_in else "")),
-            ("Bracing", "compression edge supported throughout its length" if lu_ft <= 0 else
-             f"compression edge braced at {lu_ft:g} ft; ends held against rotation"),
+            ("Bracing", ("top edge supported throughout its length" if lu_ft <= 0 else f"top edge braced at {lu_ft:g} ft")
+             + ("" if lay.simple or lu_neg_ft is None else ("; bottom edge braced where in compression" if lu_neg_ft <= 0 else
+                                                             f"; bottom edge unbraced {lu_neg_ft:g} ft where in compression"))
+             if not lay.simple else ("compression edge supported throughout its length" if lu_ft <= 0 else
+                                     f"compression edge braced at {lu_ft:g} ft; ends held against rotation")),
             ("Conditions", ("wet service" if wet else "dry service") + "; " + ("incised" if incised else "not incised") + "; "
              + ("repetitive member" if repetitive else "not a repetitive member"))]
     load_lines = []
@@ -186,8 +211,15 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         f"Governing Calculation ({gb['cb'].name})", steps, rows, assumptions,
         ["notches (NDS 3.2.3, 3.4.3.2)", "fastening of the plies to each other" if plies > 1 else None,
          "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers"],
-        picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=size, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
+        picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=plies, span=span_ft, size=size, loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
     sheet.not_checked = [x for x in sheet.not_checked if x]
+    if not lay.simple:
+        sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
+                                    "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
+                                    "uses Cb = 1.0.")
+        sheet.not_checked.insert(0, "partial snow loading (ASCE/SEI 7-22 Sect. 7.5)")
+        if min(o["Rmin"] for o in out) < 0:
+            sheet.not_checked.insert(0, "uplift at a support (a reaction is upward in at least one load arrangement)")
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
     sheet.diagram = _diagram_data(gb)
     return sheet
@@ -377,7 +409,7 @@ SUPP_T4A = "2018 NDS Supplement Table 4A"
 
 
 def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, repetitive,
-             unit_weight_pcf=None, self_weight_case="D", spacing_in=None, product="Versa-Lam LVL"):
+             unit_weight_pcf=None, self_weight_case="D", spacing_in=None, product="Versa-Lam LVL", spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None):
     """Structural composite lumber beam (Versa-Lam LVL, Microllam LVL, Parallam PSL or
     TimberStrand LSL), joist orientation, simply supported; evaluation report values and
     the 2018 NDS Chapter 8, ASD, dry use. thickness: of one ply, in.; depth, in. Loads as
@@ -387,8 +419,15 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         raise WorksheetError(f"{mark}: no ASD load combinations given")
     if plies not in (1, 2, 3, 4):
         raise WorksheetError(f"{mark}: the number of plies must be 1 to 4")
-    if span_ft is None or span_ft <= 0 or bearing_in is None or bearing_in <= 0:
-        raise WorksheetError(f"{mark}: span and bearing length must be positive")
+    if bearing_in is None or bearing_in <= 0:
+        raise WorksheetError(f"{mark}: the bearing length must be positive")
+    try:
+        lay = contbeam.layout(span_ft, spans, overhang_left, overhang_right)
+    except (ValueError, TypeError) as e:
+        raise WorksheetError(f"{mark}: {e}")
+    span_ft = lay.total                                   # loads and the picture run over the whole member
+    L_cv = max(lay.spans + [2 * lay.left, 2 * lay.right])
+    bearing_int_in = bearing_int_in or bearing_in
     if thickness is None or thickness < 1.25:
         raise WorksheetError(f"{mark}: ply thickness must be 1.25 in. or more")
     try:
@@ -438,9 +477,10 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
     out = []
     for cb in combos:
         present = [c for c, v in cb.factors.items() if v and c in by_case]
-        res = run(cb.factors)
-        if res is None:
+        env = contbeam.envelope(lay, ref["E"] * I, by_case, cb.factors)
+        if env is None:
             continue
+        res = env.res_pos
         try:
             CD, cd_case, cd_dur = wood.load_duration(present)
             Fb_star = ref["Fb"] * CD * Cr * (CV if CV > 1 else 1.0)          # NDS 3.3.3.8, 8.3.6.1
@@ -449,11 +489,20 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
             raise WorksheetError(f"{mark}: {e}")
         vol = CV if CV > 1 else min(CV, CL)                                  # the lesser of CV and CL when CV <= 1
         Fb_adj = ref["Fb"] * CD * Cr * (CV * CL if CV > 1 else vol)
-        M = max(abs(res.M_max()[0]), abs(res.M_min()[0]))
-        V = abs(res.V_abs_max()[0])
-        R = max(abs(v) for v in res.reactions.values())
-        out.append(dict(res=res, cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
-                        Fv_adj=ref["Fv"] * CD, M=M, V=V, R=R, fb=M / S, fv=1.5 * V / A, reactions=dict(res.reactions)))
+        M, Mneg, V, R, Rint, sense = env.Mpos, env.Mneg, env.V, env.R_end, env.R_int, "positive"
+        if not lay.simple and Mneg > 1e-6 * max(M, 1.0):
+            if lu_neg_ft is None:
+                raise WorksheetError(f"{mark}: the bottom edge is in compression over a support; give its unbraced length "
+                                     "there (0 when it is braced)")
+            try:
+                CLn, stn = wood.beam_stability(Fb_star, Emin, lu_neg_ft * 12.0, b, d)
+            except wood.WoodError as e:
+                raise WorksheetError(f"{mark}: {e}")
+            Fb_neg, Fbs_n = ref["Fb"] * CD * Cr * (CV * CLn if CV > 1 else min(CV, CLn)), Fb_star
+            if Mneg / Fb_neg > M / Fb_adj:
+                M, Fb_adj, Fb_star, CL, st, sense, res = Mneg, Fb_neg, Fbs_n, CLn, stn, "negative", env.res_neg
+        out.append(dict(res=res, sense=sense, Rint=Rint, Rmin=env.R_min, lu_used=(lu_neg_ft if sense == "negative" else lu_ft), cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
+                        Fv_adj=ref["Fv"] * CD, M=M, V=V, R=R, fb=M / S, fv=1.5 * V / A, reactions=dict(env.reactions)))
     if not out:
         raise WorksheetError(f"{mark}: no load combination loads this beam")
     gb = max(out, key=lambda o: o["fb"] / o["Fb_adj"])
@@ -461,22 +510,27 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
     gr = max(out, key=lambda o: o["R"])
     fac_txt = lambda o: f"CD = {o['CD']:g} ({o['cd_case']}, {o['cd_dur']})"
     rows = [Row("bending", gb["cb"].name, gb["fb"], gb["Fb_adj"], "psi", f"2018 NDS 3.3.1, Table 8.3.1; {rpt} Table 1",
-                f"M = {gb['M'] / 12:,.0f} lb-ft; {fac_txt(gb)}; CV = {CV:.3f}; CL = {gb['CL']:.3f}"),
+                f"M = {gb['M'] / 12:,.0f} lb-ft" + (" (negative, over a support)" if gb["sense"] == "negative" else "") + f"; {fac_txt(gb)}; CV = {CV:.3f}; CL = {gb['CL']:.3f}"),
             Row("shear", gv["cb"].name, gv["fv"], gv["Fv_adj"], "psi", f"2018 NDS 3.4.1, 3.4.2, Table 8.3.1; {rpt} Table 1",
                 f"V = {gv['V']:,.0f} lb at the support; {fac_txt(gv)}"),
             Row("bearing at support", gr["cb"].name, gr["R"] / (b * bearing_in), ref["Fc_perp"], "psi",
                 f"2018 NDS 3.10.2, Table 8.3.1; {rpt} Table 1",
                 f"reaction {gr['R']:,.0f} lb on {b:g} in x {bearing_in:g} in; Cb = 1.0 at the end of a member")]
+    if len(lay.spans) > 1:
+        gi = max(out, key=lambda o: o["Rint"])
+        rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), ref["Fc_perp"], "psi", rows[-1].source,
+                        f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = 1.0"))
     for dc in defl_checks:
-        res = run(dc.factors)
-        if res is None:
+        wd = contbeam.deflection(lay, ref["E"] * I, by_case, dc.factors, dc.ratio)
+        if wd is None:
             continue
-        bend = max(abs(res.defl_max()[0]), abs(res.defl_min()[0]))
-        Md = max(abs(res.M_max()[0]), abs(res.M_min()[0]))
+        bend = wd[0]
+        Md = max(abs(wd[4].M_max()[0]), abs(wd[4].M_min()[0]))
         shear = scl.shear_deflection(Md, ref["E"], b, d)
         rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k}" if v != 1 else k for k, v in dc.factors.items()),
-                        bend + shear, Lin / dc.ratio, "in", dc.source + "; " + ref["defl_src"],
-                        f"limit span/{dc.ratio:g}; bending {bend:.3f} in + shear {shear:.3f} in; E = {ref['E']:,.0f} psi"))
+                        bend + shear, wd[1], "in", dc.source + "; " + ref["defl_src"],
+                        (f"limit span/{dc.ratio:g}" if lay.simple else f"{wd[2]}, limit {wd[3]}")
+                        + f"; bending {bend:.3f} in + shear {shear:.3f} in; E = {ref['E']:,.0f} psi"))
     L = footing_line
     st = gb["st"]
     steps = [L("b x d", b, "in", "member size", f"{plies} x {thickness:g} in wide, d = {d:g} in" if plies > 1 else f"d = {d:g} in"),
@@ -487,7 +541,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
              L(ref["cv_label"], CV, "", ref["cv_src"], ref["cv_note"]),
              L("Cr", Cr, "", "NDS 8.3.7", "repetitive member" if repetitive else "not a repetitive member")]
     if "RB" in st:
-        steps += [L("le", st["le"], "in", "NDS Table 3.3.3, note 1", f"lu = {lu_ft * 12:g} in"),
+        steps += [L("le", st["le"], "in", "NDS Table 3.3.3, note 1", f"lu = {gb['lu_used'] * 12:g} in"),
                   L("RB = sqrt(le d / b^2)", st["RB"], "", "NDS Eq. 3.3-5"),
                   L(ref["emin_label"], Emin, "psi", ref["emin_src"], ref["emin_note"]),
                   L("FbE = 1.20 Emin' / RB^2", st["FbE"], "psi", "NDS 3.3.3.8"),
@@ -504,10 +558,14 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
               L("E", ref["E"], "psi", ref["source"], "shear deflection added separately")]
     info = [("Member", f"({plies}) {thickness:g} in x {d:g} in {ref['name']} {grade}"),
             ("Size", f"{b:g} in x {d:g} in" + (f" ({plies} plies of {thickness:g} in)" if plies > 1 else "") + "; load on the narrow face"),
-            ("Span", f"{span_ft:g} ft, simply supported; bearing length {bearing_in:g} in at each support"
+            ("Span", lay.describe() + f"; bearing length {bearing_in:g} in at each " + ("end support" if len(lay.spans) > 1 else "support")
+             + (f", {bearing_int_in:g} in at interior supports" if len(lay.spans) > 1 else "")
              + (f"; members at {spacing_in:g} in on centre" if spacing_in else "")),
-            ("Bracing", "compression edge supported throughout its length" if lu_ft <= 0 else
-             f"compression edge braced at {lu_ft:g} ft; ends held against rotation"),
+            ("Bracing", ("top edge supported throughout its length" if lu_ft <= 0 else f"top edge braced at {lu_ft:g} ft")
+             + ("" if lay.simple or lu_neg_ft is None else ("; bottom edge braced where in compression" if lu_neg_ft <= 0 else
+                                                             f"; bottom edge unbraced {lu_neg_ft:g} ft where in compression"))
+             if not lay.simple else ("compression edge supported throughout its length" if lu_ft <= 0 else
+                                     f"compression edge braced at {lu_ft:g} ft; ends held against rotation")),
             ("Conditions", "dry use, moisture content under 16 percent; " + ("repetitive member" if repetitive else "not a repetitive member"))]
     load_lines = []
     for ld in loads:
@@ -534,7 +592,14 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         [x for x in ["notches and holes (NDS 8.4.1; manufacturer's limits)", "fastening of the plies to each other" if plies > 1 else None,
                      "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers",
                      "bearing on the supporting member"] if x],
-        picture=("wood_beam", dict(b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}", kind="lvl", loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
+        picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=plies, span=span_ft, size=f"{thickness:g}x{d:g}", kind="lvl", loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
+    if not lay.simple:
+        sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
+                                    "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
+                                    "uses Cb = 1.0.")
+        sheet.not_checked.insert(0, "partial snow loading (ASCE/SEI 7-22 Sect. 7.5)")
+        if min(o["Rmin"] for o in out) < 0:
+            sheet.not_checked.insert(0, "uplift at a support (a reaction is upward in at least one load arrangement)")
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
     sheet.diagram = _diagram_data(gb)
     return sheet
@@ -718,19 +783,26 @@ def lvl_post(mark, grade, b_in, d_in, height_ft, loads, combos, Ke1, Ke2, k_sour
 
 
 def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, wet,
-                unit_weight_pcf=None, self_weight_case="D", spacing_in=None):
+                unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None):
     """Glued laminated timber beam, simply supported, bent about the x-x axis; 2018 NDS
     Chapter 5 and Supplement Table 5A, ASD. b, d in inches. See glulam.py."""
     from . import glulam
     if not combos:
         raise WorksheetError(f"{mark}: no ASD load combinations given")
-    if span_ft is None or span_ft <= 0 or bearing_in is None or bearing_in <= 0:
-        raise WorksheetError(f"{mark}: span and bearing length must be positive")
+    if bearing_in is None or bearing_in <= 0:
+        raise WorksheetError(f"{mark}: the bearing length must be positive")
+    try:
+        lay = contbeam.layout(span_ft, spans, overhang_left, overhang_right)
+    except (ValueError, TypeError) as e:
+        raise WorksheetError(f"{mark}: {e}")
+    span_ft = lay.total                                   # loads and the picture run over the whole member
+    L_cv = max(lay.spans + [2 * lay.left, 2 * lay.right])
+    bearing_int_in = bearing_int_in or bearing_in
     try:
         ref = glulam.values(stress_class)
         if ref["sp_only"] and not southern_pine:
             raise glulam.GlulamError(f"glulam: stress class {stress_class} is Southern Pine")
-        CV = glulam.volume_factor(span_ft, d or 0, b or 0, southern_pine)
+        CV = glulam.volume_factor(L_cv, d or 0, b or 0, southern_pine)
     except glulam.GlulamError as e:
         raise WorksheetError(f"{mark}: {e}")
     CMb, CMv, CMp, CME = ((glulam.WET["Fb"], glulam.WET["Fv"], glulam.WET["Fc_perp"], glulam.WET["E"]) if wet else (1.0, 1.0, 1.0, 1.0))
@@ -773,9 +845,10 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
     out = []
     for cb in combos:
         present = [c for c, v in cb.factors.items() if v and c in by_case]
-        res = run(cb.factors)
-        if res is None:
+        env = contbeam.envelope(lay, E_adj * I, by_case, cb.factors)
+        if env is None:
             continue
+        res = env.res_pos
         try:
             CD, cd_case, cd_dur = wood.load_duration(present)
             Fb_star = ref["Fb"] * CD * CMb
@@ -783,11 +856,21 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         except wood.WoodError as e:
             raise WorksheetError(f"{mark}: {e}")
         Fb_adj = Fb_star * min(CV, CL)
-        M = max(abs(res.M_max()[0]), abs(res.M_min()[0]))
-        V = abs(res.V_abs_max()[0])
-        R = max(abs(v) for v in res.reactions.values())
-        out.append(dict(res=res, cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
-                        Fv_adj=ref["Fv"] * CD * CMv, M=M, V=V, R=R, fb=M / S, fv=1.5 * V / A, reactions=dict(res.reactions)))
+        M, Mneg, V, R, Rint, sense = env.Mpos, env.Mneg, env.V, env.R_end, env.R_int, "positive"
+        if not lay.simple and Mneg > 1e-6 * max(M, 1.0):
+            if lu_neg_ft is None:
+                raise WorksheetError(f"{mark}: the bottom edge is in compression over a support; give its unbraced length "
+                                     "there (0 when it is braced)")
+            Fbs_n = ref["Fb_neg"] * CD * CMb
+            try:
+                CLn, stn = wood.beam_stability(ref["Fb_neg"] * CD * CMb, Emin_adj, lu_neg_ft * 12.0, b, d)
+            except wood.WoodError as e:
+                raise WorksheetError(f"{mark}: {e}")
+            Fb_neg = Fbs_n * min(CV, CLn)
+            if Mneg / Fb_neg > M / Fb_adj:
+                M, Fb_adj, Fb_star, CL, st, sense, res = Mneg, Fb_neg, Fbs_n, CLn, stn, "negative", env.res_neg
+        out.append(dict(res=res, sense=sense, Rint=Rint, Rmin=env.R_min, lu_used=(lu_neg_ft if sense == "negative" else lu_ft), cb=cb, CD=CD, cd_case=cd_case, cd_dur=cd_dur, CL=CL, st=st, Fb_star=Fb_star, Fb_adj=Fb_adj,
+                        Fv_adj=ref["Fv"] * CD * CMv, M=M, V=V, R=R, fb=M / S, fv=1.5 * V / A, reactions=dict(env.reactions)))
     if not out:
         raise WorksheetError(f"{mark}: no load combination loads this beam")
     Fperp = ref["Fc_perp"] * CMp
@@ -796,18 +879,22 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
     gr = max(out, key=lambda o: o["R"])
     fac_txt = lambda o: f"CD = {o['CD']:g} ({o['cd_case']}, {o['cd_dur']})"
     rows = [Row("bending", gb["cb"].name, gb["fb"], gb["Fb_adj"], "psi", "2018 NDS 3.3.1, Table 5.3.1",
-                f"M = {gb['M'] / 12:,.0f} lb-ft; {fac_txt(gb)}; CV = {CV:.3f}; CL = {gb['CL']:.3f}"),
+                f"M = {gb['M'] / 12:,.0f} lb-ft" + (" (negative, over a support)" if gb["sense"] == "negative" else "") + f"; {fac_txt(gb)}; CV = {CV:.3f}; CL = {gb['CL']:.3f}"),
             Row("shear", gv["cb"].name, gv["fv"], gv["Fv_adj"], "psi", "2018 NDS 3.4.1, 3.4.2, Table 5.3.1",
                 f"V = {gv['V']:,.0f} lb at the support; {fac_txt(gv)}"),
             Row("bearing at support", gr["cb"].name, gr["R"] / (b * bearing_in), Fperp, "psi", "2018 NDS 3.10.2, Table 5.3.1",
                 f"reaction {gr['R']:,.0f} lb on {b:g} in x {bearing_in:g} in; Cb = 1.0 at the end of a member")]
+    if len(lay.spans) > 1:
+        gi = max(out, key=lambda o: o["Rint"])
+        rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), Fperp, "psi", rows[-1].source,
+                        f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = 1.0"))
     for dc in defl_checks:
-        res = run(dc.factors)
-        if res is None:
+        wd = contbeam.deflection(lay, E_adj * I, by_case, dc.factors, dc.ratio)
+        if wd is None:
             continue
-        dl = max(abs(res.defl_max()[0]), abs(res.defl_min()[0]))
         rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k}" if v != 1 else k for k, v in dc.factors.items()),
-                        dl, Lin / dc.ratio, "in", dc.source, f"limit span/{dc.ratio:g}; Ex' = {E_adj:,.0f} psi"))
+                        wd[0], wd[1], "in", dc.source, (f"limit span/{dc.ratio:g}" if lay.simple else f"{wd[2]}, limit {wd[3]}")
+                        + f"; Ex' = {E_adj:,.0f} psi"))
     L = footing_line
     st = gb["st"]
     x_txt = "20, Southern Pine" if southern_pine else "10"
@@ -817,9 +904,9 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
              L("Fbx+", ref["Fb"], "psi", ref["source"], "bottom of the beam in tension"),
              L("CD", gb["CD"], "", "NDS Table 2.3.2", f"{gb['cd_case']}, {gb['cd_dur']}"),
              L("CM", CMb, "", "Table 5A adjustment factors", "wet service" if wet else "dry service"),
-             L("CV = (21/L)^(1/x) (12/d)^(1/x) (5.125/b)^(1/x)", CV, "", "NDS Eq. 5.3-1", f"L = {span_ft:g} ft; x = {x_txt}; not more than 1.0")]
+             L("CV = (21/L)^(1/x) (12/d)^(1/x) (5.125/b)^(1/x)", CV, "", "NDS Eq. 5.3-1", f"L = {L_cv:g} ft; x = {x_txt}; not more than 1.0")]
     if "RB" in st:
-        steps += [L("le", st["le"], "in", "NDS Table 3.3.3, note 1", f"lu = {lu_ft * 12:g} in"),
+        steps += [L("le", st["le"], "in", "NDS Table 3.3.3, note 1", f"lu = {gb['lu_used'] * 12:g} in"),
                   L("RB = sqrt(le d / b^2)", st["RB"], "", "NDS Eq. 3.3-5"),
                   L("Ey min'", Emin_adj, "psi", f"{ref['source']}; NDS 5.2.7"),
                   L("FbE = 1.20 Ey min' / RB^2", st["FbE"], "psi", "NDS 3.3.3.8"),
@@ -834,10 +921,14 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
               L("Fc_perp' = Fc_perp CM Cb", Fperp, "psi", "NDS Table 5.3.1", f"Fc_perp x = {ref['Fc_perp']:g} psi"),
               L("Ex' = Ex CM", E_adj, "psi", "NDS Table 5.3.1, 5.2.7", f"Ex = {ref['E']:,.0f} psi")]
     info = [("Member", f"{b:g} in x {d:g} in glued laminated timber, stress class {stress_class}" + (", Southern Pine" if southern_pine and not ref["sp_only"] else "")),
-            ("Span", f"{span_ft:g} ft, simply supported; bearing length {bearing_in:g} in at each support"
+            ("Span", lay.describe() + f"; bearing length {bearing_in:g} in at each " + ("end support" if len(lay.spans) > 1 else "support")
+             + (f", {bearing_int_in:g} in at interior supports" if len(lay.spans) > 1 else "")
              + (f"; members at {spacing_in:g} in on centre" if spacing_in else "")),
-            ("Bracing", "compression edge supported throughout its length" if lu_ft <= 0 else
-             f"compression edge braced at {lu_ft:g} ft; ends held against rotation"),
+            ("Bracing", ("top edge supported throughout its length" if lu_ft <= 0 else f"top edge braced at {lu_ft:g} ft")
+             + ("" if lay.simple or lu_neg_ft is None else ("; bottom edge braced where in compression" if lu_neg_ft <= 0 else
+                                                             f"; bottom edge unbraced {lu_neg_ft:g} ft where in compression"))
+             if not lay.simple else ("compression edge supported throughout its length" if lu_ft <= 0 else
+                                     f"compression edge braced at {lu_ft:g} ft; ends held against rotation")),
             ("Conditions", ("wet service, moisture content 16 percent or more" if wet else "dry service")
              + "; straight, constant section, tension laminations at the bottom")]
     load_lines = []
@@ -861,7 +952,14 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
         f"Governing Calculation ({gb['cb'].name})", steps, rows, assumptions,
         ["shear at connections, with Cvr = 0.72 (NDS 5.3.10)", "notches, taper and holes (NDS 5.4, 3.2.3)",
          "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers", "bearing on the supporting member"],
-        picture=("wood_beam", dict(b=b, d=d, plies=1, span=span_ft, size=f"{b:g}x{d:g}", kind="glulam", lams=max(int(round(d / 1.5)), 2), loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x["x2_ft"]} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
+        picture=("wood_beam", dict(supports=lay.supports, b=b, d=d, plies=1, span=span_ft, size=f"{b:g}x{d:g}", kind="glulam", lams=max(int(round(d / 1.5)), 2), loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), P=x.get("P"), x_ft=x.get("x_ft"), **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", span_ft)} if "x1_ft" in x else {})) for x in loads])), governing=gb["cb"].name)
+    if not lay.simple:
+        sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
+                                    "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
+                                    "uses Cb = 1.0.")
+        sheet.not_checked.insert(0, "partial snow loading (ASCE/SEI 7-22 Sect. 7.5)")
+        if min(o["Rmin"] for o in out) < 0:
+            sheet.not_checked.insert(0, "uplift at a support (a reaction is upward in at least one load arrangement)")
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
     sheet.diagram = _diagram_data(gb)
     return sheet

@@ -150,6 +150,13 @@ FORMS = {
                 F("plies", "Number of plies", "select", options=["1", "2", "3", "4", "5", "6"]),
                 F("span", "Span", unit="ft"),
                 F("spacing", "Member spacing (joists and rafters)", unit="in", required=False, help="needed for area loads in psf"),
+                F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False,
+                  help="lengths of the second and later spans, separated by commas; blank = one span"),
+                F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
+                F("oh_right", "Overhang past the right support", unit="ft", required=False),
+                F("lu_neg", "Bottom edge unbraced length where it is in compression", unit="ft", required=False,
+                  help="needed with more spans or an overhang; 0 = braced"),
+                F("bearing_int", "Bearing length at interior supports", unit="in", required=False, help="blank = same as the ends"),
                 F("bracing", "Compression edge", "select", options=["supported throughout", "braced at a spacing"]),
                 F("lu", "Brace spacing (unbraced length)", unit="ft", required=False),
                 F("bearing", "Bearing length at each support", unit="in"),
@@ -175,6 +182,13 @@ FORMS = {
                 F("plies", "Number of plies", "select", options=["1", "2", "3", "4"]),
                 F("span", "Span", unit="ft"),
                 F("spacing", "Member spacing (joists and rafters)", unit="in", required=False, help="needed for area loads in psf"),
+                F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False,
+                  help="lengths of the second and later spans, separated by commas; blank = one span"),
+                F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
+                F("oh_right", "Overhang past the right support", unit="ft", required=False),
+                F("lu_neg", "Bottom edge unbraced length where it is in compression", unit="ft", required=False,
+                  help="needed with more spans or an overhang; 0 = braced"),
+                F("bearing_int", "Bearing length at interior supports", unit="in", required=False, help="blank = same as the ends"),
                 F("bracing", "Compression edge", "select", options=["supported throughout", "braced at a spacing"]),
                 F("lu", "Brace spacing (unbraced length)", unit="ft", required=False),
                 F("bearing", "Bearing length at each support", unit="in"),
@@ -198,6 +212,13 @@ FORMS = {
                 F("plies", "Number of plies", "select", options=["1", "2", "3", "4"]),
                 F("span", "Span", unit="ft"),
                 F("spacing", "Member spacing (joists and rafters)", unit="in", required=False, help="needed for area loads in psf"),
+                F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False,
+                  help="lengths of the second and later spans, separated by commas; blank = one span"),
+                F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
+                F("oh_right", "Overhang past the right support", unit="ft", required=False),
+                F("lu_neg", "Bottom edge unbraced length where it is in compression", unit="ft", required=False,
+                  help="needed with more spans or an overhang; 0 = braced"),
+                F("bearing_int", "Bearing length at interior supports", unit="in", required=False, help="blank = same as the ends"),
                 F("bracing", "Compression edge", "select", options=["supported throughout", "braced at a spacing"]),
                 F("lu", "Brace spacing (unbraced length)", unit="ft", required=False),
                 F("bearing", "Bearing length at each support", unit="in"),
@@ -243,6 +264,13 @@ FORMS = {
                 F("d", "Depth", unit="in"),
                 F("span", "Span", unit="ft"),
                 F("spacing", "Member spacing", unit="in", required=False, help="needed for area loads in psf"),
+                F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False,
+                  help="lengths of the second and later spans, separated by commas; blank = one span"),
+                F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the member"),
+                F("oh_right", "Overhang past the right support", unit="ft", required=False),
+                F("lu_neg", "Bottom edge unbraced length where it is in compression", unit="ft", required=False,
+                  help="needed with more spans or an overhang; 0 = braced"),
+                F("bearing_int", "Bearing length at interior supports", unit="in", required=False, help="blank = same as the ends"),
                 F("bracing", "Compression edge", "select", options=["supported throughout", "braced at a spacing"]),
                 F("lu", "Brace spacing (unbraced length)", unit="ft", required=False),
                 F("bearing", "Bearing length at each support", unit="in"),
@@ -866,7 +894,7 @@ def build(kind, values, project):
                 d = dict(case=ld["case"], kind="uniform", w=ld["mag"]) if ld["kind"] == "uniform" else \
                     dict(case=ld["case"], kind="area", q=ld["mag"])
                 if ld["x1"] is not None or ld["x2"] is not None:
-                    d.update(x1_ft=ld["x1"] or 0.0, x2_ft=ld["x2"] if ld["x2"] is not None else span)
+                    d.update(x1_ft=ld["x1"] or 0.0, **({"x2_ft": ld["x2"]} if ld["x2"] is not None else {}))
             else:
                 if ld["x1"] is None:
                     r.miss.append("Loads: a point load needs its location (From / at)")
@@ -881,18 +909,22 @@ def build(kind, values, project):
         r.done()
         if any(ld["kind"] == "area" for ld in loads) and r.num("spacing", False) is None:
             raise Missing(["Member spacing is blank; an area load in psf needs it"])
+        more = r.nums("more_spans") if r.text("more_spans", False) else None
+        cont = dict(spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0,
+                    overhang_right=r.num("oh_right", False) or 0.0, lu_neg_ft=r.num("lu_neg", False),
+                    bearing_int_in=r.num("bearing_int", False))
         if glu:
             return ws_wood.glulam_beam(mark, gr, sp_ == "Southern Pine", thk, dep, span, loads, cb, dc, lu or 0.0, bearing, wet, uw,
-                                       spacing_in=r.num("spacing", False)), "simple", {}
+                                       spacing_in=r.num("spacing", False), **cont), "simple", {}
         if lvl:
             prod = "Versa-Lam LVL"
             if kind == "wey_beam":
                 prod = next(p_ for p_ in scl.WEY if gr.startswith(p_ + " "))
                 gr = gr[len(prod) + 1:]
             return ws_wood.lvl_beam(mark, gr, thk, dep, int(plies), span, loads, cb, dc, lu or 0.0, bearing, rep, uw,
-                                    spacing_in=r.num("spacing", False), product=prod), "simple", {}
+                                    spacing_in=r.num("spacing", False), product=prod, **cont), "simple", {}
         return ws_wood.beam(mark, sp, gr, size, int(plies), span, loads, cb, dc, lu or 0.0, bearing, wet, inc, rep, uw,
-                            spacing_in=r.num("spacing", False)), "simple", {}
+                            spacing_in=r.num("spacing", False), **cont), "simple", {}
     if kind == "shear_wall":
         m = method(project, r.miss)
         panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")

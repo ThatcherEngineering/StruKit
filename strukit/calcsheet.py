@@ -1085,10 +1085,16 @@ def _picture(c, top, pic):
             _beam_loads(c, x0 + 3, x1 - 3, y + h, d["span"], d["loads"])
         memberart.wood_elevation(c, x0, y, x1 - x0, h, d["plies"], kind=d.get("kind", "sawn"), lams=d.get("lams"))
         c.setFillColorRGB(0.20, 0.22, 0.25)
-        for xx in (x0 + 3, x1 - 3):
+        sup = d.get("supports") or [0.0, d["span"]]
+        sx = [x0 + 3 + (x1 - x0 - 6) * v / d["span"] for v in sup]
+        for xx in sx:
             p_ = c.beginPath(); p_.moveTo(xx, y); p_.lineTo(xx - 4, y - 6); p_.lineTo(xx + 4, y - 6); p_.close()
             c.drawPath(p_, fill=1, stroke=0)
-        memberart._dim_h(c, x0 + 3, x1 - 3, y - 15, f"{d['span']:g} ft", FR, ext_from=y - 6)
+        marks = [x0 + 3] + sx + [x1 - 3]
+        vals = [0.0] + list(sup) + [d["span"]]
+        for (xa, xb), (va, vb) in zip(zip(marks[:-1], marks[1:]), zip(vals[:-1], vals[1:])):
+            if vb - va > 1e-6:
+                memberart._dim_h(c, xa, xb, y - 15, f"{vb - va:g} ft" if xb - xa > 22 else f"{vb - va:g}", FR, ext_from=y - 6)
         _sketch_title(c, 520, top, "SECTION")
         s_ = memberart.wood_section(c, 540, top - 46, 44, 60, d["b"], d["d"], d["plies"], kind=d.get("kind", "sawn"))
         memberart._dim_h(c, 540 - d["b"] * s_ / 2, 540 + d["b"] * s_ / 2, top - 46 - d["d"] * s_ / 2 - 8, f"{d['b']:g}", FR,
