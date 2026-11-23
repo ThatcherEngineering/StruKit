@@ -140,12 +140,13 @@ FORMS = {
     "wood_beam": dict(
         title="Wood Beam", code="2018 NDS", mark="WB",
         fields=[F("species", "Species", "select",
-                  options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"] + [x for x in wood.SPECIES if x not in
-                                                                                 ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
-                  help="2018 NDS Supplement Table 4A (not Southern Pine)"),
+                  options=["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR"]
+                  + [x for x in sorted(set(wood.SPECIES) | set(wood.TIMBER_SPECIES)) if x not in ("DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR")],
+                  help="2018 NDS Supplement Table 4A (2 to 4 in. thick) or Table 4D (5x5 and larger); not Southern Pine"),
                 F("grade", "Grade", "select", options=["Select Structural", "No. 1 & Btr", "No. 1", "No. 2", "No. 1/ No. 2", "No. 3",
-                                                        "Stud", "Construction", "Standard", "Utility"]),
-                F("size", "Size (nominal)", "select", options=list(wood.SIZES)),
+                                                        "Stud", "Construction", "Standard", "Utility", "Dense Select Structural",
+                                                        "Dense No. 1", "No. 2 Dense"]),
+                F("size", "Size (nominal)", "select", options=list(wood.SIZES) + list(wood.TIMBER_SIZES)),
                 F("plies", "Number of plies", "select", options=["1", "2", "3", "4", "5", "6"]),
                 F("span", "Span", unit="ft"),
                 F("bracing", "Compression edge", "select", options=["supported throughout", "braced at a spacing"]),

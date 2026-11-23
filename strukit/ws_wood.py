@@ -24,15 +24,27 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
         raise WorksheetError(f"{mark}: the number of plies must be 1 to 6")
     if span_ft is None or span_ft <= 0 or bearing_in is None or bearing_in <= 0:
         raise WorksheetError(f"{mark}: span and bearing length must be positive")
+    timber = size in wood.TIMBER_SIZES
     try:
-        ref, CF, grade_note = wood.values(species, grade, size)
+        if timber:
+            if plies != 1 or incised or repetitive:
+                raise wood.WoodError("wood: a timber (5x5 and larger) is a single piece; the incising and repetitive member "
+                                     "factors are for dimension lumber (NDS 4.3.8, 4.3.9)")
+            ref, _, (b1, d), table, grade_note = wood.post_values(species, grade, size)
+            CF = (12.0 / d) ** (1 / 9) if d > 12 else 1.0            # Table 4D adjustment factors; NDS 4.3.6.2
+        else:
+            ref, CF, grade_note = wood.values(species, grade, size)
+            b1, d = wood.SIZES[size]
+            table = "Table 4A"
     except wood.WoodError as e:
         raise WorksheetError(f"{mark}: {e}")
-    b1, d = wood.SIZES[size]
     b = b1 * plies
     A, S, I = b * d, b * d * d / 6, b * d ** 3 / 12
     Lin = span_ft * 12.0
-    f = wood.factors(ref["Fb"], CF, wet, incised, repetitive)
+    if timber:                                                       # Table 4D wet service factors
+        f = wood.Factors(1.0, 1.0, 0.67 if wet else 1.0, 1.0, 1.0, 1.0, 1.0)
+    else:
+        f = wood.factors(ref["Fb"], CF, wet, incised, repetitive)
     E_adj, Emin_adj = ref["E"] * f.CM_E * f.Ci_E, ref["Emin"] * f.CM_E * f.Ci_E
     loads = [dict(x) for x in loads]
     sw = None
@@ -110,9 +122,9 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
     steps = [L("b x d", b, "in", f"{SUPP_T1B}", f"{plies} x {b1:g} in wide, d = {d:g} in" if plies > 1 else f"d = {d:g} in"),
              L("A = b d", A, "in2", "geometry"), L("S = b d^2 / 6", S, "in3", "NDS Eq. 3.3-4"),
              L("I = b d^3 / 12", I, "in4", "NDS Eq. 3.3-3"),
-             L("Fb", ref["Fb"], "psi", SUPP_T4A), L("CD", gb["CD"], "", "NDS Table 2.3.2", f"{gb['cd_case']}, {gb['cd_dur']}"),
-             L("CM", f.CM_b, "", "Table 4A adjustment factors", "wet service" if wet else "dry service"),
-             L("CF", CF, "", "Table 4A adjustment factors", f"{size}, {grade}"),
+             L("Fb", ref["Fb"], "psi", f"2018 NDS Supplement {table}"), L("CD", gb["CD"], "", "NDS Table 2.3.2", f"{gb['cd_case']}, {gb['cd_dur']}"),
+             L("CM", f.CM_b, "", table[:8] + " adjustment factors", "wet service" if wet else "dry service"),
+             L("CF", CF, "", table[:8] + " adjustment factors", "(12/d)^(1/9) for d over 12 in" if timber else f"{size}, {grade}"),
              L("Ci", f.Ci_b, "", "NDS Table 4.3.8", "incised" if incised else "not incised"),
              L("Cr", f.Cr, "", "NDS 4.3.9", "repetitive member" if repetitive else "not a repetitive member")]
     if "RB" in st:
@@ -131,7 +143,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
               L("Fc_perp' = Fc_perp CM Ci Cb", Fperp_adj, "psi", "NDS Table 4.3.1", f"Fc_perp = {ref['Fc_perp']:g} psi"),
               L("E' = E CM Ci", E_adj, "psi", "NDS Table 4.3.1", f"E = {ref['E']:,.0f} psi")]
     sp = species.title().replace("Fir-Larch", "Fir-Larch")
-    info = [("Member", f"({plies}) {size} {sp} {grade}" + (f" ({grade_note})" if grade_note else "")),
+    info = [("Member", f"({plies}) {size} {sp} {grade}" + (f" ({grade_note})" if grade_note else "") + (f"; {table}" if timber else "")),
             ("Size", f"{b:g} in x {d:g} in dressed" + (f" ({plies} plies of {b1:g} in)" if plies > 1 else "")),
             ("Span", f"{span_ft:g} ft, simply supported; bearing length {bearing_in:g} in at each support"),
             ("Bracing", "compression edge supported throughout its length" if lu_ft <= 0 else

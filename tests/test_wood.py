@@ -222,3 +222,21 @@ def test_post_screen_with_lateral_table():
              lateral=[dict(case="W", kind="uniform", mag="120", x="", label="wind")])
     r = calc.results("wood_post", v, proj)
     assert r["state"] == "done" and next(x for x in r["rows"] if x["check"] == "compression with bending")["demand"] == pytest.approx(0.365, abs=0.002)
+
+
+def test_timber_beam_by_hand():
+    # 6x14 DF-L No. 1 (5.5 x 13.5), Beams and Stringers: Fb 1,350, Fv 170, E 1,600,000
+    # CF = (12/13.5)^(1/9) = 0.98700; D + L, braced throughout: Fb' = 1,350 x 0.98700 = 1,332.4
+    # w = 900 plf on 16 ft: M = 28,800 lb-ft; S = 5.5 x 13.5^2/6 = 167.06; fb = 2,068.7
+    loads = [dict(case="D", kind="uniform", w=300), dict(case="L", kind="uniform", w=600)]
+    s = ws_wood.beam("TB", "DOUGLAS FIR-LARCH", "No. 1", "6x14", 1, 16, loads, DL, [], 0, 5.5, False, False, False)
+    r = _row(s, "bending")
+    assert r.capacity == pytest.approx(1350 * (12 / 13.5) ** (1 / 9), rel=1e-6) and r.capacity == pytest.approx(1332.4, abs=0.1)
+    assert r.demand == pytest.approx(28800 * 12 / (5.5 * 13.5 ** 2 / 6), rel=1e-4) and r.status == "FLAG"
+    assert _row(s, "shear").capacity == 170 and _row(s, "shear").demand == pytest.approx(1.5 * 7200 / (5.5 * 13.5), rel=1e-4)
+    assert "Table 4D, Beams and Stringers" in s.info[0][1]
+    # a square timber takes the Posts and Timbers values; no size factor to 12 in. deep
+    s = ws_wood.beam("TB", "DOUGLAS FIR-LARCH", "No. 1", "8x8", 1, 8, loads, DL, [], 0, 5.5, True, False, False)
+    assert _row(s, "bending").capacity == 1200 and _row(s, "bearing").capacity == pytest.approx(625 * 0.67)
+    with pytest.raises(WorksheetError, match="single piece"):
+        ws_wood.beam("TB", "DOUGLAS FIR-LARCH", "No. 1", "6x12", 2, 16, loads, DL, [], 0, 5.5, False, False, False)
