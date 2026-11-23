@@ -860,7 +860,11 @@ FORMS = {
                 F("Is", "Bay: secondary member moment of inertia", unit="in4", required=False),
                 F("Es", "Bay: secondary member E (other material)", unit="psi", required=False),
                 F("dp", "Typed in: ponding head, dp", unit="in", required=False),
-                F("dp_source", "Typed in: where dp comes from", "text", required=False)],
+                F("dp_source", "Typed in: where dp comes from", "text", required=False),
+                F("slope", "Low slope check: roof slope", unit="in/ft", required=False, help="blank = no check; ASCE 7-22 Sect. 8.3, bays without accumulated rain"),
+                F("parallel_edge", "Low slope check: bay beside a free-draining edge with secondary members parallel to it", "select", options=["no", "yes"], required=False),
+                F("ls_Ls", "Low slope check: span of the secondary members", unit="ft", required=False, help="blank = the bay value above"),
+                F("ls_S", "Low slope check: spacing of the secondary members", unit="ft", required=False, help="blank = the bay value above")],
         tables=[]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
@@ -1755,8 +1759,14 @@ def build(kind, values, project):
                     r.miss.append(f"Bay: {nm} member E (other material) is blank")
         else:
             dp, dp_s = r.num("dp", True, label="Typed in: ponding head"), r.text("dp_source", True)
+        low = None
+        if r.num("slope", False) is not None:
+            par = bool(yes(r.text("parallel_edge", False)))
+            low = dict(slope=r.num("slope", False), parallel_edge=par, Ls=r.num("ls_Ls", False) or (bay or {}).get("Ls"), S=r.num("ls_S", False) or (bay or {}).get("S"))
+            if par and (low["Ls"] is None or low["S"] is None):
+                r.miss.append("Low slope check: the span and spacing of the secondary members are blank")
         r.done()
-        return ws_more.rain_load_sheet(mark, risk, i, i_s, A, ds, ds_s, head, D=D, D_source=D_s or "", bay=bay, dp=dp, dp_source=dp_s or ""), "simple", {}
+        return ws_more.rain_load_sheet(mark, risk, i, i_s, A, ds, ds_s, head, D=D, D_source=D_s or "", bay=bay, dp=dp, dp_source=dp_s or "", low=low), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")

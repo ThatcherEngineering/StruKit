@@ -53,3 +53,24 @@ def test_rain_load_screen_and_sheet(tmp_path):
     assert wood_bay.rain["R"] == pytest.approx(s.rain["R"], rel=0.03)
     assert calc.results("rain_load", dict(v, D=""), {})["state"] == "incomplete"
     assert calc.results("rain_load", dict(v, primary="other material"), {})["state"] == "incomplete"
+
+
+def test_low_slope_screening_design_guide_40_example_5(tmp_path):
+    """ASCE/SEI 7-22 Sect. 8.3 as printed; Design Guide 40 Example 5: Ls = 50 ft, S = 6.25 ft, beta = (8 + pi)/20 = 0.557 in./ft;
+    slope 3/16 in./ft meets both conditions."""
+    from strukit import calcsheet
+    from strukit.gui import calc
+    r = rain.low_slope(0.1875, 50, 6.25, True)
+    assert r["beta"] == pytest.approx(0.557, abs=0.0005) and r["cond1"] and r["cond2"] and r["investigate"]
+    assert rain.low_slope(0.5, 50, 6.25, True)["investigate"] and not rain.low_slope(0.5)["investigate"] and not rain.low_slope(0.6, 50, 6.25, True)["investigate"]
+    assert rain.low_slope(0.25)["cond1"] is False
+    with pytest.raises(rain.RainError):
+        rain.low_slope(0.2, None, None, True)
+    v = dict(mark="RN1", risk="II", i="6", i_source="Hazard Tool", A="1900", ds="2", ds_source="inlet", head_type="typed in", dh="1.5", dh_source="table",
+             pond_type="typed in", dp="0.5", dp_source="analysis", slope="0.5", parallel_edge="yes", ls_Ls="50", ls_S="6.25")
+    s, _, _ = calc.build("rain_load", v, {})
+    assert s.rain["low"]["investigate"] and s.rain["low"]["beta"] == pytest.approx(0.557, abs=0.0005)
+    calcsheet.simple_pdf(s, str(tmp_path / "r.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    assert calc.results("rain_load", dict(v, ls_Ls=""), {})["state"] == "incomplete"
+    none, _, _ = calc.build("rain_load", dict(v, slope=""), {})
+    assert none.rain["low"] is None

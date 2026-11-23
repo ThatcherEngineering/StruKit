@@ -74,3 +74,23 @@ def ponded(D, ds, dh, Cp, Cs):
     w0 = D + rain_load(ds, dh)
     R = Bp * w0 - D
     return dict(Bp=Bp, w0=w0, total=Bp * w0, R=R, dp=R / GAMMA - ds - dh)
+
+
+LOW_SLOPE = 0.25                 # in. per ft, Sect. 8.3 condition 1
+
+
+def low_slope(slope, Ls=None, S=None, parallel_edge=False):
+    """ASCE/SEI 7-22 Sect. 8.3 screening of a free-draining bay or an internal bay without
+    accumulated rain: slope in in. per ft; parallel_edge: the bay is beside a free-draining edge
+    with its secondary members parallel to that edge, then beta = (Ls/S + pi)/20 in. per ft
+    (Ls, S in the same units). Returns dict(beta, cond1, cond2, investigate)."""
+    if slope is None or slope < 0:
+        raise RainError("rain: the roof slope is zero or more")
+    beta = None
+    if parallel_edge:
+        if Ls is None or S is None or Ls <= 0 or S <= 0:
+            raise RainError("rain: the span and spacing of the secondary members are needed for the Sect. 8.3 slope limit")
+        beta = (Ls / S + math.pi) / 20.0
+    c1 = slope < LOW_SLOPE
+    c2 = beta is not None and slope < beta
+    return dict(beta=beta, cond1=c1, cond2=c2, investigate=c1 or c2)
