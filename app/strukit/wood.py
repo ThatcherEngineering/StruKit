@@ -215,15 +215,16 @@ def post_values(species, grade, size):
     raise WoodError(f"wood: {size} is not a size in {SUPP} Table 1B")
 
 
-def column_stability(Fc_star, Emin_adj, le1, d1, le2, d2):
-    """CP by NDS Eq. 3.7-1 for a solid rectangular sawn lumber column (c = 0.8). le1/d1 and
-    le2/d2 are the two slenderness ratios; the larger governs (3.7.1.3)."""
+def column_stability(Fc_star, Emin_adj, le1, d1, le2, d2, c=0.8):
+    """CP by NDS Eq. 3.7-1 for a solid rectangular column; c = 0.8 for sawn lumber, 0.9 for
+    glued laminated timber and structural composite lumber (3.7.1.5). le1/d1 and le2/d2
+    are the two slenderness ratios; the larger governs (3.7.1.3)."""
     r = max(le1 / d1, le2 / d2)
     if r > 50:
         raise WoodError(f"wood: slenderness ratio le/d = {r:.1f} exceeds 50 (NDS 3.7.1.4)")
     if r <= 0:
         return 1.0, dict(ratio=0.0, FcE=float("inf"))
     FcE = 0.822 * Emin_adj / r ** 2
-    a, c = FcE / Fc_star, 0.8
+    a = FcE / Fc_star
     CP = (1 + a) / (2 * c) - math.sqrt(((1 + a) / (2 * c)) ** 2 - a / c)
     return CP, dict(ratio=r, FcE=FcE)
