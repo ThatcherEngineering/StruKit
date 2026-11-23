@@ -287,3 +287,33 @@ def lag(D, side_t, G_side, G_main, penetration, theta_side=0.0, theta_main=0.0, 
     Fes, Fem = (fe(G_side, D, theta_side) if Fes is None else Fes), fe(G_main, D, theta_main)
     r = lateral(Dr, side_t, penetration, Fes, Fem, Fyb, False, max(theta_side, theta_main), nominal=D)
     return dict(r, Dr=Dr, Fyb=Fyb, Fes=Fes, Fem=Fem, lm=penetration)
+
+
+# ---- Wood screws: NDS Appendix Table L3 (number: D, root diameter Dr, head diameter DH), Table 12L note 2 ----
+WOOD_SCREWS = {"#6": (0.138, 0.113, 0.262), "#7": (0.151, 0.122, 0.287), "#8": (0.164, 0.131, 0.312), "#9": (0.177, 0.142, 0.337),
+               "#10": (0.190, 0.152, 0.363), "#12": (0.216, 0.171, 0.414), "#14": (0.242, 0.196, 0.480)}
+
+
+def wood_screw_fyb(D):
+    """Table 12L note 2, by the screw diameter D: 100,000 psi for 0.099 to 0.142 in., 90,000 psi over
+    0.142 to 0.177 in., 80,000 psi over 0.177 to 0.236 in., 70,000 psi over 0.236 to 0.273 in."""
+    for top, v in ((0.142, 100000.0), (0.177, 90000.0), (0.236, 80000.0), (0.273, 70000.0)):
+        if D <= top + 1e-9:
+            return v
+    raise DowelError("wood screw: bending yield strength is given for diameters up to 0.273 in.")
+
+
+def wood_screw(number, side_t, G_side, G_main, penetration=None):
+    """Single shear wood screw, both members wood, side grain. The yield equations use the root
+    diameter Dr (NDS 12.3.7.1(c)) and Fyb goes by the screw diameter D (as Table 12L is built).
+    penetration: into the main member, tip included; None: 10 D; not less than 6 D (12.1.5.6).
+    lm = penetration less half the tapered tip, E = 2 D (12.3.5.3)."""
+    if number not in WOOD_SCREWS:
+        raise DowelError("wood screw: the screw number is one of " + ", ".join(WOOD_SCREWS))
+    D, Dr, DH = WOOD_SCREWS[number]
+    p = 10.0 * D if penetration is None else penetration
+    if p < 6.0 * D - 1e-9:
+        raise DowelError(f"wood screw: the penetration into the main member is less than 6 D = {6 * D:.2f} in. (NDS 12.1.5.6)")
+    lm, Fyb = p - D, wood_screw_fyb(D)
+    r = lateral(Dr, side_t, lm, fe(G_side, Dr), fe(G_main, Dr), Fyb)
+    return dict(r, lm=lm, p=p, Fyb=Fyb, D=D, Dr=Dr, DH=DH)

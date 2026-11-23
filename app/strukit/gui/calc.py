@@ -680,6 +680,19 @@ FORMS = {
                 F("toe_nail", "Toe-nailed", "select", options=["no", "yes"], required=False, help="driven at 30 degrees through the end of the side member; NDS 12.1.6.3")],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Force pulling the side member off the main member, on the group of nails, by load case; the project's ASD combinations are applied.")]),
+    "screw_connection": dict(
+        title="Wood Screw Connection (lateral)", code="NDS 2018", mark="WS",
+        fields=[F("screw", "Wood screw number", "select", options=["#6", "#7", "#8", "#9", "#10", "#12", "#14"], help="NDS Appendix Table L3"),
+                F("length", "Screw length", unit="in"),
+                F("n", "Number of screws"),
+                F("side_t", "Side member thickness", unit="in", help="the piece the screw head is in"),
+                F("G_side", "Side member specific gravity, G", help="NDS Table 12.3.3A"), F("G_side_source", "Where that G comes from", "text"),
+                F("main_t", "Main member thickness", unit="in", help="the piece the screw point is in"),
+                F("G_main", "Main member specific gravity, G"), F("G_main_source", "Where that G comes from", "text"),
+                F("service", "Moisture", "select", options=["dry", "wet in service", "wet at fabrication, dry in service"], help="NDS Table 11.3.3"),
+                F("end_grain", "Screws in the end grain of the main member", "select", options=["no", "yes"], required=False)],
+        tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
+                  help="Lateral force on the group of screws, by load case; the project's ASD combinations are applied.")]),
     "bolted_connection": dict(
         title="Bolted Connection", code="NDS 2018", mark="BC",
         fields=[F("D", "Bolt diameter", "select", options=["1/2", "5/8", "3/4", "7/8", "1"], unit="in"),
@@ -1472,6 +1485,20 @@ def build(kind, values, project):
         return ws_more.nailed_connection_sheet(mark, nm, D, Lg, ts, Gs, Gss, tm, Gm, Gms, n_, sv, loads, cb,
                                                end_grain=bool(yes(r.text("end_grain", False))), diaphragm=bool(yes(r.text("diaphragm", False))),
                                                toe_nail=bool(yes(r.text("toe_nail", False)))), "simple", {}
+    if kind == "screw_connection":
+        cb = combos(project, r.miss, "ASD")
+        from .. import dowel as _dowel
+        num, n_, Lg = r.text("screw"), r.num("n"), r.num("length")
+        ts, Gs, Gss, tm, Gm, Gms, sv = r.num("side_t"), r.num("G_side"), r.text("G_side_source"), r.num("main_t"), r.num("G_main"), r.text("G_main_source"), r.text("service")
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        r.done()
+        if num not in _dowel.WOOD_SCREWS:
+            raise Missing(["The wood screw number is one of " + ", ".join(_dowel.WOOD_SCREWS)])
+        return ws_more.nailed_connection_sheet(mark, num, _dowel.WOOD_SCREWS[num][0], Lg, ts, Gs, Gss, tm, Gm, Gms, n_, sv, loads, cb,
+                                               end_grain=bool(yes(r.text("end_grain", False))), screw=num), "simple", {}
     if kind == "nail_withdrawal":
         cb = combos(project, r.miss, "ASD")
         from .. import dowel as _dowel
