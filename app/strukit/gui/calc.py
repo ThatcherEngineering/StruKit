@@ -667,7 +667,12 @@ FORMS = {
                 F("G_side", "Side member specific gravity, G"), F("E_side", "Side member E", unit="psi"), F("side_source", "Where the side member values come from", "text"),
                 F("main_t", "Main member thickness", unit="in"), F("main_w", "Main member width", unit="in"),
                 F("G_main", "Main member specific gravity, G"), F("E_main", "Main member E", unit="psi"), F("main_source", "Where the main member values come from", "text"),
-                F("service", "Moisture", "select", options=["dry", "wet in service", "wet at fabrication, dry in service"], help="NDS Table 11.3.3")],
+                F("service", "Moisture", "select", options=["dry", "wet in service", "wet at fabrication, dry in service"], help="NDS Table 11.3.3"),
+                F("Ft_main", "Tear-out: main member Ft", unit="psi", required=False, help="with every adjustment factor except CD; fill these six to check net section and tear-out (tension)"),
+                F("Fv_main", "Tear-out: main member Fv", unit="psi", required=False),
+                F("Ft_side", "Tear-out: side member Ft", unit="psi", required=False), F("Fv_side", "Tear-out: side member Fv", unit="psi", required=False),
+                F("local_source", "Tear-out: where Ft and Fv come from", "text", required=False),
+                F("hole", "Tear-out: bolt hole diameter", unit="in", required=False, help="blank = bolt diameter + 1/16 in.")],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Force along the members, by load case; the project's ASD combinations are applied.")]),
     "snow_drift": dict(
@@ -1377,8 +1382,18 @@ def build(kind, values, project):
         if not loads:
             r.miss.append("No load is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
+        loc = None
+        lv = {k: r.num(k, False) for k in ("Ft_main", "Fv_main", "Ft_side", "Fv_side")}
+        if any(v is not None for v in lv.values()):
+            for k, lab in (("Ft_main", "main member Ft"), ("Fv_main", "main member Fv"), ("Ft_side", "side member Ft"), ("Fv_side", "side member Fv")):
+                if lv[k] is None:
+                    r.miss.append(f"Tear-out: {lab} is blank")
+            if not r.text("local_source", False):
+                r.miss.append("Tear-out: where Ft and Fv come from is blank")
+            loc = dict(lv, source=r.text("local_source", False) or "", hole=r.num("hole", False))
         r.done()
-        return ws_more.bolted_connection_sheet(mark, D, rn, nr, sp, rs, end, edge, sh, st, sw, Gs, Es, ss, mt, mw, Gm, Em, ms, sense, wt, sv, loads, cb), "simple", {}
+        return ws_more.bolted_connection_sheet(mark, D, rn, nr, sp, rs, end, edge, sh, st, sw, Gs, Es, ss, mt, mw, Gm, Em, ms, sense, wt, sv, loads, cb,
+                                               local=loc), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")

@@ -148,3 +148,22 @@ def edge_minimum(D, lm, ls_total, row_spacing=None):
     if min(lm, ls_total) / D <= 6 or not row_spacing:
         return 1.5 * D
     return max(1.5 * D, row_spacing / 2.0)
+
+
+def local_stresses(Ft, Fv, t, w, rows_n, n_row, spacing, end, row_spacing, hole):
+    """Net section tension, row tear-out and group tear-out of one member at a bolted
+    connection loaded in tension parallel to grain, NDS Appendix E (document pp. 164-166, page
+    images), all rows alike. Ft, Fv: adjusted design values, psi. hole: bolt hole diameter.
+      ZNT = Ft t (w - nrow Dh), Eq. E.2-1 and E.6; ZRTi = ni Fv t s_critical, Eq. E.3-2, with
+      s_critical the lesser of the end distance and the spacing in the row; ZRT = sum of the
+      rows, Eq. E.3-3; ZGT = ZRT-1 / 2 + ZRT-n / 2 + Ft t (nrow - 1)(s_row - Dh), Eq. E.4-1."""
+    s_crit = end if n_row < 2 else min(end, spacing)
+    ZNT = Ft * t * (w - rows_n * hole)
+    row = n_row * Fv * t * s_crit
+    ZRT = rows_n * row
+    out = dict(s_critical=s_crit, ZNT=ZNT, ZRTi=row, ZRT=ZRT, ZGT=None)
+    if rows_n > 1:
+        out["ZGT"] = row / 2 + row / 2 + Ft * t * (rows_n - 1) * (row_spacing - hole)
+    out["capacity"] = min(v for v in (ZNT, ZRT, out["ZGT"]) if v is not None)
+    out["governs"] = "net section tension" if out["capacity"] == ZNT else "row tear-out" if out["capacity"] == ZRT else "group tear-out"
+    return out
