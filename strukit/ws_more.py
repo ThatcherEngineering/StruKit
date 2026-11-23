@@ -780,7 +780,24 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
     sheet.blocks.append(dict(title="External Pressures", picture=("wind_mwfrs", dict(panels=[panel(t, r, Ld) for t, Bd, Ld, r in res]))))
     for t, Bd, Ld, r in res:
         sheet.blocks.append(dict(title=t, lines=table(r), after=basis(r, Bd, Ld)))
-    sheet.wind = dict(qh=qh, cases=[r for t, Bd, Ld, r in res], normal=res[0][3], parallel=res[-1][3])
+    nres = [x for x in res if x[3]["direction"] != "parallel"]
+    xr = max(nres, key=lambda x: x[3]["F_walls"])
+    yr = res[-1]
+    xn, yn = ("across the ridge", "along the ridge") if not flat else (f"along the {across_ridge:g} ft dimension", f"along the {along_ridge:g} ft dimension")
+    lc = wind.load_cases(xr[3]["F_walls"], xr[1], yr[3]["F_walls"], yr[1])
+    cl = [f"{'case':<12}{'force ' + xn + ' lb':>34}{'force ' + yn + ' lb':>34}{'torsion lb-ft':>16}"]
+    for nm, fx, fy, mz in lc:
+        cl.append(f"{nm.replace(', x', ', ' + ('across' if not flat else 'first')).replace(', y', ', ' + ('along' if not flat else 'second')):<18}"
+                  f"{fx:>28,.0f}{fy:>34,.0f}{mz:>16,.0f}")
+    sheet.blocks.append(dict(title="Design Wind Load Cases, Wall Forces", lines=cl, after=[
+        f"Figure 27.3-8, rigid building, from the forces on the windward and leeward walls{' and parapets' if parapet else ''} of each direction "
+        f"({xr[3]['F_walls']:,.0f} lb on walls {xr[1]:g} ft wide; {yr[3]['F_walls']:,.0f} lb on walls {yr[1]:g} ft wide). Case 2: 0.75 of the wall force with a "
+        "torsional moment at an eccentricity of 0.15 B, either way. Case 3: 0.75 in both directions together. Case 4: 0.563 in both directions with both "
+        "torsional moments. Roof pressures: Case 2, 75 percent of Case 1; Cases 3 and 4, the larger of the Case 1 and Case 2 roof pressures on each "
+        "roof area (note 2)."]))
+    sheet.not_checked = [t for t in sheet.not_checked if not t.startswith("the torsional load cases")] + [
+        "the share of each load case taken by each wall or frame line", "the exception for buildings meeting Appendix D, Sect. D.1 (Sect. 27.3.5)"]
+    sheet.wind = dict(qh=qh, cases=[r for t, Bd, Ld, r in res], normal=res[0][3], parallel=res[-1][3], load_cases=lc)
     return sheet
 
 

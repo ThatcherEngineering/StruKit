@@ -25,6 +25,13 @@ enclosed and partially open rigid buildings with a gable, monoslope or flat roof
   Sect. 27.3.4   parapets (pdf p. 347, page image): pp = qp Kd (GCpn), Eq. 27.3-3, qp at the top
                  of the parapet, (GCpn) = +1.5 for the windward parapet and -1.0 for the
                  leeward parapet (net on both faces; both push downwind).
+  Sect. 27.3.5, Figure 27.3-8 (pdf pp. 352-353, page image): Case 1 full pressure along each
+                 axis separately; Case 2 0.75 of the wall pressures along one axis with a
+                 torsional moment 0.75 (pW + pL) B e, e = 0.15 B, B normal to the wind; Case 3
+                 0.75 of the wall pressures along both axes together; Case 4 0.563 along both
+                 with the torsional moments of both, 0.563 (pW + pL) B e each. Roof pressures:
+                 Case 2, 75 percent of Case 1; Cases 3 and 4, the larger of the Case 1 and
+                 Case 2 roof pressures on each roof area (note 2). Function load_cases.
   Sect. 27.1.5   minimum: 16 psf on the wall area and 8 psf on the roof area projected on a
                  vertical plane normal to the wind, as a separate case.
   Figure 27.3-1, note 6: the total horizontal force is not less than that with the roof
@@ -538,3 +545,14 @@ def cc_parapet(V, exposure, hp_top, h, least_dim, areas, theta=0.0, Kzt=1.0, Ke=
                    B_edge=g["wall_pos"] - g["wall4"], B_corner=g["wall_pos"] - g["wall5"])
         rows.append(dict(area=A, gcp=g, net=net, p={k: max(qp * KD_CC * v, MIN_CC) for k, v in net.items()}))
     return dict(qp=qp, Kp=kp, a=cc_a(least_dim, h, theta), edge=0.6 * h, rows=rows)
+
+
+def load_cases(Fx, Bx, Fy, By):
+    """Figure 27.3-8 for a rigid building, from the wall forces: Fx along the x axis on walls
+    of width Bx normal to it, Fy and By likewise. Returns [(case, force along x, force along
+    y, torsional moment)]; the moment acts either way."""
+    ex, ey = 0.15 * Bx, 0.15 * By
+    return [("Case 1, x", Fx, 0.0, 0.0), ("Case 1, y", 0.0, Fy, 0.0),
+            ("Case 2, x", 0.75 * Fx, 0.0, 0.75 * Fx * ex), ("Case 2, y", 0.0, 0.75 * Fy, 0.75 * Fy * ey),
+            ("Case 3", 0.75 * Fx, 0.75 * Fy, 0.0),
+            ("Case 4", 0.563 * Fx, 0.563 * Fy, 0.563 * Fx * ex + 0.563 * Fy * ey)]

@@ -101,7 +101,7 @@ def test_mwfrs_sheet_and_form(tmp_path):
              enclosure="enclosed", enclosure_basis="Sect. 26.12", across="40", along="60", eave="16", h="20", theta="22.62",
              Kzt="1.0", Kzt_source="no hill, ridge or escarpment, Sect. 26.8.1", elevation="6200", elevation_source="site survey")
     sheet, kind, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
-    assert kind == "simple" and len(sheet.blocks) == 3 and sheet.blocks[0]["picture"][0] == "wind_mwfrs" and sheet.wind["qh"] == pytest.approx(30.47 * wind.ke(6200), abs=0.01)
+    assert kind == "simple" and len(sheet.blocks) == 4 and sheet.blocks[0]["picture"][0] == "wind_mwfrs" and sheet.wind["qh"] == pytest.approx(30.47 * wind.ke(6200), abs=0.01)
     assert any("windward roof" in t for t in sheet.blocks[1]["lines"]) and any("0 to h/2 (0.0 to 10.0 ft)" in t for t in sheet.blocks[2]["lines"])
     out = tmp_path / "w.pdf"
     calcsheet._simple_pdf(sheet, str(out), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
@@ -154,7 +154,7 @@ def test_mwfrs_monoslope_sheet(tmp_path):
              enclosure_basis="Sect. 26.12", across="40", along="60", eave="16", h="21", theta="14.04", roof="monoslope",
              Kzt="1.0", Kzt_source="Sect. 26.8.1")
     sheet, _, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
-    assert len(sheet.blocks) == 4 and [p["shape"] for p in sheet.blocks[0]["picture"][1]["panels"]] == ["mono", "mono", "flat"]
+    assert len(sheet.blocks) == 5 and [p["shape"] for p in sheet.blocks[0]["picture"][1]["panels"]] == ["mono", "mono", "flat"]
     assert any("design horizontal force" in t for t in sheet.blocks[1]["lines"])
     calcsheet._simple_pdf(sheet, str(tmp_path / "m.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     from strukit.ws_steel_beam import WorksheetError
@@ -349,3 +349,19 @@ def test_mwfrs_parapets_by_hand():
              across="40", along="60", eave="20", h="20", theta="0", parapet="3", Kzt="1.0", Kzt_source="Sect. 26.8.1")
     sheet, _, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
     assert any("parapets, 3 ft high" in t for t in sheet.blocks[1]["lines"]) and "roof overhangs (Sect. 27.3.3)" in sheet.not_checked
+
+
+def test_wind_load_cases_by_hand():
+    """Fx = 10,000 lb on walls 60 ft wide, Fy = 6,000 lb on walls 40 ft wide: Case 2 x: 7,500 lb with 7,500(9) = 67,500 lb-ft;
+    Case 2 y: 4,500 lb with 4,500(6) = 27,000 lb-ft; Case 3: 7,500 and 4,500; Case 4: 5,630 and 3,378 with
+    0.563(10,000)(9) + 0.563(6,000)(6) = 70,938 lb-ft."""
+    c = {k: (fx, fy, m) for k, fx, fy, m in wind.load_cases(10000, 60, 6000, 40)}
+    assert c["Case 1, x"] == (10000, 0, 0) and c["Case 2, x"] == pytest.approx((7500, 0, 67500)) and c["Case 2, y"] == pytest.approx((0, 4500, 27000))
+    assert c["Case 3"] == pytest.approx((7500, 4500, 0)) and c["Case 4"] == pytest.approx((5630, 3378, 70938))
+    from strukit.gui import calc
+    v = dict(mark="WM4", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed", enclosure_basis="Sect. 26.12",
+             across="40", along="60", eave="16", h="20", theta="22.62", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, _, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
+    lc = sheet.wind["load_cases"]
+    assert lc[0][1] == pytest.approx(sheet.wind["normal"]["F_walls"]) and lc[2][3] == pytest.approx(0.75 * lc[0][1] * 0.15 * 60)
+    assert sheet.blocks[-1]["title"].startswith("Design Wind Load Cases") and len(sheet.blocks[-1]["lines"]) == 7
