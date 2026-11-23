@@ -249,12 +249,20 @@ class LowerRoof:
     sliding_why: str
 
 
-def lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding=None, parapet=False):
+def lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding=None, parapet=False, separation=None):
     """Drift surcharge on a lower roof at a roof step, and sliding snow from the upper
     roof. ps_lower: balanced snow load on the lower roof, psf. lu_upper, lu_lower: roof
     lengths perpendicular to the step, ft. step_ft: height of the upper roof above the
     lower roof at the step. sliding: None, or dict(pf, W, rise_on_12, slippery) for the
-    upper roof draining toward the lower roof."""
+    upper roof draining toward the lower roof. separation: horizontal gap s, ft, between
+    two adjacent structures (Sect. 7.7.2, pdf p. 126): where s is under 20 ft and under 6 h
+    (h = step_ft, the vertical separation) the leeward drift on the lower structure has the
+    height min(hd, (6h - s)/6) and the extent min(6 hd, 6h - s); the windward drift follows
+    Sect. 7.7.1 (its permitted truncation is not taken); otherwise no drift is required."""
+    if separation is not None and (parapet or sliding):
+        raise SnowError("snow: a gap between structures is not built together with a parapet or with sliding snow (Sect. 7.9)")
+    if separation is not None and separation <= 0:
+        separation = None
     if parapet:
         lu_upper, sliding = lu_lower, None                  # 7.8: one drift, by the windward method, on the roof beside the parapet
     for nm, v in (("the ground snow load", pg), ("the winter wind parameter W2", W2), ("the balanced snow load on the roof", ps_lower),
@@ -268,7 +276,10 @@ def lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding=None, para
     required, why = True, ""
     if hc <= 0:
         required, why = False, "the balanced snow on the lower roof reaches the upper roof"
-    elif hc / hb < 0.2:
+    elif separation is not None and not (separation < 20.0 and separation < 6.0 * step_ft):
+        required, why = False, ("the structures are 20 ft or more apart" if separation >= 20.0 else
+                                "the gap is not less than six times the height difference") + " (Sect. 7.7.2)"
+    elif hc / hb < 0.2 and separation is None:
         required, why = False, "hc / hb is less than 0.2"
     if required:
         def shape(kind, hd_eq, height, width):
@@ -279,6 +290,11 @@ def lower_roof(pg, W2, ps_lower, lu_upper, lu_lower, step_ft, sliding=None, para
         wind = shape("windward", h_w, min(h_w, hc), 8 * h_w)
         if parapet:
             gov = wind
+        elif separation is not None:
+            h_eq = drift_height(pg, lu_upper, W2)
+            h_l = min(h_eq, (6.0 * step_ft - separation) / 6.0)
+            lee = shape("leeward", h_eq, h_l, min(6.0 * h_l, 6.0 * step_ft - separation))
+            gov = lee if lee.height >= wind.height else wind
         else:
             h_l = min(drift_height(pg, lu_upper, W2), 0.6 * lu_lower)
             if h_l <= hc:

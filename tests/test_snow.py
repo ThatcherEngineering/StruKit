@@ -185,3 +185,32 @@ def test_parapet_drift_by_hand():
     assert r.leeward is None and r.governing is r.windward
     assert r.windward.hd_eq == pytest.approx(h) and r.windward.height == pytest.approx(min(h, r.hc)) and r.windward.width == pytest.approx(8 * h)
     assert r.windward.pd == pytest.approx(min(h, r.hc) * 17.9)
+
+
+def test_drift_on_an_adjacent_lower_structure(tmp_path):
+    """ASCE/SEI 7-22 Sect. 7.7.2 (page text, pdf p. 126). pg = 40 psf, W2 = 0.45, upper roof 60 ft, lower roof 40 ft with ps = 30 psf, height
+    difference h = 8 ft, gap s = 6 ft (under 20 ft and under 6h = 48 ft). gamma = 0.13(40) + 14 = 19.2 pcf. Leeward: hd by Eq. 7.6-1 for 60 ft;
+    height = the smaller of hd and (48 - 6)/6 = 7 ft, so hd; extent = the smaller of 6 hd and 42 ft; pd = hd gamma. With h = 3 ft and s = 12 ft:
+    (18 - 12)/6 = 1.0 ft governs the height and 6 ft the extent. No drift where s is 20 ft or more, or not under 6h."""
+    from strukit import snow, calcsheet
+    from strukit.gui import calc
+    hd = snow.drift_height(40, 60, 0.45)
+    r = snow.lower_roof(40, 0.45, 30, 60, 40, 8, separation=6)
+    assert r.leeward.height == pytest.approx(hd) and r.leeward.width == pytest.approx(6 * hd) and r.leeward.pd == pytest.approx(hd * 19.2) and hd < 7
+    assert r.windward.width == pytest.approx(8 * r.windward.hd_eq) and r.governing.kind == "leeward"
+    r = snow.lower_roof(40, 0.45, 30, 60, 40, 3, separation=12)
+    assert r.leeward.height == pytest.approx(1.0) and r.leeward.width == pytest.approx(6.0)
+    for h, s_ in ((8, 20), (3, 18.5), (8, 60)):
+        n = snow.lower_roof(40, 0.45, 30, 60, 40, h, separation=s_)
+        assert not n.required and "7.7.2" in n.why
+    same = snow.lower_roof(40, 0.45, 30, 60, 40, 8)
+    assert snow.lower_roof(40, 0.45, 30, 60, 40, 8, separation=0).leeward.width == same.leeward.width
+    with pytest.raises(snow.SnowError):
+        snow.lower_roof(40, 0.45, 30, 60, 40, 8, parapet=True, separation=6)
+    proj = dict(job="2026-000", name="Test", method="ASD")
+    v = dict(mark="SD4", pg="40", pg_source="ASCE 7 Hazard Tool", W2="0.45", W2_source="ASCE 7 Hazard Tool", ps="30", ps_source="sheet SN1", at="a roof step (lower roof beside a higher roof)",
+             lu_upper="60", lu_lower="40", step="8", separation="6", slide="no")
+    sheet, _, _ = calc.build("snow_drift", v, proj)
+    assert dict(sheet.info)["Separation"].startswith("6 ft") and any("7.7.2" in str(getattr(l, "source", "")) for l in sheet.steps)
+    assert "sliding snow across the gap (Sect. 7.9)" in sheet.not_checked and sheet.blocks[0]["picture"][1]["gap"] == 6
+    calcsheet._simple_pdf(sheet, str(tmp_path / "g.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")

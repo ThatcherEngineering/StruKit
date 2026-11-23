@@ -1981,8 +1981,12 @@ def _snow_drift_picture(c, top, d):
         _sketch_title(c, x0, top - 4, title)
         wx = x0 + 34                                        # face of the upper wall
         c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
-        c.line(wx, ybase, wx, ybase + d["step"] * sy); c.line(wx - 18, ybase + d["step"] * sy, wx, ybase + d["step"] * sy)
+        gx = 14 if d.get("gap") else 0                      # adjacent structures: the higher wall stands back by the gap (not to scale)
+        c.line(wx - gx, ybase - (10 if gx else 0), wx - gx, ybase + d["step"] * sy); c.line(wx - gx - 18, ybase + d["step"] * sy, wx - gx, ybase + d["step"] * sy)
         c.line(wx, ybase, wx + shown * sx, ybase)
+        if gx:
+            c.line(wx, ybase, wx, ybase - 10)
+            c.setFillColorRGB(*GREY); c.setFont(FR, 5.5); c.drawCentredString(wx - gx / 2, ybase - 17, f"gap {d['gap']:g} ft")
         c.setFillColorRGB(0.90, 0.93, 0.97); c.setStrokeColorRGB(*LOADC); c.setLineWidth(0.5)
         hb = d["hb"] * sy
         c.rect(wx, ybase, shown * sx, hb, fill=1, stroke=1)
@@ -2002,7 +2006,7 @@ def _snow_drift_picture(c, top, d):
             memberart._dim_h(c, wx, wx + w_, ybase - 9, f"{x['ext']:g} ft", FR, ext_from=ybase)
         c.setFillColorRGB(*GREY); c.setFont(FR, 6)
         c.drawString(wx + shown * sx - 46, ybase + 2, f"balanced {d['ps']:g} psf")
-        memberart._dim_v(c, ybase, ybase + d["step"] * sy, wx - 24, f"{d['step']:g} ft", FR, ext_from=wx - 18)
+        memberart._dim_v(c, ybase, ybase + d["step"] * sy, wx - 24 - (10 if d.get("gap") else 0), f"{d['step']:g} ft", FR, ext_from=wx - 18 - (14 if d.get("gap") else 0))
     _small(c, (LM + RM) / 2, ybase - 32, "sections through the roof step; not to scale")
     return ybase - 38
 

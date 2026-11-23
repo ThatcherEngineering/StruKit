@@ -819,6 +819,7 @@ FORMS = {
                 F("lu_upper", "Upper roof length, perpendicular to the step", unit="ft", required=False, help="roof step only"),
                 F("lu_lower", "Lower roof length, perpendicular to the step (parapet: roof length upwind)", unit="ft"),
                 F("step", "Height of the upper roof, or of the parapet, above the roof", unit="ft"),
+                F("separation", "Gap between the two structures", unit="ft", required=False, help="blank = one structure; adjacent structures: ASCE 7-22 Sect. 7.7.2"),
                 F("slide", "Sliding snow from the upper roof", "select", options=["no", "yes"], help="the upper roof slopes toward the lower roof"),
                 F("s_pf", "Sliding: upper roof flat roof snow load, pf", unit="psf", required=False),
                 F("s_pf_source", "Sliding: where pf comes from", "text", required=False),
@@ -1680,7 +1681,7 @@ def build(kind, values, project):
             if not sl["pf_source"]:
                 r.miss.append("Sliding: where pf comes from is blank")
         r.done()
-        return ws_more.snow_drift_sheet(mark, pg, src, W2, w2s, ps, pss, lu1, lu2, step, sl, parapet=par), "simple", {}
+        return ws_more.snow_drift_sheet(mark, pg, src, W2, w2s, ps, pss, lu1, lu2, step, sl, parapet=par, separation=r.num("separation", False)), "simple", {}
     if kind == "snow":
         pg, src, risk = r.num("pg"), r.text("pg_source"), r.text("risk")
         rough, expo, therm = r.text("roughness"), r.text("exposure"), r.text("thermal")
