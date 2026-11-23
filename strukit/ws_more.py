@@ -6,7 +6,7 @@ calculations and their sources.
 """
 from dataclasses import dataclass, field
 
-from . import anchorage as anch, base_plate, footing, footing_moment, shapes, shearwall, snow
+from . import anchorage as anch, base_plate, footing, footing_moment, shapes, shearwall, snow, wind
 from .ws_steel_beam import Row, WorksheetError
 
 
@@ -600,4 +600,48 @@ def snow_drift_sheet(mark, pg, pg_source, W2, W2_source, ps_lower, ps_source, lu
                                                                  for d in ((r.leeward, r.windward) if r.required else ()) if d],
                                                          sliding=dict(psf=r.sliding_psf, ext=r.sliding_extent) if r.sliding_psf else None))))
     sheet.drift = r
+    return sheet
+
+
+def wind_pressure_sheet(mark, V, V_source, exposure, exposure_basis, heights, h_mean, Kzt, Kzt_source, elevation_ft=None,
+                        elevation_source=""):
+    """Wind velocity pressure qz at the heights listed and qh at the mean roof height,
+    ASCE/SEI 7-22 Sect. 26.10 (see wind.py). elevation_ft None: Ke = 1.0."""
+    for nm, v in (("the source of the basic wind speed", V_source), ("the basis of the exposure category", exposure_basis),
+                  ("the source of Kzt", Kzt_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if elevation_ft is not None and not (elevation_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the ground elevation is blank")
+    if h_mean is None or h_mean <= 0:
+        raise WorksheetError(f"{mark}: the mean roof height must be positive")
+    Ke = wind.ke(elevation_ft) if elevation_ft is not None else 1.0
+    L = footing_line
+    try:
+        qh, kh = wind.velocity_pressure(V, exposure, h_mean, Kzt, Ke)
+        table = [(z,) + wind.velocity_pressure(V, exposure, z, Kzt, Ke) for z in sorted(set(heights or []))]
+    except wind.WindError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    steps = [L("V", V, "mi/h", "ASCE/SEI 7-22 Sect. 26.5", V_source.strip()),
+             L("Kzt", Kzt, "", "Sect. 26.8", Kzt_source.strip()),
+             L("Ke" + (" = e^(-0.0000362 ze)" if elevation_ft is not None else ""), Ke, "", "Sect. 26.9, Table 26.9-1",
+               f"ze = {elevation_ft:,.0f} ft" if elevation_ft is not None else "taken as 1.0"),
+             L("Kh", kh, "", "Table 26.10-1", f"Exposure {exposure}, h = {h_mean:g} ft"),
+             L("qh = 0.00256 Kh Kzt Ke V^2", qh, "psf", "Eq. 26.10-1", "at the mean roof height")]
+    for z, q, k in table:
+        steps += [L(f"Kz at {z:g} ft", k, "", "Table 26.10-1"), L(f"qz at {z:g} ft", q, "psf", "Eq. 26.10-1")]
+    text = [f"qh = {qh:.1f} psf at the mean roof height, {h_mean:g} ft"] + [f"qz = {q:.1f} psf at {z:g} ft" for z, q, k in table]
+    info = [("Wind Speed", f"V = {V:g} mi/h ({V_source.strip()})"),
+            ("Exposure", f"{exposure} ({exposure_basis.strip()})"),
+            ("Topography", f"Kzt = {Kzt:g} ({Kzt_source.strip()})"),
+            ("Elevation", f"{elevation_ft:,.0f} ft above sea level ({elevation_source.strip()})" if elevation_ft is not None else "Ke taken as 1.0"),
+            ("Heights", f"mean roof height h = {h_mean:g} ft" + ("; " + ", ".join(f"{z:g}" for z, _, _ in table) + " ft" if table else ""))]
+    sheet = SimpleSheet(
+        mark, "Wind Velocity Pressure", "Site and Building", "Chapter 26", info, [], [], "Velocity Pressure", steps, [],
+        ["Velocity pressures are strength-level (ASCE/SEI 7-22 basic wind speed). The directionality factor Kd is applied with the "
+         "pressure coefficients (Sect. 26.6), not here."],
+        ["design wind pressures on the main wind force resisting system (Chapters 27 and 28)",
+         "design wind pressures on components and cladding (Chapter 30)", "enclosure classification and internal pressure (Sect. 26.12, 26.13)",
+         "the 0.70 minimum Kz of Chapter 28 for Exposure B below 30 ft"])
+    sheet.wind = dict(qh=qh, Kh=kh, Ke=Ke, table=table)
     return sheet

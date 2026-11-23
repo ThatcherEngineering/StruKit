@@ -480,6 +480,19 @@ FORMS = {
                 F("W2", "Winter wind parameter, W2 (gable)", required=False, help="from the ASCE 7 Hazard Tool; Fig. 7.6-1"),
                 F("W2_source", "Where W2 comes from (gable)", "text", required=False)],
         tables=[]),
+    "wind_pressure": dict(
+        title="Wind Velocity Pressure", code="ASCE/SEI 7-22", mark="WV",
+        fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
+                F("V_source", "Where V comes from", "text"),
+                F("exposure", "Exposure category", "select", options=["B", "C", "D"], help="ASCE 7-22 Sect. 26.7"),
+                F("exposure_basis", "Basis of the exposure category", "text", help="for example: open terrain with scattered obstructions, Sect. 26.7.3"),
+                F("h", "Mean roof height, h", unit="ft"),
+                F("heights", "Other heights for qz", "text", "ft", required=False, help="separated by commas, for example 15, 20, 25"),
+                F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
+                F("Kzt_source", "Where Kzt comes from", "text", help="for example: no hill, ridge or escarpment, Sect. 26.8.1"),
+                F("elevation", "Ground elevation above sea level", unit="ft", required=False, help="blank = Ke taken as 1.0"),
+                F("elevation_source", "Where the elevation comes from", "text", required=False)],
+        tables=[]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1074,6 +1087,13 @@ def build(kind, values, project):
                                         r.num("slip", False), sides=sides, blocked=blocked, stud_spacing=int(ss_) if ss_ else None,
                                         field_nails=int(fn_) if fn_ else None, dead_plf=dead or 0.0,
                                         dead_factor=r.num("dead_factor", False), dead_source=r.text("dead_source", False) or ""), "simple", {}
+    if kind == "wind_pressure":
+        V, vs, ex, eb, h = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h")
+        kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")
+        hs = r.nums("heights") if r.text("heights", False) else []
+        r.done()
+        return ws_more.wind_pressure_sheet(mark, V, vs, ex, eb, hs, h, kzt, ks_, r.num("elevation", False),
+                                           r.text("elevation_source", False) or ""), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
