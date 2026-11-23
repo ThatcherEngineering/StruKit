@@ -1307,6 +1307,8 @@ def _block_picture(c, top, pic):
         return _shear_wall_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
+    if name == "snow_drift":
+        return _snow_drift_picture(c, top, d)
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
@@ -1367,6 +1369,50 @@ def _block_picture(c, top, pic):
     low = min(low1, low2)
     _small(c, (LM + RM) / 2, low - 4, "dimensions in inches; to scale; edge distances are measured from the rod centres")
     return low - 8
+
+
+def _snow_drift_picture(c, top, d):
+    """Section through the roof step: the wall of the upper roof, the lower roof, the
+    balanced snow, and one panel for each drift (and one for sliding snow), with the
+    surcharge and its width dimensioned. Vertical and horizontal scales differ."""
+    panels = [("drift", x) for x in d["drifts"]] + ([("sliding", d["sliding"])] if d["sliding"] else [])
+    if not panels:
+        panels = [("none", None)]
+    pw = (RM - LM - 20) / max(len(panels), 2)
+    shown = min(d["lu"], max([x["w"] for k, x in panels if k == "drift"] + [x["ext"] for k, x in panels if k == "sliding"] + [10.0]) * 1.25)
+    sx = (pw - 84) / shown                                  # points per ft, horizontal
+    sy = 58.0 / max(d["step"], d["hb"] * 2, 1.0)            # points per ft, vertical
+    ybase = top - 96
+    for i, (kind, x) in enumerate(panels):
+        x0 = LM + 10 + i * pw
+        title = {"drift": (x or {}).get("kind", "").upper() + " DRIFT", "sliding": "SLIDING SNOW", "none": "BALANCED"}[kind]
+        _sketch_title(c, x0, top - 4, title)
+        wx = x0 + 34                                        # face of the upper wall
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+        c.line(wx, ybase, wx, ybase + d["step"] * sy); c.line(wx - 18, ybase + d["step"] * sy, wx, ybase + d["step"] * sy)
+        c.line(wx, ybase, wx + shown * sx, ybase)
+        c.setFillColorRGB(0.90, 0.93, 0.97); c.setStrokeColorRGB(*LOADC); c.setLineWidth(0.5)
+        hb = d["hb"] * sy
+        c.rect(wx, ybase, shown * sx, hb, fill=1, stroke=1)
+        c.setFillColorRGB(0.78, 0.85, 0.94)
+        if kind == "drift":
+            w_, h_ = min(x["w"], shown) * sx, x["h"] * sy
+            far = h_ * (x["far"] / x["pd"]) if x["pd"] else 0.0
+            p_ = c.beginPath(); p_.moveTo(wx, ybase + hb); p_.lineTo(wx, ybase + hb + h_); p_.lineTo(wx + w_, ybase + hb + far)
+            p_.lineTo(wx + w_, ybase + hb); p_.close(); c.drawPath(p_, fill=1, stroke=1)
+            c.setFillColorRGB(*LOADC); c.setFont(FR, 6)
+            c.drawString(wx + 4, ybase + hb + h_ + 3, f"{x['pd']:.1f} psf surcharge, {x['h']:.2f} ft")
+            memberart._dim_h(c, wx, wx + w_, ybase - 9, f"{x['w']:.1f} ft", FR, ext_from=ybase)
+        elif kind == "sliding":
+            w_ = min(x["ext"], shown) * sx
+            c.rect(wx, ybase + hb, w_, 9, fill=1, stroke=1)
+            c.setFillColorRGB(*LOADC); c.setFont(FR, 6); c.drawString(wx + 4, ybase + hb + 12, f"{x['psf']:.1f} psf surcharge")
+            memberart._dim_h(c, wx, wx + w_, ybase - 9, f"{x['ext']:g} ft", FR, ext_from=ybase)
+        c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+        c.drawString(wx + shown * sx - 46, ybase + 2, f"balanced {d['ps']:g} psf")
+        memberart._dim_v(c, ybase, ybase + d["step"] * sy, wx - 24, f"{d['step']:g} ft", FR, ext_from=wx - 18)
+    _small(c, (LM + RM) / 2, ybase - 32, "sections through the roof step; not to scale")
+    return ybase - 38
 
 
 def _perforated_wall_picture(c, top, d):

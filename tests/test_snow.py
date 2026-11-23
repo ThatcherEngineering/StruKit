@@ -127,3 +127,50 @@ def test_monoslope_sheet_has_minimum_and_no_unbalanced():
                                          simple="", W2="", W2_source=""), {})
     assert s.snow.pm == 20 and s.snow.rain_on_snow == 8 and not s.snow.unbalanced
     assert any("Minimum snow load" in t for t in s.blocks[0]["text"])
+
+
+# ---- drifts and sliding snow --------------------------------------------------------------
+def test_commentary_example_3_drifts():
+    """ASCE/SEI 7-22 Commentary C7, Example 3: lower roof ps = 27 psf, step 10 ft, upper roof 100 ft, lower roof 240 ft,
+    W2 = 0.5, pg = 32 psf in Eq. 7.6-1 with gamma = 19 pcf: hb = 1.4 ft, hc = 8.6 ft, leeward hd = 3.4 ft, windward
+    0.75 hd = 3.41 ft (the example prints hd = 4.55 ft; Eq. 7.6-1 gives 4.69 ft), width 8 x 3.41 = 27.3 ft, surcharge 64.8 psf.
+    The example takes gamma from a 40 psf ground load and hd from a 32 psf one; StruKit uses one pg, so the comparison is
+    within 5 to 6 percent, not exact."""
+    from strukit import snow
+    r = snow.lower_roof(32, 0.5, 27, 100, 240, 10)
+    assert r.required and r.hb == pytest.approx(1.4, abs=0.1) and r.hc == pytest.approx(8.6, abs=0.1)
+    assert r.leeward.height == pytest.approx(3.4, rel=0.05) and r.leeward.width == pytest.approx(4 * r.leeward.height)
+    assert r.windward.height == pytest.approx(3.41, rel=0.06) and r.windward.width == pytest.approx(8 * r.windward.height)
+    assert r.windward.pd == pytest.approx(64.8, rel=0.06)
+    assert 0.75 * 1.5 * (32 ** 0.74 * 240 ** 0.70 * 0.5 ** 1.7 / 19) ** 0.5 == pytest.approx(3.52, abs=0.01)   # against the printed 3.41
+    # Eq. 7.6-1 itself with the example's own numbers: 1.5 sqrt(32^0.74 x 100^0.70 x 0.5^1.7 / 19) = 3.45 ft
+    assert 1.5 * (32 ** 0.74 * 100 ** 0.70 * 0.5 ** 1.7 / 19) ** 0.5 == pytest.approx(3.4, abs=0.06)
+
+
+def test_drift_rules_by_hand():
+    from strukit import snow
+    # a low step: pg 30 (gamma 17.9), ps 21, step 3 ft: hb = 1.173, hc = 1.827; leeward from a 200 ft roof, W2 0.45:
+    hd = 1.5 * (30 ** 0.74 * 200 ** 0.70 * 0.45 ** 1.7 / 17.9) ** 0.5
+    r = snow.lower_roof(30, 0.45, 21, 200, 50, 3)
+    assert hd > r.hc and r.leeward.height == pytest.approx(r.hc) and r.leeward.width == pytest.approx(min(4 * hd ** 2 / r.hc, 8 * r.hc))
+    assert r.leeward.pd == pytest.approx(r.hc * 17.9)
+    # the 0.6 x lower roof length limit, and the taper on a narrow lower roof
+    n = snow.lower_roof(30, 0.45, 21, 200, 4, 12)
+    assert n.leeward.hd_eq == pytest.approx(2.4) and n.leeward.extent == 4 and n.leeward.at_far_end == pytest.approx(n.leeward.pd * (1 - 4 / 9.6))
+    # hc / hb under 0.2: no drift
+    assert not snow.lower_roof(30, 0.45, 21, 200, 50, 1.3).required
+    with pytest.raises(snow.SnowError):
+        snow.lower_roof(30, None, 21, 200, 50, 3)
+
+
+def test_sliding_snow_by_hand():
+    from strukit import snow
+    # upper roof pf = 30 psf, W = 20 ft, 4 on 12, not slippery: 0.4 x 30 x 20 = 240 plf over 15 ft = 16 psf
+    r = snow.lower_roof(30, 0.45, 21, 40, 30, 8, sliding=dict(pf=30, W=20, rise_on_12=4, slippery=False))
+    assert r.sliding_psf == pytest.approx(16) and r.sliding_extent == 15 and r.sliding_total == pytest.approx(240)
+    # lower roof 10 ft wide: the same 16 psf on 10 ft
+    r = snow.lower_roof(30, 0.45, 21, 40, 10, 8, sliding=dict(pf=30, W=20, rise_on_12=4, slippery=False))
+    assert r.sliding_psf == pytest.approx(16) and r.sliding_extent == 10 and r.sliding_total == pytest.approx(160)
+    # 2 on 12 and not slippery: none; 1 on 12 and slippery: applies
+    assert snow.lower_roof(30, 0.45, 21, 40, 30, 8, sliding=dict(pf=30, W=20, rise_on_12=2, slippery=False)).sliding_psf == 0
+    assert snow.lower_roof(30, 0.45, 21, 40, 30, 8, sliding=dict(pf=30, W=20, rise_on_12=1, slippery=True)).sliding_psf == pytest.approx(16)
