@@ -65,6 +65,16 @@ Components and cladding, buildings with h of 60 ft or less (Chapter 30, Part 1),
                  adjacent wall's value for the same effective wind area). Built for uplift:
                  the roof's negative value less the wall's positive value. For roofs in the
                  range of Figure 30.3-2A its overhang chart is used (OVERHANG_GCP_7 below).
+  Sect. 30.6     parapets (pdf pp. 394-396, Figure 30.6-1 on p. 400): p = qp Kd [(GCp) - (GCpi)],
+                 Eq. 30.6-1, qp at the top of the parapet. Load Case A, windward parapet: the
+                 positive wall value on the outside face and the negative roof edge or corner
+                 value (zone 2 or 3) on the roof side face. Load Case B, leeward parapet: the
+                 positive wall value on the roof side face and the negative wall value (zone 4
+                 or 5) on the outside face. Built for roofs in the range of Figure 30.3-2A, as
+                 the net pressure on the two faces together.
+  Figure 30.3-2A note 5: with a parapet 3 ft or higher around the perimeter of a roof at 7
+                 degrees or less, the negative zone 3 values equal those of zone 2, and the
+                 positive values in zones 2 and 3 equal those of wall zones 4 and 5.
 Not covered: roof components and cladding on hip and other roof shapes, on gable roofs over 45
 degrees and monoslope roofs over 30 degrees, the parapet provision of Figure 30.3-2A note 5, roof overhangs
 (Sect. 30.7); Parts 2 to 5 of Chapter 30;
@@ -439,7 +449,7 @@ def cc_roof_gcp(area, zone, theta=0.0, roof="gable"):
     return _log_line(area, *curves[zone])
 
 
-def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_dim=None, roof="gable", overhang=False):
+def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_dim=None, roof="gable", overhang=False, parapet=False):
     """Roof component and cladding pressures (psf, strength level) for a flat roof or a gable
     roof up to 45 degrees: for each effective wind area, the positive pressure and the
     negative pressure in each zone, with the internal pressure sign that adds, not less than
@@ -450,6 +460,8 @@ def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_
         raise WindError("wind: this procedure is for a roof height of 60 ft or less")
     fig = cc_roof_figure(theta, roof)
     zones = ROOF_GCP_ALL[fig]["zones"]
+    if parapet and (fig != "30.3-2A" or theta > 7):
+        raise WindError("wind: the parapet provision applies to roofs at 7 degrees or less (Figure 30.3-2A, note 5)")
     if fig != "30.3-2A" and (least_dim is None or least_dim <= 0):
         raise WindError("wind: the least horizontal dimension of the building is needed for this roof")
     if not areas:
@@ -461,7 +473,13 @@ def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_
         g = {z: cc_roof_gcp(A, z, theta, roof) for z in ("positive",) + zones}
         p = {z: qh * KD_CC * (v + gc if z == "positive" else v - gc) for z, v in g.items()}
         d = {z: (max(v, MIN_CC) if z == "positive" else min(v, -MIN_CC)) for z, v in p.items()}
-        rows.append(dict(area=A, gcp=g, p=p, design=d))
+        row = dict(area=A, gcp=g, p=p, design=d)
+        if parapet:                          # Figure 30.3-2A note 5
+            g["3"] = g["2"]
+            p["3"], d["3"] = p["2"], d["2"]
+            row["edge_positive_gcp"] = cc_wall_gcp(A, "positive", theta)
+            row["edge_positive"] = max(qh * KD_CC * (row["edge_positive_gcp"] + gc), MIN_CC)
+        rows.append(row)
     if overhang:
         for x in rows:
             if fig == "30.3-2A":
@@ -472,9 +490,37 @@ def cc_roof(V, exposure, h, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0, least_
                 x["overhang_wall"] = w
                 x["overhang_gcp"] = {z: x["gcp"][z] - w for z in zones}
             x["overhang"] = {z: min(qh * KD_CC * (v - gc), -MIN_CC) for z, v in x["overhang_gcp"].items()}
-    out = dict(qh=qh, Kh=kh, GCpi=gc, figure=fig, zones=zones, rows=rows, overhang=bool(overhang))
+    out = dict(qh=qh, Kh=kh, GCpi=gc, figure=fig, zones=zones, rows=rows, overhang=bool(overhang), parapet=bool(parapet))
     if fig == "30.3-2A":
         out.update(edge=0.6 * h, corner=0.2 * h)
     else:
         out.update(a=cc_a(least_dim, h, theta))
     return out
+
+
+def cc_parapet(V, exposure, hp_top, h, least_dim, areas, theta=0.0, Kzt=1.0, Ke=1.0):
+    """Net component and cladding pressure (psf, strength level) on a parapet of a roof in the
+    range of Figure 30.3-2A, Sect. 30.6, the two faces together: Load Case A (windward
+    parapet, pressure toward the roof) beside roof zone 2 and beside roof zone 3; Load Case B
+    (leeward parapet, pressure away from the roof) in wall zone 4 and in wall zone 5.
+    hp_top: height of the top of the parapet above ground; h: the eave height."""
+    for nm, v in (("the height of the top of the parapet", hp_top), ("the eave height", h), ("the least horizontal dimension", least_dim)):
+        if v is None or v <= 0:
+            raise WindError(f"wind: {nm} must be positive")
+    if hp_top <= h:
+        raise WindError("wind: the top of the parapet is above the eave")
+    if h > 60:
+        raise WindError("wind: this procedure is for a roof height of 60 ft or less")
+    if theta is None or theta < 0 or theta > 7:
+        raise WindError("wind: parapets are built for roofs at 7 degrees or less (Figure 30.3-2A)")
+    if not areas:
+        raise WindError("wind: list at least one effective wind area")
+    qp, kp = velocity_pressure(V, exposure, hp_top, Kzt, Ke)
+    rows = []
+    for A in sorted(set(areas)):
+        g = dict(wall_pos=cc_wall_gcp(A, "positive", theta), roof2=cc_roof_gcp(A, "2", theta), roof3=cc_roof_gcp(A, "3", theta),
+                 wall4=cc_wall_gcp(A, 4, theta), wall5=cc_wall_gcp(A, 5, theta))
+        net = dict(A_edge=g["wall_pos"] - g["roof2"], A_corner=g["wall_pos"] - g["roof3"],
+                   B_edge=g["wall_pos"] - g["wall4"], B_corner=g["wall_pos"] - g["wall5"])
+        rows.append(dict(area=A, gcp=g, net=net, p={k: max(qp * KD_CC * v, MIN_CC) for k, v in net.items()}))
+    return dict(qp=qp, Kp=kp, a=cc_a(least_dim, h, theta), edge=0.6 * h, rows=rows)
