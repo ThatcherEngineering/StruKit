@@ -1170,3 +1170,138 @@ def builtup_post(mark, species, grade, size, plies, fastening, height_ft, loads,
         governing=g["cb"].name)
     sheet.base = {o["cb"].name: o["P"] for o in out}
     return sheet
+
+
+def glulam_post(mark, combination, b, d, laminations, height_ft, loads, combos, Ke_d, Ke_b, k_source, lu_d_ft=None, lu_b_ft=None,
+                e_d_in=0.0, e_b_in=0.0, unit_weight_pcf=None, self_weight_case="D"):
+    """Glued laminated timber column, 2018 NDS 3.6, 3.7 and 15.4.1(b), Supplement Table 5B,
+    ASD, dry service. b: width of the laminations; d: depth (the stack of laminations),
+    in. Ke_d, lu_d, e_d go with the depth d; Ke_b, lu_b, e_b with the width b. For
+    Combination 3 columns of a size in Boise's column tables the load is also limited to
+    the table value (see glulam.py)."""
+    from . import glulam, scl
+    if not combos:
+        raise WorksheetError(f"{mark}: no ASD load combinations given")
+    if height_ft is None or height_ft <= 0 or not b or not d or b <= 0 or d <= 0:
+        raise WorksheetError(f"{mark}: the height and the section dimensions must be positive")
+    if d > 15:
+        raise WorksheetError(f"{mark}: a glued laminated column deeper than 15 in. is not covered (Table 5B note 4)")
+    if not (k_source or "").strip():
+        raise WorksheetError(f"{mark}: say where the effective length factors come from")
+    try:
+        ref = glulam.column_values(combination, laminations)
+    except glulam.GlulamError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    A = b * d
+    le_d = Ke_d * (lu_d_ft if lu_d_ft else height_ft) * 12.0
+    le_b = Ke_b * (lu_b_ft if lu_b_ft else height_ft) * 12.0
+    e_d, e_b = abs(e_d_in or 0.0), abs(e_b_in or 0.0)
+    Emin = ref["Emin"]
+    # strong / weak axes for the interaction equation: d1 is the larger dimension
+    d_is_1 = d >= b
+    d1, d2 = (d, b) if d_is_1 else (b, d)
+    le1, le2 = (le_d, le_b) if d_is_1 else (le_b, le_d)
+    e1, e2 = (e_d, e_b) if d_is_1 else (e_b, e_d)
+    CVx = glulam.volume_factor(height_ft, d, b, False)
+    Fb_d, Fb_b = ref["Fbx"] * CVx, ref["Fby"]            # bending with depth d (x-x), with depth b (y-y)
+    Fb1_ref, Fb2_ref = (Fb_d, Fb_b) if d_is_1 else (Fb_b, Fb_d)
+    loads = [dict(x) for x in loads]
+    sw = None
+    if unit_weight_pcf:
+        sw = unit_weight_pcf * A / 144.0 * height_ft
+        loads.append(dict(case=self_weight_case, P=sw, label="self-weight"))
+    if not loads:
+        raise WorksheetError(f"{mark}: no loads given")
+    by_case = {}
+    for ld in loads:
+        if not ld.get("case") or ld.get("P") is None:
+            raise WorksheetError(f"{mark}: a load is missing its case or its value")
+        by_case[ld["case"]] = by_case.get(ld["case"], 0.0) + ld["P"]
+    FcE1, FcE2 = 0.822 * Emin / (le1 / d1) ** 2, 0.822 * Emin / (le2 / d2) ** 2
+    out = []
+    for cb in combos:
+        present = [c for c, v in cb.factors.items() if v and c in by_case]
+        if not present:
+            continue
+        P = sum(cb.factors[c] * by_case[c] for c in present)
+        try:
+            CD, cd_case, cd_dur = wood.load_duration(present)
+            Fcs = ref["Fc"] * CD
+            CP, st = wood.column_stability(Fcs, Emin, le1, d1, le2, d2, c=0.9)
+            CL, bst = wood.beam_stability(Fb1_ref * CD, Emin, le2 / (Ke_b if d_is_1 else Ke_d), d2, d1)
+        except wood.WoodError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        fc = P / A
+        o = dict(cb=cb, P=P, CD=CD, cd_case=cd_case, cd_dur=cd_dur, Fcs=Fcs, CP=CP, st=st, Fc_adj=Fcs * CP, fc=fc, i3=0.0,
+                 Fb1=Fb1_ref * CD * CL, Fb2=Fb2_ref * CD, CL=CL, tab=glulam.boise_column_load(combination, b, d, max(le1, le2) / 12.0, CD))
+        if (e1 or e2) and P > 0:
+            o["i3"] = scl.eccentric_column(fc, o["Fc_adj"], d1, d2, e1, e2, o["Fb1"], o["Fb2"], FcE1, FcE2, bst.get("FbE") if e1 else None)[0]
+            if o["i3"] == float("inf"):
+                raise WorksheetError(f"{mark}: {cb.name}: the axial stress reaches the buckling stress; the column is too slender")
+        out.append(o)
+    if not out:
+        raise WorksheetError(f"{mark}: no load combination loads this column")
+    g = max(out, key=lambda o: o["fc"] / o["Fc_adj"])
+    rows = [Row("compression", g["cb"].name, g["fc"], g["Fc_adj"], "psi", "2018 NDS 3.6.3, 3.7.1, Table 5.3.1; Supplement Table 5B",
+                f"P = {g['P']:,.0f} lb; CD = {g['CD']:g} ({g['cd_case']}, {g['cd_dur']}); CP = {g['CP']:.3f}; le/d = {g['st']['ratio']:.2f}")]
+    ge = None
+    if e1 or e2:
+        ge = max(out, key=lambda o: o["i3"])
+        rows.append(Row("compression with eccentric load", ge["cb"].name, ge["i3"], 1.0, "", "2018 NDS Eq. 15.4-3",
+                        f"fc = {ge['fc']:.1f} psi; eccentricity {e_d:.3g} in along the depth, {e_b:.3g} in along the width; "
+                        f"CD = {ge['CD']:g} ({ge['cd_case']}, {ge['cd_dur']})"))
+    tabbed = [o for o in out if o["tab"]]
+    gt = None
+    if tabbed:
+        gt = max(tabbed, key=lambda o: o["P"] / o["tab"][0])
+        t = gt["tab"]
+        rows.append(Row("axial load, column table", gt["cb"].name, gt["P"], t[0], "lb", glulam.BOISE_TABLE,
+                        f"{t[1]} ft column, {t[2]} load duration" + (f" x {t[3]:g}" if t[3] != 1 else "")
+                        + f"; CD = {gt['CD']:g} ({gt['cd_case']}, {gt['cd_dur']})"))
+    L = footing_line
+    steps = [L("b x d", b, "in", "member size", f"{b:g} in wide x {d:g} in deep, {laminations} laminations"), L("A", A, "in2", "geometry"),
+             L("Fc", ref["Fc"], "psi", glulam.SOURCE_5B, "4 or more laminations" if laminations >= 4 else "2 or 3 laminations"),
+             L("E axial min", Emin, "psi", glulam.SOURCE_5B),
+             L("CD", g["CD"], "", "NDS Table 2.3.2", f"{g['cd_case']}, {g['cd_dur']}"),
+             L("Fc* = Fc CD", g["Fcs"], "psi", "NDS 3.7.1.5"),
+             L("le / d, along the depth", le_d / d, "", "NDS 3.7.1.3", f"Ke = {Ke_d:g}, le = {le_d:g} in, d = {d:g} in"),
+             L("le / d, along the width", le_b / b, "", "NDS 3.7.1.3", f"Ke = {Ke_b:g}, le = {le_b:g} in, b = {b:g} in"),
+             L("FcE = 0.822 Emin / (le/d)^2", g["st"]["FcE"], "psi", "NDS 3.7.1.5", f"le/d = {g['st']['ratio']:.2f}"),
+             L("CP", g["CP"], "", "NDS Eq. 3.7-1", "c = 0.9 for glued laminated timber"),
+             L("Fc' = Fc* CP", g["Fc_adj"], "psi", "NDS Table 5.3.1"),
+             L("fc = P / A", g["fc"], "psi", "NDS 3.6.3", f"P = {g['P']:,.0f} lb, {g['cb'].name}")]
+    if ge:
+        steps += [L("Fbx", ref["Fbx"], "psi", glulam.SOURCE_5B, f"bending with the depth d; CV = {CVx:.3f} (NDS Eq. 5.3-1, L = {height_ft:g} ft)"),
+                  L("Fby", ref["Fby"], "psi", glulam.SOURCE_5B, f"bending with the width b; {laminations} laminations; flat use factor 1.0"),
+                  L("FcE1", FcE1, "psi", "NDS 15.4.1", f"le1/d1 = {le1 / d1:.2f}"), L("FcE2", FcE2, "psi", "NDS 15.4.1", f"le2/d2 = {le2 / d2:.2f}"),
+                  L("Eq. 15.4-3", ge["i3"], "", "NDS Eq. 15.4-3", f"{ge['cb'].name}; not more than 1.0")]
+    if gt:
+        steps.append(L("allowable axial load, column table", gt["tab"][0], "lb", glulam.BOISE_TABLE,
+                       f"{b:g} in x {d:g} in, {gt['tab'][1]} ft, {gt['tab'][2]}" + (f" x {gt['tab'][3]:g}" if gt["tab"][3] != 1 else "")))
+    info = [("Member", f"{b:g} in x {d:g} in glued laminated timber column, combination {combination}, {laminations} laminations"),
+            ("Height", f"{height_ft:g} ft; effective length {le_d / 12:g} ft along the depth and {le_b / 12:g} ft along the width"),
+            ("Ends", f"Ke = {Ke_d:g} and {Ke_b:g} ({k_source.strip()})"),
+            ("Load Position", f"eccentricity {e_d:.3g} in along the {d:g} in depth and {e_b:.3g} in along the {b:g} in width"
+             if (e_d or e_b) else "along the centre of the column"),
+            ("Conditions", "dry service")]
+    load_lines = [f"{ld['case']:<3} axial {ld['P']:>10,.0f} lb   {ld.get('label', '')}" for ld in loads]
+    assumptions = ["Allowable stress design, 2018 NDS Chapter 5, with reference design values from the 2018 NDS Supplement Table 5B. "
+                   "Temperature factor Ct = 1.0 (NDS 2.3.3, sustained temperature to 100 F).",
+                   "Bending from the eccentric load uses Fbx with the volume factor for bending with the depth, and Fby with no flat use "
+                   "increase for bending with the width." if (e_d or e_b) else
+                   "The axial load acts along the centre of the column. No bending is considered."]
+    if gt:
+        assumptions.append("The axial load is also limited to the manufacturer's column table, which is for a column braced at its ends "
+                           "only with Ke = 1.0 and includes an eccentricity of 0.167 times the column dimension. The table is entered "
+                           "with the longer effective length, rounded up to a whole foot.")
+    assumptions.append(f"Self-weight {sw:,.0f} lb (unit weight {unit_weight_pcf:g} pcf) added to load case {self_weight_case}."
+                       if sw is not None else "Self-weight is not added separately.")
+    sheet = SimpleSheet(
+        mark, "Glulam Column", "Member", "ASD", info, load_lines, [(c.name, c.source) for c in combos],
+        f"Governing Calculation ({g['cb'].name})", steps, rows, assumptions,
+        ["bending from lateral load (NDS 15.4.1(a))", "bearing on the end grain and on the supporting member (NDS 3.10)",
+         "connections at the top and base"],
+        picture=("wood_post", dict(b=b, d=d, height=height_ft, size=f"{b:g}x{d:g}", kind="glulam",
+                                   axial=[f"{x['case']} {x['P']:,.0f} lb" for x in loads])), governing=g["cb"].name)
+    sheet.base = {o["cb"].name: o["P"] for o in out}
+    return sheet
