@@ -173,3 +173,33 @@ def test_toe_nailed_connection_by_hand():
     assert c["p"] == pytest.approx(1.332, abs=0.001) and c["lm"] == pytest.approx(1.201, abs=0.001) and c["Z"] == pytest.approx(z["Z"])
     assert sheet.rows[0].capacity == pytest.approx(3 * z["Z"] * 1.6 * 0.83) and 60 < z["Z"] < 82          # Table 12N: 82 lb at full side thickness
     assert not sheet.blocks and any("Toe-nails driven" in t for t in sheet.assumptions)
+
+
+def test_bolted_connection_perpendicular_to_grain():
+    """Beam hung from a post: 2 - 2x10 side members (loaded perpendicular to grain) on a 6x6 post (5.5 in. main member, loaded parallel,
+    compression), Douglas Fir-Larch, 2 - 3/4 in. bolts in one row along the load at 3 in., double shear. Z = Zs perpendicular of the
+    double shear equations (NDS Table 12F lists 1,170 lb for a 2-1/2 in. main member; here 5.5 in.).
+    Row spacing rule by hand: l/D = 3.0/0.75 = 4: (5 x 3.0 + 10 x 0.75)/8 = 2.81 in."""
+    from strukit.gui import calc
+    from strukit.ws_steel_beam import WorksheetError
+    assert dowel.row_spacing_min_perp(0.75, 3.0) == pytest.approx(2.8125) and dowel.row_spacing_min_perp(0.75, 1.5) == pytest.approx(1.875) and dowel.row_spacing_min_perp(0.5, 3.5) == 2.5
+    assert dowel.geometry_perp_member(0.75, 1.5) == 0.5 and dowel.geometry_perp_member(0.75, 6) == 1.0
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + L", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 2a")])
+    v = dict(mark="BC3", D="3/4", shear="double", rows="1", n_row="2", spacing="3", end="6", edge="2.75", sense="compression", wood_type="softwood",
+             grain="perpendicular in the side member(s)", p_loaded="4", p_unloaded="2.25", p_end="12",
+             side_t="1.5", side_w="9.25", G_side="0.50", E_side="1600000", side_source="DF-L No. 2", main_t="5.5", main_w="5.5", G_main="0.50", E_main="1600000",
+             main_source="DF-L No. 1", service="dry", loads=[dict(case="D", P="600"), dict(case="L", P="1400")])
+    sheet, _, _ = calc.build("bolted_connection", v, proj)
+    c = sheet.connection
+    z = dowel.bolt(0.75, 1.5, 5.5, 0.5, 0.5, 90, 0, double=True)
+    Cg = dowel.group_action(0.75, 2, 3.0, 1.6e6 * 1.5 * 3.0 * 2, 1.6e6 * 30.25)                 # side area = thickness x group width (3 in.), two members
+    assert c["Z"] == z["Z"] and 1100 < z["Z"] < 1250 and c["Cg"] == pytest.approx(Cg) and c["Cdelta"] == 1.0
+    assert sheet.rows[0].capacity == pytest.approx(2 * z["Z"] * Cg * 1.0)
+    names = [r.check for r in sheet.rows]
+    assert names == ["Load on the bolts", "Edge distance, main member", "Loaded edge distance, side members", "Unloaded edge distance, side members",
+                     "Distance between outer bolts across the grain, side members"]
+    assert sheet.rows[2].demand == 3.0 and sheet.rows[2].capacity == 4 and any("3.4.3.3" in t for t in sheet.not_checked)
+    with pytest.raises(calc.Missing):
+        calc.build("bolted_connection", dict(v, p_loaded=""), proj)
+    with pytest.raises(WorksheetError):
+        calc.build("bolted_connection", dict(v, p_loaded="5", p_unloaded="2"), proj)              # 5 + 3 + 2 = 10 in. in a 9.25 in. member
