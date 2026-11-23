@@ -114,3 +114,31 @@ def test_dead_load_reduces_uplift():
     assert big.segments[0].T == 0.0
     with pytest.raises(sw.ShearWallError, match="factor"):
         sw.line(P, 4, "OSB", 0.5, 9, [8], 400, "wind", "ASD", dead_plf=100)
+
+
+# ---- SDPWS-2021 Commentary examples (published) -----------------------------------------
+def test_commentary_example_c4_3_5_5_1_1_deflection_of_sw1():
+    # SW1: 8 ft x 8 ft, vn = 730 plf (15/32 sheathing, 8d at 6 in., OSB, Ga = 13), seismic ASD 260.7 plf,
+    # EA = 16,800,000 lb, anchorage slip 0.079 in: deflection = 0.008 + 0.16 + 0.079 = 0.248 in.; T = 2,224.8 lb
+    w = sw.line(P, 6, "OSB", 0.5, 8, [8], 260.7 * 8, "seismic", "ASD", arm_offset_in=6, chord_E=1.6e6, chord_A=10.5, anchor_slip_in=0.079)
+    s = w.segments[0]
+    assert w.capacity == pytest.approx(2085.6, abs=0.3) and w.Ga == 13
+    assert s.defl == pytest.approx(0.248, abs=0.001) and s.T == pytest.approx(2224.8, abs=0.5)
+    # SW2 of the same example: 2.3 ft long at 110.6 plf, slip 0.048 in: 0.012 + 0.068 + 0.167 = 0.247 in.
+    w2 = sw.line(P, 6, "OSB", 0.5, 8, [2.3], 110.6 * 2.3, "seismic", "ASD", chord_E=1.6e6, chord_A=10.5, anchor_slip_in=0.048)
+    assert w2.segments[0].defl == pytest.approx(0.247, abs=0.001)
+
+
+def test_commentary_example_c4_3_5_5_1_2_line_capacity_by_the_exception():
+    # 8 ft and 2.3 ft walls, 8 ft high, seismic ASD: 260.7 x 8 + (730 / 2.8 x 2b/h) x 2.3 = 2,085.6 + 341.8 = 2,427 lb
+    # (the example rounds 2b/h = 0.575 to 0.57; unrounded the second wall is 344.8 lb)
+    w = sw.line(P, 6, "OSB", 0.5, 8, [8, 2.3], 2000, "seismic", "ASD")
+    assert w.segments[0].Vcap == pytest.approx(2085.6, abs=0.3) and w.segments[1].Vcap == pytest.approx(341.8, abs=3.5)
+    assert w.capacity == pytest.approx(2427, abs=4)
+
+
+def test_awc_slide_factor_tables():
+    for G, f in ((0.55, 1.00), (0.50, 1.00), (0.43, 0.93), (0.42, 0.92), (0.36, 0.86)):
+        assert sw.line(P, 6, "OSB", G, 8, [8], 100, "wind", "ASD").sg_factor == pytest.approx(f)
+    for b, f in ((4, 1.00), (3.2, 0.80), (2.7, 0.67), (2.3, 0.57)):
+        assert sw.line(P, 6, "OSB", 0.5, 8, [b], 100, "wind", "ASD").segments[0].reduction == pytest.approx(f, abs=0.006)
