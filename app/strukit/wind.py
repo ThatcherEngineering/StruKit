@@ -684,3 +684,51 @@ def line_load(r, z1, z2):
     w = (ww + lw + roof + par) / B
     return dict(w=max(w, w_min), w_pressures=w, w_min=w_min, windward=ww / B, leeward=lw / B, roof=roof / B, parapet=par / B,
                 governs="the minimum of Sect. 27.1.5" if w_min > w else "the wall and roof pressures", at_top=at_top)
+
+
+# ---- Topographic factor, Sect. 26.8 and Figure 26.8-1 (pdf p. 336, 337) --------------------------
+# shape -> (K1/(H/Lh) by exposure, gamma, mu upwind of crest, mu downwind of crest)
+TOPO = {"2D ridge": ({"B": 1.30, "C": 1.45, "D": 1.55}, 3.0, 1.5, 1.5),
+        "2D escarpment": ({"B": 0.75, "C": 0.85, "D": 0.95}, 2.5, 1.5, 4.0),
+        "3D axisymmetrical hill": ({"B": 0.95, "C": 1.05, "D": 1.15}, 4.0, 1.5, 1.5)}
+TOPO_MIN_H = {"B": 60.0, "C": 15.0, "D": 15.0}          # Sect. 26.8.1 condition 3
+TOPO_MIN_SLOPE = 0.2                                     # Sect. 26.8.1 condition 2
+
+
+def kzt(shape, exposure, H, Lh, x, z, downwind, located=True):
+    """Topographic factor Kzt = (1 + K1 K2 K3)^2, Eq. 26.8-1, by the equations of Figure 26.8-1.
+    H: height of the feature; Lh: distance upwind of the crest to half the height; x: distance
+    from the crest to the site (positive), downwind True or False; z: height above the ground
+    at the site; located: the site is in the upper half of the hill or ridge or near the crest
+    of the escarpment. K1/(H/Lh) is the larger of the value for the exposure and the Exposure C
+    value the figure's table of multipliers is built on (its note d: used for any exposure).
+    Returns a dict; applies False with Kzt 1.0 and the reason where Sect. 26.8.1 is not met."""
+    if shape not in TOPO:
+        raise WindError("wind: the topographic feature is one of: " + "; ".join(TOPO))
+    if exposure not in TOPO_MIN_H:
+        raise WindError("wind: the exposure category is B, C or D")
+    for nm, v in (("the height of the feature, H", H), ("the distance Lh", Lh)):
+        if v is None or v <= 0:
+            raise WindError(f"wind: {nm} must be positive")
+    if x is None or x < 0 or z is None or z < 0:
+        raise WindError("wind: the distance from the crest and the height above ground are zero or more")
+    slope = H / Lh
+    why = None
+    if not located:
+        why = "the site is not in the upper half of the hill or ridge or near the crest of the escarpment (Sect. 26.8.1, condition 1)"
+    elif slope < TOPO_MIN_SLOPE:
+        why = f"H/Lh = {slope:.2f}, less than 0.2 (Sect. 26.8.1, condition 2)"
+    elif H < TOPO_MIN_H[exposure]:
+        why = f"H = {H:g} ft, less than {TOPO_MIN_H[exposure]:g} ft for Exposure {exposure} (Sect. 26.8.1, condition 3)"
+    k1s, gamma, mu_up, mu_down = TOPO[shape]
+    k1_ratio = max(k1s[exposure], k1s["C"])
+    steep = slope > 0.5
+    slope_used = 0.5 if steep else slope
+    L_used = 2.0 * H if steep else Lh                     # Figure 26.8-1 note b
+    mu = mu_down if downwind else mu_up
+    K1 = k1_ratio * slope_used
+    K2 = max(0.0, 1.0 - x / (mu * L_used))
+    K3 = math.exp(-gamma * z / L_used)
+    val = (1.0 + K1 * K2 * K3) ** 2
+    return dict(applies=why is None, why=why, slope=slope, slope_used=slope_used, steep=steep, L_used=L_used, k1_ratio=k1_ratio, gamma=gamma, mu=mu,
+                K1=K1, K2=K2, K3=K3, Kzt=val if why is None else 1.0, Kzt_feature=val)

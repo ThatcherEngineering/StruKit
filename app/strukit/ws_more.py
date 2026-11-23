@@ -2117,3 +2117,49 @@ def rain_load_sheet(mark, risk, i, i_source, A, ds, ds_source, head, D=None, D_s
         sheet.blocks.append(dict(title="Water on the Roof", head="Water on the Roof", picture=("rain", dict(ds=ds, dh=dh, dp=dpv, R=R))))
     sheet.rain = dict(Q=Q, dh=dh, R0=R0, R=R, dp=dpv, pond=pond)
     return sheet
+
+
+def wind_kzt_sheet(mark, shape, exposure, exposure_basis, H, Lh, geometry_source, x, downwind, located, heights):
+    """Topographic factor Kzt at the heights listed, ASCE/SEI 7-22 Sect. 26.8 (see wind.kzt)."""
+    for nm, v in (("the basis of the exposure category", exposure_basis), ("where H and Lh come from", geometry_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: say {nm}")
+    hs = sorted(set(heights or []))
+    if not hs:
+        raise WorksheetError(f"{mark}: list at least one height above ground")
+    L = footing_line
+    try:
+        res = [(z, wind.kzt(shape, exposure, H, Lh, x, z, downwind, located)) for z in hs]
+    except wind.WindError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    r0 = res[0][1]
+    side = "downwind" if downwind else "upwind"
+    steps = [L("H", f"{H:g} ft", "", "", geometry_source.strip()),
+             L("Lh", f"{Lh:g} ft", "", "Figure 26.8-1", "distance upwind of the crest to half the height of the feature"),
+             L("H / Lh", f"{r0['slope']:.2f}", "", "Sect. 26.8.1", "")]
+    if r0["applies"]:
+        if r0["steep"]:
+            steps += [L("H / Lh for K1", "0.50", "", "Figure 26.8-1 note b", "H / Lh is over 0.5"),
+                      L("Lh for K2 and K3 = 2H", f"{r0['L_used']:g} ft", "", "Figure 26.8-1 note b", "")]
+        steps += [L("K1 / (H/Lh)", f"{r0['k1_ratio']:g}", "", "Figure 26.8-1", f"{shape}, Exposure {exposure}"),
+                  L("K1", f"{r0['K1']:.3f}", "", "Figure 26.8-1", f"{r0['k1_ratio']:g} x {r0['slope_used']:.2f}"),
+                  L("K2 = 1 - x / (mu Lh)", f"{r0['K2']:.3f}", "", "Figure 26.8-1", f"x = {x:g} ft {side} of the crest, mu = {r0['mu']:g}"),
+                  L("K3 = e^(-gamma z / Lh)", "tabulated below", "", "Figure 26.8-1", f"gamma = {r0['gamma']:g}"),
+                  L("Kzt = (1 + K1 K2 K3)^2", "tabulated below", "", "Eq. 26.8-1", "")]
+        t = [f"{'z ft':>8}{'K3':>9}{'Kzt':>9}"] + [f"{z:>8g}{r['K3']:>9.3f}{r['Kzt']:>9.2f}" for z, r in res]
+    else:
+        steps.append(L("Kzt", "1.00", "", "Sect. 26.8.2", r0["why"]))
+        t = None
+    info = [("Feature", f"{shape}; H = {H:g} ft, Lh = {Lh:g} ft ({geometry_source.strip()})"),
+            ("Site", f"{x:g} ft {side} of the crest; Exposure {exposure} ({exposure_basis.strip()})"),
+            ("Result", ("Kzt = " + ", ".join(f"{r['Kzt']:.2f} at {z:g} ft" for z, r in res)) if r0["applies"] else "Kzt = 1.0")]
+    sheet = SimpleSheet(mark, "Wind Topographic Factor", "Topography", "Sect. 26.8", info, [], [], "Topographic Factor", steps, [],
+                        ["The wind approaches the feature along the direction of maximum slope (Figure 26.8-1 note c).",
+                         "Kzt by the equations of Figure 26.8-1." if r0["applies"] else "The conditions of Sect. 26.8.1 are not all met; Kzt = 1.0 (Sect. 26.8.2)."],
+                        ["other wind directions and other topographic features", "the velocity pressure and the wind pressures (wind sheets)"])
+    sheet.blocks.append(dict(title="Feature and Site", head="Feature and Site",
+                             picture=("topo", dict(shape=shape, H=H, Lh=Lh, x=x, downwind=downwind, z=hs[-1]))))
+    if t:
+        sheet.blocks.append(dict(title="Kzt by Height Above Ground", lines=t))
+    sheet.kzt = dict(rows=res, applies=r0["applies"])
+    return sheet

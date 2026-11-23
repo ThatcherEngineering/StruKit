@@ -1458,6 +1458,8 @@ def _block_picture(c, top, pic):
         return _collector_picture(c, top - 6, d)
     if name == "rain":
         return _rain_picture(c, top - 6, d)
+    if name == "topo":
+        return _topo_picture(c, top - 6, d)
     if name == "nailed":
         return _nailed_picture(c, top, d)
     if name == "lag":
@@ -1844,6 +1846,57 @@ def _toe_nail_picture(c, top, d):
     off = 24 if d.get("withdrawal") else 0
     _small(c, xc, y_bot - 12 - off, f"section through one toe-nail, to scale; main member {tm:g} in thick" + (", not shown full depth" if tmd < tm else ""))
     return y_bot - 18 - off
+
+
+def _topo_picture(c, top, d):
+    """Section through the hill, ridge or escarpment, schematic (not to scale): the wind from the
+    left, the crest, H, Lh (crest back to half height), the site at x from the crest."""
+    esc = d["shape"] == "2D escarpment"
+    hgt, half = 44.0, 62.0                                # drawn height of the feature; drawn Lh
+    xc = (LM + RM) / 2 - (30 if esc else 0)               # crest
+    y0 = top - 30 - hgt                                   # upwind ground
+    def prof(xx):
+        u = (xx - xc) / half
+        if esc:
+            return y0 + hgt * (0.5 + 0.5 * math.cos(math.pi * min(max(-u / 2.0, 0.0), 1.0)))
+        return y0 + hgt / (1.0 + u * u)
+    xa, xb = xc - 175, xc + 175
+    pth = c.beginPath(); pth.moveTo(xa, y0 - 10)
+    n = 140
+    pts = [(xa + (xb - xa) * j / n, prof(xa + (xb - xa) * j / n)) for j in range(n + 1)]
+    for px, py in pts:
+        pth.lineTo(px, py)
+    pth.lineTo(xb, y0 - 10); pth.close()
+    c.setFillColorRGB(0.93, 0.91, 0.86); c.setStrokeColorRGB(*INK); c.setLineWidth(0.3); c.drawPath(pth, fill=1, stroke=0)
+    c.setLineWidth(1.0)
+    pth = c.beginPath(); pth.moveTo(*pts[0])
+    for px, py in pts[1:]:
+        pth.lineTo(px, py)
+    c.drawPath(pth, fill=0, stroke=1)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.7)
+    _arrow(c, xa + 4, y0 + hgt + 8, xa + 44, y0 + hgt + 8, head=3.5)
+    c.setFont(FR, 6.5); c.drawString(xa + 4, y0 + hgt + 12, "wind")
+    # site: x from the crest, drawn at a fixed offset on its side
+    off = 0.0 if d["x"] == 0 else (48.0 if d["downwind"] else -34.0)
+    xs = xc + off
+    ys = prof(xs)
+    c.setFillColorRGB(0.35, 0.38, 0.42); c.setStrokeColorRGB(*INK); c.setLineWidth(0.5)
+    c.rect(xs - 5, ys, 10, 12, fill=1, stroke=1)
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawCentredString(xs, ys + 15, "site")
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4); c.setDash(2, 2)
+    c.line(xc, y0 - 4, xc, y0 + hgt + 20); c.line(xa, y0, xc + (0 if esc else half * 2), y0); c.setDash()
+    if off > 0:
+        c.drawRightString(xc - 3, y0 + hgt + 22, "crest")
+    elif off < 0:
+        c.drawString(xc + 3, y0 + hgt + 22, "crest")
+    else:
+        c.drawCentredString(xc, y0 + hgt + 30, "crest")
+    memberart._dim_v(c, y0, y0 + hgt, xb - 26 if esc else xc + half * 2 + 12, f"H {d['H']:g} ft", FR)
+    memberart._dim_h(c, xc - half, xc, y0 - 12, f"Lh {d['Lh']:g} ft", FR, ext_from=y0 + hgt / 2)
+    if off:
+        memberart._dim_h(c, min(xc, xs), max(xc, xs), y0 + hgt + 32, f"x {d['x']:g} ft", FR)
+    _small(c, (LM + RM) / 2, y0 - 34, "schematic section, not to scale; Lh is measured upwind from the crest to half the height H")
+    return y0 - 40
 
 
 def _rain_picture(c, top, d):

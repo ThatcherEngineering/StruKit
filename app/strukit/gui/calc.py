@@ -499,6 +499,19 @@ FORMS = {
                 F("W2", "Winter wind parameter, W2 (gable)", required=False, help="from the ASCE 7 Hazard Tool; Fig. 7.6-1"),
                 F("W2_source", "Where W2 comes from (gable)", "text", required=False)],
         tables=[]),
+    "wind_kzt": dict(
+        title="Wind Topographic Factor (Kzt)", code="ASCE/SEI 7-22", mark="WT",
+        fields=[F("shape", "Topographic feature", "select", options=["2D ridge", "2D escarpment", "3D axisymmetrical hill"], help="ASCE 7-22 Figure 26.8-1"),
+                F("exposure", "Exposure category upwind of the feature", "select", options=["B", "C", "D"]),
+                F("exposure_basis", "Basis of the exposure category", "text"),
+                F("H", "Height of the feature above the upwind terrain, H", unit="ft"),
+                F("Lh", "Distance upwind of the crest to half the height, Lh", unit="ft"),
+                F("geometry_source", "Where H and Lh come from", "text", help="for example: USGS topographic map, section through the site"),
+                F("x", "Distance from the crest to the site, x", unit="ft", help="0 at the crest"),
+                F("side", "Site is", "select", options=["downwind of the crest", "upwind of the crest"]),
+                F("located", "Site is in the upper half of the hill or ridge, or near the crest of the escarpment", "select", options=["yes", "no"], help="Sect. 26.8.1, condition 1"),
+                F("heights", "Heights above ground for Kzt", "text", "ft", help="separated by commas, for example 0, 15, 30; Kzt is largest at the ground")],
+        tables=[]),
     "wind_pressure": dict(
         title="Wind Velocity Pressure", code="ASCE/SEI 7-22", mark="WV",
         fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
@@ -1463,6 +1476,12 @@ def build(kind, values, project):
                                         r.num("slip", False), sides=sides, blocked=blocked, stud_spacing=int(ss_) if ss_ else None,
                                         field_nails=int(fn_) if fn_ else None, dead_plf=dead or 0.0,
                                         dead_factor=r.num("dead_factor", False), dead_source=r.text("dead_source", False) or "", other=oth), "simple", {}
+    if kind == "wind_kzt":
+        shape, ex, eb, H, Lh, gs, x = r.text("shape"), r.text("exposure"), r.text("exposure_basis"), r.num("H"), r.num("Lh"), r.text("geometry_source"), r.num("x")
+        side, loc = r.text("side"), yes(r.text("located"))
+        hs = r.nums("heights") if r.text("heights") else []
+        r.done()
+        return ws_more.wind_kzt_sheet(mark, shape, ex, eb, H, Lh, gs, x, (side or "").startswith("downwind"), bool(loc), hs), "simple", {}
     if kind == "wind_pressure":
         V, vs, ex, eb, h = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h")
         kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")
