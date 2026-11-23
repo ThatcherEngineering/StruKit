@@ -509,6 +509,7 @@ FORMS = {
                 F("h", "Mean roof height, h", unit="ft", help="the eave height where the roof angle is 10 degrees or less"),
                 F("theta", "Roof angle", unit="degrees", help="0 for a flat roof"),
                 F("parapet", "Parapet height above the wall top", unit="ft", required=False, help="blank = no parapets"),
+                F("overhang", "Roof overhang, horizontal projection", unit="ft", required=False, help="blank = no overhang"),
                 F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
                 F("Kzt_source", "Where Kzt comes from", "text"),
                 F("elevation", "Ground elevation above sea level", unit="ft", required=False, help="blank = Ke taken as 1.0"),
@@ -1300,7 +1301,7 @@ def build(kind, values, project):
         return ws_more.wind_mwfrs_sheet(mark, V, vs, ex, eb, h, ev, ac, al, th, en, enb, kzt, ks_, r.num("elevation", False),
                                         r.text("elevation_source", False) or "",
                                         roof={"mon": "monoslope", "hip": "hip"}.get((r.text("roof", False) or "")[:3], "gable"),
-                                        parapet=r.num("parapet", False) or 0.0, theta_hip=thh), "simple", {}
+                                        parapet=r.num("parapet", False) or 0.0, theta_hip=thh, overhang=r.num("overhang", False) or 0.0), "simple", {}
     if kind == "wind_cc_walls":
         V, vs, ex, eb, h = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h")
         en, enb, ld, th = r.text("enclosure"), r.text("enclosure_basis"), r.num("least"), r.num("theta")

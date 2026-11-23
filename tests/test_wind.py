@@ -459,3 +459,23 @@ def test_cc_roof_hip(tmp_path):
     calcsheet._simple_pdf(sheet, str(tmp_path / "h.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     low, _, _ = calc.build("wind_cc_roof", dict(v, theta="5", overhang="no"), dict(job="2026-000", name="Test", method="ASD"))
     assert low.wind["figure"] == "30.3-2A"
+
+
+def test_mwfrs_overhang_by_hand():
+    """Sect. 27.3.3. Gable 26.57 degrees, h = 20 ft, 115 mi/h, Exposure C: qh = 30.47 psf; qh Kd G = 30.47(0.85)(0.85) = 22.015 psf;
+    bottom 22.015(0.8) = 17.61 psf up; top, Cp -0.2686: -5.91 psf; net -23.53 psf; on a 2 ft projection 47.1 lb/ft uplift.
+    Flat roof, h = 16 ft: Kh = 0.86, qh = 29.116 psf; bottom 21.036(0.8) = 16.83; top Cp -0.9: -18.93; net -35.76 psf."""
+    o = wind.mwfrs_overhang(wind.mwfrs(115, "C", 20, 15, 60, 40, "enclosed", "normal", 26.57), 2)
+    assert o["bottom"] == pytest.approx(17.61, abs=0.01) and o["net"] == pytest.approx(-23.53, abs=0.01) and o["w"] == pytest.approx(-47.05, abs=0.02) and len(o["values"]) == 2
+    f = wind.mwfrs_overhang(wind.mwfrs(115, "C", 16, 16, 60, 40, "enclosed", "normal", 0), 2)
+    assert f["bottom"] == pytest.approx(16.83, abs=0.01) and f["net"] == pytest.approx(-35.76, abs=0.01) and [v["Cp"] for v in f["values"]] == [-0.9, -0.18]
+    for rf, d, kw in (("monoslope", "normal_low", {}), ("monoslope", "normal_high", {}), ("hip", "parallel", dict(theta_hip=30))):
+        assert wind.mwfrs_overhang(wind.mwfrs(115, "C", 20, 15, 60, 40, "enclosed", d, 20, roof=rf, **kw), 1.5)["net"] < 0
+    with pytest.raises(wind.WindError):
+        wind.mwfrs_overhang(wind.mwfrs(115, "C", 16, 16, 60, 40, "enclosed", "normal", 0), 0)
+    from strukit.gui import calc
+    v = dict(mark="WM4", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed", enclosure_basis="Sect. 26.12",
+             across="40", along="60", eave="15", h="20", theta="26.57", overhang="2", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, _, _ = calc.build("wind_mwfrs", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert any("governing uplift 23.5 psf = 47 lb per ft" in t for t in sheet.blocks[1]["lines"]) and "parapets (Sect. 27.3.4)" in sheet.not_checked
+    assert any("Sect. 27.3.3" in t for t in sheet.assumptions)
