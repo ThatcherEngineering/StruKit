@@ -35,3 +35,25 @@ def test_dowel_pieces():
         dowel.nail(0.148, 1.5, 0.5, 0.5, penetration=0.8)
     with pytest.raises(dowel.DowelError):
         dowel.bolt(1.25, 1.5, 1.5, 0.5, 0.5)
+
+
+def test_nailed_connection_sheet(tmp_path):
+    """8 - 16d common (0.162 x 3.5 in.) through a 1-1/2 in. side member into a 3-1/2 in. main member, Douglas Fir-Larch, dry:
+    penetration 2.0 in. (12.3 D), Z = 141 lb (Table 12N). Wind 1,500 lb, D + 0.6W: 900 lb; CD = 1.6: 8(141)(1.6) = 1,804 lb."""
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 5a"),
+                                                                        dict(expr="D", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 1a")])
+    v = dict(mark="NC1", nail="16d common", D="0.162", length="3.5", n="8", side_t="1.5", G_side="0.50", G_side_source="Douglas Fir-Larch, NDS Table 12.3.3A",
+             main_t="3.5", G_main="0.50", G_main_source="Douglas Fir-Larch, NDS Table 12.3.3A", service="dry", loads=[dict(case="W", P="1500")])
+    sheet, kind, _ = calc.build("nailed_connection", v, proj)
+    c = sheet.connection
+    assert kind == "simple" and c["Z"] == pytest.approx(141, abs=0.75) and sheet.rows[0].demand == pytest.approx(900) and sheet.rows[0].capacity == pytest.approx(8 * 141 * 1.6, abs=8)
+    calcsheet._simple_pdf(sheet, str(tmp_path / "n.pdf"), "2026-000", "NDS 2018", "2026-11-23")
+    wet, _, _ = calc.build("nailed_connection", dict(v, service="wet in service", end_grain="yes", diaphragm="yes", loads=[dict(case="D", P="400")]), proj)
+    assert wet.rows[0].capacity == pytest.approx(8 * c["Z"] * 0.9 * 0.7 * 0.67 * 1.1, rel=1e-6) and wet.rows[0].combo in ("D", "D + 0.6W")
+    from strukit.ws_steel_beam import WorksheetError
+    with pytest.raises(WorksheetError):
+        calc.build("nailed_connection", dict(v, length="2.25"), proj)                 # 0.75 in. penetration, under 6 D
+    with pytest.raises(calc.Missing):
+        calc.build("nailed_connection", dict(v, loads=[]), proj)
