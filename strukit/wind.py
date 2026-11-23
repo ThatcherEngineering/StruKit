@@ -26,7 +26,19 @@ enclosed and partially open rigid buildings with a gable, monoslope or flat roof
                  vertical plane normal to the wind, as a separate case.
   Figure 27.3-1, note 6: the total horizontal force is not less than that with the roof
                  forces neglected.
-Not covered: hip, mansard and arched roofs; open buildings; flexible buildings;
+
+Components and cladding, buildings with h of 60 ft or less (Chapter 30, Part 1), walls:
+  Eq. 30.3-1     p = qh Kd [(GCp) - (GCpi)]
+  Figure 30.3-1  (GCp) for walls (pdf p. 378, read from the page image): positive, zones 4 and
+                 5: +1.0 at 10 ft2 or less to +0.7 at 500 ft2 or more; negative, zone 4: -1.1 to
+                 -0.8; zone 5: -1.4 to -0.8; straight lines on the logarithm of the effective
+                 wind area between 10 and 500 ft2. Note 5: reduced 10 percent where theta is 10
+                 degrees or less. a = the smaller of 10 percent of the least horizontal
+                 dimension and 0.4h, not less than 4 percent of that dimension or 3 ft; where
+                 theta is 0 to 7 degrees and the least dimension is over 300 ft, not over 0.8h.
+  Sect. 30.2.2   net pressure not less than 16 psf in either direction.
+Not covered: roof components and cladding (Figures 30.3-2 and on); Parts 2 to 5 of Chapter 30;
+hip, mansard and arched roofs; open buildings; flexible buildings;
 parapets and roof overhangs; the torsional cases of Figure 27.3-8; Chapters 28 and 30.
 """
 import math
@@ -276,3 +288,50 @@ def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, 
                 walls_together=walls_together, direction=direction, theta=theta, rise=rise, top_w=top_w, top_l=top_l, sloped=sloped,
                 F_windward=F_w, F_leeward=F_l, F_walls=walls, F_roof=roof_h, F_total=total, A_wall=A_wall, A_roof=A_roof,
                 F_min=F_min, F_design=max(total, F_min))
+
+
+# ---- Components and cladding, walls, h of 60 ft or less (Figure 30.3-1) ------------------
+KD_CC = 0.85                                             # Table 26.6-1, buildings, components and cladding
+MIN_CC = 16.0                                            # Sect. 30.2.2, psf
+WALL_GCP = {"positive": (1.0, 0.7), 4: (-1.1, -0.8), 5: (-1.4, -0.8)}      # at 10 ft2 or less, at 500 ft2 or more
+
+
+def cc_wall_gcp(area, zone, theta=0.0):
+    """(GCp) for a wall, Figure 30.3-1. zone: "positive", 4 or 5."""
+    if area is None or area <= 0:
+        raise WindError("wind: the effective wind area must be positive")
+    lo, hi = WALL_GCP[zone]
+    f = min(1.0, max(0.0, (math.log10(area) - 1.0) / (math.log10(500.0) - 1.0)))
+    v = lo + (hi - lo) * f
+    return v * (0.9 if theta <= 10 else 1.0)
+
+
+def cc_a(least_dim, h, theta=0.0):
+    """Width a of the wall corner zone, Figure 30.3-1 notation."""
+    a = max(min(0.10 * least_dim, 0.4 * h), 0.04 * least_dim, 3.0)
+    if theta <= 7 and least_dim > 300:
+        a = min(a, 0.8 * h)
+    return a
+
+
+def cc_walls(V, exposure, h, least_dim, enclosure, areas, theta=0.0, Kzt=1.0, Ke=1.0):
+    """Wall component and cladding pressures (psf, strength level): for each effective wind
+    area, the positive pressure (zones 4 and 5) and the negative pressure in zone 4 and in
+    zone 5, each with the internal pressure sign that adds, and not less than 16 psf."""
+    if enclosure not in GCPI or enclosure == "open":
+        raise WindError("wind: the enclosure is enclosed, partially enclosed or partially open (open buildings are not covered)")
+    if h is None or h <= 0 or h > 60:
+        raise WindError("wind: this procedure is for a mean roof height of 60 ft or less")
+    if least_dim is None or least_dim <= 0:
+        raise WindError("wind: the least horizontal dimension must be positive")
+    if not areas:
+        raise WindError("wind: list at least one effective wind area")
+    gc = GCPI[enclosure]
+    qh, kh = velocity_pressure(V, exposure, h, Kzt, Ke)
+    rows = []
+    for A in sorted(set(areas)):
+        g = {z: cc_wall_gcp(A, z, theta) for z in ("positive", 4, 5)}
+        p = {"positive": qh * KD_CC * (g["positive"] + gc), 4: qh * KD_CC * (g[4] - gc), 5: qh * KD_CC * (g[5] - gc)}
+        d = {"positive": max(p["positive"], MIN_CC), 4: min(p[4], -MIN_CC), 5: min(p[5], -MIN_CC)}
+        rows.append(dict(area=A, gcp=g, p=p, design=d))
+    return dict(qh=qh, Kh=kh, GCpi=gc, a=cc_a(least_dim, h, theta), rows=rows)

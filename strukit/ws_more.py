@@ -773,3 +773,55 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         sheet.blocks.append(dict(title=t, lines=table(r), after=basis(r, Bd, Ld)))
     sheet.wind = dict(qh=qh, cases=[r for t, Bd, Ld, r in res], normal=res[0][3], parallel=res[-1][3])
     return sheet
+
+
+def wind_cc_walls_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, least_dim, theta, enclosure, enclosure_basis, areas,
+                        Kzt, Kzt_source, elevation_ft=None, elevation_source=""):
+    """Wind pressures on wall components and cladding, buildings with h of 60 ft or less,
+    ASCE/SEI 7-22 Chapter 30 Part 1 (see wind.py)."""
+    for nm, v in (("the source of the basic wind speed", V_source), ("the basis of the exposure category", exposure_basis),
+                  ("the source of Kzt", Kzt_source), ("the basis of the enclosure classification", enclosure_basis)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if elevation_ft is not None and not (elevation_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the ground elevation is blank")
+    Ke = wind.ke(elevation_ft) if elevation_ft is not None else 1.0
+    L = footing_line
+    try:
+        r = wind.cc_walls(V, exposure, h_mean, least_dim, enclosure, areas, theta, Kzt, Ke)
+    except wind.WindError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    qh, gc, a = r["qh"], r["GCpi"], r["a"]
+    steps = [L("V", V, "mi/h", "ASCE/SEI 7-22 Sect. 26.5", V_source.strip()),
+             L("Kzt", Kzt, "", "Sect. 26.8", Kzt_source.strip()),
+             L("Ke" + (" = e^(-0.0000362 ze)" if elevation_ft is not None else ""), Ke, "", "Sect. 26.9, Table 26.9-1",
+               f"ze = {elevation_ft:,.0f} ft" if elevation_ft is not None else "taken as 1.0"),
+             L("Kh", r["Kh"], "", "Table 26.10-1", f"Exposure {exposure}, h = {h_mean:g} ft"),
+             L("qh = 0.00256 Kh Kzt Ke V^2", qh, "psf", "Eq. 26.10-1", "at the mean roof height"),
+             L("Kd", wind.KD_CC, "", "Table 26.6-1", "buildings, components and cladding"),
+             L("GCpi", gc, "", "Table 26.13-1", f"{enclosure} building; plus and minus"),
+             L("a", a, "ft", "Figure 30.3-1", f"width of the corner zone (zone 5) at each wall corner; least horizontal dimension {least_dim:g} ft")]
+    lines = [f"{'area':>8}{'(GCp) +':>12}{'zone 4 -':>10}{'zone 5 -':>10}{'p + (4, 5)':>14}{'p - zone 4':>12}{'p - zone 5':>12}",
+             f"{'ft2':>8}{'':>12}{'':>10}{'':>10}{'psf':>14}{'psf':>12}{'psf':>12}"]
+    for x in r["rows"]:
+        g, d = x["gcp"], x["design"]
+        lines.append(f"{x['area']:>8g}{g['positive']:>12.2f}{g[4]:>10.2f}{g[5]:>10.2f}{d['positive']:>14.1f}{d[4]:>12.1f}{d[5]:>12.1f}")
+    info = [("Wind Speed", f"V = {V:g} mi/h ({V_source.strip()})"),
+            ("Exposure", f"{exposure} ({exposure_basis.strip()})"),
+            ("Topography", f"Kzt = {Kzt:g} ({Kzt_source.strip()})"),
+            ("Elevation", f"{elevation_ft:,.0f} ft above sea level ({elevation_source.strip()})" if elevation_ft is not None else "Ke taken as 1.0"),
+            ("Enclosure", f"{enclosure} ({enclosure_basis.strip()})"),
+            ("Building", f"mean roof height h = {h_mean:g} ft; least horizontal dimension {least_dim:g} ft; roof at {theta:g} degrees")]
+    sheet = SimpleSheet(
+        mark, "Wind Pressures, Wall Components and Cladding", "Site and Building", "Chapter 30, Part 1", info, [], [],
+        "Velocity Pressure and Factors", steps, [],
+        ["Pressures are strength-level (ASCE/SEI 7-22 basic wind speed), in psf, positive toward the wall and negative away from it.",
+         "p = qh Kd [(GCp) - (GCpi)], Eq. 30.3-1; the internal pressure sign that adds is used with each value.",
+         "(GCp) from Figure 30.3-1 by effective wind area (Sect. 26.2)" + ("; reduced 10 percent for a roof at 10 degrees or less (note 5)." if theta <= 10 else "."),
+         f"Net pressure not less than {wind.MIN_CC:g} psf in either direction (Sect. 30.2.2).",
+         "Zone 5 is within the distance a of a wall corner; zone 4 is the rest of the wall."],
+        ["roof components and cladding (Figures 30.3-2 and on)", "parapets and roof overhangs",
+         "the enclosure classification (Sect. 26.12)", "the effective wind area of each component (Sect. 26.2)"])
+    sheet.blocks.append(dict(title="Design Pressures by Effective Wind Area", lines=lines))
+    sheet.wind = dict(r)
+    return sheet

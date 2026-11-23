@@ -160,3 +160,31 @@ def test_mwfrs_monoslope_sheet(tmp_path):
     from strukit.ws_steel_beam import WorksheetError
     with pytest.raises(WorksheetError):
         calc.build("wind_mwfrs", dict(v, theta="0"), dict(job="2026-000", name="Test", method="ASD"))
+
+
+def test_cc_walls_by_hand(tmp_path):
+    """Figure 30.3-1 end values, and by hand at 100 ft2: f = (2 - 1)/(log 500 - 1) = 0.5886;
+    positive 1.0 - 0.3(0.5886) = 0.823; zone 4 -1.1 + 0.3(0.5886) = -0.923; zone 5 -1.4 + 0.6(0.5886) = -1.047.
+    115 mi/h, Exposure C, h = 20 ft: qh = 30.47 psf; enclosed: p+ = 30.47(0.85)(0.823 + 0.18) = 25.99 psf;
+    zone 4: 30.47(0.85)(-0.923 - 0.18) = -28.58; zone 5: 30.47(0.85)(-1.047 - 0.18) = -31.78.
+    a for a 40 ft least dimension, h = 20 ft: min(4, 8) = 4 ft."""
+    assert wind.cc_wall_gcp(5, "positive", 20) == 1.0 and wind.cc_wall_gcp(10, 5, 20) == -1.4 and wind.cc_wall_gcp(10, 4, 20) == -1.1
+    assert wind.cc_wall_gcp(500, 5, 20) == pytest.approx(-0.8) and wind.cc_wall_gcp(2000, 4, 20) == pytest.approx(-0.8)
+    assert wind.cc_wall_gcp(700, "positive", 20) == pytest.approx(0.7) and wind.cc_wall_gcp(10, 5, 10) == pytest.approx(-1.26)
+    r = wind.cc_walls(115, "C", 20, 40, "enclosed", [100, 10], theta=22.6)
+    assert r["a"] == 4.0 and [x["area"] for x in r["rows"]] == [10, 100]
+    x = r["rows"][1]
+    assert x["gcp"]["positive"] == pytest.approx(0.823, abs=0.001) and x["gcp"][4] == pytest.approx(-0.923, abs=0.001) and x["gcp"][5] == pytest.approx(-1.047, abs=0.001)
+    assert x["design"]["positive"] == pytest.approx(25.99, abs=0.03) and x["design"][4] == pytest.approx(-28.58, abs=0.03) and x["design"][5] == pytest.approx(-31.78, abs=0.03)
+    assert wind.cc_a(200, 15) == 8.0 and wind.cc_a(20, 30) == 3.0 and wind.cc_a(400, 20, 5) == 16.0 and wind.cc_a(400, 12, 20) == 16.0
+    low = wind.cc_walls(70, "B", 15, 40, "enclosed", [500])["rows"][0]            # the 16 psf minimum governs
+    assert low["design"] == {"positive": 16.0, 4: -16.0, 5: -16.0} and abs(low["p"][4]) < 16
+    with pytest.raises(wind.WindError):
+        wind.cc_walls(115, "C", 70, 40, "enclosed", [10])
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="WC1", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
+             enclosure_basis="Sect. 26.12", h="20", least="40", theta="22.6", areas="10, 20, 50, 100, 200, 500", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, kind, _ = calc.build("wind_cc_walls", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert kind == "simple" and len(sheet.blocks[0]["lines"]) == 8
+    calcsheet._simple_pdf(sheet, str(tmp_path / "c.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")

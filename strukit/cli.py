@@ -79,7 +79,7 @@ def cmd_run(a):
 
 # ---------------------------------------------------------------- StruKit project files
 KIND_OF = {"steel_beam": "MEMBER", "steel_column": "MEMBER", "frame": "MEMBER", "footing_iso": "FTG",
-           "footing_cont": "FTG", "footing_moment": "FTG", "weld": "CONN", "bolts": "CONN", "base_plate": "CONN", "base_plate_moment": "CONN", "snow": "LOAD", "wood_beam": "MEMBER", "wood_post": "MEMBER", "shear_wall": "MEMBER", "lvl_beam": "MEMBER", "lvl_post": "MEMBER", "glulam_beam": "MEMBER", "wey_beam": "MEMBER", "ijoist": "MEMBER", "wey_post": "MEMBER", "builtup_post": "MEMBER", "perforated_wall": "MEMBER", "snow_drift": "LOAD", "glulam_post": "MEMBER", "wind_pressure": "LOAD", "wind_mwfrs": "LOAD"}
+           "footing_cont": "FTG", "footing_moment": "FTG", "weld": "CONN", "bolts": "CONN", "base_plate": "CONN", "base_plate_moment": "CONN", "snow": "LOAD", "wood_beam": "MEMBER", "wood_post": "MEMBER", "shear_wall": "MEMBER", "lvl_beam": "MEMBER", "lvl_post": "MEMBER", "glulam_beam": "MEMBER", "wey_beam": "MEMBER", "ijoist": "MEMBER", "wey_post": "MEMBER", "builtup_post": "MEMBER", "perforated_wall": "MEMBER", "snow_drift": "LOAD", "glulam_post": "MEMBER", "wind_pressure": "LOAD", "wind_mwfrs": "LOAD", "wind_cc_walls": "LOAD"}
 
 
 def _project(path):
