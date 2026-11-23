@@ -565,6 +565,22 @@ FORMS = {
                 F("elevation", "Ground elevation above sea level", unit="ft", required=False, help="blank = Ke taken as 1.0"),
                 F("elevation_source", "Where the elevation comes from", "text", required=False)],
         tables=[]),
+    "seismic_elf": dict(
+        title="Seismic Base Shear and Story Forces", code="ASCE/SEI 7-22", mark="EQ",
+        fields=[F("SDS", "SDS", unit="g", help="from the ASCE 7 Hazard Tool for the site, Risk Category and Site Class"),
+                F("SD1", "SD1", unit="g"), F("S1", "S1", unit="g"), F("TL", "Long-period transition period, TL", unit="s"),
+                F("ground_source", "Where these values come from", "text", help="for example: ASCE 7 Hazard Tool, Site Class D, Risk Category II, with the date"),
+                F("R", "Response modification coefficient, R", help="ASCE 7-22 Table 12.2-1"),
+                F("R_source", "The system and its line in Table 12.2-1", "text"),
+                F("Ie", "Importance factor, Ie", help="ASCE 7-22 Table 1.5-2"),
+                F("Ie_source", "Where Ie comes from", "text", help="for example: Risk Category II, Table 1.5-2"),
+                F("structure", "Structure type for the period", "select", options=["all other structural systems", "steel moment-resisting frame",
+                  "concrete moment-resisting frame", "steel eccentrically braced frame", "steel buckling-restrained braced frame"], help="Table 12.8-2"),
+                F("hn", "Structural height, hn", unit="ft", help="base to the highest level (to the average roof height of a sloped roof)"),
+                F("T", "Period from analysis", unit="s", required=False, help="blank = the approximate period Ta"),
+                F("T_source", "Where that period comes from", "text", required=False)],
+        tables=[T("levels", "Levels", [F("name", "Level", "text"), F("w", "Effective seismic weight", unit="kips"),
+                                       F("h", "Height above the base", unit="ft")])]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1202,6 +1218,15 @@ def build(kind, values, project):
         r.done()
         return ws_more.wind_cc_parapet_sheet(mark, V, vs, ex, eb, hp, h, ld, th, ars, kzt, ks_, r.num("elevation", False),
                                              r.text("elevation_source", False) or ""), "simple", {}
+    if kind == "seismic_elf":
+        SDS, SD1, S1, TL, gs = r.num("SDS"), r.num("SD1"), r.num("S1"), r.num("TL"), r.text("ground_source")
+        R, Rs, Ie, Is, st, hn = r.num("R"), r.text("R_source"), r.num("Ie"), r.text("Ie_source"), r.text("structure"), r.num("hn")
+        lv = r.rows("levels")
+        if not lv:
+            r.miss.append("No level is entered")
+        r.done()
+        return ws_more.seismic_elf_sheet(mark, SDS, SD1, S1, TL, gs, R, Rs, Ie, Is, st, hn, [(x["name"], x["w"], x["h"]) for x in lv],
+                                         r.num("T", False), r.text("T_source", False) or ""), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
