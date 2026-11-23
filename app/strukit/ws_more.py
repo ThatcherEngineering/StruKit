@@ -1567,6 +1567,106 @@ def lag_withdrawal_sheet(mark, D, length, n, side_t, main_t, G_main, G_main_sour
     return sheet
 
 
+def screw_withdrawal_sheet(mark, number, length, n, side_t, G_side, G_side_source, main_t, G_main, G_main_source, service, loads, combos,
+                           steel=None, steel_source="", steel_side=False):
+    """Wood screws loaded in withdrawal from side grain, with head pull-through of a wood side
+    member, 2018 NDS 12.2.2 and 12.2.5 (see dowel.py). loads: [dict(case, P lb)], P pulling the
+    side member off; combos: ASD combinations. service: "dry" or "wet in service". steel:
+    allowable tension of one screw, lb (optional, with its source). steel_side: the side
+    member is a steel part (no pull-through check)."""
+    from . import dowel, wood
+    if number not in dowel.WOOD_SCREWS:
+        raise WorksheetError(f"{mark}: the wood screw number is one of " + ", ".join(dowel.WOOD_SCREWS))
+    if not (G_main_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the main member specific gravity is blank")
+    if not steel_side and (G_side is None or not (G_side_source or "").strip()):
+        raise WorksheetError(f"{mark}: the side member specific gravity and its source are needed for head pull-through")
+    CMs = {"dry": 1.0, "wet in service": 0.7}
+    if service not in CMs:
+        raise WorksheetError(f"{mark}: the service condition is one of: " + "; ".join(CMs))
+    if n is None or n < 1 or int(n) != n:
+        raise WorksheetError(f"{mark}: the number of wood screws is a whole number, 1 or more")
+    for nm, v in (("the screw length", length), ("the side member thickness", side_t), ("the main member thickness", main_t)):
+        if v is None or v <= 0:
+            raise WorksheetError(f"{mark}: {nm} must be positive")
+    if steel is not None and not (steel_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the screw's allowable tension is blank")
+    D, Dr, DH = dowel.WOOD_SCREWS[number]
+    in_main = length - side_t
+    if in_main > main_t + 1e-9:
+        raise WorksheetError(f"{mark}: the wood screw is longer than the side member and main member together")
+    T = 2.0 * length / 3.0
+    pt = min(T, in_main)
+    if pt <= 0:
+        raise WorksheetError(f"{mark}: the wood screw does not reach the main member")
+    try:
+        W = dowel.wood_screw_withdrawal(G_main, D)
+        pth = None if steel_side else dowel.pull_through(DH, G_side, side_t)
+    except dowel.DowelError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    CM = CMs[service]
+    Ln = footing_line
+    steps = [Ln("D", f"{D:g} in", "", "NDS Table L3", f"{number} wood screw, {length:g} in. long"),
+             Ln("W = 2850 G^2 D", W, "lb/in", "NDS Eq. 12.2-2", f"G = {G_main:g} ({G_main_source.strip()})"),
+             Ln("thread length, T = 2/3 L", f"{T:.3f} in", "", "NDS Table L3 notes 2, 3"),
+             Ln("thread penetration, pt", f"{pt:.3f} in", "", "NDS 12.2.2.2", f"the lesser of T and the length in the main member, {in_main:g} in."),
+             Ln("W pt", W * pt, "lb", "NDS 12.2.2.2", "one wood screw"),
+             Ln("CM", CM, "", "NDS Table 11.3.3", service + "; withdrawal" + ("" if steel_side else " and pull-through"))]
+    if pth:
+        steps += [Ln("DH", f"{DH:g} in", "", "NDS Table L3", "head diameter"),
+                  Ln("WH = 690 pi DH G^2 tns" if pth["thin"] else "WH = 1725 pi DH^2 G^2", pth["WH"], "lb", f"NDS Eq. {pth['eq']}",
+                     f"G = {G_side:g} ({G_side_source.strip()}); tns = {side_t:g} in. {'not over' if pth['thin'] else 'over'} 2.5 DH = {2.5 * DH:.2f} in.")]
+    base_w = W * pt * CM
+    base_h = pth["WH"] * CM if pth else None
+    worst = None
+    for cb in combos:
+        P = sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)
+        present = [ld["case"] for ld in loads if cb.factors.get(ld["case"], 0.0) and ld["P"]]
+        if not present or P < 1e-9:
+            continue
+        try:
+            CD, cd_case, cd_dur = wood.load_duration(present)
+        except wood.WoodError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        cap = n * min(base_w, base_h if base_h is not None else base_w) * CD
+        g = dict(name=cb.name, P=P, CD=CD, cd_case=cd_case, cd_dur=cd_dur, cap=cap, source=cb.source)
+        if worst is None or g["P"] / cap > worst["P"] / worst["cap"]:
+            worst = g
+    if worst is None:
+        raise WorksheetError(f"{mark}: no load combination pulls on the connection")
+    CD = worst["CD"]
+    steps += [Ln("CD", CD, "", "NDS Table 2.3.2", f"{worst['cd_case']}, {worst['cd_dur']}; combination {worst['name']}"),
+              Ln("W' pt = W pt CD CM Ct", base_w * CD, "lb", "NDS Table 11.3.1", "Ct = 1.0; one wood screw")]
+    rows = [Row("Withdrawal of the wood screws", worst["name"], worst["P"], n * base_w * CD, "lb", "NDS Table 11.3.1, 12.2.2", f"{int(n)} wood screws")]
+    not_checked = ["wood screw spacing, edge and end distances against splitting (NDS 12.1.5.7)", "the members at the connection",
+                   "combined lateral and withdrawal loading (NDS 12.4.1)"]
+    if pth:
+        steps.append(Ln("W'H = WH CD CM Ct", base_h * CD, "lb", "NDS Table 11.3.1", "Ct = 1.0; one wood screw"))
+        rows.append(Row("Head pull-through of the side member", worst["name"], worst["P"], n * base_h * CD, "lb", "NDS Table 11.3.1, 12.2.5", f"{int(n)} wood screws"))
+    else:
+        not_checked.insert(1, "the steel side member at the screw heads")
+    if steel is not None:
+        rows.append(Row("Tension in the wood screws", worst["name"], worst["P"], n * steel, "lb", "NDS 12.2.2.5, 11.2.3", f"{steel:,.0f} lb per screw ({steel_source.strip()})"))
+    else:
+        not_checked.insert(0, "the tensile strength of the wood screw at the root diameter (NDS 12.2.2.5)")
+    info = [("Fastener", f"{int(n)} - {number} wood screws, {D:g} in. diameter x {length:g} in. long" + ("" if steel_side else f", {DH:g} in. head")),
+            ("Side Member", f"{side_t:g} in. thick, steel" if steel_side else f"{side_t:g} in. thick, G = {G_side:g} ({G_side_source.strip()})"),
+            ("Main Member", f"{main_t:g} in. thick, G = {G_main:g} ({G_main_source.strip()})"),
+            ("Conditions", service + (" service" if service == "dry" else ""))]
+    load_lines = [f"{ld['case']}: {ld['P']:,.0f} lb" + (f"  ({ld['label']})" if ld.get("label") else "") for ld in loads]
+    sheet = SimpleSheet(
+        mark, "Wood Screws in Withdrawal", "Connection", "ASD", info, load_lines, [(f"{worst['name']}", worst["source"])], "Withdrawal Design Value", steps, rows,
+        ["Standard wood screws (NDS Table L3) turned into lead holes bored to NDS 12.1.5.2, into the side grain of the main member, perpendicular to the wood fibers; load along the screw.",
+         "Thread length two thirds of the screw length, at the point end.",
+         "Sustained temperature not over 100 degrees F (Ct = 1.0, NDS Table 11.3.4).",
+         "All wood screws share the load equally."],
+        not_checked)
+    sheet.blocks.append(dict(title="Section", picture=("nailed", dict(side_t=side_t, main_t=main_t, length=length, p=in_main, D=D,
+                                                       label=f"{number} x {length:g} in. wood screw", withdrawal=True, screw=True))))
+    sheet.connection = dict(W=W, pt=pt, T=T, WH=pth["WH"] if pth else None, capacity=worst["cap"], demand=worst["P"], CD=CD, CM=CM)
+    return sheet
+
+
 def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, edge, shear, side_t, side_w, G_side, E_side, side_source,
                             main_t, main_w, G_main, E_main, main_source, sense, wood_type, service, loads, combos, local=None, grain="parallel", perp=None, lag=None, steel=None):
     """Bolted wood-to-wood connection loaded parallel to grain in every member (a splice or

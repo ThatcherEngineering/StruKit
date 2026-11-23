@@ -317,3 +317,13 @@ def wood_screw(number, side_t, G_side, G_main, penetration=None):
     lm, Fyb = p - D, wood_screw_fyb(D)
     r = lateral(Dr, side_t, lm, fe(G_side, Dr), fe(G_main, Dr), Fyb)
     return dict(r, lm=lm, p=p, Fyb=Fyb, D=D, Dr=Dr, DH=DH)
+
+
+def wood_screw_withdrawal(G, D):
+    """Wood screw reference withdrawal design value, lb per inch of thread penetration into side
+    grain, NDS Eq. 12.2-2: W = 2850 G^2 D. Range of Table 12.2B: G 0.31 to 0.73, screws #6 to #24."""
+    if not 0.31 <= G <= 0.73:
+        raise DowelError("wood screw withdrawal: the specific gravity is from 0.31 to 0.73 (NDS Table 12.2B)")
+    if not 0.138 <= D <= 0.372:
+        raise DowelError("wood screw withdrawal: the screw diameter is from 0.138 to 0.372 in. (NDS Table 12.2B)")
+    return 2850.0 * G ** 2 * D
