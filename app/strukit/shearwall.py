@@ -16,12 +16,23 @@ Read from the standard:
   Eq. 4.3-7  chord tension and compression T = C = V h / b_eff
   Eq. 4.3-1  deflection = 8 v h^3 / (E A b) + v h / (1000 Ga) + h Da / b
 
-Covered: individual full-height wall segments in one line, blocked, panels on one side.
-Not covered: unblocked walls (4.3.5.3), panels on both sides (4.3.5.4), perforated walls
-and force transfer around openings (4.3.2.2, 4.3.2.3), other sheathing materials, the
-increase of Table 4.3A note 2, moisture above 19 percent (note 5), dead load resisting
-uplift, anchor bolts and plate washers (4.3.6.4.3), and the added seismic construction
-requirements of 4.3.7.1.
+  4.3.5.3    unblocked walls: vn(ub) = vn(b) x C(ub) (Eq. 4.3-2), vn(b) the Table 4.3A
+             value for 6 in. edge nailing; C(ub) from Table 4.3.5.3 by stud spacing and
+             intermediate nail spacing (read from the page image); height not over 16 ft;
+             Table 4.3.3 maximum aspect ratio 2 for unblocked walls
+  4.3.4.3    unblocked deflection: Ga for 6 in. edge nailing, and v divided by C(ub)
+  4.3.5.4.1  the same sheathing system on both sides: combined Ga = Ga1 + Ga2 and
+             combined vn = Kmin x Ga(c) (Eq. 4.3-3, 4.3-4), which for identical sides is
+             twice the one-side values
+
+Covered: individual full-height wall segments in one line; blocked or unblocked; panels on
+one side, or the same panels and nailing on both sides. Chord tension may be reduced by
+dead load: T = V h / b_eff - (factor x w x b / 2), the dead load taken at the middle of
+the segment and moments about the compression chord, with the arm b_eff / 2.
+Not covered: different sheathing on the two sides (4.3.5.4.2), perforated walls and force
+transfer around openings (4.3.2.2, 4.3.2.3), other sheathing materials, the increase of
+Table 4.3A note 2, moisture above 19 percent (note 5), anchor bolts and plate washers
+(4.3.6.4.3), and the added seismic construction requirements of 4.3.7.1.
 
 Units: lb, ft, plf; Ga in kips/in.; chord area in2, E in psi; deflection in inches.
 """
@@ -51,6 +62,8 @@ TABLE_4_3A = {
     ("Sheathing", "19/32", "10d"): [(950, 19, 13), (1430, 26, 16), (1860, 33, 18), (2435, 48, 22)],
 }
 PANELS = [f"{g}, {t} in, {n} common" for (g, t, n) in TABLE_4_3A]
+# Table 4.3.5.3: intermediate nail spacing -> stud spacing -> C(ub); edge nails at 6 in.
+CUB = {6: {12: 1.0, 16: 0.8, 20: 0.6, 24: 0.5}, 12: {12: 0.8, 16: 0.6, 20: 0.5, 24: 0.4}}
 FACTORS = {("wind", "ASD"): ("divided by 2.0", 1 / 2.0), ("seismic", "ASD"): ("divided by 2.8", 1 / 2.8),
            ("wind", "LRFD"): ("x 0.80", 0.80), ("seismic", "LRFD"): ("x 0.50", 0.50)}
 
@@ -72,8 +85,10 @@ class Segment:
     V: float                     # shear carried, lb
     v: float                     # unit shear carried, plf
     b_eff: float
-    T: float                     # chord tension = compression, lb
+    T: float                     # chord tension, lb (reduced by dead load where given)
     defl: float                  # in, or None when the chord data is not given
+    C: float = 0.0               # chord compression from overturning, lb
+    T_dead: float = 0.0          # dead load reduction of the tension, lb
 
 
 @dataclass
@@ -88,10 +103,13 @@ class WallLine:
     V: float
     capacity: float              # design capacity of the line, lb
     lines: list = field(default_factory=list)
+    cub: float = 1.0
+    sides: int = 1
 
 
 def line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_inside=None, arm_offset_in=0.0,
-         chord_E=None, chord_A=None, anchor_slip_in=None):
+         chord_E=None, chord_A=None, anchor_slip_in=None, sides=1, blocked=True, stud_spacing=None, field_nails=None,
+         dead_plf=0.0, dead_factor=None):
     """A line of individual full-height segments. panel: an entry of PANELS; spacing: edge
     nail spacing, in.; panel_type: "OSB" or "plywood" (for Ga); G: specific gravity of the
     framing; h: wall height, ft; lengths: segment lengths, ft; V: design shear on the line,
@@ -110,8 +128,23 @@ def line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_in
         raise ShearWallError("shear wall: the specific gravity of the framing is missing or out of range")
     if h is None or h <= 0 or not lengths or any(b is None or b <= 0 for b in lengths):
         raise ShearWallError("shear wall: the height and every segment length must be positive")
+    if sides not in (1, 2):
+        raise ShearWallError("shear wall: panels are on one side or on both sides")
+    cub = 1.0
+    if not blocked:
+        if spacing != 6:
+            raise ShearWallError("shear wall: an unblocked wall has edge nails at 6 in. (SDPWS Table 4.3.5.3)")
+        if field_nails not in CUB or stud_spacing not in CUB[6]:
+            raise ShearWallError("shear wall: an unblocked wall needs the stud spacing (12, 16, 20 or 24 in.) and the nail "
+                                 "spacing at intermediate framing (6 or 12 in.)")
+        if h > 16:
+            raise ShearWallError("shear wall: an unblocked wall is limited to 16 ft high (SDPWS 4.3.5.3)")
+        cub = CUB[field_nails][stud_spacing]
+    if dead_plf and dead_factor is None:
+        raise ShearWallError("shear wall: the dead load needs its factor in the uplift load combination")
+    max_ratio = 3.5 if blocked else 2.0
     vn_t, ga_osb, ga_ply = TABLE_4_3A[key][SPACINGS.index(spacing)]
-    Ga = ga_osb if panel_type == "OSB" else ga_ply
+    Ga = (ga_osb if panel_type == "OSB" else ga_ply) * sides
     sg = min(1.0, 1.0 - (0.5 - G))
     nail = 1.0
     if key[2] == "10d":
@@ -123,11 +156,11 @@ def line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_in
     segs = []
     for b in lengths:
         r = h / b
-        if r > 3.5:
-            raise ShearWallError(f"shear wall: a {b:g} ft segment of a {h:g} ft wall has h/b = {r:.2f}, over the 3.5 limit "
-                                 "of SDPWS Table 4.3.3")
+        if r > max_ratio + 1e-9:
+            raise ShearWallError(f"shear wall: a {b:g} ft segment of a {h:g} ft wall has h/b = {r:.2f}, over the {max_ratio:g} limit "
+                                 "of SDPWS Table 4.3.3" + ("" if blocked else " for unblocked walls"))
         red = 2 * b / h if r > 2 else 1.0
-        vn = vn_t * sg * nail * red
+        vn = vn_t * sg * nail * red * sides * cub
         segs.append(dict(b=b, r=r, red=red, vn=vn, cap=vn * b * fac))
     total = sum(s["cap"] for s in segs)
     out = []
@@ -139,11 +172,19 @@ def line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_in
         v = Vi / s["b"]
         d = None
         if chord_E and chord_A and anchor_slip_in is not None:
-            d = 8 * v * h ** 3 / (chord_E * chord_A * s["b"]) + v * h / (1000 * Ga) + h * anchor_slip_in / s["b"]
-        out.append(Segment(s["b"], s["r"], s["red"], s["vn"], s["cap"], Vi, v, be, Vi * h / be, d))
+            vd = v / cub                                        # 4.3.4.3
+            d = 8 * vd * h ** 3 / (chord_E * chord_A * s["b"]) + vd * h / (1000 * Ga) + h * anchor_slip_in / s["b"]
+        ot = Vi * h / be
+        td = (dead_factor or 0.0) * (dead_plf or 0.0) * s["b"] / 2.0
+        out.append(Segment(s["b"], s["r"], s["red"], s["vn"], s["cap"], Vi, v, be, max(ot - td, 0.0), d, ot, td))
     L = [Line("vn", vn_t, "plf", "SDPWS Table 4.3A", f"{panel}, edge nails at {spacing} in"),
          Line("specific gravity factor, 1 - (0.5 - G)", sg, "", "Table 4.3A note 3", f"G = {G:g}"),
          Line("design factor", fac, "", "SDPWS 4.1.4", f"{load}, {method}: nominal {txt}")]
+    if sides == 2:
+        L.insert(2, Line("panels on both sides", 2.0, "", "SDPWS 4.3.5.4.1", "the same panels and nailing on each side; vn and Ga doubled"))
+    if not blocked:
+        L.insert(2, Line("C(ub)", cub, "", "SDPWS Table 4.3.5.3, Eq. 4.3-2",
+                         f"unblocked; studs at {stud_spacing:g} in, intermediate nails at {field_nails:g} in"))
     if key[2] == "10d":
         L.insert(2, Line("10d nail factor", nail, "", "Table 4.3A note 10",
                          "hold-down on the inside face of the end post" if holddown_inside else "hold-down not on the inside face"))
@@ -154,7 +195,10 @@ def line(panel, spacing, panel_type, G, h, lengths, V, load, method, holddown_in
     L.append(Line("design capacity of the line", total, "lb", "sum of the segments"))
     for i, s in enumerate(out, 1):
         L.append(Line(f"segment {i}: shear", s.V, "lb", "SDPWS 4.3.5.5.1, exception 1", f"{s.v:.0f} plf; in proportion to capacity"))
-        L.append(Line(f"segment {i}: T = C = V h / b_eff", s.T, "lb", "SDPWS Eq. 4.3-7", f"b_eff = {s.b_eff:.2f} ft"))
+        L.append(Line(f"segment {i}: V h / b_eff", s.C, "lb", "SDPWS Eq. 4.3-7", f"b_eff = {s.b_eff:.2f} ft"))
+        if dead_plf:
+            L.append(Line(f"segment {i}: T = V h / b_eff - factor x w b / 2", s.T, "lb", "statics",
+                          f"dead load {dead_factor:g} x {dead_plf:g} plf x {s.b:g} ft / 2 = {s.T_dead:,.0f} lb"))
         if s.defl is not None:
             L.append(Line(f"segment {i}: deflection", s.defl, "in", "SDPWS Eq. 4.3-1", f"Ga = {Ga:g} kips/in"))
-    return WallLine(vn_t, Ga, sg, nail, fac, txt, out, V, total, L)
+    return WallLine(vn_t, Ga, sg, nail, fac, txt, out, V, total, L, cub, sides)
