@@ -570,6 +570,7 @@ FORMS = {
         fields=[F("SDS", "SDS", unit="g", help="from the ASCE 7 Hazard Tool for the site, Risk Category and Site Class"),
                 F("SD1", "SD1", unit="g"), F("S1", "S1", unit="g"), F("TL", "Long-period transition period, TL", unit="s"),
                 F("ground_source", "Where these values come from", "text", help="for example: ASCE 7 Hazard Tool, Site Class D, Risk Category II, with the date"),
+                F("risk", "Risk Category", "select", options=["I", "II", "III", "IV"], help="ASCE 7-22 Table 1.5-1"),
                 F("R", "Response modification coefficient, R", help="ASCE 7-22 Table 12.2-1"),
                 F("R_source", "The system and its line in Table 12.2-1", "text"),
                 F("Ie", "Importance factor, Ie", help="ASCE 7-22 Table 1.5-2"),
@@ -1221,12 +1222,13 @@ def build(kind, values, project):
     if kind == "seismic_elf":
         SDS, SD1, S1, TL, gs = r.num("SDS"), r.num("SD1"), r.num("S1"), r.num("TL"), r.text("ground_source")
         R, Rs, Ie, Is, st, hn = r.num("R"), r.text("R_source"), r.num("Ie"), r.text("Ie_source"), r.text("structure"), r.num("hn")
+        rk = r.text("risk")
         lv = r.rows("levels")
         if not lv:
             r.miss.append("No level is entered")
         r.done()
         return ws_more.seismic_elf_sheet(mark, SDS, SD1, S1, TL, gs, R, Rs, Ie, Is, st, hn, [(x["name"], x["w"], x["h"]) for x in lv],
-                                         r.num("T", False), r.text("T_source", False) or ""), "simple", {}
+                                         r.num("T", False), r.text("T_source", False) or "", risk=rk), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")

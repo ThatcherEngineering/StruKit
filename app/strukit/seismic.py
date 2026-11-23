@@ -20,8 +20,15 @@ Read from the standard (pdf pp. 185-186; equations and tables confirmed against 
   Eq. 12.8-12, 12.8-13   Fx = Cvx V, Cvx = wx hx^k / sum(wi hi^k); k = 1 for T of 0.5 s or
                  less, 2 for 2.5 s or more, linear between.
   Eq. 12.8-14    story shear Vx = the sum of the forces at and above the level.
+  Sect. 11.6     Seismic Design Category (pdf p. 169, tables confirmed against the page image):
+                 S1 of 0.75 or more: E for Risk Category I, II or III, F for IV. Otherwise the
+                 more severe of Table 11.6-1 (SDS under 0.167: A, A; 0.167 to under 0.33: B, C;
+                 0.33 to under 0.50: C, D; 0.50 and over: D, D, for Risk Category I to III and
+                 IV) and Table 11.6-2 (SD1 under 0.067: A, A; 0.067 to under 0.133: B, C; 0.133
+                 to under 0.20: C, D; 0.20 and over: D, D). The permission to use Table 11.6-1
+                 alone is not taken.
 R, Ie, SDS, SD1, S1 and TL are entered with their sources. Not covered: Method 1 (the
-multi-period spectrum), the SDS limit of Sect. 12.8.1.3, the Seismic Design Category, the
+multi-period spectrum), the SDS limit of Sect. 12.8.1.3, the
 redundancy factor, vertical seismic load, torsion, drift, P-delta, structural irregularities
 and whether this procedure is permitted (Table 12.6-1).
 """
@@ -34,6 +41,27 @@ CU = ((0.4, 1.4), (0.3, 1.4), (0.2, 1.5), (0.15, 1.6), (0.1, 1.7))
 
 class SeismicError(ValueError):
     pass
+
+
+SDC_SDS = ((0.167, "A", "A"), (0.33, "B", "C"), (0.50, "C", "D"), (None, "D", "D"))      # under this value: Risk Category I to III, IV
+SDC_SD1 = ((0.067, "A", "A"), (0.133, "B", "C"), (0.20, "C", "D"), (None, "D", "D"))
+
+
+def sdc(SDS, SD1, S1, risk):
+    """Seismic Design Category, Sect. 11.6: (category, by Table 11.6-1, by Table 11.6-2, note)."""
+    if risk not in ("I", "II", "III", "IV"):
+        raise SeismicError("seismic: the Risk Category is I, II, III or IV")
+    col = 2 if risk == "IV" else 1
+
+    def look(table, v):
+        for row in table:
+            if row[0] is None or v < row[0]:
+                return row[col]
+
+    a, b = look(SDC_SDS, SDS), look(SDC_SD1, SD1)
+    if S1 >= 0.75:
+        return ("F" if risk == "IV" else "E"), a, b, "S1 is 0.75 or more"
+    return max(a, b), a, b, "the more severe of the two tables"
 
 
 def cu(SD1):
