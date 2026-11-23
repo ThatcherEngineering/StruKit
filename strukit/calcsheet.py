@@ -1226,7 +1226,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
                    230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
-            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm"):
+            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "nailed"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
             p.head(b.get("head") or b["title"] + ": Inputs and Layout")
@@ -1344,6 +1344,8 @@ def _block_picture(c, top, pic):
         return _seismic_forces_picture(c, top, d)
     if name == "diaphragm":
         return _diaphragm_picture(c, top, d)
+    if name == "nailed":
+        return _nailed_picture(c, top, d)
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
@@ -1495,6 +1497,39 @@ def _wind_mwfrs_picture(c, top, d):
     ybase = y - 112
     _small(c, (LM + RM) / 2, ybase - 30, "sections to scale; external pressure q Kd G Cp in psf, + toward the surface, - away from it; windward wall value at its top")
     return ybase - 36
+
+
+def _nailed_picture(c, top, d):
+    """Section through the connection, to scale: the side member over the main member, one
+    nail through both, the load on each member, and the thicknesses, nail length and
+    penetration dimensioned."""
+    ts, tm, Lg, p, D = d["side_t"], d["main_t"], d["length"], d["p"], d["D"]
+    sc = min(26.0, 86.0 / (ts + tm))                      # points per inch
+    wd = 150.0
+    x0 = (LM + RM) / 2 - wd / 2
+    y_top = top - 26
+    y_mid = y_top - ts * sc
+    y_bot = y_mid - tm * sc
+    for (xa, ya, w_, h_, kind) in ((x0 - 22, y_mid, wd, ts * sc, "side"), (x0 + 22, y_bot, wd, tm * sc, "main")):
+        c.setFillColorRGB(0.93, 0.87, 0.74); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8); c.rect(xa, ya, w_, h_, fill=1, stroke=1)
+    xn = (LM + RM) / 2
+    c.setStrokeColorRGB(0.25, 0.27, 0.3); c.setLineWidth(max(1.0, D * sc)); c.line(xn, y_top, xn, y_top - Lg * sc + D * sc)
+    c.setLineWidth(0.8); c.line(xn - 3.5, y_top + 0.8, xn + 3.5, y_top + 0.8)
+    t = c.beginPath(); t.moveTo(xn - D * sc / 2, y_top - Lg * sc + D * sc); t.lineTo(xn + D * sc / 2, y_top - Lg * sc + D * sc); t.lineTo(xn, y_top - Lg * sc); t.close()
+    c.setFillColorRGB(0.25, 0.27, 0.3); c.drawPath(t, fill=1, stroke=0)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow(c, x0 - 22, (y_top + y_mid) / 2, x0 - 50, (y_top + y_mid) / 2, head=4)
+    _arrow(c, x0 + 22 + wd, (y_mid + y_bot) / 2, x0 + 50 + wd, (y_mid + y_bot) / 2, head=4)
+    c.setFont(FR, 6.5); c.drawRightString(x0 - 54, (y_top + y_mid) / 2 - 2, "load"); c.drawString(x0 + 54 + wd, (y_mid + y_bot) / 2 - 2, "load")
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+    c.drawString(x0 - 18, (y_top + y_mid) / 2 - 2, "side member"); c.drawString(x0 + 26, y_bot + 3, "main member")
+    xr = x0 + 22 + wd + 14
+    memberart._dim_v(c, y_mid, y_top, xr + 66, f"{ts:g} in", FR, ext_from=x0 + wd - 22)
+    memberart._dim_v(c, y_bot, y_mid, xr + 66, f"{tm:g} in", FR, ext_from=xr - 14)
+    memberart._dim_v(c, y_top - Lg * sc, y_mid, xn + 24, f"p = {p:.2f} in", FR, ext_from=xn + 2)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawCentredString(xn, y_top + 6, d["label"])
+    _small(c, (LM + RM) / 2, y_bot - 12, "section through one nail, to scale")
+    return y_bot - 18
 
 
 def _diaphragm_picture(c, top, d):
