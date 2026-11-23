@@ -31,6 +31,16 @@ Read from the standard (pdf pp. 185-186; equations and tables confirmed against 
                  images): Fpx = [sum of Fi from the top to x / sum of wi from the top to x] wpx,
                  Eq. 12.10-1; not less than 0.2 SDS Ie wpx, Eq. 12.10-2; need not exceed
                  0.4 SDS Ie wpx, Eq. 12.10-3. wpx is the level weight unless one is entered.
+  Sect. 12.8.6, 12.12.1 story drift (pdf pp. 187-188, 194-195; equation and table confirmed
+                 against the page images): design earthquake displacement = Cd de / Ie
+                 (Eq. 12.8-16; diaphragm deformation may be neglected for story drift,
+                 Sect. 12.8.6.5); story drift = the difference between the top and bottom of
+                 the story; allowable drift, Table 12.12-1, as a fraction of the story height
+                 for Risk Category I or II, III, IV: structures of four stories or less, not
+                 masonry shear walls, with interior walls, partitions and ceilings designed to
+                 accommodate the drift 0.025, 0.020, 0.015; masonry cantilever shear wall
+                 structures 0.010; other masonry shear wall structures 0.007; all other
+                 structures 0.020, 0.015, 0.010. The elastic displacements de are entered.
 R, Ie, SDS, SD1, S1 and TL are entered with their sources. Not covered: Method 1 (the
 multi-period spectrum), the SDS limit of Sect. 12.8.1.3, the
 redundancy factor, vertical seismic load, torsion, drift, P-delta, structural irregularities
@@ -150,3 +160,34 @@ def elf(SDS, SD1, S1, TL, R, Ie, structure, hn, levels, T_analysis=None):
     M_base = sum(r["F"] * r["h"] for r in rows)
     return dict(Ta=Ta, Ct=Ct, x=x, Cu=Cu, T=T, T_note=T_note, R_over_Ie=RI, Cs_123=c3, Cs_cap=cap, cap_eq=cap_eq, Cs_min=c6, Cs_s1=c7,
                 Cs=Cs, governs=governs, W=W, V=V, k=k, rows=rows, M_base=M_base)
+
+
+DRIFT = {"four stories or less, finishes designed for the drift": (0.025, 0.020, 0.015),
+         "masonry cantilever shear walls": (0.010, 0.010, 0.010),
+         "other masonry shear walls": (0.007, 0.007, 0.007),
+         "all other structures": (0.020, 0.015, 0.010)}
+
+
+def drift(levels, Cd, Ie, structure, risk):
+    """levels: [(name, height above the base ft, elastic displacement in)], any order.
+    Returns rows from the top down: name, story height hsx ft, design earthquake
+    displacement in, story drift in, allowable in."""
+    if structure not in DRIFT:
+        raise SeismicError("seismic: the structure type for the drift limit is one of: " + "; ".join(DRIFT))
+    if risk not in ("I", "II", "III", "IV"):
+        raise SeismicError("seismic: the Risk Category is I, II, III or IV")
+    if Cd is None or Cd <= 0 or Ie is None or Ie <= 0:
+        raise SeismicError("seismic: Cd and Ie must be positive")
+    f = DRIFT[structure][{"I": 0, "II": 0, "III": 1, "IV": 2}[risk]]
+    lv = sorted(levels, key=lambda r: r[1])
+    out, h0, d0 = [], 0.0, 0.0
+    for nm, h, de in lv:
+        if de is None or de < 0:
+            raise SeismicError(f"seismic: level {nm}: the elastic displacement is blank")
+        dDE = Cd * de / Ie
+        hs = h - h0
+        if hs <= 0:
+            raise SeismicError(f"seismic: level {nm}: two levels have the same height")
+        out.append(dict(name=nm, hsx=hs, dDE=dDE, drift=abs(dDE - d0), allow=f * hs * 12.0, factor=f))
+        h0, d0 = h, dDE
+    return out[::-1]

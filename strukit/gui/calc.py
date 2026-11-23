@@ -579,10 +579,16 @@ FORMS = {
                   "concrete moment-resisting frame", "steel eccentrically braced frame", "steel buckling-restrained braced frame"], help="Table 12.8-2"),
                 F("hn", "Structural height, hn", unit="ft", help="base to the highest level (to the average roof height of a sloped roof)"),
                 F("T", "Period from analysis", unit="s", required=False, help="blank = the approximate period Ta"),
-                F("T_source", "Where that period comes from", "text", required=False)],
+                F("T_source", "Where that period comes from", "text", required=False),
+                F("Cd", "Drift: deflection amplification factor, Cd", required=False, help="ASCE 7-22 Table 12.2-1; fill the drift boxes and the displacement column to check story drift"),
+                F("Cd_source", "Drift: where Cd comes from", "text", required=False),
+                F("drift_type", "Drift: structure type for the limit", "select", required=False, options=["four stories or less, finishes designed for the drift",
+                  "all other structures", "masonry cantilever shear walls", "other masonry shear walls"], help="Table 12.12-1"),
+                F("de_source", "Drift: where the elastic displacements come from", "text", required=False, help="for example: shear wall sheets SW1 to SW4, or the frame analysis")],
         tables=[T("levels", "Levels", [F("name", "Level", "text"), F("w", "Effective seismic weight", unit="kips"),
                                        F("h", "Height above the base", unit="ft"),
-                                       F("wp", "Diaphragm weight, wpx", unit="kips", required=False, help="blank = the level weight")])]),
+                                       F("wp", "Diaphragm weight, wpx", unit="kips", required=False, help="blank = the level weight"),
+                                       F("de", "Elastic displacement", unit="in", required=False, help="under the design seismic forces; for the drift check")])]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1227,9 +1233,16 @@ def build(kind, values, project):
         lv = r.rows("levels")
         if not lv:
             r.miss.append("No level is entered")
+        dr = None
+        if any(x.get("de") is not None for x in lv or []) or r.num("Cd", False) is not None:
+            dr = dict(Cd=r.num("Cd", label="Drift: Cd"), Cd_source=r.text("Cd_source"), structure=r.text("drift_type"), de_source=r.text("de_source"),
+                      de={str(x["name"]): x.get("de") for x in lv or []})
+            for x in lv or []:
+                if x.get("de") is None:
+                    r.miss.append(f"Levels: the elastic displacement of {x['name']} is blank")
         r.done()
         return ws_more.seismic_elf_sheet(mark, SDS, SD1, S1, TL, gs, R, Rs, Ie, Is, st, hn, [(x["name"], x["w"], x["h"], x.get("wp")) for x in lv],
-                                         r.num("T", False), r.text("T_source", False) or "", risk=rk), "simple", {}
+                                         r.num("T", False), r.text("T_source", False) or "", risk=rk, drift=dr), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")

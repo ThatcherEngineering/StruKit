@@ -115,3 +115,33 @@ def test_diaphragm_forces_by_hand():
     # the maximum governs where R is small: R = 1.5, Cs = 0.267: roof 16.0/60 x 60 ... over 0.4(0.4)(60) = 9.6
     r = seismic.elf(0.40, 0.3, 0.08, 4, 1.5, 1.0, "all other structural systems", 20, [("Floor", 90, 10), ("Roof", 60, 20)])["rows"]
     assert r[0]["Fpx"] == pytest.approx(9.6) and r[0]["Fpx_by"] == "Eq. 12.10-3"
+
+
+def test_story_drift_by_hand(tmp_path):
+    """Cd = 4, Ie = 1.0; elastic displacements 0.10 in at 10 ft and 0.22 in at 20 ft: design displacements 0.40 and 0.88 in;
+    story drifts 0.40 and 0.48 in; Risk Category II, four stories or less: 0.025(10)(12) = 3.00 in; all other structures 2.40 in;
+    Risk Category IV, all other structures: 0.010(120) = 1.20 in."""
+    d = seismic.drift([("Roof", 20, 0.22), ("Floor", 10, 0.10)], 4, 1.0, "four stories or less, finishes designed for the drift", "II")
+    assert [x["name"] for x in d] == ["Roof", "Floor"] and [round(x["drift"], 3) for x in d] == [0.48, 0.40] and d[0]["allow"] == pytest.approx(3.0)
+    assert seismic.drift([("Roof", 20, 0.22), ("Floor", 10, 0.10)], 4, 1.0, "all other structures", "II")[1]["allow"] == pytest.approx(2.4)
+    assert seismic.drift([("Roof", 20, 0.22), ("Floor", 10, 0.10)], 4, 1.25, "all other structures", "IV")[0]["allow"] == pytest.approx(1.2)
+    assert seismic.drift([("Roof", 20, 0.22), ("Floor", 10, 0.10)], 4, 1.25, "all other structures", "IV")[0]["dDE"] == pytest.approx(0.704)
+    assert seismic.drift([("R", 12, 0.5)], 4, 1.0, "other masonry shear walls", "III")[0]["allow"] == pytest.approx(0.007 * 144)
+    with pytest.raises(seismic.SeismicError):
+        seismic.drift([("Roof", 20, None)], 4, 1.0, "all other structures", "II")
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="EQ2", SDS="0.40", SD1="0.12", S1="0.08", TL="4", ground_source="ASCE 7 Hazard Tool, Site Class D", risk="II",
+             R="6.5", R_source="Table 12.2-1", Ie="1.0", Ie_source="Table 1.5-2", structure="all other structural systems", hn="20",
+             Cd="4", Cd_source="Table 12.2-1", drift_type="four stories or less, finishes designed for the drift", de_source="shear wall sheets SW1, SW2",
+             levels=[dict(name="Roof", w="60", h="20", de="0.22"), dict(name="Floor", w="90", h="10", de="0.10")])
+    sheet, kind, _ = calc.build("seismic_elf", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert len(sheet.rows) == 2 and sheet.rows[0].demand == pytest.approx(0.48) and sheet.rows[0].capacity == pytest.approx(3.0)
+    assert sheet.blocks[-1]["title"] == "Story Drift"
+    calcsheet._simple_pdf(sheet, str(tmp_path / "d.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    res = calc.results("seismic_elf", v, dict(job="2026-000", name="Test", method="ASD", number="1", date="2026-11-23"))
+    assert res.get("state") in ("done", "stopped")
+    with pytest.raises(calc.Missing):
+        calc.build("seismic_elf", dict(v, levels=[dict(name="Roof", w="60", h="20", de="0.22"), dict(name="Floor", w="90", h="10")]), dict(job="2026-000", name="Test", method="ASD"))
+    with pytest.raises(calc.Missing):
+        calc.build("seismic_elf", dict(v, Cd_source=""), dict(job="2026-000", name="Test", method="ASD"))
