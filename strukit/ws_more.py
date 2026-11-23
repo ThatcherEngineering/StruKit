@@ -265,8 +265,7 @@ def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod
          "stress over a length Y from the compression edge; when bearing alone cannot balance the moment, the stress "
          "is the available bearing stress and the rods on the far side take tension.",
          "Plate bending from the rod tension uses the lesser of the full plate width (Eq. 4-60) and a 45 degree "
-         "distribution from each rod to the column flange, which the guide gives as the conservative effective "
-         "width (Sect. 4.3.2, Appendix B).",
+         "distribution from each rod to the column flange (Sect. 4.3.2).",
          "Rod strengths are steel strengths only. Grout strength is not counted."],
         not_checked,
         picture=("base_plate_moment", dict(d=p["d"], bf=p["bf"], tf=p["tf"], tw=p["tw"], N=N, B=B, n=n_rods,

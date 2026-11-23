@@ -195,10 +195,6 @@ def check(da, nt, futa, fya, ductile, hef, Abrg, fc, ha, n, s_row, s_rows, c_end
                f"phi = {phi_c:g}")]
     M.append(Mode("Ncb", "breakout, tension", "tension", phi_c, N / 1000, share,
                   "ACI 318-19 17.6.2; Table 17.5.3(b)", who))
-    if d["alt"]:
-        notes.append(f"Breakout of the row uses Eq. 17.6.2.2.1 ({N / 1000:.1f} kip nominal). Eq. 17.6.2.2.3, for embedment "
-                     f"from 11 to 25 in., would give {d['alt'] / 1000:.1f} kip; the Code words it for a single rod, while "
-                     "AISC Design Guide 1 Example 4.7-11 applies it to a row. Thatcher Engineering standard: the lower value is used.")
     Np = psi_cP * 8 * Abrg * fc / 1000                    # Eq. 17.6.3.1, 17.6.3.2.2a
     L.append(Line("Npn = psi_c,P 8 Abrg f'c", Np, "kip", "Eq. 17.6.3.1, 17.6.3.2.2a", f"psi_c,P = {psi_cP:g}; phi = {phi_p:g}"))
     M.append(Mode("Npn", "pullout", "tension", phi_p, Np, 1.0 / n,

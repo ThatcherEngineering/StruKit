@@ -268,3 +268,12 @@ def test_screen_leaves_anchorage_out_when_embedment_is_blank():
     from strukit.gui import calc
     s, _, _ = calc.build("base_plate_moment", _typed(anc_hef="", cases_lrfd=[]), PROJECT)
     assert not s.blocks and any("Chapter 17" in t for t in s.not_checked)
+
+
+def test_sheet_notes_are_factual_not_a_design_log():
+    # Zach, 2026-11-23: report sheets read professional and factual; rulings and the reasons for
+    # choosing one reading over another stay in the rulings file, never on the sheet
+    s = _sheet(an=_an(hef=14))
+    text = " ".join(s.assumptions + s.not_checked + [r.note for r in s.rows]).lower()
+    for phrase in ("would give", "thatcher engineering standard", "ruled", "on file", "lower value", "is not used for"):
+        assert phrase not in text
