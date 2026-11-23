@@ -428,11 +428,11 @@ function migrate(d) {      // an older project file has one list of combinations
 function load(data, p) { S = migrate(data); path = p; R.clear(); sel = "project"; setDirty(false); drawNav(); drawMain(); recalcAll().then(() => { if (sel === "project") drawMain(); }); }
 
 function example() {
-  const src = "ASCE/SEI 7 Section 2.4 (typed in)", src2 = "ASCE/SEI 7 Section 2.3 (typed in)";
+  const src = "ASCE/SEI 7-22 Sect. 2.4.1 (typed in)", src2 = "ASCE/SEI 7-22 Sect. 2.3.1 (typed in)";
   return { format: "strukit-project", version: 1,
     project: { name: "Example Project", number: "0000-000", address: "", date: INFO.today, method: "ASD",
-      combos_asd: [{ expr: "D + L", source: src }, { expr: "D + S", source: src }, { expr: "D + 0.6W", source: src }, { expr: "D + 0.75L + 0.75S + 0.45W", source: src }],
-      combos_lrfd: [{ expr: "1.2D + 1.6L + 0.5S", source: src2 }, { expr: "1.2D + 1.6S + 0.5W", source: src2 }, { expr: "1.2D + 1.0W + 1.0L + 0.5S", source: src2 }, { expr: "0.9D + 1.0W", source: src2 }] },
+      combos_asd: [{ expr: "D + L", source: src }, { expr: "D + 0.7S", source: src }, { expr: "D + 0.6W", source: src }, { expr: "D + 0.75L + 0.45W + 0.525S", source: src }],
+      combos_lrfd: [{ expr: "1.2D + 1.6L + 0.3S", source: src2 }, { expr: "1.2D + 1.0S + 0.5W", source: src2 }, { expr: "1.2D + 1.0W + 1.0L + 0.3S", source: src2 }, { expr: "0.9D + 1.0W", source: src2 }] },
     members: [
       { kind: "steel_beam", values: { mark: "B1", shape: "W18X50", Fy: "50", span: "35", bracing: "at points", brace_pts: "11.67, 23.33", self_weight: "yes",
         loads: [{ case: "D", kind: "uniform", mag: "0.45" }, { case: "L", kind: "uniform", mag: "0.75" }], defl: [{ label: "live", expr: "L", ratio: "360", source: "limit typed in" }] } },
