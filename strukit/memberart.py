@@ -53,11 +53,41 @@ def steel_section(c, cx, cy, box_w, box_h, d, bf, tf, tw, k=None):
     return s
 
 
-def wood_elevation(c, x, y, w, h, plies=1, seed=7):
-    """Side view of a sawn or built-up wood member: tan face with grain lines running
-    along the length. Ply lines are not visible from the side, so plies only seeds the
-    grain so that different members do not look identical."""
+LVL_FILL, LVL_LINE, LVL_GRAIN = (0.84, 0.72, 0.52), (0.38, 0.25, 0.12), (0.60, 0.45, 0.28)
+GLU_FILL, GLU_LINE, GLU_GRAIN = (0.95, 0.86, 0.66), (0.42, 0.28, 0.13), (0.62, 0.46, 0.26)
+
+
+def wood_elevation(c, x, y, w, h, plies=1, seed=7, kind="sawn", lams=None):
+    """Side view of a wood member. kind "sawn": tan face with wavy grain lines along the
+    length. "lvl": a darker, even face with fine straight lines (the veneer face).
+    "glulam": a lighter face with the glue lines between laminations drawn straight and
+    evenly spaced (lams = number of laminations). Ply lines are not visible from the side,
+    so plies only seeds the grain so that different members do not look identical."""
     rnd = random.Random(seed + plies)
+    if kind == "lvl":
+        c.setLineWidth(0.5); c.setStrokeColorRGB(*LVL_LINE)
+        c.setFillColorRGB(*LVL_FILL); c.rect(x, y, w, h, fill=1, stroke=1)
+        c.saveState()
+        clip = c.beginPath(); clip.rect(x, y, w, h); c.clipPath(clip, stroke=0, fill=0)
+        c.setStrokeColorRGB(*LVL_GRAIN); c.setLineWidth(0.2)
+        rows = max(6, int(h / 1.3))                           # short fine dashes: veneer face
+        for i in range(rows):
+            yy = y + h * (i + 0.5) / rows
+            xa = x + rnd.uniform(-10, 6)
+            while xa < x + w:
+                ln = rnd.uniform(10, 28)
+                c.line(max(xa, x), yy, min(xa + ln, x + w), yy)
+                xa += ln + rnd.uniform(4, 14)
+        c.restoreState()
+        return
+    if kind == "glulam":
+        c.setLineWidth(0.5); c.setStrokeColorRGB(*GLU_LINE)
+        c.setFillColorRGB(*GLU_FILL); c.rect(x, y, w, h, fill=1, stroke=1)
+        n = lams or max(3, int(round(h / 2.6)))
+        c.setStrokeColorRGB(*GLU_GRAIN); c.setLineWidth(0.4)
+        for i in range(1, n):
+            c.line(x, y + h * i / n, x + w, y + h * i / n)
+        return
     c.setLineWidth(0.5); c.setStrokeColorRGB(*WOOD_LINE)
     c.setFillColorRGB(*WOOD_FILL); c.rect(x, y, w, h, fill=1, stroke=1)
     c.saveState()
@@ -75,12 +105,43 @@ def wood_elevation(c, x, y, w, h, plies=1, seed=7):
     c.restoreState()
 
 
-def wood_section(c, cx, cy, box_w, box_h, b, d, plies=1):
-    """Cut section of a wood member, to scale: end grain shown as growth rings, one set
-    per ply, with the ply joints drawn. b is the total width. Returns points per inch."""
+def wood_section(c, cx, cy, box_w, box_h, b, d, plies=1, kind="sawn", lam_in=1.5):
+    """Cut section of a wood member, to scale. kind "sawn": end grain shown as growth
+    rings, one set per ply, with the ply joints drawn. "lvl": fine vertical veneer lines
+    (veneers stand vertical in the joist orientation), ply joints drawn heavier.
+    "glulam": horizontal laminations lam_in thick, each with its own growth rings.
+    b is the total width. Returns points per inch."""
     s = min(box_w / b, box_h / d)
     B, D = b * s, d * s
     x0, y0 = cx - B / 2, cy - D / 2
+    if kind == "lvl":
+        c.setLineWidth(0.7); c.setStrokeColorRGB(*LVL_LINE); c.setFillColorRGB(*LVL_FILL)
+        c.rect(x0, y0, B, D, fill=1, stroke=1)
+        c.setStrokeColorRGB(*LVL_GRAIN); c.setLineWidth(0.2)
+        n = max(int(B / 0.9), 3 * plies)
+        for i in range(1, n):
+            c.line(x0 + B * i / n, y0, x0 + B * i / n, y0 + D)
+        c.setStrokeColorRGB(*LVL_LINE); c.setLineWidth(0.55)
+        for i in range(1, plies):
+            c.line(x0 + B * i / plies, y0, x0 + B * i / plies, y0 + D)
+        return s
+    if kind == "glulam":
+        c.setLineWidth(0.7); c.setStrokeColorRGB(*GLU_LINE); c.setFillColorRGB(*GLU_FILL)
+        c.rect(x0, y0, B, D, fill=1, stroke=1)
+        n = max(int(round(d / lam_in)), 1)
+        for i in range(n):
+            ly, lh = y0 + D * i / n, D / n
+            c.saveState()
+            clip = c.beginPath(); clip.rect(x0, ly, B, lh); c.clipPath(clip, stroke=0, fill=0)
+            c.setStrokeColorRGB(*GLU_GRAIN); c.setLineWidth(0.25)
+            ox, oy = x0 + B * (0.3 if i % 2 else 0.7), ly - lh * 1.6
+            rr = lh * 1.2
+            while rr < 2.5 * max(B, lh) + lh * 2:
+                c.circle(ox, oy, rr, fill=0, stroke=1); rr += 1.6
+            c.restoreState()
+            if i:
+                c.setStrokeColorRGB(*GLU_LINE); c.setLineWidth(0.45); c.line(x0, ly, x0 + B, ly)
+        return s
     c.setLineWidth(0.7); c.setStrokeColorRGB(*WOOD_LINE); c.setFillColorRGB(*WOOD_FILL)
     c.rect(x0, y0, B, D, fill=1, stroke=1)
     pw = B / plies
