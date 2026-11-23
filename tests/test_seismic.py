@@ -63,7 +63,7 @@ def test_seismic_sheet_and_form(tmp_path):
              Ie_source="Risk Category II, Table 1.5-2", structure="all other structural systems", hn="20", risk="II",
              levels=[dict(name="Roof", w="60", h="20"), dict(name="Floor", w="90", h="10")])
     sheet, kind, _ = calc.build("seismic_elf", v, dict(job="2026-000", name="Test", method="ASD"))
-    assert kind == "simple" and sheet.seismic["V"] == pytest.approx(9.23, abs=0.01) and len(sheet.blocks[1]["lines"]) == 4
+    assert kind == "simple" and sheet.seismic["V"] == pytest.approx(9.23, abs=0.01) and len(sheet.blocks[1]["lines"]) == 4 and len(sheet.blocks[2]["lines"]) == 3
     assert sheet.blocks[0]["picture"][0] == "seismic_forces" and sheet.seismic["sdc"] == "C"
     calcsheet._simple_pdf(sheet, str(tmp_path / "e.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     with pytest.raises(calc.Missing):
@@ -100,3 +100,18 @@ def test_seismic_design_category():
     assert f(1.0, 0.6, 0.75, "II")[0] == "E" and f(1.0, 0.6, 0.80, "IV")[0] == "F"
     with pytest.raises(seismic.SeismicError):
         f(0.4, 0.1, 0.1, "V")
+
+
+def test_diaphragm_forces_by_hand():
+    """Two-story case above (SDS 0.40, Ie 1.0; roof 60 kips, F 5.27; floor 90 kips, F 3.96; V 9.23):
+    roof: 5.27/60 x 60 = 5.27 kips; minimum 0.2(0.4)(60) = 4.8; maximum 9.6 -> 5.27 (Eq. 12.10-1)
+    floor: 9.23/150 x 90 = 5.54 kips; minimum 0.2(0.4)(90) = 7.2 -> 7.2 (Eq. 12.10-2).
+    With a floor diaphragm weight of 70 kips: 9.23/150 x 70 = 4.31; minimum 5.6 -> 5.6."""
+    r = seismic.elf(0.40, 0.12, 0.08, 4, 6.5, 1.0, "all other structural systems", 20, [("Floor", 90, 10), ("Roof", 60, 20)])["rows"]
+    assert r[0]["Fpx"] == pytest.approx(5.27, abs=0.01) and r[0]["Fpx_by"] == "Eq. 12.10-1" and r[0]["Fpx_max"] == pytest.approx(9.6)
+    assert r[1]["Fpx_eq"] == pytest.approx(5.54, abs=0.01) and r[1]["Fpx"] == pytest.approx(7.2) and r[1]["Fpx_by"] == "Eq. 12.10-2"
+    r = seismic.elf(0.40, 0.12, 0.08, 4, 6.5, 1.0, "all other structural systems", 20, [("Floor", 90, 10, 70), ("Roof", 60, 20, None)])["rows"]
+    assert r[1]["wp"] == 70 and r[1]["Fpx_eq"] == pytest.approx(4.31, abs=0.01) and r[1]["Fpx"] == pytest.approx(5.6)
+    # the maximum governs where R is small: R = 1.5, Cs = 0.267: roof 16.0/60 x 60 ... over 0.4(0.4)(60) = 9.6
+    r = seismic.elf(0.40, 0.3, 0.08, 4, 1.5, 1.0, "all other structural systems", 20, [("Floor", 90, 10), ("Roof", 60, 20)])["rows"]
+    assert r[0]["Fpx"] == pytest.approx(9.6) and r[0]["Fpx_by"] == "Eq. 12.10-3"

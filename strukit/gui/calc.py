@@ -581,7 +581,8 @@ FORMS = {
                 F("T", "Period from analysis", unit="s", required=False, help="blank = the approximate period Ta"),
                 F("T_source", "Where that period comes from", "text", required=False)],
         tables=[T("levels", "Levels", [F("name", "Level", "text"), F("w", "Effective seismic weight", unit="kips"),
-                                       F("h", "Height above the base", unit="ft")])]),
+                                       F("h", "Height above the base", unit="ft"),
+                                       F("wp", "Diaphragm weight, wpx", unit="kips", required=False, help="blank = the level weight")])]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1227,7 +1228,7 @@ def build(kind, values, project):
         if not lv:
             r.miss.append("No level is entered")
         r.done()
-        return ws_more.seismic_elf_sheet(mark, SDS, SD1, S1, TL, gs, R, Rs, Ie, Is, st, hn, [(x["name"], x["w"], x["h"]) for x in lv],
+        return ws_more.seismic_elf_sheet(mark, SDS, SD1, S1, TL, gs, R, Rs, Ie, Is, st, hn, [(x["name"], x["w"], x["h"], x.get("wp")) for x in lv],
                                          r.num("T", False), r.text("T_source", False) or "", risk=rk), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
