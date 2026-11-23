@@ -452,6 +452,22 @@ FORMS = {
                 F("W2", "Winter wind parameter, W2 (gable)", required=False, help="from the ASCE 7 Hazard Tool; Fig. 7.6-1"),
                 F("W2_source", "Where W2 comes from (gable)", "text", required=False)],
         tables=[]),
+    "snow_drift": dict(
+        title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
+        fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
+                F("W2", "Winter wind parameter, W2", help="from the ASCE 7 Hazard Tool; Fig. 7.6-1"), F("W2_source", "Where W2 comes from", "text"),
+                F("ps", "Balanced snow load on the lower roof", unit="psf", help="from its Roof Snow Load sheet"),
+                F("ps_source", "Where that load comes from", "text", help="for example: sheet SN1"),
+                F("lu_upper", "Upper roof length, perpendicular to the step", unit="ft"),
+                F("lu_lower", "Lower roof length, perpendicular to the step", unit="ft"),
+                F("step", "Height of the upper roof above the lower roof at the step", unit="ft"),
+                F("slide", "Sliding snow from the upper roof", "select", options=["no", "yes"], help="the upper roof slopes toward the lower roof"),
+                F("s_pf", "Sliding: upper roof flat roof snow load, pf", unit="psf", required=False),
+                F("s_pf_source", "Sliding: where pf comes from", "text", required=False),
+                F("s_W", "Sliding: upper roof eave to ridge, W (horizontal)", unit="ft", required=False),
+                F("s_rise", "Sliding: upper roof rise in 12", required=False),
+                F("s_slippery", "Sliding: slippery upper roof surface", "select", options=["yes", "no"], required=False)],
+        tables=[]),
     "base_plate": dict(
         title="Base Plate", code="AISC 360-22", mark="BP",
         fields=[F("shape", "Column", "shape"), F("N", "Plate length (along column depth)", unit="in"),
@@ -1012,6 +1028,20 @@ def build(kind, values, project):
                                         r.num("slip", False), sides=sides, blocked=blocked, stud_spacing=int(ss_) if ss_ else None,
                                         field_nails=int(fn_) if fn_ else None, dead_plf=dead or 0.0,
                                         dead_factor=r.num("dead_factor", False), dead_source=r.text("dead_source", False) or ""), "simple", {}
+    if kind == "snow_drift":
+        pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
+        ps, pss, lu1, lu2, step = r.num("ps"), r.text("ps_source"), r.num("lu_upper"), r.num("lu_lower"), r.num("step")
+        sl = None
+        if yes(r.text("slide")):
+            sl = dict(pf=r.num("s_pf", label="Sliding: upper roof pf"), pf_source=r.text("s_pf_source", False) or "",
+                      W=r.num("s_W", label="Sliding: eave to ridge W"), rise_on_12=r.num("s_rise", label="Sliding: rise in 12"),
+                      slippery=yes(r.text("s_slippery", False)))
+            if sl["slippery"] is None:
+                r.miss.append("Sliding: slippery upper roof surface is blank")
+            if not sl["pf_source"]:
+                r.miss.append("Sliding: where pf comes from is blank")
+        r.done()
+        return ws_more.snow_drift_sheet(mark, pg, src, W2, w2s, ps, pss, lu1, lu2, step, sl), "simple", {}
     if kind == "snow":
         pg, src, risk = r.num("pg"), r.text("pg_source"), r.text("risk")
         rough, expo, therm = r.text("roughness"), r.text("exposure"), r.text("thermal")
