@@ -60,11 +60,11 @@ def test_seismic_sheet_and_form(tmp_path):
     from strukit import calcsheet
     v = dict(mark="EQ1", SDS="0.40", SD1="0.12", S1="0.08", TL="4", ground_source="ASCE 7 Hazard Tool, Site Class D, Risk Category II",
              R="6.5", R_source="light-frame wood walls sheathed with wood structural panels, Table 12.2-1 line A.16", Ie="1.0",
-             Ie_source="Risk Category II, Table 1.5-2", structure="all other structural systems", hn="20",
+             Ie_source="Risk Category II, Table 1.5-2", structure="all other structural systems", hn="20", risk="II",
              levels=[dict(name="Roof", w="60", h="20"), dict(name="Floor", w="90", h="10")])
     sheet, kind, _ = calc.build("seismic_elf", v, dict(job="2026-000", name="Test", method="ASD"))
     assert kind == "simple" and sheet.seismic["V"] == pytest.approx(9.23, abs=0.01) and len(sheet.blocks[1]["lines"]) == 4
-    assert sheet.blocks[0]["picture"][0] == "seismic_forces"
+    assert sheet.blocks[0]["picture"][0] == "seismic_forces" and sheet.seismic["sdc"] == "C"
     calcsheet._simple_pdf(sheet, str(tmp_path / "e.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
     with pytest.raises(calc.Missing):
         calc.build("seismic_elf", dict(v, levels=[]), dict(job="2026-000", name="Test", method="ASD"))
@@ -88,3 +88,15 @@ def test_seismic_load_combinations():
         loadcombos.seismic(0.5, 1.2)
     assert server.api("/api/seismic_combos", dict(sds="0.5", rho="1.3")) == c
     assert "error" in server.api("/api/seismic_combos", dict(sds="", rho="1.0")) and "error" in server.api("/api/seismic_combos", dict(sds="0.5", rho="2"))
+
+
+def test_seismic_design_category():
+    f = seismic.sdc
+    assert [f(s, 0.01, 0.1, "II")[0] for s in (0.1, 0.167, 0.32, 0.33, 0.49, 0.50, 1.2)] == ["A", "B", "B", "C", "C", "D", "D"]
+    assert [f(s, 0.01, 0.1, "IV")[0] for s in (0.1, 0.167, 0.33, 0.50)] == ["A", "C", "D", "D"]
+    assert [f(0.01, s, 0.1, "III")[0] for s in (0.05, 0.067, 0.133, 0.20)] == ["A", "B", "C", "D"]
+    assert [f(0.01, s, 0.1, "IV")[0] for s in (0.05, 0.067, 0.133, 0.20)] == ["A", "C", "D", "D"]
+    assert f(0.40, 0.12, 0.08, "II") == ("C", "C", "B", "the more severe of the two tables") and f(0.2, 0.15, 0.1, "I")[0] == "C"
+    assert f(1.0, 0.6, 0.75, "II")[0] == "E" and f(1.0, 0.6, 0.80, "IV")[0] == "F"
+    with pytest.raises(seismic.SeismicError):
+        f(0.4, 0.1, 0.1, "V")

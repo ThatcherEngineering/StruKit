@@ -975,7 +975,7 @@ def wind_cc_parapet_sheet(mark, V, V_source, exposure, exposure_basis, hp_top, h
 
 
 def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie_source, structure, hn, levels, T_analysis=None,
-                      T_source="", unit="kips"):
+                      T_source="", unit="kips", risk=None):
     """Seismic base shear and story forces, ASCE/SEI 7-22 Sect. 12.8 (see seismic.py).
     levels: [(name, weight, height above the base ft)]."""
     from . import seismic
@@ -1001,6 +1001,14 @@ def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie
                   L("T", T, "s", "Sect. 12.8.2", r["T_note"])]
     else:
         steps += [L("T", T, "s", "Sect. 12.8.2", "taken as Ta")]
+    cat = None
+    if risk:
+        try:
+            cat = seismic.sdc(SDS, SD1, S1, risk)
+        except seismic.SeismicError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        steps += [L("Seismic Design Category", cat[0], "", "Sect. 11.6, Tables 11.6-1, 11.6-2",
+                    f"Risk Category {risk}; by SDS: {cat[1]}; by SD1: {cat[2]}; {cat[3]}")]
     steps += [L("Cs = SDS / (R/Ie)", f"{r['Cs_123']:.4f}", "", "Eq. 12.8-3"),
               L("Cs need not exceed " + ("SD1 / [T (R/Ie)]" if r["cap_eq"] == "Eq. 12.8-4" else "SD1 TL / [T^2 (R/Ie)]"), f"{r['Cs_cap']:.4f}", "", r["cap_eq"]),
               L("Cs not less than 0.044 SDS Ie, 0.01", f"{r['Cs_min']:.4f}", "", "Eq. 12.8-6")]
@@ -1025,10 +1033,13 @@ def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie
          "Fx = Cvx V, Cvx = wx hx^k / sum(wi hi^k), Eq. 12.8-12 and 12.8-13. Vx: story shear below the level, Eq. 12.8-14. "
          "Mx: overturning moment at the level, from the forces above it.",
          "Level weights are the effective seismic weights of Sect. 12.7.2, as entered."],
-        ["whether the equivalent lateral force procedure is permitted (Table 12.6-1)", "the Seismic Design Category (Sect. 11.6) and system height limits (Table 12.2-1)",
+        ["whether the equivalent lateral force procedure is permitted (Table 12.6-1)", ("" if risk else "the Seismic Design Category (Sect. 11.6) and ") + "system limits and height limits (Table 12.2-1)",
          "the redundancy factor (Sect. 12.3.4) and the vertical seismic load effect (Sect. 12.4.2.2)", "structural irregularities (Sect. 12.3.2)",
          "torsion (Sect. 12.8.4), story drift (Sect. 12.8.6) and P-delta effects (Sect. 12.8.7)", "diaphragm forces (Sect. 12.10)"])
     sheet.blocks.append(dict(title="Story Forces", picture=("seismic_forces", dict(rows=r["rows"], V=r["V"], unit=unit, hn=hn))))
     sheet.blocks.append(dict(title="Vertical Distribution", lines=lines))
+    if cat:
+        sheet.info.insert(3, ("Category", f"Risk Category {risk}; Seismic Design Category {cat[0]}"))
+        r = dict(r, sdc=cat[0])
     sheet.seismic = r
     return sheet
