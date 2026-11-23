@@ -1238,12 +1238,12 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         if b.get("steps"):
             _steps(p, b["title"], b["steps"])
         if b.get("lines"):
-            p.room(min(14 + 10 * (len(b["lines"]) + sum(len(_split(t, 125)) for t in b.get("after", ())) + 1), 260))
+            p.room(min(14 + 10 * (len(b["lines"]) + sum(len(_split(t, 116)) for t in b.get("after", ())) + 1), 260))
             p.head(b["title"])
             for t in b["lines"]:
                 p.room(11); p.text(t, font=FM, size=7.5, dy=10)
             for t in b.get("after", ()):
-                for u in _split(t, 125):
+                for u in _split(t, 116):
                     p.room(11); p.text(u, size=7.5, color=GREY, dy=10)
             p.y -= 3
     if sheet.rows:

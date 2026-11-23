@@ -975,7 +975,7 @@ def wind_cc_parapet_sheet(mark, V, V_source, exposure, exposure_basis, hp_top, h
 
 
 def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie_source, structure, hn, levels, T_analysis=None,
-                      T_source="", unit="kips", risk=None):
+                      T_source="", unit="kips", risk=None, drift=None):
     """Seismic base shear and story forces, ASCE/SEI 7-22 Sect. 12.8 (see seismic.py).
     levels: [(name, weight, height above the base ft)]."""
     from . import seismic
@@ -1045,6 +1045,30 @@ def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie
     sheet.blocks.append(dict(title="Diaphragm Design Forces", lines=dl, after=[
         "Fpx = (sum of Fi at and above the level / sum of wi at and above the level) wpx, Eq. 12.10-1; not less than 0.2 SDS Ie wpx, Eq. 12.10-2; "
         "need not exceed 0.4 SDS Ie wpx, Eq. 12.10-3. wpx is the weight tributary to the diaphragm: the level weight unless a diaphragm weight is entered."]))
+    if drift:                                   # dict(Cd, Cd_source, structure, de={level name: elastic displacement in}, de_source)
+        for nm, v in (("the source of Cd", drift.get("Cd_source")), ("the source of the elastic displacements", drift.get("de_source"))):
+            if not (v or "").strip():
+                raise WorksheetError(f"{mark}: {nm} is blank")
+        if not risk:
+            raise WorksheetError(f"{mark}: the Risk Category is needed for the drift limit")
+        try:
+            dr = seismic.drift([(nm, h, drift["de"].get(str(nm))) for nm, w, h in [tuple(x[:3]) for x in levels]], drift["Cd"], Ie, drift["structure"], risk)
+        except seismic.SeismicError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        tl = [f"{'story below':<16}{'hsx ft':>9}{'Cd de / Ie in':>16}{'drift in':>11}{'allowable in':>14}"]
+        for x in dr:
+            tl.append(f"{str(x['name'])[:15]:<16}{x['hsx']:>9.2f}{x['dDE']:>16.3f}{x['drift']:>11.3f}{x['allow']:>14.3f}")
+            sheet.rows.append(Row(f"Story drift below {x['name']}", "E", x["drift"], x["allow"], "in", "Sect. 12.8.6, 12.12.1, Table 12.12-1",
+                                  f"{x['factor']:g} hsx"))
+        sheet.blocks.append(dict(title="Story Drift", lines=tl, after=[
+            f"Design earthquake displacement = Cd de / Ie, Eq. 12.8-16, Cd = {drift['Cd']:g} ({drift['Cd_source'].strip()}); elastic displacements de: "
+            f"{drift['de_source'].strip()}. Allowable story drift {dr[0]['factor']:g} hsx, Table 12.12-1: {drift['structure']}, Risk Category {risk}."]))
+        sheet.not_checked = [t.replace("torsion (Sect. 12.8.4), story drift (Sect. 12.8.6) and P-delta effects (Sect. 12.8.7)",
+                                       "torsion (Sect. 12.8.4) and P-delta effects (Sect. 12.8.7)") for t in sheet.not_checked]
+        sheet.not_checked += ["how the elastic displacements were found (forces, period, torsion: Sect. 12.8.6.1, 12.8.6.2)",
+                              "the drift limit divided by the redundancy factor for moment frames in Seismic Design Category D, E or F (Sect. 12.12.1.1)",
+                              "building separation (Sect. 12.12.2)"]
+        r = dict(r, drift=dr)
     if cat:
         sheet.info.insert(3, ("Category", f"Risk Category {risk}; Seismic Design Category {cat[0]}"))
         r = dict(r, sdc=cat[0])
