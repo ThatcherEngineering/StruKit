@@ -161,6 +161,9 @@ function drawResults(m) {
   if (r.steps.length) box.append(el("details", { open: "" }, el("summary", {}, "Calculation"), el("div", { class: "steps mono" },
     r.steps.map(s => [el("div", { class: "s" }, el("span", {}, s.label + " = " + (typeof s.value === "string" ? s.value : s.unit ? fmt(s.value, s.unit) : s.value.toFixed(2))), el("span", {}, s.source)),
       s.note ? el("div", { class: "note" }, s.note) : null]))));
+  for (const t of (r.tables || [])) box.append(el("details", { open: "" }, el("summary", {}, t.title),
+    el("pre", { class: "mono", style: "overflow-x:auto;font-size:11px;line-height:1.45;margin:6px 0" }, t.lines.join("\n")),
+    t.after.map(x => el("div", { class: "small" }, x))));
   if (r.assumptions.length) box.append(el("details", {}, el("summary", {}, "Assumptions"), el("ul", { class: "msg small" }, r.assumptions.map(t => el("li", {}, t)))));
   if (r.not_checked.length) box.append(el("details", {}, el("summary", {}, "Not checked on this sheet"), el("ul", { class: "msg small" }, r.not_checked.map(t => el("li", {}, t)))));
 }
