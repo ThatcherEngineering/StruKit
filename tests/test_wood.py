@@ -301,3 +301,17 @@ def test_built_up_column_by_hand():
     assert single > built and e.rows[0].capacity == pytest.approx(1485 * single, rel=1e-6)
     with pytest.raises(Exception, match="2 to 5"):
         ws_wood.builtup_post("BC1", "DOUGLAS FIR-LARCH", "No. 2", "2x6", 6, "nailed", 10, loads, _combos(), 1.0, 1.0, "pinned", False, False)
+
+
+def test_post_with_eccentric_load_by_hand():
+    """6x6 Douglas Fir-Larch No. 1 (Posts and Timbers: Fc 1,000, Fb 1,200, Emin 580,000), 10 ft, pinned, D 3,000 + L 5,000 lb at
+    e = d/6 = 0.917 in. NDS Eq. 15.4-3: fc = 264.5 psi; le/d = 21.82; FcE = 1,001.5; CP = 0.6914; Fc' = 691.4;
+    (fc/Fc')^2 = 0.1463; fc (6e/d)(1 + 0.234 fc/FcE) / (Fb' (1 - fc/FcE)) = 280.8 / 883.1 = 0.3180; total 0.464."""
+    from strukit import ws_wood
+    from tests.test_lvl import _combos
+    s = ws_wood.post("P", "DOUGLAS FIR-LARCH", "No. 1", "6x6", 10, [dict(case="D", P=3000.0), dict(case="L", P=5000.0)], _combos(), 1.0, 1.0,
+                     "pinned", False, False, e2_in=5.5 / 6)
+    r = {x.check: x for x in s.rows}
+    assert r["compression"].capacity == pytest.approx(691.4, abs=0.5)
+    assert r["compression with eccentric load"].demand == pytest.approx(0.464, abs=0.003)
+    assert "15.4-3" in r["compression with eccentric load"].source and "shear" not in r

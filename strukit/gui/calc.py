@@ -261,6 +261,8 @@ FORMS = {
                 F("k_source", "Ke comes from", "text", help="for example: pinned top and bottom, NDS Appendix G"),
                 F("service", "Moisture", "select", options=["dry service", "wet service"]),
                 F("incised", "Incised", "select", options=["yes", "no"]),
+                F("e1", "Load eccentricity, parallel to the larger dimension", unit="in", required=False, help="blank = 0"),
+                F("e2", "Load eccentricity, parallel to the smaller dimension", unit="in", required=False, help="blank = 0"),
                 F("unit_weight", "Wood unit weight, to add self-weight", unit="pcf", required=False, help="blank = self-weight not added")],
         tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="lb"), F("label", "Note", "text", required=False)]),
                 T("lateral", "Lateral load on the narrow face (bending about the strong axis)",
@@ -873,7 +875,7 @@ def build(kind, values, project):
         cases_used([x["case"] for x in loads + lat], cb, r.miss)
         r.done()
         return ws_wood.post(mark, sp, gr, size, H, loads, cb, Ke1, Ke2, ks, wet, inc, r.num("lu1", False), r.num("lu2", False),
-                            r.num("unit_weight", False), lateral=lat), "simple", {}
+                            r.num("unit_weight", False), lateral=lat, e1_in=r.num("e1", False) or 0.0, e2_in=r.num("e2", False) or 0.0), "simple", {}
     if kind == "builtup_post":
         cb = combos(project, r.miss, "ASD")
         sp, gr, size, n_, fa, H = r.text("species"), r.text("grade"), r.text("size"), r.text("plies"), r.text("fastening"), r.num("height")
