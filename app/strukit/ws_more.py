@@ -797,7 +797,7 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         "roof area (note 2)."]))
     sheet.not_checked = [t for t in sheet.not_checked if not t.startswith("the torsional load cases")] + [
         "the share of each load case taken by each wall or frame line", "the exception for buildings meeting Appendix D, Sect. D.1 (Sect. 27.3.5)"]
-    sheet.wind = dict(qh=qh, cases=[r for t, Bd, Ld, r in res], normal=res[0][3], parallel=res[-1][3], load_cases=lc)
+    sheet.wind = dict(qh=qh, cases=[r for t, Bd, Ld, r in res], normal=res[0][3], parallel=res[-1][3], load_cases=lc, titles=[t for t, Bd, Ld, r in res])
     return sheet
 
 

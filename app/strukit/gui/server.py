@@ -138,6 +138,26 @@ def api(path, body):
             return dict(error=f"The seismic sheet stopped: {e}")
         return dict(lines=sheet.seismic.get("lines") or [],
                     levels=[dict(level=str(x["name"]), Fpx=x["Fpx"], by=x["Fpx_by"]) for x in sheet.seismic["rows"]])
+    if path == "/api/wind_line":
+        from .. import wind as _wind
+        try:
+            sheet, _, _ = calc.build("wind_mwfrs", body.get("values") or {}, body.get("project") or {})
+            z1, z2 = float(str(body.get("z1", "")).replace(",", "")), float(str(body.get("z2", "")).replace(",", ""))
+            out = []
+            for title, r in zip(sheet.wind["titles"], sheet.wind["cases"]):
+                top = max(r["top_w"], r["top_l"])
+                zt = top if z2 >= r["eave"] - 0.05 else z2          # at or above the eave: to the top of the walls for that direction
+                d = _wind.line_load(r, z1, zt)
+                out.append(dict(title=title, B=r["B"], to=round(zt, 2), **{k: d[k] for k in ("w", "w_pressures", "w_min", "windward", "leeward", "roof", "parapet", "governs")}))
+            return dict(directions=out)
+        except calc.Missing as e:
+            return dict(error="The wind sheet is not complete: " + "; ".join(e.items))
+        except ValueError as e:
+            msg = str(e)
+            return dict(error=msg.replace("wind: ", "").capitalize() if msg.startswith("wind:") else
+                        "Type the two heights of the wall tributary to the diaphragm (above ground, ft) first.")
+        except Exception as e:
+            return dict(error=f"The wind sheet stopped: {e}")
     if path == "/api/ping":
         _last_ping[0] = time.time(); _pinged[0] = True
         return {}

@@ -348,7 +348,7 @@ def mwfrs(V, exposure, h, eave, B, L, enclosure, direction, theta=0.0, Kzt=1.0, 
     return dict(qh=qh, Kh=kh, h_over_L=hl, L_over_B=lb, GCpi=gc, windward=windward, leeward=leeward, side=side, roof=surfaces,
                 walls_together=walls_together, direction=direction, theta=theta, rise=rise, top_w=top_w, top_l=top_l, sloped=sloped,
                 F_windward=F_w, F_leeward=F_l, F_walls=walls, F_roof=roof_h, F_total=total, A_wall=A_wall, A_roof=A_roof,
-                F_min=F_min, F_design=max(total, F_min), parapet=par)
+                F_min=F_min, F_design=max(total, F_min), parapet=par, B=B, eave=eave, taper=taper)
 
 
 # ---- Components and cladding, walls, h of 60 ft or less (Figure 30.3-1) ------------------
@@ -556,3 +556,43 @@ def load_cases(Fx, Bx, Fy, By):
             ("Case 2, x", 0.75 * Fx, 0.0, 0.75 * Fx * ex), ("Case 2, y", 0.0, 0.75 * Fy, 0.75 * Fy * ey),
             ("Case 3", 0.75 * Fx, 0.75 * Fy, 0.0),
             ("Case 4", 0.563 * Fx, 0.563 * Fy, 0.563 * Fx * ex + 0.563 * Fy * ey)]
+
+
+def line_load(r, z1, z2):
+    """Wind load per foot of building width (plf, strength level) delivered to a diaphragm by
+    the walls between heights z1 and z2 above ground, from a mwfrs() result r: windward plus
+    leeward wall pressure over the tributary height (windward pressure at the top of each
+    height band), the horizontal roof force and the parapets where z2 reaches the top of the
+    walls, and the Sect. 27.1.5 minimum on the same areas. Walls under a roof slope (wind
+    parallel to the ridge) are averaged over the building width."""
+    B, eave, taper = r["B"], r["eave"], r["taper"]
+    if z1 is None or z2 is None or z1 < 0 or z2 <= z1:
+        raise WindError("wind: the tributary wall heights run from a lower height to a higher one")
+    top = max(r["top_w"], r["top_l"])
+    if z2 > top + 1e-6:
+        raise WindError(f"wind: the tributary height goes above the top of the walls ({top:g} ft)")
+
+    def width(z):
+        return B if z <= eave or not taper else B * max(0.0, 1.0 - (z - eave) / taper)
+
+    def area(a, b):
+        if b <= a:
+            return 0.0
+        cuts = sorted({a, b} | ({eave} if a < eave < b else set()))
+        return sum((width(p) + width(q)) / 2 * (q - p) for p, q in zip(cuts[:-1], cuts[1:]))
+
+    ww, z0 = 0.0, 0.0
+    for s in r["windward"]:
+        ww += s.external * area(max(z0, z1), min(s.z, z2))
+        z0 = s.z
+    A_w = area(z1, min(z2, r["top_w"]))
+    A_l = area(z1, min(z2, r["top_l"]))
+    lw = -r["leeward"].external * A_l
+    at_top = z2 >= top - 1e-6
+    roof = max([0.0] + list(r["F_roof"])) if at_top else 0.0
+    par = r["parapet"]["F"] if (at_top and r["parapet"]) else 0.0
+    A_min = A_w + (B * r["parapet"]["height"] if (at_top and r["parapet"]) else 0.0)
+    w_min = (MIN_WALL * A_min + (MIN_ROOF * r["A_roof"] if at_top else 0.0)) / B
+    w = (ww + lw + roof + par) / B
+    return dict(w=max(w, w_min), w_pressures=w, w_min=w_min, windward=ww / B, leeward=lw / B, roof=roof / B, parapet=par / B,
+                governs="the minimum of Sect. 27.1.5" if w_min > w else "the wall and roof pressures", at_top=at_top)

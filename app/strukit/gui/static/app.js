@@ -198,7 +198,8 @@ function fillWallBar(m, changed) {
 
 function fillDiaphragmBar(m, changed) {
   const src = S.members.filter(x => x.kind === "seismic_elf");
-  if (!src.length) return el("div", { class: "fill small" }, "A seismic diaphragm load can be filled in from a Seismic Base Shear sheet once the project has one.");
+  if (!src.length) return el("div", {}, fillWindBar(m, changed) ||
+    el("div", { class: "fill small" }, "The load can be filled in from a main-system wind sheet or a Seismic Base Shear sheet once the project has one."));
   const pick = el("select", {}, el("option", { value: "" }, "choose a seismic sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
   const lvl = el("select", { style: "display:none" });
   let got = null;
@@ -223,7 +224,36 @@ function fillDiaphragmBar(m, changed) {
       w_source: "sheet " + (s.values.mark || "seismic") + ", Fpx at " + r.level + " = " + r.Fpx.toFixed(2) + " kips (" + r.by + ")" + (asd ? " x 0.7" : "") + " over L = " + L + " ft; rho = 1.0, ASCE/SEI 7-22 Sect. 12.3.4.1" });
     changed(); drawMain();
   } }, "Fill Load");
-  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the seismic load from"), pick, lvl, go);
+  return el("div", {}, el("div", { class: "fill" }, el("span", { class: "small" }, "Take the seismic load from"), pick, lvl, go), fillWindBar(m, changed));
+}
+
+function fillWindBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "wind_mwfrs");
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose a wind sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 main system wind")));
+  const dir = el("select", { style: "display:none" });
+  let got = null;
+  pick.addEventListener("change", async () => {
+    got = null; dir.style.display = "none"; dir.textContent = "";
+    if (pick.value === "") return;
+    const s = S.members[+pick.value];
+    try {
+      got = await post("/api/wind_line", { values: s.values, project: S.project, z1: m.values.trib_low || "", z2: m.values.trib_high || "" });
+      got.directions.forEach((r, i) => dir.append(el("option", { value: i }, r.title.toLowerCase())));
+      dir.style.display = "";
+    } catch (e) { pick.value = ""; toast(e.message, 12000); }
+  });
+  const go = el("button", { class: "btn", onclick: () => {
+    if (!got || !got.directions.length) return toast("Type the two tributary wall heights, then choose the wind sheet.", 9000);
+    if (S.project.method !== "ASD" && S.project.method !== "LRFD") return toast("Choose the design method on the Project page first.", 9000);
+    const s = S.members[+pick.value], r = got.directions[+dir.value], asd = S.project.method === "ASD";
+    const w = r.w * (asd ? 0.6 : 1.0);
+    Object.assign(m.values, { w: w.toFixed(1), load: "wind",
+      w_source: "sheet " + (s.values.mark || "wind") + ", " + r.title.toLowerCase() + ", walls from " + m.values.trib_low + " to " + r.to + " ft: " + r.w.toFixed(1) + " plf (" + r.governs + ")" + (asd ? " x 0.6" : "") });
+    changed(); drawMain();
+    toast("Wind load " + w.toFixed(1) + " plf. The span L of this diaphragm should be the building dimension normal to that wind (" + r.B + " ft on the wind sheet).", 12000);
+  } }, "Fill Load");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the wind load from"), pick, dir, go);
 }
 
 function fillBar(m, changed) {
