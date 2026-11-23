@@ -155,3 +155,21 @@ def test_bolted_sheet_with_tear_out():
         calc.build("bolted_connection", dict(v, Fv_side=""), proj)
     plain, _, _ = calc.build("bolted_connection", {k: x for k, x in v.items() if not k.startswith(("Ft_", "Fv_", "local"))}, proj)
     assert any("row and group tear-out" in t for t in plain.not_checked) and len(plain.rows) == 4
+
+
+def test_toe_nailed_connection_by_hand():
+    """3 - 8d common (0.131 x 2.5 in.) toe-nails, stud to plate, Spruce-Pine-Fir (G 0.42), dry: ls = min(1.5, 2.5/3) = 0.833 in.;
+    p = 2.5 cos 30 - 2.5/3 = 1.332 in. (10.2 D); lm = 1.332 - 0.131 = 1.201 in.; Z by the yield equations with those lengths;
+    Z' = Z (1.6)(0.83) for wind."""
+    import math
+    from strukit.gui import calc
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 5a")])
+    v = dict(mark="NC3", nail="8d common", n="3", side_t="1.5", G_side="0.42", G_side_source="SPF", main_t="1.5", G_main="0.42", G_main_source="SPF", service="dry",
+             toe_nail="yes", loads=[dict(case="W", P="300")])
+    sheet, _, _ = calc.build("nailed_connection", v, proj)
+    c = sheet.connection
+    p = 2.5 * math.cos(math.radians(30)) - 2.5 / 3
+    z = dowel.lateral(0.131, 2.5 / 3, p - 0.131, 3350, 3350, 100000)
+    assert c["p"] == pytest.approx(1.332, abs=0.001) and c["lm"] == pytest.approx(1.201, abs=0.001) and c["Z"] == pytest.approx(z["Z"])
+    assert sheet.rows[0].capacity == pytest.approx(3 * z["Z"] * 1.6 * 0.83) and 60 < z["Z"] < 82          # Table 12N: 82 lb at full side thickness
+    assert not sheet.blocks and any("Toe-nails driven" in t for t in sheet.assumptions)
