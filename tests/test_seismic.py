@@ -83,7 +83,7 @@ def test_seismic_load_combinations():
     assert "Sect. 2.3.6, combination 6" in c["LRFD"][0]["source"] and "Sect. 2.4.5, combination 10" in c["ASD"][2]["source"]
     assert calc.parse_expr(c["ASD"][1]["expr"]) == {"D": 1.0525, "E": 0.6825, "L": 0.75, "S": 0.1}
     b = loadcombos.seismic(0.3, 1.0, ev=False)
-    assert [x["expr"] for x in b["LRFD"]] == ["1.2D + 1E + 1.0L + 0.15S", "0.9D + 1E"] and b["ASD"][2]["expr"] == "0.6D + 0.7E"
+    assert [x["expr"] for x in b["LRFD"]] == ["1.2D + 1.0E + 1.0L + 0.15S", "0.9D + 1.0E"] and b["ASD"][2]["expr"] == "0.6D + 0.7E"
     with pytest.raises(ValueError):
         loadcombos.seismic(0.5, 1.2)
     assert server.api("/api/seismic_combos", dict(sds="0.5", rho="1.3")) == c

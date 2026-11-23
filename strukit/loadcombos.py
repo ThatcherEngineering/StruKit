@@ -64,7 +64,8 @@ SETS = {STANDARD: dict(ASD=ASD, LRFD=LRFD)}
 
 
 def _n(x):
-    return f"{x:.4f}".rstrip("0").rstrip(".")
+    t = f"{x:.4f}".rstrip("0")
+    return t + "0" if t.endswith(".") else t
 
 
 def seismic(SDS, rho=1.0, ev=True):
