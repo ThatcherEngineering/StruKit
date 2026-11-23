@@ -1224,6 +1224,9 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
     for b in sheet.blocks:
         if b.get("picture"):
             p.room(230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
+            if b["picture"][0] == "wind_mwfrs":
+                p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
+                continue
             p.head(b.get("head") or b["title"] + ": Inputs and Layout")
             for k, v in b.get("info", ()):
                 lines = _split(v, 104)
@@ -1234,7 +1237,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         if b.get("steps"):
             _steps(p, b["title"], b["steps"])
         if b.get("lines"):
-            p.room(14 + 10 * min(len(b["lines"]), 8))
+            p.room(min(14 + 10 * (len(b["lines"]) + sum(len(_split(t, 125)) for t in b.get("after", ())) + 1), 260))
             p.head(b["title"])
             for t in b["lines"]:
                 p.room(11); p.text(t, font=FM, size=7.5, dy=10)
@@ -1331,6 +1334,8 @@ def _block_picture(c, top, pic):
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
         return _snow_drift_picture(c, top, d)
+    if name == "wind_mwfrs":
+        return _wind_mwfrs_picture(c, top, d)
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
@@ -1391,6 +1396,83 @@ def _block_picture(c, top, pic):
     low = min(low1, low2)
     _small(c, (LM + RM) / 2, low - 4, "dimensions in inches; to scale; edge distances are measured from the rod centres")
     return low - 8
+
+
+def _arrow(c, x1, y1, x2, y2, head=3.2):
+    """A line from (x1, y1) to (x2, y2) with a filled head at the second point."""
+    import math
+    a = math.atan2(y2 - y1, x2 - x1)
+    c.line(x1, y1, x2 - head * 0.8 * math.cos(a), y2 - head * 0.8 * math.sin(a))
+    t = c.beginPath(); t.moveTo(x2, y2)
+    for da in (2.7, -2.7):
+        t.lineTo(x2 + head * math.cos(a + da), y2 + head * math.sin(a + da))
+    t.close(); c.drawPath(t, fill=1, stroke=0)
+
+
+def _wind_mwfrs_picture(c, top, d):
+    """One section through the building for each wind direction, to scale, wind from the
+    left: an arrow on each surface toward it (pressure) or away from it (suction) with the
+    external pressure q Kd G Cp in psf. The internal pressure is not drawn."""
+    import math
+    pw = (RM - LM) / 2
+    ybase = top - 112
+    for i, pn in enumerate(d["panels"]):
+        x0 = LM + i * pw
+        _sketch_title(c, x0 + 6, top - 4, pn["title"])
+        L, eave, rise = pn["L"], pn["eave"], pn["rise"]
+        s = min((pw - 150) / L, 62.0 / (eave + rise))
+        xl = x0 + 76 + ((pw - 150) - L * s) / 2
+        xr, ye, yr = xl + L * s, ybase + eave * s, ybase + (eave + rise) * s
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4); c.line(x0 + 30, ybase, x0 + pw - 30, ybase)
+        c.setStrokeColorRGB(*INK); c.setLineWidth(1.0)
+        c.line(xl, ybase, xl, ye); c.line(xr, ybase, xr, ye)
+        if pn["gable"]:
+            c.line(xl, ye, (xl + xr) / 2, yr); c.line((xl + xr) / 2, yr, xr, ye)
+        else:
+            c.line(xl, ye, xr, ye)
+        c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.7); c.setFont(FR, 6)
+
+        def wall(x, p, side, label):
+            out = -1 if side == "left" else 1
+            for f in (0.3, 0.7):
+                y = ybase + eave * s * f
+                a, b = (x + out * 16, x + out * 1) if p >= 0 else (x + out * 1, x + out * 16)
+                _arrow(c, a, y, b, y)
+            t = f"{label} {p:+.1f}"
+            (c.drawRightString if side == "left" else c.drawString)(x + out * 19, ybase + eave * s * 0.5 - 2, t)
+
+        wall(xl, pn["windward"], "left", "windward")
+        wall(xr, pn["leeward"], "right", "leeward")
+        if pn["gable"]:
+            ang = math.atan2(yr - ye, (xr - xl) / 2)
+            for sign, vals, nm in ((-1, pn["roof_windward"], "windward roof"), (1, pn["roof_leeward"], "leeward roof")):
+                mx, my = (xl + xr) / 2 + sign * (xr - xl) / 4, (ye + yr) / 2
+                nx, ny = sign * math.sin(ang), math.cos(ang)
+                p0 = vals[0]
+                a, b = ((mx + nx * 16, my + ny * 16), (mx + nx, my + ny)) if p0 >= 0 else ((mx + nx, my + ny), (mx + nx * 16, my + ny * 16))
+                _arrow(c, a[0], a[1], b[0], b[1])
+                t = nm + " " + " and ".join(f"{v:+.1f}" for v in vals)
+                (c.drawRightString if sign < 0 else c.drawString)(mx + nx * 19 + sign * 2, my + ny * 19 + 1, t)
+        else:
+            zs = pn["zones"]
+            for k, (x1, x2, p) in enumerate(zs):
+                xa, xb = xl + x1 * s, xl + x2 * s
+                if k:
+                    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4); c.line(xa, ye - 3, xa, ye + 20)
+                    c.setStrokeColorRGB(*LOADC); c.setLineWidth(0.7)
+                xm = (xa + xb) / 2
+                a, b = (ye + 16, ye + 1) if p >= 0 else (ye + 1, ye + 16)
+                _arrow(c, xm, a, xm, b)
+                c.drawCentredString(xm, ye + 19 + (7 if (xb - xa) < 26 and k % 2 else 0), f"{p:+.1f}")
+            c.drawString(xr + 4, ye + 12, f"each zone also {pn['other']:+.1f}")
+            c.setFillColorRGB(*GREY)
+            c.drawCentredString((xl + xr) / 2, ye - 8, "roof zones at " + ", ".join(f"{x2:g}" for x1, x2, p in zs) + " ft")
+        c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
+        _arrow(c, x0 + 6, top - 26, x0 + 34, top - 26, head=4)
+        c.setFont(FR, 6); c.drawString(x0 + 6, top - 22, "WIND")
+        memberart._dim_h(c, xl, xr, ybase - 9, f"L = {L:g} ft", FR, ext_from=ybase)
+    _small(c, (LM + RM) / 2, ybase - 30, "sections to scale; external pressure q Kd G Cp in psf, + toward the surface, - away from it; windward wall value at the eave")
+    return ybase - 36
 
 
 def _snow_drift_picture(c, top, d):

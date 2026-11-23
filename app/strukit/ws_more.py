@@ -718,9 +718,26 @@ def wind_mwfrs_sheet(mark, V, V_source, exposure, exposure_basis, h_mean, eave, 
         ["the comparison of the total building force with the minimum of Sect. 27.1.5", "the torsional load cases of Figure 27.3-8 (Sect. 27.3.5)",
          "parapets and roof overhangs (Sect. 27.3.3, 27.3.4)", "components and cladding (Chapter 30)",
          "whether the building is rigid (Sect. 26.2) and its enclosure classification (Sect. 26.12)"])
-    sheet.blocks.append(dict(title="Wind Normal to the Ridge" if theta > 0 else f"Wind Parallel to the {across_ridge:g} ft Dimension",
+    import math as _m
+
+    def panel(r, title, Ld):
+        gable = r["direction"] == "normal" and theta >= 10
+        pn = dict(title=title, L=Ld, eave=eave, gable=gable, rise=(Ld / 2 * _m.tan(_m.radians(theta)) if gable else 0.0),
+                  windward=r["windward"][-1].external, leeward=r["leeward"].external)
+        if gable:
+            pn["roof_windward"] = [x.external for x in r["roof"] if x.name == "windward roof"]
+            pn["roof_leeward"] = [x.external for x in r["roof"] if x.name == "leeward roof"]
+        else:
+            pn["zones"] = [(x.zone[1], x.zone[2], x.external) for x in r["roof"] if x.zone]
+            pn["other"] = r["roof"][-1].external
+        return pn
+
+    sheet.blocks.append(dict(title="External Pressures", picture=("wind_mwfrs", dict(panels=[
+        panel(rn, "WIND NORMAL TO THE RIDGE" if theta > 0 else f"WIND ALONG THE {across_ridge:g} FT DIMENSION", across_ridge),
+        panel(rp, "WIND PARALLEL TO THE RIDGE" if theta > 0 else f"WIND ALONG THE {along_ridge:g} FT DIMENSION", along_ridge)]))))
+    sheet.blocks.append(dict(title="Wind Normal to the Ridge" if theta > 0 else f"Wind Along the {across_ridge:g} ft Dimension",
                              lines=table(rn), after=basis(rn, along_ridge, across_ridge)))
-    sheet.blocks.append(dict(title="Wind Parallel to the Ridge" if theta > 0 else f"Wind Parallel to the {along_ridge:g} ft Dimension",
+    sheet.blocks.append(dict(title="Wind Parallel to the Ridge" if theta > 0 else f"Wind Along the {along_ridge:g} ft Dimension",
                              lines=table(rp), after=basis(rp, across_ridge, along_ridge)))
     sheet.wind = dict(qh=qh, normal=rn, parallel=rp)
     return sheet
