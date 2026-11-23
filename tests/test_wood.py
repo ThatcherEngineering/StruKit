@@ -268,3 +268,36 @@ def test_joist_screen_area_load():
     assert r["state"] == "done" and next(x for x in r["rows"] if x["check"] == "bending")["demand"] == pytest.approx(118.1, abs=0.1)
     r = calc.results("wood_beam", dict(v, spacing=""), proj)
     assert r["state"] == "incomplete" and "spacing" in r["messages"][0]
+
+
+def test_built_up_column_by_hand():
+    """(3) 2x6 Douglas Fir-Larch No. 2, nailed, 10 ft, pinned, unbraced both ways. NDS 15.3 by hand:
+    Fc = 1,350, CF = 1.1, Emin = 580,000; D + L (CD = 1.0): Fc* = 1,485 psi.
+    Across the face width: le/d = 120 / 5.5 = 21.82; FcE = 0.822 x 580,000 / 476.0 = 1,001.5; CP1 = 0.5443 (Kf = 1)
+    Across the laminations: le/d = 120 / 4.5 = 26.67; FcE = 670.4; CP by Eq. 3.7-1 = 0.3986; x Kf 0.6 = 0.2392
+    One lamination: le/t = 80 > 50, so no lower bound. CP = 0.2392; Fc' = 355.2 psi; A = 24.75 in2."""
+    from strukit import ws_wood
+    from tests.test_lvl import _combos
+    import math
+    def cp(r, Fcs=1485.0, Emin=580000.0):
+        a = 0.822 * Emin / r ** 2 / Fcs
+        return (1 + a) / 1.6 - math.sqrt(((1 + a) / 1.6) ** 2 - a / 0.8)
+    loads = [dict(case="D", P=2000.0), dict(case="L", P=5000.0)]
+    s = ws_wood.builtup_post("BC1", "DOUGLAS FIR-LARCH", "No. 2", "2x6", 3, "nailed", 10, loads, _combos(), 1.0, 1.0, "pinned", False, False)
+    r = s.rows[0]
+    assert r.demand == pytest.approx(7000 / 24.75) and r.capacity == pytest.approx(1485 * 0.6 * cp(120 / 4.5), rel=1e-6)
+    assert cp(120 / 4.5) == pytest.approx(0.3986, abs=0.0005) and cp(120 / 5.5) == pytest.approx(0.5443, abs=0.0005)
+    b = ws_wood.builtup_post("BC1", "DOUGLAS FIR-LARCH", "No. 2", "2x6", 3, "bolted", 10, loads, _combos(), 1.0, 1.0, "pinned", False, False)
+    assert b.rows[0].capacity == pytest.approx(1485 * 0.75 * cp(120 / 4.5), rel=1e-6)
+    # braced across the laminations at 4 ft (sheathing or blocking): le2/d2 = 10.67 -> Kf x CP2 = 0.6 x 0.867; the single
+    # lamination (le/t = 32) gives CP = 0.293, less than that; CP1 = 0.544 against 0.6 x CP2
+    c = ws_wood.builtup_post("BC1", "DOUGLAS FIR-LARCH", "No. 2", "2x6", 3, "nailed", 10, loads, _combos(), 1.0, 1.0, "pinned", False, False,
+                             lu_stack_ft=4.0)
+    assert c.rows[0].capacity == pytest.approx(1485 * min(cp(120 / 5.5), 0.6 * cp(48 / 4.5)), rel=1e-6)
+    # lower bound: (2) 2x4... braced at 2 ft across the laminations, le/t = 16: single-lamination CP exceeds Kf x CP2
+    e = ws_wood.builtup_post("BC2", "DOUGLAS FIR-LARCH", "No. 2", "2x6", 2, "nailed", 6, loads, _combos(), 1.0, 1.0, "pinned", False, False,
+                             lu_stack_ft=2.0)
+    single = min(cp(24 / 1.5), cp(72 / 5.5)); built = min(cp(72 / 5.5), 0.6 * cp(24 / 3.0))
+    assert single > built and e.rows[0].capacity == pytest.approx(1485 * single, rel=1e-6)
+    with pytest.raises(Exception, match="2 to 5"):
+        ws_wood.builtup_post("BC1", "DOUGLAS FIR-LARCH", "No. 2", "2x6", 6, "nailed", 10, loads, _combos(), 1.0, 1.0, "pinned", False, False)

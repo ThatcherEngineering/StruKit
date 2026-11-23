@@ -865,3 +865,124 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
     sheet.reactions = {o["cb"].name: o["reactions"] for o in out}
     sheet.diagram = _diagram_data(gb)
     return sheet
+
+
+def builtup_post(mark, species, grade, size, plies, fastening, height_ft, loads, combos, Ke_d, Ke_stack, k_source, wet, incised,
+                 lu_d_ft=None, lu_stack_ft=None, unit_weight_pcf=None, self_weight_case="D"):
+    """Nailed or bolted built-up column of 2 to 5 full-length dimension lumber laminations,
+    2018 NDS 15.3, ASD, axial compression. size: one lamination, nominal ("2x6"); its face
+    width is d. Ke_d, lu_d: buckling across the face width d (the laminations act together,
+    Kf = 1.0); Ke_stack, lu_stack: buckling across the stack of laminations (Kf = 0.6
+    nailed, 0.75 bolted). Fc' need not be less than that of one lamination as a solid
+    column (15.3.2.2). loads: dict(case, P lb, label)."""
+    if not combos:
+        raise WorksheetError(f"{mark}: no ASD load combinations given")
+    if plies not in (2, 3, 4, 5):
+        raise WorksheetError(f"{mark}: a built-up column has 2 to 5 laminations (NDS 15.3.1)")
+    if fastening not in ("nailed", "bolted"):
+        raise WorksheetError(f"{mark}: the laminations are nailed or bolted")
+    if height_ft is None or height_ft <= 0:
+        raise WorksheetError(f"{mark}: the height must be positive")
+    if not (k_source or "").strip():
+        raise WorksheetError(f"{mark}: say where the effective length factors come from")
+    if size not in wood.SIZES:
+        raise WorksheetError(f"{mark}: the laminations are dimension lumber, 2 to 4 in. thick")
+    try:
+        ref, CF, (t, d), table, note = wood.post_values(species, grade, size)
+    except wood.WoodError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    stack = plies * t
+    A = stack * d
+    CM_c = (1.0 if ref["Fc"] * CF <= 750 else 0.8) if wet else 1.0
+    CM_E, Ci_c, Ci_E = (0.9 if wet else 1.0), (0.80 if incised else 1.0), (0.95 if incised else 1.0)
+    Emin = ref["Emin"] * CM_E * Ci_E
+    le_d = Ke_d * (lu_d_ft if lu_d_ft else height_ft) * 12.0
+    le_s = Ke_stack * (lu_stack_ft if lu_stack_ft else height_ft) * 12.0
+    Kf = 0.6 if fastening == "nailed" else 0.75
+    if le_d / d > 50 or le_s / stack > 50:
+        raise WorksheetError(f"{mark}: slenderness ratio le/d exceeds 50 (NDS 15.3.2.3)")
+    loads = [dict(x) for x in loads]
+    sw = None
+    if unit_weight_pcf:
+        sw = unit_weight_pcf * A / 144.0 * height_ft
+        loads.append(dict(case=self_weight_case, P=sw, label="self-weight"))
+    if not loads:
+        raise WorksheetError(f"{mark}: no loads given")
+    by_case = {}
+    for ld in loads:
+        if not ld.get("case") or ld.get("P") is None:
+            raise WorksheetError(f"{mark}: a load is missing its case or its value")
+        by_case[ld["case"]] = by_case.get(ld["case"], 0.0) + ld["P"]
+
+    def cp(Fcs, ratio):
+        FcE = 0.822 * Emin / ratio ** 2
+        a = FcE / Fcs
+        return (1 + a) / 1.6 - math.sqrt(((1 + a) / 1.6) ** 2 - a / 0.8), FcE
+
+    out = []
+    for cb in combos:
+        present = [c for c, v in cb.factors.items() if v and c in by_case]
+        if not present:
+            continue
+        P = sum(cb.factors[c] * by_case[c] for c in present)
+        try:
+            CD, cd_case, cd_dur = wood.load_duration(present)
+        except wood.WoodError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        Fcs = ref["Fc"] * CD * CM_c * CF * Ci_c
+        cp_d, FcE_d = cp(Fcs, le_d / d)
+        cp_s0, FcE_s = cp(Fcs, le_s / stack)
+        cp_s = Kf * cp_s0
+        single = None
+        if le_s / t <= 50:                                          # one lamination as a solid column
+            single = min(cp(Fcs, le_s / t)[0], cp_d)
+        CP = max(min(cp_d, cp_s), single or 0.0)
+        out.append(dict(cb=cb, P=P, CD=CD, cd_case=cd_case, cd_dur=cd_dur, Fcs=Fcs, cp_d=cp_d, cp_s0=cp_s0, cp_s=cp_s, single=single,
+                        CP=CP, FcE_d=FcE_d, FcE_s=FcE_s, Fc_adj=Fcs * CP, fc=P / A))
+    if not out:
+        raise WorksheetError(f"{mark}: no load combination loads this column")
+    g = max(out, key=lambda o: o["fc"] / o["Fc_adj"])
+    rows = [Row("compression", g["cb"].name, g["fc"], g["Fc_adj"], "psi", "2018 NDS 15.3.2, Table 4.3.1",
+                f"P = {g['P']:,.0f} lb; CD = {g['CD']:g} ({g['cd_case']}, {g['cd_dur']}); CP = {g['CP']:.3f}")]
+    L = footing_line
+    steps = [L("lamination t x d", t, "in", SUPP_T1B, f"{t:g} in x {d:g} in dressed"),
+             L("stack = n t", stack, "in", "geometry", f"{plies} laminations"), L("A", A, "in2", "geometry"),
+             L("Fc", ref["Fc"], "psi", f"2018 NDS Supplement {table}"), L("Emin'", Emin, "psi", "NDS Table 4.3.1"),
+             L("CD", g["CD"], "", "NDS Table 2.3.2", f"{g['cd_case']}, {g['cd_dur']}"),
+             L("CM", CM_c, "", "Table 4A adjustment factors", "wet service" if wet else "dry service"),
+             L("CF", CF, "", "Table 4A adjustment factors"), L("Ci", Ci_c, "", "NDS Table 4.3.8", "incised" if incised else "not incised"),
+             L("Fc* = Fc CD CM CF Ci", g["Fcs"], "psi", "NDS 15.3.2.4"),
+             L("le1 / d1", le_d / d, "", "NDS 15.3.2.2", f"across the face width, d1 = {d:g} in, le = {le_d:g} in"),
+             L("FcE1", g["FcE_d"], "psi", "NDS 15.3.2.4"),
+             L("CP1", g["cp_d"], "", "NDS Eq. 15.3-1", "Kf = 1.0, c = 0.8"),
+             L("le2 / d2", le_s / stack, "", "NDS 15.3.2.2", f"across the laminations, d2 = {stack:g} in, le = {le_s:g} in"),
+             L("FcE2", g["FcE_s"], "psi", "NDS 15.3.2.4"),
+             L("CP2", g["cp_s"], "", "NDS Eq. 15.3-1", f"Kf = {Kf:g} ({fastening}), c = 0.8")]
+    if g["single"] is not None:
+        steps.append(L("CP, one lamination as a solid column", g["single"], "", "NDS 15.3.2.2, Eq. 3.7-1",
+                       f"le / t = {le_s / t:.1f} and le1 / d1; Fc' need not be less than this"))
+    steps += [L("CP", g["CP"], "", "NDS 15.3.2.2", "the smaller of CP1 and CP2" + (", but not less than the single-lamination value" if g["single"] is not None else "")),
+              L("Fc' = Fc* CP", g["Fc_adj"], "psi", "NDS Table 4.3.1"),
+              L("fc = P / A", g["fc"], "psi", "NDS 3.6.3", f"P = {g['P']:,.0f} lb, {g['cb'].name}")]
+    info = [("Member", f"({plies}) {size} {species.title()} {grade}" + (f" ({note})" if note else "") + f", {fastening} together"),
+            ("Size", f"{stack:g} in x {d:g} in ({plies} laminations of {t:g} in x {d:g} in)"),
+            ("Height", f"{height_ft:g} ft; effective length {le_d / 12:g} ft across the {d:g} in face width and {le_s / 12:g} ft across the laminations"),
+            ("Ends", f"Ke = {Ke_d:g} and {Ke_stack:g} ({k_source.strip()})"),
+            ("Conditions", ("wet service" if wet else "dry service") + "; " + ("incised" if incised else "not incised"))]
+    load_lines = [f"{ld['case']:<3} axial {ld['P']:>10,.0f} lb   {ld.get('label', '')}" for ld in loads]
+    sheet = SimpleSheet(
+        mark, "Built-Up Wood Column", "Member", "ASD", info, load_lines, [(c.name, c.source) for c in combos],
+        f"Governing Calculation ({g['cb'].name})", steps, rows,
+        ["Allowable stress design, 2018 NDS. Temperature factor Ct = 1.0 (NDS 2.3.3, sustained temperature to 100 F).",
+         "All laminations are full column length, the same size and grade, with faces in contact (NDS 15.3.1).",
+         f"The laminations are {fastening} in accordance with NDS " + ("15.3.3." if fastening == "nailed" else "15.3.4."),
+         "The axial load acts along the centre of the column. No bending is considered.",
+         f"Self-weight {sw:,.0f} lb (unit weight {unit_weight_pcf:g} pcf) added to load case {self_weight_case}." if sw is not None
+         else "Self-weight is not added separately."],
+        [("nail size, spacing, end and edge distances (NDS 15.3.3)" if fastening == "nailed" else "bolt size, spacing, end and edge distances (NDS 15.3.4)"),
+         "bending from eccentric or lateral load", "bearing on the end grain and on the supporting member (NDS 3.10)",
+         "connections at the top and base"],
+        picture=("wood_post", dict(b=stack, d=d, height=height_ft, size=size, plies=plies, axial=[f"{x['case']} {x['P']:,.0f} lb" for x in loads])),
+        governing=g["cb"].name)
+    sheet.base = {o["cb"].name: o["P"] for o in out}
+    return sheet

@@ -80,7 +80,7 @@ def test_server_requests_save_open_and_print(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "APP_DIR", tmp_path / "app")
     monkeypatch.setattr(server, "SETTINGS", tmp_path / "app" / "settings.json")
     info = server.api("/api/info", {})
-    assert set(info["forms"]) == {"steel_beam", "steel_column", "footing_iso", "footing_cont", "frame", "weld", "bolts", "base_plate", "base_plate_moment", "footing_moment", "snow", "wood_beam", "wood_post", "shear_wall", "lvl_beam", "lvl_post", "glulam_beam", "wey_beam", "ijoist", "wey_post"} and "W18X50" in info["shapes"]
+    assert set(info["forms"]) == {"steel_beam", "steel_column", "footing_iso", "footing_cont", "frame", "weld", "bolts", "base_plate", "base_plate_moment", "footing_moment", "snow", "wood_beam", "wood_post", "shear_wall", "lvl_beam", "lvl_post", "glulam_beam", "wey_beam", "ijoist", "wey_post", "builtup_post"} and "W18X50" in info["shapes"]
     data = dict(format="strukit-project", version=1, project=PROJ, members=[dict(kind="steel_beam", values=BEAM)])
     p = str(tmp_path / "job.strukit")
     assert server.api("/api/save", dict(path=p, data=data))["path"] == p

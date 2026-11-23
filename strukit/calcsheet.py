@@ -1042,7 +1042,7 @@ def _picture(c, top, pic):
                     c.setFont(FR, 5.5); c.drawRightString(xl - 18, yy - 2, f"{ld['case']} {ld['P']:,.0f} lb")
         c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK)
         _sketch_title(c, 505, top, "SECTION")
-        s_ = memberart.wood_section(c, 528, top - 50, 46, 46, d["b"], d["d"], 1, kind=d.get("kind", "sawn"))
+        s_ = memberart.wood_section(c, 528, top - 50, 46, 46, d["b"], d["d"], d.get("plies", 1), kind=d.get("kind", "sawn"))
         memberart._dim_h(c, 528 - d["b"] * s_ / 2, 528 + d["b"] * s_ / 2, top - 50 - d["d"] * s_ / 2 - 8, f"{d['b']:g}", FR,
                          ext_from=top - 50 - d["d"] * s_ / 2)
         memberart._dim_v(c, top - 50 - d["d"] * s_ / 2, top - 50 + d["d"] * s_ / 2, 528 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,
