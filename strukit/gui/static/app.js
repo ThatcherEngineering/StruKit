@@ -360,16 +360,18 @@ function drawProject(main) {
   } }, "Fill both lists from " + name));
   const seis = [{ key: "seismic_sds", label: "SDS (for the seismic combinations)", type: "text", required: false, help: "from the ASCE 7 Hazard Tool; used only by the button below" },
     { key: "seismic_rho", label: "Redundancy factor", type: "select", options: ["1.0", "1.3"], required: false, help: "ASCE 7-22 Sect. 12.3.4" },
-    { key: "seismic_no_ev", label: "Vertical seismic effect Ev", type: "select", options: ["0.2 SDS D", "zero (Seismic Design Category B)"], required: false, help: "ASCE 7-22 Sect. 12.4.2.2" }];
+    { key: "seismic_no_ev", label: "Vertical seismic effect Ev", type: "select", options: ["0.2 SDS D", "zero (Seismic Design Category B)"], required: false, help: "ASCE 7-22 Sect. 12.4.2.2" },
+    { key: "seismic_omega0", label: "Overstrength factor (optional)", type: "text", required: false, help: "ASCE 7-22 Table 12.2-1; blank = no combinations with overstrength. Members designed for overstrength carry their seismic load under load case Em in place of E." }];
   fillBtns.push(el("button", { class: "btn", onclick: async () => {
     let r;
-    try { r = await post("/api/seismic_combos", { sds: p.seismic_sds || "", rho: p.seismic_rho || "1.0", no_ev: (p.seismic_no_ev || "").startsWith("zero") }); }
+    try { r = await post("/api/seismic_combos", { sds: p.seismic_sds || "", rho: p.seismic_rho || "1.0", no_ev: (p.seismic_no_ev || "").startsWith("zero"), omega0: p.seismic_omega0 || "" }); }
     catch (e) { toast(e.message, 9000); return; }
     S.prevCombos = { asd: p.combos_asd, lrfd: p.combos_lrfd };
     const keep = rows => (rows || []).filter(c => !/Sect\. 2\.(3\.6|4\.5),/.test(c.source || ""));
     p.combos_asd = keep(p.combos_asd).concat(r.ASD); p.combos_lrfd = keep(p.combos_lrfd).concat(r.LRFD);
     changed(); select("project");
-    toast("The seismic combinations are added to both lists. Load case E is the effect of the horizontal seismic forces; enter it with both signs where the force reverses.", 12000);
+    toast("The seismic combinations are added to both lists. Load case E is the effect of the horizontal seismic forces; enter it with both signs where the force reverses."
+      + ((p.seismic_omega0 || "").trim() ? " The combinations with overstrength use load case Em: on a member that must be designed for overstrength, enter the same seismic load under Em in place of E." : ""), 16000);
   } }, "Add the ASCE/SEI 7-22 seismic combinations"));
   if (S.prevCombos) fillBtns.push(el("button", { class: "btn", onclick: () => {
     p.combos_asd = S.prevCombos.asd; p.combos_lrfd = S.prevCombos.lrfd; S.prevCombos = null; changed(); select("project"); } }, "Put back the previous lists"));

@@ -27,7 +27,7 @@ def T(key, label, columns, help=""):
     return dict(key=key, label=label, columns=columns, help=help)
 
 
-CASE = F("case", "Case", "text", help="D, L, Lr, S, W, E ...")
+CASE = F("case", "Case", "text", help="D, L, Lr, S, W, E, Em (seismic with overstrength) ...")
 FORMS = {
     "steel_beam": dict(
         title="Steel Beam", code="AISC 360-22", mark="B",

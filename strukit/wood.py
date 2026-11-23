@@ -77,7 +77,7 @@ SPECIES = sorted({k[0] for k in VALUES})
 
 # NDS Table 2.3.2: load case -> (CD, duration)
 CD = {"D": (0.9, "permanent"), "L": (1.0, "ten years"), "S": (1.15, "two months"), "Lr": (1.25, "seven days"),
-      "W": (1.6, "ten minutes"), "E": (1.6, "ten minutes")}
+      "W": (1.6, "ten minutes"), "E": (1.6, "ten minutes"), "Em": (1.6, "ten minutes")}
 
 _MAIN = ("Select Structural", "No. 1 & Btr", "No. 1", "No. 2", "No. 3", "No. 1/ No. 2")
 # Table 4A size factors for Fb: nominal width -> (2 and 3 in. thick, 4 in. thick)

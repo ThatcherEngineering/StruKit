@@ -205,3 +205,31 @@ def test_seismic_system_table(tmp_path):
         calc.build("seismic_elf", dict(v, system="Steel systems not specifically detailed for seismic resistance"), dict(job="2026-000", name="Test", method="ASD"))
     with pytest.raises(calc.Missing):
         calc.build("seismic_elf", dict(v, system="other (type R and Cd)"), dict(job="2026-000", name="Test", method="ASD"))
+
+
+def test_seismic_combinations_with_overstrength():
+    """ASCE/SEI 7-22 Sect. 2.3.6 and 2.4.5 with overstrength, read from the page text (pdf pp. 69-70): the same combinations with
+    Emh = Omega0 QE in place of Eh. SDS = 1.0, Omega0 = 2.5: ASD 8: (1.0 + 0.7(0.2))D + 0.7(2.5)Em = 1.14D + 1.75Em; 9: 1.105D + 0.525(2.5)Em
+    + 0.75L + 0.1S = 1.105D + 1.3125Em + ...; 10: (0.6 - 0.14)D + 1.75Em = 0.46D + 1.75Em. LRFD 6: 1.4D + 2.5Em + 1.0L + 0.15S; 7: 0.7D + 2.5Em.
+    The redundancy factor does not enter them."""
+    from strukit import loadcombos, ws_wood
+    from strukit.gui import calc
+    from strukit.gui import server
+    r = loadcombos.seismic(1.0, 1.3, True, omega0=2.5)
+    assert [c["expr"] for c in r["ASD"]][3:] == ["1.14D + 1.75Em", "1.105D + 1.3125Em + 0.75L + 0.1S", "0.46D + 1.75Em"]
+    assert [c["expr"] for c in r["LRFD"]][2:] == ["1.4D + 2.5Em + 1.0L + 0.15S", "0.7D + 2.5Em"]
+    assert all("with overstrength" in c["source"] and "Omega0 = 2.5" in c["source"] and "Sect. 12.4.3" in c["source"] for c in r["ASD"][3:] + r["LRFD"][2:])
+    assert len(loadcombos.seismic(1.0, 1.3)["ASD"]) == 3 and loadcombos.seismic(1.0, 1.0, False, omega0=3)["ASD"][3]["expr"] == "1.0D + 2.1Em"
+    for bad in (0.5, 4.0):
+        with pytest.raises(ValueError):
+            loadcombos.seismic(1.0, 1.0, True, omega0=bad)
+    api = server.api("/api/seismic_combos", dict(sds="1.0", rho="1.3", omega0="2.5"))
+    assert len(api["ASD"]) == 6 and "error" in server.api("/api/seismic_combos", dict(sds="1.0", rho="1.0", omega0="x"))
+    assert len(server.api("/api/seismic_combos", dict(sds="1.0", rho="1.0", omega0=""))["ASD"]) == 3
+    # a post carrying its seismic axial load under Em: 6x6 DF-L No. 2, D 2,000 lb, Em 3,000 lb: governing 1.14(2000) + 1.75(3000) = 7,530 lb
+    proj = dict(method="ASD", combos_asd=r["ASD"], combos_lrfd=r["LRFD"])
+    v = dict(mark="WP5", species="DOUGLAS FIR-LARCH", grade="No. 2", size="6x6", height="9", lu1="", lu2="", Ke1="1", Ke2="1", k_source="pinned",
+             service="dry service", incised="no", unit_weight="", loads=[dict(case="D", P="2000", label=""), dict(case="Em", P="3000", label="")])
+    sh, _, _ = calc.build("wood_post", v, proj)
+    comp = next(x for x in sh.rows if x.check == "compression")
+    assert comp.combo == "1.14D + 1.75Em" and comp.demand == pytest.approx(7530 / 30.25, abs=0.01)
