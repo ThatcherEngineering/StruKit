@@ -206,7 +206,9 @@ def test_cc_roof_low_slope_by_hand(tmp_path):
     assert x["design"]["3"] == pytest.approx(-60.1, abs=0.1) and x["design"]["positive"] == 16.0 and x["p"]["positive"] == pytest.approx(9.84, abs=0.02)
     assert r["edge"] == 12.0 and r["corner"] == 4.0
     with pytest.raises(wind.WindError):
-        wind.cc_roof(115, "C", 20, "enclosed", [100], theta=15)
+        wind.cc_roof(115, "C", 20, "enclosed", [100], theta=15)          # the least horizontal dimension is needed
+    with pytest.raises(wind.WindError):
+        wind.cc_roof(115, "C", 20, "enclosed", [100], theta=50, least_dim=40)
     from strukit.gui import calc
     from strukit import calcsheet
     v = dict(mark="WR1", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
@@ -214,3 +216,33 @@ def test_cc_roof_low_slope_by_hand(tmp_path):
     sheet, kind, _ = calc.build("wind_cc_roof", v, dict(job="2026-000", name="Test", method="ASD"))
     assert kind == "simple" and len(sheet.blocks[0]["lines"]) == 8
     calcsheet._simple_pdf(sheet, str(tmp_path / "r.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+
+
+def test_cc_roof_gable_figures_by_hand(tmp_path):
+    """Figures 30.3-2B, 2C, 2D end values as read, and by hand at 50 ft2 on a roof at 18 degrees (Figure 30.3-2B):
+    zone 3: -3.6 + 1.8 log(5)/1 = -2.342; zone 2: -2.7 + 1.7 log(5)/log(20) = -1.787; zone 1: -2.0 + 1.5 log(5)/log(30) = -1.290;
+    positive: 0.6 - 0.3 log(5)/log(20) = 0.439."""
+    g, F = wind.cc_roof_gcp, wind.cc_roof_figure
+    assert [F(t) for t in (0, 7, 7.1, 20, 20.5, 27, 27.5, 45)] == ["30.3-2A"] * 2 + ["30.3-2B"] * 2 + ["30.3-2C"] * 2 + ["30.3-2D"] * 2
+    ends = {15: {"positive": (0.6, 200, 0.3), "1": (-2.0, 300, -0.5), "2": (-2.7, 200, -1.0), "3": (-3.6, 100, -1.8)},
+            25: {"positive": (0.6, 200, 0.3), "1": (-1.5, 200, -0.8), "2": (-2.5, 100, -1.2), "3": (-3.0, 100, -1.4)},
+            35: {"positive": (0.9, 200, 0.5), "1": (-1.8, 100, -0.8), "2": (-2.0, 200, -1.0), "3": (-2.5, 200, -1.0)}}
+    for th, zs in ends.items():
+        for z, (v10, A2, v2) in zs.items():
+            assert g(10, z, th) == v10 and g(3, z, th) == v10 and g(A2, z, th) == pytest.approx(v2) and g(1000, z, th) == pytest.approx(v2)
+    assert g(50, "3", 18) == pytest.approx(-2.342, abs=0.001) and g(50, "2", 18) == pytest.approx(-1.787, abs=0.001)
+    assert g(50, "1", 18) == pytest.approx(-1.290, abs=0.001) and g(50, "positive", 18) == pytest.approx(0.439, abs=0.001)
+    with pytest.raises(wind.WindError):
+        g(50, "1'", 18)
+    r = wind.cc_roof(115, "C", 20, "enclosed", [50], theta=18, least_dim=40)
+    assert r["a"] == 4.0 and r["zones"] == ("1", "2", "3") and r["figure"] == "30.3-2B"
+    assert r["rows"][0]["design"]["3"] == pytest.approx(30.4704 * 0.85 * (-2.342 - 0.18), abs=0.05)
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="WR2", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
+             enclosure_basis="Sect. 26.12", h="20", theta="22.62", least="40", areas="10, 50, 100", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, kind, _ = calc.build("wind_cc_roof", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert sheet.wind["figure"] == "30.3-2C" and len(sheet.blocks[0]["lines"]) == 4
+    calcsheet._simple_pdf(sheet, str(tmp_path / "r.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+    with pytest.raises(calc.Missing):
+        calc.build("wind_cc_roof", dict(v, least=""), dict(job="2026-000", name="Test", method="ASD"))
