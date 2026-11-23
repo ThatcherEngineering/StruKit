@@ -203,3 +203,23 @@ def test_bolted_connection_perpendicular_to_grain():
         calc.build("bolted_connection", dict(v, p_loaded=""), proj)
     with pytest.raises(WorksheetError):
         calc.build("bolted_connection", dict(v, p_loaded="5", p_unloaded="2"), proj)              # 5 + 3 + 2 = 10 in. in a 9.25 in. member
+
+
+def test_shear_at_connection_by_hand():
+    """NDS 3.4.3.3. 2 - 2x10 (b = 3.0 in., d = 9.25 in.), bolts with the nearest 2.25 in. from the unloaded edge: de = 7.0 in.; Fv' = 180 psi.
+    12 in. from the end (under 5 d = 46.25 in.): (2/3)(180)(3.0)(7.0)(7.0/9.25)^2 = 1,443 lb; far from the end: (2/3)(180)(3.0)(7.0) = 2,520 lb."""
+    v, eq = dowel.shear_at_connection(180, 3.0, 9.25, 7.0, 12)
+    assert v == pytest.approx(1443, abs=1) and eq == "Eq. 3.4-6"
+    assert dowel.shear_at_connection(180, 3.0, 9.25, 7.0, 60) == (pytest.approx(2520), "Eq. 3.4-7")
+    from strukit.gui import calc
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + L", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 2a")])
+    v = dict(mark="BC4", D="3/4", shear="double", rows="1", n_row="2", spacing="3", end="6", edge="2.75", sense="compression", wood_type="softwood",
+             grain="perpendicular in the side member(s)", p_loaded="4", p_unloaded="2.25", p_end="12", p_Fv="180", p_Fv_source="DF-L No. 2, NDS Supplement Table 4A",
+             side_t="1.5", side_w="9.25", G_side="0.50", E_side="1600000", side_source="DF-L No. 2", main_t="5.5", main_w="5.5", G_main="0.50", E_main="1600000",
+             main_source="DF-L No. 1", service="dry", loads=[dict(case="D", P="600"), dict(case="L", P="1400")])
+    sheet, _, _ = calc.build("bolted_connection", v, proj)
+    row = [r for r in sheet.rows if r.check.startswith("Shear at the connection")][0]
+    assert row.capacity == pytest.approx(1443, abs=1) and row.demand == 2000 and row.status != "OK"            # the beam shear governs: 2,000 lb on 1,443 lb
+    assert not any("3.4.3.3" in t for t in sheet.not_checked)
+    with pytest.raises(calc.Missing):
+        calc.build("bolted_connection", dict(v, p_Fv_source=""), proj)
