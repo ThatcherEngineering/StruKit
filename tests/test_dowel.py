@@ -390,3 +390,28 @@ def test_lag_combined_lateral_and_withdrawal_by_hand(tmp_path):
     assert flat.connection["capacity"] == pytest.approx(1.15 * 394.22, abs=0.1) and flat.connection_lag["comb"] is None
     with pytest.raises(Exception):
         calc.build("lag_connection", dict(v, alpha="120"), proj)
+
+
+def test_wood_screws_against_nds_table_12l(tmp_path):
+    """NDS Table 12L, G = 0.50, penetration 10 D: (side thickness, screw number): Z = (1/2, #8): 73; (1/2, #10): 90; (1/2, #14): 120;
+    (3/4, #10): 107; (1, #6): 72; (1/2, #6): 59; (1/2, #12): 110; (5/8, #9): 91; (3/4, #14): 135.
+    Sheet: 4 - #10 x 3 in. screws, 3/4 in. side member on a 3.5 in. main member, D + S: p = 2.25 in. (over 10 D); capacity 4(106.6)(1.15) = 490 lb."""
+    T = {(0.5, "#8"): 73, (0.5, "#10"): 90, (0.5, "#14"): 120, (0.75, "#10"): 107, (1.0, "#6"): 72, (0.5, "#6"): 59, (0.5, "#12"): 110, (0.625, "#9"): 91, (0.75, "#14"): 135}
+    for (ts, num), v in T.items():
+        assert abs(dowel.wood_screw(num, ts, 0.5, 0.5)["Z"] - v) <= 0.6, (ts, num)
+    with pytest.raises(dowel.DowelError):
+        dowel.wood_screw("#10", 0.75, 0.5, 0.5, penetration=1.0)
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3")])
+    v = dict(mark="WS1", screw="#10", length="3", n="4", side_t="0.75", G_side="0.50", G_side_source="DF-L", main_t="3.5", G_main="0.50", G_main_source="DF-L",
+             service="dry", loads=[dict(case="D", P="100"), dict(case="S", P="250")])
+    sheet, kind, _ = calc.build("screw_connection", v, proj)
+    z = dowel.wood_screw("#10", 0.75, 0.5, 0.5, penetration=2.25)["Z"]
+    assert kind == "simple" and sheet.title == "Wood Screw Connection" and sheet.connection["p"] == pytest.approx(2.25) and sheet.rows[0].capacity == pytest.approx(4 * z * 1.15)
+    assert 106 < z < 108 and [x.check for x in sheet.rows] == ["Lateral load on the wood screws", "Wood screw penetration"]
+    txt = " ".join(sheet.assumptions + sheet.not_checked + [k + v_ for k, v_ in sheet.info]).lower()
+    assert "nail" not in txt
+    calcsheet._simple_pdf(sheet, str(tmp_path / "s.pdf"), "2026-000", "2018 NDS", "2026-11-23")
+    with pytest.raises(Exception):
+        calc.build("screw_connection", dict(v, length="1.5"), proj)            # penetration 0.75 in. under 6 D = 1.14 in.

@@ -1281,23 +1281,26 @@ def diaphragm_sheet(mark, panel, face_in, case, panel_type, G, G_source, L, W, w
 
 
 def nailed_connection_sheet(mark, nail_name, D, length, side_t, G_side, G_side_source, main_t, G_main, G_main_source, n, service, loads, combos,
-                            end_grain=False, diaphragm=False, toe_nail=False):
+                            end_grain=False, diaphragm=False, toe_nail=False, screw=None):
     """Laterally loaded nailed connection, single shear, wood to wood, 2018 NDS Ch. 11 and 12
     (see dowel.py). loads: [dict(case, P lb)]; combos: ASD combinations. service: "dry",
     "wet in service" or "wet at fabrication, dry in service"."""
     from . import dowel, wood
+    fs = "wood screw" if screw else "nail"                # screw: the wood screw number, e.g. "#10"
+    if screw and (toe_nail or diaphragm):
+        raise WorksheetError(f"{mark}: the toe-nail and diaphragm factors are for nails")
     for nm, v in (("the source of the side member specific gravity", G_side_source), ("the source of the main member specific gravity", G_main_source),
-                  ("the nail description", nail_name)):
+                  (f"the {fs} description", nail_name)):
         if not (v or "").strip():
             raise WorksheetError(f"{mark}: {nm} is blank")
     CMs = {"dry": 1.0, "wet in service": 0.7, "wet at fabrication, dry in service": 0.7}
     if service not in CMs:
         raise WorksheetError(f"{mark}: the service condition is one of: " + "; ".join(CMs))
     if n is None or n < 1 or int(n) != n:
-        raise WorksheetError(f"{mark}: the number of nails is a whole number, 1 or more")
+        raise WorksheetError(f"{mark}: the number of {fs}s is a whole number, 1 or more")
     if D is None or D <= 0 or D >= 0.25:
-        raise WorksheetError(f"{mark}: the nail diameter is under 1/4 in.")
-    for nm, v in (("the nail length", length), ("the side member thickness", side_t), ("the main member thickness", main_t)):
+        raise WorksheetError(f"{mark}: the {fs} diameter is under 1/4 in.")
+    for nm, v in ((f"the {fs} length", length), ("the side member thickness", side_t), ("the main member thickness", main_t)):
         if v is None or v <= 0:
             raise WorksheetError(f"{mark}: {nm} must be positive")
     ls = side_t
@@ -1308,26 +1311,27 @@ def nailed_connection_sheet(mark, nail_name, D, length, side_t, G_side, G_side_s
     else:
         p = min(length - side_t, main_t)
     if p <= 0:
-        raise WorksheetError(f"{mark}: the nail does not reach the main member")
+        raise WorksheetError(f"{mark}: the {fs} does not reach the main member")
     if p < 6 * D:
         raise WorksheetError(f"{mark}: the penetration into the main member, {p:.2f} in., is less than 6 D = {6 * D:.2f} in. (NDS 12.1.6.4)")
     try:
-        r = dowel.nail(D, ls, G_side, G_main, penetration=p)
+        r = dowel.wood_screw(screw, ls, G_side, G_main, penetration=p) if screw else dowel.nail(D, ls, G_side, G_main, penetration=p)
     except dowel.DowelError as e:
         raise WorksheetError(f"{mark}: {e}")
     CM, Ceg, Cdi, Ctn = CMs[service], (0.67 if end_grain else 1.0), (1.1 if diaphragm else 1.0), (0.83 if toe_nail else 1.0)
     base = r["Z"] * CM * Ceg * Cdi * Ctn
     Ln = footing_line
     modes = r["modes"]
-    steps = [Ln("D", f"{D:g} in", "", "NDS Table L4", f"{nail_name.strip()}, {length:g} in. long"),
-             Ln("penetration into the main member, p" + (" = L cos 30 - L/3" if toe_nail else ""), f"{p:.2f} in", "", "NDS 12.1.6.4" + (", Figure 12A" if toe_nail else ""),
+    steps = [Ln("D", f"{D:g} in", "", "NDS Table L3" if screw else "NDS Table L4", f"{nail_name.strip()}, {length:g} in. long"),
+             *([Ln("Dr", f"{r['Dr']:g} in", "", "NDS Table L3, 12.3.7.1(c)", "root diameter, used in the yield equations")] if screw else []),
+             Ln("penetration into the main member, p" + (" = L cos 30 - L/3" if toe_nail else ""), f"{p:.2f} in", "", ("NDS 12.1.5.6" if screw else "NDS 12.1.6.4") + (", Figure 12A" if toe_nail else ""),
                 f"not less than 6 D = {6 * D:.2f} in."),
              Ln("ls, lm", f"{ls:.3g} in, {r['lm']:.2f} in", "", "NDS 12.3.5" + (", 12.3.10.2" if toe_nail else ""),
                 ("ls = the lesser of the side member thickness and L/3; " if toe_nail else "") + "lm = p less half the tapered tip (E = 2 D)"),
-             Ln("Fes", dowel.fe(G_side, D), "psi", "NDS Table 12.3.3", f"G = {G_side:g} ({G_side_source.strip()})"),
-             Ln("Fem", dowel.fe(G_main, D), "psi", "NDS Table 12.3.3", f"G = {G_main:g} ({G_main_source.strip()})"),
-             Ln("Fyb", r["Fyb"], "psi", "NDS Table 12N note 2"),
-             Ln("Rd = KD", dowel.rd(D, "IV"), "", "NDS Table 12.3.1B")]
+             Ln("Fes", dowel.fe(G_side, r["Dr"] if screw else D), "psi", "NDS Table 12.3.3", f"G = {G_side:g} ({G_side_source.strip()})"),
+             Ln("Fem", dowel.fe(G_main, r["Dr"] if screw else D), "psi", "NDS Table 12.3.3", f"G = {G_main:g} ({G_main_source.strip()})"),
+             Ln("Fyb", r["Fyb"], "psi", "NDS Table 12L note 2" if screw else "NDS Table 12N note 2"),
+             Ln("Rd = KD", dowel.rd(r["Dr"] if screw else D, "IV"), "", "NDS Table 12.3.1B")]
     names = {"Im": "Eq. 12.3-1", "Is": "Eq. 12.3-2", "II": "Eq. 12.3-3", "IIIm": "Eq. 12.3-4", "IIIs": "Eq. 12.3-5", "IV": "Eq. 12.3-6"}
     for m in ("Im", "Is", "II", "IIIm", "IIIs", "IV"):
         steps.append(Ln(f"Z, mode {m}", modes[m], "lb", "NDS " + names[m]))
@@ -1335,7 +1339,7 @@ def nailed_connection_sheet(mark, nail_name, D, length, side_t, G_side, G_side_s
               Ln("CM", CM, "", "NDS Table 11.3.3", service), Ln("Cg", 1.0, "", "NDS 11.3.6.1", "D under 1/4 in."),
               Ln("C-delta", 1.0, "", "NDS 12.5.1.1", "D under 1/4 in.")]
     if end_grain:
-        steps.append(Ln("Ceg", Ceg, "", "NDS 12.5.2.2", "nail in the end grain of the main member"))
+        steps.append(Ln("Ceg", Ceg, "", "NDS 12.5.2.2", f"{fs} in the end grain of the main member"))
     if diaphragm:
         steps.append(Ln("Cdi", Cdi, "", "NDS 12.5.3", "diaphragm construction"))
     if toe_nail:
@@ -1359,24 +1363,25 @@ def nailed_connection_sheet(mark, nail_name, D, length, side_t, G_side, G_side_s
     steps += [Ln("CD", worst["CD"], "", "NDS Table 2.3.2", f"{worst['cd_case']}, {worst['cd_dur']}; combination {worst['name']}"),
               Ln("Z' = Z CD CM Ct Cg C-delta" + (" Ceg" if end_grain else "") + (" Cdi" if diaphragm else "") + (" Ctn" if toe_nail else ""), base * worst["CD"], "lb", "NDS Table 11.3.1", "Ct = 1.0"),
               Ln(f"capacity = {int(n)} Z'", worst["cap"], "lb", "")]
-    rows = [Row("Lateral load on the nails", worst["name"], worst["P"], worst["cap"], "lb", "NDS Table 11.3.1, 12.3.1", f"{int(n)} nails; mode {r['mode']}"),
-            Row("Nail penetration", "", 6 * D, p, "in", "NDS 12.1.6.4", "6 D minimum against the penetration provided")]
-    info = [("Fastener", f"{int(n)} - {nail_name.strip()} nails, {D:g} in. diameter x {length:g} in. long, single shear"),
+    rows = [Row(f"Lateral load on the {fs}s", worst["name"], worst["P"], worst["cap"], "lb", "NDS Table 11.3.1, 12.3.1", f"{int(n)} {fs}s; mode {r['mode']}"),
+            Row("Wood screw penetration" if screw else "Nail penetration", "", 6 * D, p, "in", "NDS 12.1.5.6" if screw else "NDS 12.1.6.4", "6 D minimum against the penetration provided")]
+    info = [("Fastener", f"{int(n)} - {nail_name.strip()} {fs}s, {D:g} in. diameter x {length:g} in. long, single shear"),
             ("Side Member", f"{side_t:g} in. thick, G = {G_side:g} ({G_side_source.strip()})"),
             ("Main Member", f"{main_t:g} in. thick, G = {G_main:g} ({G_main_source.strip()})"),
-            ("Conditions", service + " service" + ("; nails in the end grain of the main member" if end_grain else "") + ("; diaphragm construction" if diaphragm else "") + ("; toe-nailed" if toe_nail else ""))]
+            ("Conditions", service + " service" + (f"; {fs}s in the end grain of the main member" if end_grain else "") + ("; diaphragm construction" if diaphragm else "") + ("; toe-nailed" if toe_nail else ""))]
     load_lines = [f"{ld['case']}: {ld['P']:,.0f} lb" + (f"  ({ld['label']})" if ld.get("label") else "") for ld in loads]
     sheet = SimpleSheet(
-        mark, "Nailed Connection", "Connection", "ASD", info, load_lines, [(f"{worst['name']}", worst["source"])], "Lateral Design Value", steps, rows,
-        ["Common, box or sinker steel wire nails driven into side grain perpendicular to the wood fibers" + (" of the side member" if end_grain else "") + ", members in contact, load perpendicular to the nail.",
+        mark, "Wood Screw Connection" if screw else "Nailed Connection", "Connection", "ASD", info, load_lines, [(f"{worst['name']}", worst["source"])], "Lateral Design Value", steps, rows,
+        [("Standard wood screws (NDS Table L3) turned into lead holes bored to NDS 12.1.5.3, into side grain perpendicular to the wood fibers" if screw else
+          "Common, box or sinker steel wire nails driven into side grain perpendicular to the wood fibers") + (" of the side member" if end_grain else "") + f", members in contact, load perpendicular to the {fs}.",
          "Sustained temperature not over 100 degrees F (Ct = 1.0, NDS Table 11.3.4).",
-         "All nails share the load equally."]
+         f"All {fs}s share the load equally."]
         + (["Toe-nails driven at about 30 degrees to the side member and started about one third of the nail length from its end (NDS 12.1.6.3, Figure 12A); "
             "the penetration into the main member is the projection of the nail along the side member, L cos 30 - L/3."] if toe_nail else []),
-        ["nail spacing, edge and end distances against splitting (NDS 12.1.6.5)", "the members at the connection: net section, shear at the connection (NDS 3.4.3.3) and local stresses (NDS 11.1.2, Appendix E)",
-         "withdrawal and combined lateral and withdrawal loading"] + ([] if toe_nail else ["toe-nailed connections (NDS 12.1.6.3, 12.5.4)"]))
+        [("wood screw spacing, edge and end distances against splitting (NDS 12.1.5.7)" if screw else "nail spacing, edge and end distances against splitting (NDS 12.1.6.5)"), "the members at the connection: net section, shear at the connection (NDS 3.4.3.3) and local stresses (NDS 11.1.2, Appendix E)",
+         "withdrawal and combined lateral and withdrawal loading"] + ([] if (toe_nail or screw) else ["toe-nailed connections (NDS 12.1.6.3, 12.5.4)"]))
     sheet.blocks.append(dict(title="Section", picture=("toe_nail" if toe_nail else "nailed", dict(side_t=side_t, main_t=main_t, length=length, p=p, D=D,
-                                                                      label=f"{nail_name.strip()}, {D:g} x {length:g} in."))))
+                                                                      label=f"{nail_name.strip()}, {D:g} x {length:g} in.", screw=bool(screw)))))
     sheet.connection = dict(r, Zp=base * worst["CD"], n=int(n), capacity=worst["cap"], demand=worst["P"], CM=CM)
     return sheet
 

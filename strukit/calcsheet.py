@@ -1620,7 +1620,7 @@ def _nailed_picture(c, top, d):
     memberart._dim_v(c, y_top - Lg * sc, y_mid, xn + 24, f"p = {p:.2f} in", FR, ext_from=xn + 2)
     c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawCentredString(xn, y_top + 6, d["label"])
     off = 24 if d.get("withdrawal") else 0
-    _small(c, (LM + RM) / 2, y_bot - 12 - off, "section through one nail, to scale")
+    _small(c, (LM + RM) / 2, y_bot - 12 - off, "section through one wood screw, to scale" if d.get("screw") else "section through one nail, to scale")
     return y_bot - 18 - off
 
 
