@@ -129,6 +129,14 @@ def api(path, body):
         except ValueError as e:
             msg = str(e)
             return dict(error=msg if msg.startswith(("SDS", "the redundancy")) else "Type SDS as a number, and the redundancy factor as 1.0 or 1.3.")
+    if path == "/api/wall_lines":
+        try:
+            sheet, _, _ = calc.build("seismic_elf", body.get("values") or {}, body.get("project") or {})
+        except calc.Missing as e:
+            return dict(error="The seismic sheet is not complete: " + "; ".join(e.items))
+        except Exception as e:                              # a stopped sheet: say why
+            return dict(error=f"The seismic sheet stopped: {e}")
+        return dict(lines=sheet.seismic.get("lines") or [])
     if path == "/api/ping":
         _last_ping[0] = time.time(); _pinged[0] = True
         return {}
