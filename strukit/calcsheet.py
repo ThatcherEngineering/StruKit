@@ -1225,8 +1225,8 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
     for b in sheet.blocks:
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
-                   230 if b["picture"][0] in ("anchorage", "perforated_wall") else 175)
-            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "nailed", "toe_nail", "bolted", "bolted_perp"):
+                   230 if b["picture"][0] in ("anchorage", "perforated_wall") else 215 if b["picture"][0] == "lag" else 175)
+            if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "nailed", "toe_nail", "lag", "bolted", "bolted_perp"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
             p.head(b.get("head") or b["title"] + ": Inputs and Layout")
@@ -1346,6 +1346,8 @@ def _block_picture(c, top, pic):
         return _diaphragm_picture(c, top, d)
     if name == "nailed":
         return _nailed_picture(c, top, d)
+    if name == "lag":
+        return _lag_picture(c, top - 8, d)
     if name == "toe_nail":
         return _toe_nail_picture(c, top - 8, d)
     if name == "bolted":
@@ -1620,6 +1622,60 @@ def _nailed_picture(c, top, d):
     off = 24 if d.get("withdrawal") else 0
     _small(c, (LM + RM) / 2, y_bot - 12 - off, "section through one nail, to scale")
     return y_bot - 18 - off
+
+
+def _lag_picture(c, top, d):
+    """Section through one lag screw, to scale: the side member (or plate) over the main member,
+    the screw with its head, washer, unthreaded shank, threads and tapered tip; the side member
+    thickness, the thread penetration and the tip dimensioned; the load along the screw."""
+    D, L, ts, tm, T, E, pt, wash = d["D"], d["L"], d["side_t"], d["main_t"], d["T"], d["E"], d["pt"], d.get("washer") or 0.0
+    tmd = min(tm, (L - wash - ts) + max(0.75, D))          # depth of the main member shown, in
+    sc = min(26.0, 104.0 / (ts + tmd + wash + 0.5 * D))
+    wd = 150.0
+    xc = (LM + RM) / 2
+    y_top = top - 34 - (wash + 0.5 * D) * sc              # top of the side member
+    y_mid = y_top - ts * sc
+    y_bot = y_mid - tmd * sc
+    x0 = xc - wd / 2
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    if d.get("steel_side"):
+        c.setFillColorRGB(0.72, 0.75, 0.80)
+    else:
+        c.setFillColorRGB(0.93, 0.87, 0.74)
+    c.rect(x0, y_mid, wd, max(ts * sc, 1.2), fill=1, stroke=1)
+    c.setFillColorRGB(0.93, 0.87, 0.74)
+    c.rect(x0, y_bot, wd, tmd * sc, fill=1, stroke=(0 if tmd < tm else 1))
+    if tmd < tm:
+        c.line(x0, y_mid, x0 + wd, y_mid); c.line(x0, y_mid, x0, y_bot); c.line(x0 + wd, y_mid, x0 + wd, y_bot)
+    steel = (0.25, 0.27, 0.3)
+    y_head = y_top + wash * sc
+    y_tip = y_head - L * sc
+    y_thr = y_tip + T * sc                                 # top of the threads
+    c.setStrokeColorRGB(*steel); c.setFillColorRGB(*steel)
+    if wash:
+        c.rect(xc - 1.3 * D * sc, y_top, 2.6 * D * sc, wash * sc, fill=1, stroke=0)
+    c.rect(xc - 0.8 * D * sc, y_head, 1.6 * D * sc, 0.5 * D * sc, fill=1, stroke=0)        # head
+    c.rect(xc - D * sc / 2, y_thr, D * sc, y_head - y_thr, fill=1, stroke=0)               # shank
+    c.setFillColorRGB(0.55, 0.58, 0.62)
+    c.rect(xc - D * sc / 2, y_tip + E * sc, D * sc, (T - E) * sc, fill=1, stroke=0)        # threads
+    tp = c.beginPath(); tp.moveTo(xc - D * sc / 2, y_tip + E * sc); tp.lineTo(xc + D * sc / 2, y_tip + E * sc); tp.lineTo(xc, y_tip); tp.close()
+    c.drawPath(tp, fill=1, stroke=0)
+    c.setStrokeColorRGB(*steel); c.setLineWidth(0.4)
+    k, pitch = y_tip + E * sc, max(2.0, 0.18 * D * sc * 2)
+    while k < y_thr - 0.5:
+        c.line(xc - D * sc / 2, k, xc + D * sc / 2, min(k + pitch * 0.6, y_thr)); k += pitch
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow(c, x0 + 14, y_top, x0 + 14, y_top + 22, head=4); _arrow(c, x0 + wd - 14, y_bot, x0 + wd - 14, y_bot - 20, head=4)
+    c.setFont(FR, 6.5); c.drawString(x0 + 19, y_top + 14, "load"); c.drawRightString(x0 + wd - 19, y_bot - 16, "load")
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+    c.drawRightString(x0 - 4, (y_top + y_mid) / 2 - 2, "side plate" if d.get("steel_side") else "side member"); c.drawString(x0 + 4, y_bot + 3, "main member")
+    y_pt_top = y_tip + E * sc + pt * sc
+    memberart._dim_v(c, y_mid, y_top, x0 + wd + 16, f"{ts:g} in", FR, ext_from=x0 + wd)
+    memberart._dim_v(c, y_tip + E * sc, y_pt_top, xc + D * sc / 2 + 18, f"pt = {pt:.2f} in", FR, ext_from=xc + D * sc / 2 + 1)
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawRightString(xc - D * sc / 2 - 6, y_tip + E * sc / 2 - 2, f"tapered tip E = {E:.2f} in")
+    c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawCentredString(xc, y_head + 0.5 * D * sc + 26, d["label"])
+    _small(c, xc, y_bot - 34, f"section through one lag screw, to scale; threads shaded; main member {tm:g} in thick" + (", not shown full depth" if tmd < tm else ""))
+    return y_bot - 40
 
 
 def _toe_nail_picture(c, top, d):

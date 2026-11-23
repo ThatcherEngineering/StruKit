@@ -747,6 +747,7 @@ FORMS = {
                 F("washer", "Washer thickness under the head", unit="in", required=False, help="blank = none"),
                 F("n", "Number of lag screws"),
                 F("side_t", "Side member thickness", unit="in", help="the part the screw passes through, wood or steel"),
+                F("side_kind", "Side member material", "select", options=["wood", "steel"], required=False, help="for the sketch only"),
                 F("main_t", "Main member thickness", unit="in", help="the piece the threads are in, measured along the screw"),
                 F("G_main", "Main member specific gravity, G", help="NDS Table 12.3.3A"), F("G_main_source", "Where that G comes from", "text"),
                 F("service", "Moisture in service", "select", options=["dry", "wet in service"], help="NDS Table 11.3.3"),
@@ -1504,7 +1505,8 @@ def build(kind, values, project):
         r.done()
         return ws_more.lag_withdrawal_sheet(mark, D, Lg, n_, ts, tm, Gm, Gms, sv, loads, cb, washer=r.num("washer", False) or 0.0,
                                             end_grain=bool(yes(r.text("end_grain", False))), edge=r.num("edge", False), end=r.num("end", False),
-                                            spacing=r.num("spacing", False), steel=st_, steel_source=r.text("steel_source", False) or ""), "simple", {}
+                                            spacing=r.num("spacing", False), steel=st_, steel_source=r.text("steel_source", False) or "",
+                                            steel_side=r.text("side_kind", False) == "steel"), "simple", {}
     if kind in ("bolted_connection", "lag_connection"):
         cb = combos(project, r.miss, "ASD")
         Dt = r.text("D")

@@ -322,6 +322,7 @@ def test_lag_withdrawal_sheet_by_hand(tmp_path):
     sheet, kind, _ = calc.build("lag_withdrawal", v, proj)
     c = sheet.connection
     assert kind == "simple" and c["pt"] == pytest.approx(2.28125) and round(c["W"]) == 305 and c["capacity"] == pytest.approx(2226.2, abs=0.2) and len(sheet.rows) == 1
+    assert sheet.blocks[0]["picture"][0] == "lag" and sheet.blocks[0]["picture"][1]["pt"] == c["pt"]
     calcsheet._simple_pdf(sheet, str(tmp_path / "l.pdf"), "2026-000", "2018 NDS", "2026-11-23")
     full, _, _ = calc.build("lag_withdrawal", dict(v, service="wet in service", end_grain="yes", edge="1", end="1", spacing="2", steel="1200", steel_source="AISC 360-22 J3, A307"), proj)
     assert full.connection["capacity"] == pytest.approx(2226.2 * 0.7 * 0.75, abs=0.2) and [x.check for x in full.rows] == [
