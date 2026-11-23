@@ -1458,6 +1458,8 @@ def _block_picture(c, top, pic):
         return _collector_picture(c, top - 6, d)
     if name == "rain":
         return _rain_picture(c, top - 6, d)
+    if name == "guard":
+        return _guard_picture(c, top - 6, d)
     if name == "topo":
         return _topo_picture(c, top - 6, d)
     if name == "nailed":
@@ -1897,6 +1899,42 @@ def _topo_picture(c, top, d):
         memberart._dim_h(c, min(xc, xs), max(xc, xs), y0 + hgt + 32, f"x {d['x']:g} ft", FR)
     _small(c, (LM + RM) / 2, y0 - 34, "schematic section, not to scale; Lh is measured upwind from the crest to half the height H")
     return y0 - 40
+
+
+def _guard_picture(c, top, d):
+    """Elevation of three posts and the top rail, schematic: the 200 lb load at mid-span and
+    at the top of a post, the uniform load along the rail where it applies, post spacing and
+    guard height dimensioned."""
+    S, h = d["S"], d["h"]
+    sc = min(100.0 / S, 62.0 / h)
+    x0 = (LM + RM) / 2 - S * sc
+    yb = top - 40 - h * sc
+    yt = yb + h * sc
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.6); c.line(x0 - 26, yb, x0 + 2 * S * sc + 26, yb)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(2.2)
+    for k in range(3):
+        c.line(x0 + k * S * sc, yb, x0 + k * S * sc, yt)
+    c.setLineWidth(2.6); c.line(x0 - 6, yt, x0 + 2 * S * sc + 6, yt)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.8)
+    _arrow_down(c, x0 + S * sc / 2, yt + 17, yt + 3, head=3)
+    c.setFont(FR, 6.5); c.drawCentredString(x0 + S * sc / 2, yt + 20, "200 lb, any direction")
+    _arrow(c, x0 + S * sc - 22, yt - 6, x0 + S * sc - 3, yt - 6, head=3)
+    c.drawRightString(x0 + S * sc - 24, yt - 8, "200 lb")
+    if d.get("uniform"):
+        xa, xb = x0 + S * sc + 6, x0 + 2 * S * sc - 6
+        c.setLineWidth(0.45); c.line(xa, yt + 11, xb, yt + 11)
+        n = max(int((xb - xa) / 10), 3)
+        for j in range(n + 1):
+            _arrow_down(c, xa + (xb - xa) * j / n, yt + 11, yt + 3, head=1.6)
+        c.drawCentredString((xa + xb) / 2, yt + 14, "or 50 lb/ft")
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+    c.drawString(x0 + 2 * S * sc + 10, yt - 2, f"top rail {d['rail']}")
+    c.drawString(x0 + 2 * S * sc + 10, yb + h * sc / 2, f"posts {d['post']}")
+    memberart._dim_h(c, x0, x0 + S * sc, yb - 10, f"S {S:g} ft", FR, ext_from=yb)
+    memberart._dim_h(c, x0 + S * sc, x0 + 2 * S * sc, yb - 10, f"{S:g} ft", FR, ext_from=yb)
+    memberart._dim_v(c, yb, yt, x0 - 46, f"h {h:g} ft", FR)
+    _small(c, (LM + RM) / 2, yb - 28, "elevation, to scale; loads are applied one at a time, in the direction that governs")
+    return yb - 34
 
 
 def _rain_picture(c, top, d):
