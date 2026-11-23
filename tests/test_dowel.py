@@ -226,3 +226,37 @@ def test_shear_at_connection_by_hand():
     assert not any("3.4.3.3" in t for t in sheet.not_checked)
     with pytest.raises(calc.Missing):
         calc.build("bolted_connection", dict(v, p_Fv_source=""), proj)
+
+
+def test_withdrawal_and_pull_through_against_nds_tables():
+    """NDS Table 12.2A (lag screws, lb/in.): G 0.50, 1/2 in. = 378; G 0.42, 3/8 in. = 235; G 0.55, 3/4 in. = 592.
+    Table 12.2F (pull-through, lb): G 0.42, DH 0.281, 1-1/2 in. = 75; G 0.50, DH 0.281, 7/16 in. = 67; G 0.42, DH 0.344, 3/4 in. = 99;
+    G 0.50, DH 0.500, 1-1/8 in. = 305. Nails, Eq. 12.2-3 by hand: 1380 (0.42^2.5)(0.131) = 1380(0.11432)(0.131) = 20.67 lb/in."""
+    assert round(dowel.lag_withdrawal(0.50, 0.5)) == 378 and round(dowel.lag_withdrawal(0.42, 0.375)) == 235 and round(dowel.lag_withdrawal(0.55, 0.75)) == 592
+    for DH, G, t, v in ((0.281, 0.42, 1.5, 75), (0.281, 0.50, 7 / 16, 67), (0.344, 0.42, 0.75, 99), (0.5, 0.5, 1.125, 305)):
+        assert round(dowel.pull_through(DH, G, t)["WH"]) == v
+    assert dowel.nail_withdrawal(0.42, 0.131) == pytest.approx(20.67, abs=0.01) and dowel.NAIL_HEADS["8d common"] == 0.281 and set(dowel.NAIL_HEADS) == set(dowel.NAILS)
+    with pytest.raises(dowel.DowelError):
+        dowel.nail_withdrawal(0.25, 0.131)
+
+
+def test_nail_withdrawal_sheet_by_hand(tmp_path):
+    """4 - 8d common through 7/16 in. sheathing (G 0.50) into Spruce-Pine-Fir (G 0.42), dry, wind: pt = 2.5 - 0.4375 = 2.0625 in.;
+    W pt = 20.67(2.0625) = 42.6 lb; x 1.6 = 68.2 lb per nail. Pull-through WH = 66.6 lb (Table 12.2F: 67); x 1.6 = 106.6 lb.
+    Capacity 4(68.2) = 272.8 lb. Toe-nailed 8d, stud to plate: pt = 1.332 in.; 20.67(1.332)(0.67)(1.6) = 29.5 lb per nail; CM does not apply."""
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="0.6D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 7")])
+    v = dict(mark="NW1", nail="8d common", n="4", side_t="0.4375", G_side="0.50", G_side_source="NDS Table 12.3.3B", main_t="3.5", G_main="0.42", G_main_source="SPF",
+             service="dry", loads=[dict(case="W", P="400"), dict(case="D", P="-50")])
+    sheet, kind, _ = calc.build("nail_withdrawal", v, proj)
+    assert kind == "simple" and sheet.connection["pt"] == pytest.approx(2.0625) and sheet.rows[0].capacity == pytest.approx(4 * 20.667 * 2.0625 * 1.6, abs=0.1)
+    assert sheet.rows[1].capacity == pytest.approx(4 * 66.62 * 1.6, abs=0.1) and sheet.rows[0].demand == pytest.approx(210) and sheet.blocks[0]["picture"][1]["withdrawal"]
+    calcsheet._simple_pdf(sheet, str(tmp_path / "w.pdf"), "2026-000", "2018 NDS", "2026-11-23")
+    wet, _, _ = calc.build("nail_withdrawal", dict(v, service="wet in service"), proj)
+    assert wet.rows[0].capacity == pytest.approx(sheet.rows[0].capacity * 0.25) and wet.rows[1].capacity == pytest.approx(sheet.rows[1].capacity * 0.7)
+    toe, _, _ = calc.build("nail_withdrawal", dict(v, side_t="1.5", G_side="0.42", main_t="1.5", toe_nail="yes", service="wet in service"), proj)
+    assert len(toe.rows) == 1 and toe.rows[0].capacity == pytest.approx(4 * 20.667 * 1.3317 * 0.67 * 1.6, abs=0.1) and toe.blocks[0]["picture"][0] == "toe_nail"
+    calcsheet._simple_pdf(toe, str(tmp_path / "t.pdf"), "2026-000", "2018 NDS", "2026-11-23")
+    with pytest.raises(calc.Missing):
+        calc.build("nail_withdrawal", dict(v, G_main_source=""), proj)
