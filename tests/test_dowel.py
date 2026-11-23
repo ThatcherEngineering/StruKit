@@ -260,3 +260,52 @@ def test_nail_withdrawal_sheet_by_hand(tmp_path):
     calcsheet._simple_pdf(toe, str(tmp_path / "t.pdf"), "2026-000", "2018 NDS", "2026-11-23")
     with pytest.raises(calc.Missing):
         calc.build("nail_withdrawal", dict(v, G_main_source=""), proj)
+
+
+def test_lag_screws_against_nds_table_12j(tmp_path):
+    """NDS Table 12J, G = 0.50, penetration 8 D: (side thickness, D): Z parallel, Zs perp, Zm perp, Z perp (table values are rounded to 10 lb).
+    Mode IV by hand, 1/2 in. lag (Dr 0.371): 0.371^2 / 3.2 x sqrt(2(5600)(45,000) / (3(2))) = 0.04301(9165) = 394.2 lb.
+    Sheet: 3 - 1/2 x 5 in. lags in one row, 2x side on a 4x main: p = 5 - 1.5 - 0.3125 = 3.1875 in.; capacity 3(394.2)(Cg 0.980)(1.15) = 1,333 lb."""
+    T = {(1.5, 0.5): (390, 220, 270, 200), (1.5, 0.25): (150, 120, 120, 110), (1.5, 0.75): (770, 440, 510, 380), (3.5, 1.0): (1740, 850, 1060, 740),
+         (0.5, 0.375): (150, 100, 110, 90), (2.5, 0.625): (640, 390, 420, 350), (1.5, 0.3125): (200, 140, 140, 130), (0.5, 0.25): (120, 90, 90, 80),
+         (1.0, 0.3125): (190, 130, 140, 120)}
+    for (ts, D), vals in T.items():
+        got = [dowel.lag(D, ts, 0.5, 0.5, 8 * D, a, b)["Z"] for a, b in ((0, 0), (90, 0), (0, 90), (90, 90))]
+        for g, v in zip(got, vals):
+            assert abs(g - v) <= 6, (ts, D, got, vals)
+    assert dowel.lag(0.5, 1.5, 0.5, 0.5, 3.1875)["Z"] == pytest.approx(394.2, abs=0.1)
+    assert dowel.lag_thread(0.5, 5) == dict(T=3.0, E=0.3125, S=2.0, Dr=0.371) and dowel.lag_thread(0.25, 1)["T"] == 0.75 and dowel.lag_thread(1.0, 12)["T"] == 6.0
+    for bad in ((0.75, 2.0), (0.5, 3.5)):
+        with pytest.raises(dowel.DowelError):
+            dowel.lag_thread(*bad)
+    with pytest.raises(dowel.DowelError):
+        dowel.lag(0.5, 1.5, 0.5, 0.5, 1.9)
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3")])
+    v = dict(mark="LC1", D="1/2", L="5", rows="1", n_row="3", spacing="4", end="6", edge="2.75", sense="tension", wood_type="softwood",
+             side_t="1.5", side_w="5.5", G_side="0.50", E_side="1600000", side_source="DF-L No. 2", main_t="3.5", main_w="5.5", G_main="0.50", E_main="1600000",
+             main_source="DF-L No. 2", service="dry", loads=[dict(case="D", P="300"), dict(case="S", P="700")])
+    sheet, kind, _ = calc.build("lag_connection", v, proj)
+    c = sheet.connection
+    assert kind == "simple" and sheet.title == "Lag Screw Connection" and c["capacity"] == pytest.approx(3 * 394.22 * c["Cg"] * 1.15, abs=0.5) and 0.975 < c["Cg"] < 0.985
+    assert sheet.connection_lag["p"] == pytest.approx(3.1875) and [x.check for x in sheet.rows][:2] == ["Load on the lag screws", "Penetration into the main member"]
+    assert not any("bolt" in (x.check + x.note).lower() for x in sheet.rows) and not any("bolt" in t.lower() for t in sheet.assumptions)
+    calcsheet._simple_pdf(sheet, str(tmp_path / "l.pdf"), "2026-000", "2018 NDS", "2026-11-23")
+    with pytest.raises(Exception):
+        calc.build("lag_connection", dict(v, L="6"), proj)                 # longer than both members
+    w, _, _ = calc.build("lag_connection", dict(v, washer="0.125"), proj)
+    assert w.connection_lag["p"] == pytest.approx(3.0625)
+    perp, _, _ = calc.build("lag_connection", dict(v, grain="perpendicular in the side member(s)", p_loaded="2.75", p_unloaded="2.75", p_end="12", n_row="1", spacing=""), proj)
+    assert perp.connection["Z"] == pytest.approx(dowel.lag(0.5, 1.5, 0.5, 0.5, 3.1875, 90, 0)["Z"])
+
+
+def test_bolted_connection_one_bolt_blank_spacing():
+    """One bolt in a row with the spacing left blank (failed with an internal error in builds before 0.90.0)."""
+    from strukit.gui import calc
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + S", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3")])
+    v = dict(mark="BC9", D="1/2", shear="single", rows="1", n_row="1", end="6", edge="2.75", sense="tension", wood_type="softwood", side_t="1.5", side_w="5.5",
+             G_side="0.50", E_side="1600000", side_source="DF-L", main_t="3.5", main_w="5.5", G_main="0.50", E_main="1600000", main_source="DF-L", service="dry",
+             loads=[dict(case="D", P="300")])
+    sheet, _, _ = calc.build("bolted_connection", v, proj)
+    assert sheet.connection["Cg"] == 1.0 and "spacing in a row" not in dict(sheet.info)["Layout"]
