@@ -370,8 +370,9 @@ SUPP_T4A = "2018 NDS Supplement Table 4A"
 
 
 def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, repetitive,
-             unit_weight_pcf=None, self_weight_case="D", spacing_in=None):
-    """Versa-Lam LVL beam, joist orientation, simply supported; ICC-ES ESR-1040 values and
+             unit_weight_pcf=None, self_weight_case="D", spacing_in=None, product="Versa-Lam LVL"):
+    """Structural composite lumber beam (Versa-Lam LVL, Microllam LVL, Parallam PSL or
+    TimberStrand LSL), joist orientation, simply supported; evaluation report values and
     the 2018 NDS Chapter 8, ASD, dry use. thickness: of one ply, in.; depth, in. Loads as
     for beam(). See scl.py for the provisions used."""
     from . import scl
@@ -381,17 +382,18 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         raise WorksheetError(f"{mark}: the number of plies must be 1 to 4")
     if span_ft is None or span_ft <= 0 or bearing_in is None or bearing_in <= 0:
         raise WorksheetError(f"{mark}: span and bearing length must be positive")
-    if thickness is None or thickness < 1.5:
-        raise WorksheetError(f"{mark}: ply thickness must be 1.5 in. or more")
+    if thickness is None or thickness < 1.25:
+        raise WorksheetError(f"{mark}: ply thickness must be 1.25 in. or more")
     try:
-        ref = scl.values(grade)
-        CV = scl.volume_factor(depth, thickness * plies)
+        ref = scl.beam_spec(product, grade, thickness, plies, depth)
+        CV = ref["CV"]
     except scl.SclError as e:
         raise WorksheetError(f"{mark}: {e}")
     b, d = thickness * plies, depth
     A, S, I = b * d, b * d * d / 6, b * d ** 3 / 12
     Lin = span_ft * 12.0
-    Emin = scl.emin(ref["E_app"])
+    Emin = ref["Emin"]
+    rpt = ref["report"].replace("ICC-ES ", "")
     Cr = 1.04 if repetitive else 1.0
     loads = [dict(x) for x in loads]
     for ld in loads:
@@ -451,12 +453,12 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
     gv = max(out, key=lambda o: o["fv"] / o["Fv_adj"])
     gr = max(out, key=lambda o: o["R"])
     fac_txt = lambda o: f"CD = {o['CD']:g} ({o['cd_case']}, {o['cd_dur']})"
-    rows = [Row("bending", gb["cb"].name, gb["fb"], gb["Fb_adj"], "psi", "2018 NDS 3.3.1, Table 8.3.1; ESR-1040 Table 1",
+    rows = [Row("bending", gb["cb"].name, gb["fb"], gb["Fb_adj"], "psi", f"2018 NDS 3.3.1, Table 8.3.1; {rpt} Table 1",
                 f"M = {gb['M'] / 12:,.0f} lb-ft; {fac_txt(gb)}; CV = {CV:.3f}; CL = {gb['CL']:.3f}"),
-            Row("shear", gv["cb"].name, gv["fv"], gv["Fv_adj"], "psi", "2018 NDS 3.4.1, 3.4.2, Table 8.3.1; ESR-1040 Table 1",
+            Row("shear", gv["cb"].name, gv["fv"], gv["Fv_adj"], "psi", f"2018 NDS 3.4.1, 3.4.2, Table 8.3.1; {rpt} Table 1",
                 f"V = {gv['V']:,.0f} lb at the support; {fac_txt(gv)}"),
             Row("bearing at support", gr["cb"].name, gr["R"] / (b * bearing_in), ref["Fc_perp"], "psi",
-                "2018 NDS 3.10.2, Table 8.3.1; ESR-1040 Table 1",
+                f"2018 NDS 3.10.2, Table 8.3.1; {rpt} Table 1",
                 f"reaction {gr['R']:,.0f} lb on {b:g} in x {bearing_in:g} in; Cb = 1.0 at the end of a member")]
     for dc in defl_checks:
         res = run(dc.factors)
@@ -466,22 +468,21 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
         Md = max(abs(res.M_max()[0]), abs(res.M_min()[0]))
         shear = scl.shear_deflection(Md, ref["E"], b, d)
         rows.append(Row(f"deflection, {dc.label}", " + ".join(f"{v:g}{k}" if v != 1 else k for k, v in dc.factors.items()),
-                        bend + shear, Lin / dc.ratio, "in", dc.source + "; ESR-1040 Table 1 note 11",
+                        bend + shear, Lin / dc.ratio, "in", dc.source + "; " + ref["defl_src"],
                         f"limit span/{dc.ratio:g}; bending {bend:.3f} in + shear {shear:.3f} in; E = {ref['E']:,.0f} psi"))
     L = footing_line
     st = gb["st"]
     steps = [L("b x d", b, "in", "member size", f"{plies} x {thickness:g} in wide, d = {d:g} in" if plies > 1 else f"d = {d:g} in"),
              L("A = b d", A, "in2", "geometry"), L("S = b d^2 / 6", S, "in3", "NDS Eq. 3.3-4"),
              L("I = b d^3 / 12", I, "in4", "NDS Eq. 3.3-3"),
-             L("Fb", ref["Fb"], "psi", scl.SOURCE, "joist orientation, 12 in. depth"),
+             L("Fb", ref["Fb"], "psi", ref["source"], ref["fb_note"]),
              L("CD", gb["CD"], "", "NDS Table 2.3.2", f"{gb['cd_case']}, {gb['cd_dur']}"),
-             L("CV = (12 / d)^(1/9)", CV, "", "ESR-1040 Table 1 note 3"),
+             L(ref["cv_label"], CV, "", ref["cv_src"], ref["cv_note"]),
              L("Cr", Cr, "", "NDS 8.3.7", "repetitive member" if repetitive else "not a repetitive member")]
     if "RB" in st:
         steps += [L("le", st["le"], "in", "NDS Table 3.3.3, note 1", f"lu = {lu_ft * 12:g} in"),
                   L("RB = sqrt(le d / b^2)", st["RB"], "", "NDS Eq. 3.3-5"),
-                  L("Emin = E [1 - 1.645 (0.10)] (1.03) / 1.66", Emin, "psi", "ESR-1040 Table 1 note 6; NDS Eq. D-4",
-                    f"apparent E = {ref['E_app']:,.0f} psi"),
+                  L(ref["emin_label"], Emin, "psi", ref["emin_src"], ref["emin_note"]),
                   L("FbE = 1.20 Emin' / RB^2", st["FbE"], "psi", "NDS 3.3.3.8"),
                   L("Fb*", gb["Fb_star"], "psi", "NDS 3.3.3.8"),
                   L("CL", gb["CL"], "", "NDS Eq. 3.3-6")]
@@ -490,11 +491,11 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
     steps += [L("Fb' = Fb CD Cr x (lesser of CV and CL)" if CV <= 1 else "Fb' = Fb CD CV CL Cr", gb["Fb_adj"], "psi",
                 "NDS Table 8.3.1, 8.3.6.1"),
               L("fb = M / S", gb["fb"], "psi", "NDS Eq. 3.3-1", f"M = {gb['M'] / 12:,.0f} lb-ft, {gb['cb'].name}"),
-              L("Fv' = Fv CD", gv["Fv_adj"], "psi", "NDS Table 8.3.1", f"Fv = {ref['Fv']:g} psi ({scl.SOURCE}); {fac_txt(gv)}"),
+              L("Fv' = Fv CD", gv["Fv_adj"], "psi", "NDS Table 8.3.1", f"Fv = {ref['Fv']:g} psi ({ref['source']}); {fac_txt(gv)}"),
               L("fv = 3V / (2 b d)", gv["fv"], "psi", "NDS Eq. 3.4-2", f"V = {gv['V']:,.0f} lb, {gv['cb'].name}"),
-              L("Fc_perp' = Fc_perp Cb", ref["Fc_perp"], "psi", "NDS Table 8.3.1", f"{scl.SOURCE}, joist orientation"),
-              L("E", ref["E"], "psi", scl.SOURCE, "true E; shear deflection added (note 11)")]
-    info = [("Member", f"({plies}) {thickness:g} in x {d:g} in Versa-Lam LVL {grade}"),
+              L("Fc_perp' = Fc_perp Cb", ref["Fc_perp"], "psi", "NDS Table 8.3.1", f"{ref['source']}, joist orientation"),
+              L("E", ref["E"], "psi", ref["source"], "shear deflection added separately")]
+    info = [("Member", f"({plies}) {thickness:g} in x {d:g} in {ref['name']} {grade}"),
             ("Size", f"{b:g} in x {d:g} in" + (f" ({plies} plies of {thickness:g} in)" if plies > 1 else "") + "; load on the narrow face"),
             ("Span", f"{span_ft:g} ft, simply supported; bearing length {bearing_in:g} in at each support"
              + (f"; members at {spacing_in:g} in on centre" if spacing_in else "")),
@@ -511,17 +512,17 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
                 load_lines.append(f"{ld['case']:<3} uniform {ld['w']:>9.1f} plf   {where:<16} {ld.get('label', '')}")
         else:
             load_lines.append(f"{ld['case']:<3} point   {ld['P']:>9.0f} lb    at {ld['x_ft']:g} ft{'':<8} {ld.get('label', '')}")
-    assumptions = ["Allowable stress design, 2018 NDS Chapter 8, with reference design values from ICC-ES ESR-1040. "
+    assumptions = ["Allowable stress design, 2018 NDS Chapter 8, with reference design values from " + ref["report"] + ". "
                    "Temperature factor Ct = 1.0 (NDS 2.3.3, sustained temperature to 100 F).",
                    "Shear is taken at the face of the support with no reduction for loads near the support (NDS 3.4.3.1).",
                    "Deflection is bending deflection with the true modulus of elasticity plus shear deflection, taken as "
-                   "19.2 M / (E b d) with M the maximum moment in lb-in (ESR-1040 Table 1 note 11, written in terms of moment)."]
+                   "19.2 M / (E b d) with M the maximum moment in lb-in (" + ref["defl_src"] + ", written in terms of moment)."]
     if plies > 1:
         assumptions.append("The plies are fastened together to act as one member of the combined width.")
     assumptions.append(f"Self-weight {sw:.1f} plf (unit weight {unit_weight_pcf:g} pcf) added to load case {self_weight_case}."
                        if sw is not None else "Self-weight is not added separately.")
     sheet = SimpleSheet(
-        mark, "LVL Beam", "Member", "ASD", info, load_lines, [(c.name, c.source) for c in combos],
+        mark, {"Parallam PSL": "PSL Beam", "TimberStrand LSL": "LSL Beam"}.get(product, "LVL Beam"), "Member", "ASD", info, load_lines, [(c.name, c.source) for c in combos],
         f"Governing Calculation ({gb['cb'].name})", steps, rows, assumptions,
         [x for x in ["notches and holes (NDS 8.4.1; manufacturer's limits)", "fastening of the plies to each other" if plies > 1 else None,
                      "lateral support at the ends against rotation (NDS 3.3.3.4)", "connections and hangers",

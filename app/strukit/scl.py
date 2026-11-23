@@ -90,3 +90,68 @@ def eccentric_column(fc, Fc_adj, d1, d2, e1, e2, Fb1_adj, Fb2_adj, FcE1, FcE2, F
             return float("inf"), fc / FcE2 + t
         v += fc * (6 * e2 / d2) * (1 + 0.234 * fc / FcE2 + 0.234 * t) / (Fb2_adj * den)
     return v, fc / FcE2 + t
+
+
+# ---- Weyerhaeuser Microllam LVL, Parallam PSL, TimberStrand LSL: ICC-ES ESR-1387 --------
+# Read from the report (reissued February 2025, revised July 2026), Table 1, joist / beam
+# orientation (values typed from the table into data/esr1387_table1.csv):
+#   note 1   dry use, moisture content under 16 percent
+#   note 5   deflection must include shear: 270 W L^4 / (E b d^3) + 28.8 W L^2 / (E b d)
+#   note 6   Emin is tabulated
+#   note 7   CV, joist / beam orientation: Microllam (12/d)^0.136 <= 1.18;
+#            Parallam (12/d)^0.111 <= 1.15; TimberStrand (12/d)^0.092 <= 1.12
+#   note 8   Parallam: Fb x 0.93 when the thickness is under 2.69 in.
+#   note 11  Microllam: Fv = 260 psi for depths over 24 in.
+#   note 15  TimberStrand 1.3E not labeled Rim Board: Fc_perp = 670 psi (in the data file)
+#   note 21  TimberStrand 1.6E thinner than 2.5 in.: Fc_perp = 900 psi
+# Not taken: the higher Fc_perp of notes 19 and 20 for single-species production.
+# Sizes (Sect. 3): Microllam 0.75 to 3.5 in. thick; Parallam up to 11 in.; TimberStrand
+# 1.25 to 5.5 in.
+WEY = {}
+with open(Path(__file__).parent / "data" / "esr1387_table1.csv", newline="") as _f:
+    for _r in csv.DictReader(_f):
+        WEY.setdefault(_r["product"], {})[_r["grade"]] = dict(
+            E=float(_r["E_e6"]) * 1e6, Emin=float(_r["Emin_e6"]) * 1e6, Fb=float(_r["Fb_joist"]), Fv=float(_r["Fv_joist"]),
+            Fc_perp=float(_r["Fc_perp_joist"]))
+_WEY_CV = {"Microllam LVL": (0.136, 1.18), "Parallam PSL": (0.111, 1.15), "TimberStrand LSL": (0.092, 1.12)}
+_WEY_T = {"Microllam LVL": (0.75, 3.5), "Parallam PSL": (1.75, 11.0), "TimberStrand LSL": (1.25, 5.5)}
+PRODUCTS = ["Versa-Lam LVL"] + list(WEY)
+
+
+def grades(product):
+    return list(GRADES) if product == "Versa-Lam LVL" else list(WEY.get(product, {}))
+
+
+def beam_spec(product, grade, ply_thickness, plies, depth):
+    """Everything a joist-orientation beam calculation needs for one product and grade."""
+    b = ply_thickness * plies
+    if product == "Versa-Lam LVL":
+        v = values(grade)
+        return dict(name=product, report="ICC-ES ESR-1040", source=SOURCE, Fb=v["Fb"], Fv=v["Fv"], Fc_perp=v["Fc_perp"], E=v["E"],
+                    Emin=emin(v["E_app"]), emin_label="Emin = E [1 - 1.645 (0.10)] (1.03) / 1.66",
+                    emin_src="ESR-1040 Table 1 note 6; NDS Eq. D-4", emin_note=f"apparent E = {v['E_app']:,.0f} psi",
+                    CV=volume_factor(depth, b), cv_label="CV = (12 / d)^(1/9)", cv_src="ESR-1040 Table 1 note 3", cv_note="",
+                    fb_note="joist orientation, 12 in. depth", defl_src="ESR-1040 Table 1 note 11", notes=[])
+    if product not in WEY:
+        raise SclError(f"structural composite lumber: product '{product}' is not on file")
+    if grade not in WEY[product]:
+        raise SclError(f"{product}: grade '{grade}' is not in ESR-1387 Table 1")
+    v = dict(WEY[product][grade])
+    lo, hi = _WEY_T[product]
+    if not lo <= ply_thickness <= hi:
+        raise SclError(f"{product}: thickness must be {lo:g} to {hi:g} in. (ESR-1387)")
+    if depth <= 0 or depth > 54:
+        raise SclError(f"{product}: the depth is out of range (ESR-1387)")
+    x, cap = _WEY_CV[product]
+    notes, fb_note = [], "joist / beam orientation, 12 in. depth"
+    if product == "Parallam PSL" and ply_thickness < 2.69:
+        v["Fb"] *= 0.93
+        fb_note += "; x 0.93 for thickness under 2.69 in. (note 8)"
+    if product == "Microllam LVL" and depth > 24:
+        v["Fv"] = 260.0
+    if product == "TimberStrand LSL" and grade == "1.6E" and ply_thickness < 2.5:
+        v["Fc_perp"] = 900.0
+    return dict(name=product, report="ICC-ES ESR-1387", source="ICC-ES ESR-1387 Table 1", Fb=v["Fb"], Fv=v["Fv"], Fc_perp=v["Fc_perp"],
+                E=v["E"], Emin=v["Emin"], emin_label="Emin", emin_src="ESR-1387 Table 1", emin_note="",
+                CV=min((12.0 / depth) ** x, cap), cv_label=f"CV = (12 / d)^{x:g}", cv_src="ESR-1387 Table 1 note 7",
+                cv_note=f"not more than {cap:g}", fb_note=fb_note, defl_src="ESR-1387 Table 1 note 5", notes=notes)
