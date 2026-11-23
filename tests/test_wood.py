@@ -127,3 +127,53 @@ def test_screen_builds_and_prints(tmp_path):
     assert (tmp_path / "wb.pdf").stat().st_size > 5000
     r = calc.results("wood_beam", dict(v, bracing="braced at a spacing", lu=""), proj)
     assert r["state"] == "incomplete" and any("Brace spacing" in m for m in r["messages"])
+
+
+# ---------------------------------------------------------------- posts
+def test_job_2026_011_deck_column():
+    # sealed StruCalc package, page 7: 6x6 Douglas Fir-Larch No. 2, 9 ft, 6,062 lb, D + L:
+    # Fc 700 psi, le/d 19.64, compressive stress 200.4 psi against 559.0 psi
+    s = ws_wood.post("DC", "DOUGLAS FIR-LARCH", "No. 2", "6x6", 9, [dict(case="L", P=6000), dict(case="D", P=62)], DL, 1.0, 1.0,
+                     "pinned top and bottom", False, False)
+    r = s.rows[0]
+    assert r.demand == pytest.approx(200.4, abs=0.05) and r.capacity == pytest.approx(559.0, abs=0.1)
+    assert "le/d = 19.64" in r.note
+
+
+def test_column_stability_by_hand():
+    # FcE = 0.822 x 470,000 / 19.636^2 = 1,002.0; Fc* = 700: a = 1.4314; (1 + a)/1.6 = 1.5196
+    # CP = 1.5196 - sqrt(1.5196^2 - 1.4314/0.8) = 0.7985
+    CP, st = wood.column_stability(700, 470000, 108, 5.5, 108, 5.5)
+    assert st["FcE"] == pytest.approx(1002.0, abs=0.1) and CP == pytest.approx(0.7985, abs=0.0002)
+    # the larger slenderness ratio governs
+    assert wood.column_stability(700, 470000, 108, 5.5, 60, 3.5)[1]["ratio"] == pytest.approx(108 / 5.5)
+    with pytest.raises(wood.WoodError, match="exceeds 50"):
+        wood.column_stability(700, 470000, 200, 3.5, 200, 3.5)
+
+
+def test_post_values_from_both_tables():
+    ref, CF, size, table, _ = wood.post_values("DOUGLAS FIR-LARCH", "No. 2", "4x4")
+    assert ref["Fc"] == 1350 and CF == 1.15 and size == (3.5, 3.5) and table == "Table 4A"
+    assert wood.post_values("DOUGLAS FIR-LARCH", "No. 2", "4x6")[1] == 1.1
+    ref, CF, size, table, _ = wood.post_values("HEM-FIR", "No. 1", "8x8")
+    assert ref["Fc"] == 850 and CF == 1.0 and size == (7.5, 7.5) and table == "Table 4D, Posts and Timbers"
+    assert wood.post_values("DOUGLAS FIR-LARCH", "No. 1", "6x10")[3] == "Table 4D, Beams and Stringers"     # 10 is more than 2 over 6
+    assert wood.post_values("DOUGLAS FIR-LARCH", "No. 1", "6x10")[0]["Fc"] == 925
+    with pytest.raises(wood.WoodError, match="Table 4D file"):
+        wood.post_values("REDWOOD", "No. 1", "6x6")
+
+
+def test_post_wet_service_and_screen():
+    from strukit.gui import calc
+    # 4x4 DF-L No. 2 wet: Fc CF = 1,350 x 1.15 = 1,552 > 750, so CM = 0.8; E factor 0.9
+    s = ws_wood.post("P", "DOUGLAS FIR-LARCH", "No. 2", "4x4", 8, [dict(case="D", P=2000)], [Combo("D", {"D": 1}, "x")], 1, 1, "pinned", True, False)
+    assert next(l for l in s.steps if l.label == "CM").value == 0.8
+    assert next(l for l in s.steps if l.label.startswith("Fc*")).value == pytest.approx(1350 * 0.9 * 0.8 * 1.15)
+    proj = dict(method="ASD", combos_asd=[dict(expr="D + L", source="typed in")], combos_lrfd=[])
+    v = dict(mark="WP1", species="DOUGLAS FIR-LARCH", grade="No. 2", size="6x6", height="9", lu1="", lu2="", Ke1="1", Ke2="1",
+             k_source="pinned top and bottom", service="dry service", incised="no", unit_weight="",
+             loads=[dict(case="L", P="6000", label=""), dict(case="D", P="62", label="")])
+    r = calc.results("wood_post", v, proj)
+    assert r["state"] == "done" and r["rows"][0]["demand"] == pytest.approx(200.4, abs=0.05)
+    r = calc.results("wood_post", dict(v, k_source="", Ke1=""), proj)
+    assert r["state"] == "incomplete" and any("Ke comes from" in m for m in r["messages"])
