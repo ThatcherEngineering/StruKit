@@ -494,7 +494,7 @@ FORMS = {
                 F("elevation_source", "Where the elevation comes from", "text", required=False)],
         tables=[]),
     "wind_mwfrs": dict(
-        title="Wind Pressures, Main System (gable, monoslope or flat roof)", code="ASCE/SEI 7-22", mark="WM",
+        title="Wind Pressures, Main System (gable, hip, monoslope or flat roof)", code="ASCE/SEI 7-22", mark="WM",
         fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
                 F("V_source", "Where V comes from", "text"),
                 F("exposure", "Exposure category", "select", options=["B", "C", "D"], help="ASCE 7-22 Sect. 26.7"),
@@ -503,7 +503,8 @@ FORMS = {
                 F("enclosure_basis", "Basis of the enclosure classification", "text"),
                 F("across", "Plan dimension across the ridge", unit="ft", help="flat roof: one plan dimension"),
                 F("along", "Plan dimension along the ridge", unit="ft", help="flat roof: the other plan dimension"),
-                F("roof", "Roof", "select", options=["gable or flat", "monoslope"], required=False),
+                F("roof", "Roof", "select", options=["gable or flat", "hip", "monoslope"], required=False),
+                F("theta_hip", "Hip roof: hip end roof angle", unit="degrees", required=False),
                 F("eave", "Eave height (monoslope: the low eave)", unit="ft"),
                 F("h", "Mean roof height, h", unit="ft", help="the eave height where the roof angle is 10 degrees or less"),
                 F("theta", "Roof angle", unit="degrees", help="0 for a flat roof"),
@@ -1285,11 +1286,12 @@ def build(kind, values, project):
         V, vs, ex, eb, h = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h")
         en, enb, ac, al, ev, th = r.text("enclosure"), r.text("enclosure_basis"), r.num("across"), r.num("along"), r.num("eave"), r.num("theta")
         kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")
+        thh = r.num("theta_hip", r.text("roof", False) == "hip", label="Hip roof: hip end roof angle")
         r.done()
         return ws_more.wind_mwfrs_sheet(mark, V, vs, ex, eb, h, ev, ac, al, th, en, enb, kzt, ks_, r.num("elevation", False),
                                         r.text("elevation_source", False) or "",
-                                        roof="monoslope" if (r.text("roof", False) or "").startswith("mono") else "gable",
-                                        parapet=r.num("parapet", False) or 0.0), "simple", {}
+                                        roof={"mon": "monoslope", "hip": "hip"}.get((r.text("roof", False) or "")[:3], "gable"),
+                                        parapet=r.num("parapet", False) or 0.0, theta_hip=thh), "simple", {}
     if kind == "wind_cc_walls":
         V, vs, ex, eb, h = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h")
         en, enb, ld, th = r.text("enclosure"), r.text("enclosure_basis"), r.num("least"), r.num("theta")

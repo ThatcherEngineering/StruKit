@@ -1445,7 +1445,8 @@ def _wind_mwfrs_picture(c, top, d):
         c.line(xl, ybase, xl, yl); c.line(xr, ybase, xr, yrt)
         if shape == "gable":
             yp = yl + pn["rise"] * s
-            c.line(xl, yl, (xl + xr) / 2, yp); c.line((xl + xr) / 2, yp, xr, yrt)
+            xp1, xp2 = (xl + xr) / 2 - pn.get("top", 0.0) * s / 2, (xl + xr) / 2 + pn.get("top", 0.0) * s / 2
+            c.line(xl, yl, xp1, yp); c.line(xp1, yp, xp2, yp); c.line(xp2, yp, xr, yrt)
         else:
             c.line(xl, yl, xr, yrt)
         c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.7); c.setFont(FR, 6)
@@ -1473,8 +1474,8 @@ def _wind_mwfrs_picture(c, top, d):
         wall(xr, pn["hr"], pn["leeward"], "right", "leeward")
         ytop = max(yl, yrt)
         if shape == "gable":
-            slope(xl, yl, (xl + xr) / 2, yp, pn["roof_windward"], "windward roof", "right")
-            slope((xl + xr) / 2, yp, xr, yrt, pn["roof_leeward"], "leeward roof", "left")
+            slope(xl, yl, xp1, yp, pn["roof_windward"], "windward roof", "right")
+            slope(xp2, yp, xr, yrt, pn["roof_leeward"], "leeward roof", "left")
         elif shape == "mono":
             slope(xl, yl, xr, yrt, pn["roof_values"], "roof", "centre")
         else:
