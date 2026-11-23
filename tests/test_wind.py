@@ -188,3 +188,29 @@ def test_cc_walls_by_hand(tmp_path):
     sheet, kind, _ = calc.build("wind_cc_walls", v, dict(job="2026-000", name="Test", method="ASD"))
     assert kind == "simple" and len(sheet.blocks[0]["lines"]) == 8
     calcsheet._simple_pdf(sheet, str(tmp_path / "c.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
+
+
+def test_cc_roof_low_slope_by_hand(tmp_path):
+    """Figure 30.3-2A end values, and by hand at 100 ft2: f = 1/(log 500 - 1) = 0.5886:
+    zone 1 -1.7 + 0.7(0.5886) = -1.288; zone 2 -2.3 + 0.9(0.5886) = -1.770; zone 3 -3.2 + 1.8(0.5886) = -2.141;
+    zone 1' -0.9; positive 0.2. At 300 ft2 zone 1': -0.9 + 0.5 log(3) = -0.661.
+    115 mi/h, Exposure C, h = 20 ft, enclosed: qh Kd = 30.47(0.85) = 25.90; zone 3 at 100 ft2: 25.90(-2.141 - 0.18) = -60.1 psf;
+    positive: 25.90(0.2 + 0.18) = 9.8 -> 16 psf minimum."""
+    g = wind.cc_roof_gcp
+    assert g(10, "3") == -3.2 and g(1, "2") == -2.3 and g(10, "1") == -1.7 and g(50, "1'") == -0.9 and g(5, "positive") == 0.3
+    assert g(500, "3") == pytest.approx(-1.4) and g(500, "2") == pytest.approx(-1.4) and g(900, "1") == pytest.approx(-1.0)
+    assert g(1000, "1'") == pytest.approx(-0.4) and g(100, "positive") == pytest.approx(0.2) and g(300, "1'") == pytest.approx(-0.661, abs=0.001)
+    assert g(100, "1") == pytest.approx(-1.288, abs=0.001) and g(100, "2") == pytest.approx(-1.770, abs=0.001) and g(100, "3") == pytest.approx(-2.141, abs=0.001)
+    r = wind.cc_roof(115, "C", 20, "enclosed", [100])
+    x = r["rows"][0]
+    assert x["design"]["3"] == pytest.approx(-60.1, abs=0.1) and x["design"]["positive"] == 16.0 and x["p"]["positive"] == pytest.approx(9.84, abs=0.02)
+    assert r["edge"] == 12.0 and r["corner"] == 4.0
+    with pytest.raises(wind.WindError):
+        wind.cc_roof(115, "C", 20, "enclosed", [100], theta=15)
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="WR1", V="115", V_source="ASCE 7 Hazard Tool", exposure="C", exposure_basis="Sect. 26.7.3", enclosure="enclosed",
+             enclosure_basis="Sect. 26.12", h="20", theta="1.2", areas="10, 20, 50, 100, 200, 500, 1000", Kzt="1.0", Kzt_source="Sect. 26.8.1")
+    sheet, kind, _ = calc.build("wind_cc_roof", v, dict(job="2026-000", name="Test", method="ASD"))
+    assert kind == "simple" and len(sheet.blocks[0]["lines"]) == 8
+    calcsheet._simple_pdf(sheet, str(tmp_path / "r.pdf"), "2026-000", "ASCE/SEI 7-22", "2026-11-23")
