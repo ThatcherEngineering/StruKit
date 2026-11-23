@@ -512,6 +512,23 @@ FORMS = {
                 F("elevation", "Ground elevation above sea level", unit="ft", required=False, help="blank = Ke taken as 1.0"),
                 F("elevation_source", "Where the elevation comes from", "text", required=False)],
         tables=[]),
+    "wind_cc_walls": dict(
+        title="Wind Pressures, Wall Components and Cladding (h 60 ft or less)", code="ASCE/SEI 7-22", mark="WC",
+        fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
+                F("V_source", "Where V comes from", "text"),
+                F("exposure", "Exposure category", "select", options=["B", "C", "D"], help="ASCE 7-22 Sect. 26.7"),
+                F("exposure_basis", "Basis of the exposure category", "text"),
+                F("enclosure", "Enclosure classification", "select", options=["enclosed", "partially enclosed", "partially open"], help="ASCE 7-22 Sect. 26.12"),
+                F("enclosure_basis", "Basis of the enclosure classification", "text"),
+                F("h", "Mean roof height, h", unit="ft", help="the eave height where the roof angle is 10 degrees or less"),
+                F("least", "Least horizontal dimension of the building", unit="ft"),
+                F("theta", "Roof angle", unit="degrees", help="0 for a flat roof"),
+                F("areas", "Effective wind areas", "text", "ft2", help="separated by commas, for example 10, 20, 50, 100, 200, 500"),
+                F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
+                F("Kzt_source", "Where Kzt comes from", "text"),
+                F("elevation", "Ground elevation above sea level", unit="ft", required=False, help="blank = Ke taken as 1.0"),
+                F("elevation_source", "Where the elevation comes from", "text", required=False)],
+        tables=[]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1121,6 +1138,14 @@ def build(kind, values, project):
         return ws_more.wind_mwfrs_sheet(mark, V, vs, ex, eb, h, ev, ac, al, th, en, enb, kzt, ks_, r.num("elevation", False),
                                         r.text("elevation_source", False) or "",
                                         roof="monoslope" if (r.text("roof", False) or "").startswith("mono") else "gable"), "simple", {}
+    if kind == "wind_cc_walls":
+        V, vs, ex, eb, h = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h")
+        en, enb, ld, th = r.text("enclosure"), r.text("enclosure_basis"), r.num("least"), r.num("theta")
+        ars = r.nums("areas") if r.text("areas") else []
+        kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")
+        r.done()
+        return ws_more.wind_cc_walls_sheet(mark, V, vs, ex, eb, h, ld, th, en, enb, ars, kzt, ks_, r.num("elevation", False),
+                                           r.text("elevation_source", False) or ""), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
