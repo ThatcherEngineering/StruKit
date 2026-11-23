@@ -25,7 +25,7 @@ Read from the documents:
 
 Covered: visually graded dimension lumber 2 to 4 in. thick (Table 4A) as beams and posts,
 and timbers (Table 4D) as posts, allowable stress design. Not covered: Southern Pine
-(Table 4B), glued laminated timber, LRFD, flat use, notches, built-up columns (NDS 15.3),
+(Table 4B), glued laminated timber, LRFD, notches, built-up columns (NDS 15.3),
 temperatures above 100 F.
 
 Units: lb, in, psi.
@@ -84,6 +84,22 @@ _MAIN = ("Select Structural", "No. 1 & Btr", "No. 1", "No. 2", "No. 3", "No. 1/ 
 # Table 4A size factors for Fb: nominal width -> (2 and 3 in. thick, 4 in. thick)
 _CF_MAIN = {2: (1.5, 1.5), 3: (1.5, 1.5), 4: (1.5, 1.5), 5: (1.4, 1.4), 6: (1.3, 1.3), 8: (1.2, 1.3), 10: (1.1, 1.2),
             12: (1.0, 1.1), 14: (0.9, 1.0), 16: (0.9, 1.0)}
+
+
+# Flat use factor Cfu, 2018 NDS Supplement Table 4A adjustment factors: nominal width -> (2 and 3 in. thick, 4 in. thick)
+_CFU = {2: (1.0, None), 3: (1.0, None), 4: (1.1, 1.0), 5: (1.1, 1.05), 6: (1.15, 1.05), 8: (1.15, 1.05)}
+
+
+def flat_use(size):
+    """Cfu for dimension lumber loaded on its wide face. size: nominal, "2x10"."""
+    t, w = nominal(size)
+    if t not in (2, 3, 4):
+        raise WoodError("wood: the flat use factor is for dimension lumber 2 to 4 in. thick")
+    row = _CFU.get(w, (1.2, 1.1) if w >= 10 else None)
+    v = row[1 if t == 4 else 0] if row else None
+    if v is None:
+        raise WoodError(f"wood: no flat use factor is listed for a {size}")
+    return v
 
 
 def grades(species):

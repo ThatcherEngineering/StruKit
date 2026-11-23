@@ -44,7 +44,7 @@ def _diagram_data(o):
 
 
 def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks, lu_ft, bearing_in, wet, incised,
-         repetitive, unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True, rise_on_12=0.0):
+         repetitive, unit_weight_pcf=None, self_weight_case="D", spacing_in=None, spans=None, overhang_left=0.0, overhang_right=0.0, lu_neg_ft=None, bearing_int_in=None, snow_partial=True, rise_on_12=0.0, flat=False):
     """species, grade: as listed in 2018 NDS Supplement Table 4A. size: nominal, "2x10".
     plies: number of pieces side by side, fastened to act together. lu_ft: unbraced length
     of the compression edge (0 when it is supported throughout). bearing_in: bearing
@@ -77,6 +77,12 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
             ref, CF, grade_note = wood.values(species, grade, size)
             b1, d = wood.SIZES[size]
             table = "Table 4A"
+        Cfu = 1.0
+        if flat:                                                     # loaded on the wide face: bending about the weak axis
+            if timber or plies != 1:
+                raise wood.WoodError("wood: flat use is for a single piece of dimension lumber 2 to 4 in. thick")
+            Cfu = wood.flat_use(size)
+            b1, d = d, b1
     except wood.WoodError as e:
         raise WorksheetError(f"{mark}: {e}")
     b = b1 * plies
@@ -134,7 +140,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
             CD, cd_case, cd_dur = wood.load_duration(present)
         except wood.WoodError as e:
             raise WorksheetError(f"{mark}: {e}")
-        Fb_star = ref["Fb"] * CD * f.CM_b * CF * f.Ci_b * f.Cr
+        Fb_star = ref["Fb"] * CD * f.CM_b * CF * f.Ci_b * f.Cr * Cfu
         try:
             CL, st = wood.beam_stability(Fb_star, Emin_adj, lu_ft * 12.0, b, d)
         except wood.WoodError as e:
@@ -190,6 +196,8 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
              L("CF", CF, "", table[:8] + " adjustment factors", "(12/d)^(1/9) for d over 12 in" if timber else f"{size}, {grade}"),
              L("Ci", f.Ci_b, "", "NDS Table 4.3.8", "incised" if incised else "not incised"),
              L("Cr", f.Cr, "", "NDS 4.3.9", "repetitive member" if repetitive else "not a repetitive member")]
+    if flat:
+        steps.append(L("Cfu", Cfu, "", "Table 4A adjustment factors", f"{size} loaded on the wide face"))
     if "RB" in st:
         steps += [L("le", st["le"], "in", "NDS Table 3.3.3, note 1", f"lu = {gb['lu_used'] * 12:g} in"),
                   L("RB = sqrt(le d / b^2)", st["RB"], "", "NDS Eq. 3.3-5"),
@@ -199,7 +207,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
                   L("CL", gb["CL"], "", "NDS Eq. 3.3-6")]
     else:
         steps.append(L("CL", 1.0, "", "NDS 3.3.3", st["why"]))
-    steps += [L("Fb' = Fb CD CM CL CF Ci Cr", gb["Fb_adj"], "psi", "NDS Table 4.3.1"),
+    steps += [L("Fb' = Fb CD CM CL CF Cfu Ci Cr" if flat else "Fb' = Fb CD CM CL CF Ci Cr", gb["Fb_adj"], "psi", "NDS Table 4.3.1"),
               L("fb = M / S", gb["fb"], "psi", "NDS Eq. 3.3-1", f"M = {gb['M'] / 12:,.0f} lb-ft, {gb['cb'].name}"),
               L("Fv' = Fv CD CM Ci", gv["Fv_adj"], "psi", "NDS Table 4.3.1", f"Fv = {ref['Fv']:g} psi; {fac_txt(gv)}"),
               L("fv = 3V / (2 b d)", gv["fv"], "psi", "NDS Eq. 3.4-2", f"V = {gv['V']:,.0f} lb, {gv['cb'].name}"),
@@ -207,7 +215,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
               L("E' = E CM Ci", E_adj, "psi", "NDS Table 4.3.1", f"E = {ref['E']:,.0f} psi")]
     sp = species.title().replace("Fir-Larch", "Fir-Larch")
     info = [("Member", f"({plies}) {size} {sp} {grade}" + (f" ({grade_note})" if grade_note else "") + (f"; {table}" if timber else "")),
-            ("Size", f"{b:g} in x {d:g} in dressed" + (f" ({plies} plies of {b1:g} in)" if plies > 1 else "")),
+            ("Size", f"{b:g} in x {d:g} in dressed" + (f" ({plies} plies of {b1:g} in)" if plies > 1 else "") + (", loaded on the wide face" if flat else "")),
             ("Span", lay.describe() + f"; bearing length {bearing_in:g} in at each " + ("end support" if len(lay.spans) > 1 else "support")
              + (f", {bearing_int_in:g} in at interior supports" if len(lay.spans) > 1 else "")
              + (f"; members at {spacing_in:g} in on centre" if spacing_in else "")),

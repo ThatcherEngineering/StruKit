@@ -337,3 +337,29 @@ def test_sloped_rafter_by_hand():
     assert any("6 on 12" in a for a in s.assumptions) and any("thrust" in n for n in s.not_checked)
     flat = ws_wood.beam("R1", "DOUGLAS FIR-LARCH", "No. 2", "2x10", 1, 12, loads, _combos(), [], 0.0, 3.5, False, False, True, spacing_in=24)
     assert {x.check: x for x in flat.rows}["bending"].demand < r["bending"].demand
+
+
+def test_flat_use_plank_by_hand(tmp_path):
+    """2x10 Douglas Fir-Larch No. 2 loaded on the wide face, 4 ft span, 100 plf live (D + L, CD 1.0), dry, not repetitive:
+    b = 9.25 in., d = 1.5 in.; S = 9.25(1.5^2)/6 = 3.469 in3; M = 100(4^2)/8 = 200 lb-ft; fb = 2400/3.469 = 691.9 psi.
+    Fb' = 900 (CF 1.1)(Cfu 1.2) = 1,188 psi; CL = 1.0 (depth does not exceed breadth). Cfu table: 2x4 1.1, 2x6 1.15, 2x12 1.2,
+    4x6 1.05, 4x10 1.1, 4x4 1.0, 2x3 1.0."""
+    from strukit import calcsheet, wood
+    from strukit.gui import calc
+    for size, v in (("2x4", 1.1), ("2x6", 1.15), ("2x8", 1.15), ("2x12", 1.2), ("4x6", 1.05), ("4x10", 1.1), ("4x4", 1.0), ("2x3", 1.0), ("3x5", 1.1)):
+        assert wood.flat_use(size) == v
+    with pytest.raises(wood.WoodError):
+        wood.flat_use("6x6")
+    proj = dict(method="ASD", combos_asd=[dict(expr="D + L", source="typed in")])
+    v = dict(mark="WB9", species="DOUGLAS FIR-LARCH", grade="No. 2", size="2x10", plies="1", flat="yes", span="4", bracing="supported throughout",
+             bearing="3", service="dry service", incised="no", repetitive="no", unit_weight="",
+             loads=[dict(case="L", kind="uniform", mag="100", x1="", x2="", label="")], defl=[dict(label="live", expr="L", ratio="240", source="typed in")])
+    s, _, _ = calc.build("wood_beam", v, proj)
+    bend = next(x for x in s.rows if x.check == "bending")
+    assert bend.demand == pytest.approx(691.9, abs=0.1) and bend.capacity == pytest.approx(1188.0, abs=0.1)
+    assert "loaded on the wide face" in dict(s.info)["Size"] and any(getattr(x, "label", "") == "Cfu" for x in s.steps)
+    calcsheet.simple_pdf(s, str(tmp_path / "f.pdf"), "Job", "2018 NDS", "Nov 23, 2026")
+    edge, _, _ = calc.build("wood_beam", dict(v, flat="no"), proj)
+    assert next(x for x in edge.rows if x.check == "bending").capacity == pytest.approx(990.0, abs=0.1)
+    with pytest.raises(Exception):
+        calc.build("wood_beam", dict(v, plies="2"), proj)
