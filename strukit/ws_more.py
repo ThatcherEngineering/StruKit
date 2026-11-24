@@ -156,7 +156,7 @@ def footing_line(label, value, unit, source, note=""):
 
 def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod_d, rod_Fu, rod_source,
                             n_rods, rod_edge, rod_side_edge, n_shear, cases, method, anchorage=None,
-                            cases_factored=None):
+                            cases_factored=None, flange_weld=None):
     """A column base that carries moment about the column's strong axis.
 
     N: plate length in the direction of the moment (parallel to the column depth); B: width.
@@ -304,6 +304,34 @@ def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod
         sheet.load_lines += extra["load_lines"]
         sheet.assumptions += extra["assumptions"]
         sheet.blocks.append(extra["block"])
+    if flange_weld:
+        # AISC Design Guide 1 (3rd Ed.) Example 4.7-9: the moment as a force couple at the column depth, taken by the fillet weld along the outside of
+        # the flange, loaded at 90 degrees (kds = 1.5).  Axial tension adds half to the flange; axial compression is not counted on to reduce it.
+        from . import welds
+        from .steel_beam import SteelInputError
+        w, FEXX = flange_weld.get("size"), flange_weld.get("FEXX")
+        if not w or not FEXX or w <= 0 or FEXX <= 0:
+            raise WorksheetError(f"{mark}: the flange weld needs its size and the electrode strength")
+        Lw = p["bf"] if col_kind == "I" else p["bf"] - 3 * p["tf"]
+        wc = max(cases, key=lambda c: abs(c["M"]) * 12 / p["d"] + max(-c["P"], 0.0) / 2)
+        Rf = abs(wc["M"]) * 12 / p["d"] + max(-wc["P"], 0.0) / 2
+        try:
+            wr = welds.fillet(w, Lw, 1, FEXX, 90.0, True, method=method)
+        except SteelInputError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        wmin = welds.min_fillet_size(min(p["tf"], t))
+        sheet.blocks.append(dict(title="Column Flange Weld", steps=[
+            Line("Flange force = M / d" + (" + T / 2" if wc["P"] < 0 else ""), Rf, "kip", "AISC Design Guide 1 Example 4.7-9", f"{wc['name']}: M = {abs(wc['M']):.2f} kip-ft, d = {p['d']:g} in."),
+            Line("Weld length", Lw, "in", "", "outside face of the flange, full width" if col_kind == "I" else "outside face of the HSS wall, flat width b - 3t"),
+            Line("Rn = 0.60 FEXX (w / 2^0.5) L (1.0 + 0.50 sin^1.5 90)", wr.Rn, "kip", "AISC 360-22 Eq. J2-4, J2-5", f"w = {w:g} in., E{FEXX:g}XX"),
+            Line("0.75 Rn" if method == "LRFD" else "Rn / 2.00", wr.R_avail, "kip", "AISC 360-22 Sect. J2.4", ""),
+            Line("Minimum fillet size", wmin, "in", "AISC 360-22 Table J2.4", f"thinner part {min(p['tf'], t):g} in.")]))
+        sheet.rows.append(Row("column flange weld", wc["name"], Rf, wr.R_avail, "kip", "AISC 360-22 Sect. J2.4; AISC Design Guide 1 Example 4.7-9", f"{w:g} in. fillet, {Lw:g} in. long"))
+        sheet.rows.append(Row("flange weld, minimum size", "", wmin, w, "in", "AISC 360-22 Table J2.4", ""))
+        sheet.not_checked = ["web weld and shear transfer through the welds" if x == "weld of the column to the plate" else x for x in sheet.not_checked]
+        sheet.assumptions.append("Column flange weld: the moment is a force couple at the column depth, taken by the fillet weld along the outside of the tension flange; "
+                                 "axial compression is not counted on to reduce it.")
+        sheet.flange_weld = dict(R=Rf, Rn=wr.Rn, R_avail=wr.R_avail, L=Lw, w_min=wmin)
     return sheet
 
 

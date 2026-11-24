@@ -55,3 +55,23 @@ def test_worksheet_rows_and_rod_strength():
     assert any("Chapter 17" in n for n in s.not_checked)
     with pytest.raises(Exception):
         ws_more.base_plate_moment_sheet("BP2", "W8X31", 16, 12, 1.0, 36, 3000, (30, 30), 0.75, 58, "", 2, 1.5, 1.5, 2, cases, "ASD")
+
+
+@pytest.mark.parametrize("method, M, R, avail", [("LRFD", 100.0, 65.9, 92.3), ("ASD", 68.0, 44.8, 61.5)])
+def test_column_flange_weld_design_guide_1_example_4_7_9(method, M, R, avail, tmp_path):
+    """AISC Design Guide 1 (3rd Ed.) Example 4.7-9, flange welding: W18x76 (d = 18.2, bf = 11.0, tf = 0.680 in.), 1-1/2 in. plate, M = 1,200 kip-in. LRFD /
+    816 kip-in. ASD, 1/4 in. fillet along the outside of the flange, E70: Ru = 65.9 / 44.8 kips, Rn = 123 kips, 92.3 / 61.5 kips; minimum size 1/4 in.
+    (The plate size and rods here are stand-ins: the weld check does not depend on them.)"""
+    from strukit import calcsheet
+    s = ws_more.base_plate_moment_sheet("BP9", "W18X76", 26, 18, 1.5, 50, 4000, (60, 60), 1.0, 58, "ASTM F1554 Grade 36", 2, 2.0, 3.0, 0,
+                                        [dict(name="case", P=0.0, M=M, V=0.0)], method, flange_weld=dict(size=0.25, FEXX=70))
+    w = s.flange_weld
+    assert w["R"] == pytest.approx(R, abs=0.1) and w["Rn"] == pytest.approx(123, abs=0.6) and w["R_avail"] == pytest.approx(avail, abs=0.5) and w["w_min"] == 0.25 and w["L"] == 11.0
+    r = {x.check: x for x in s.rows}
+    assert r["column flange weld"].status == "OK" and r["flange weld, minimum size"].status == "OK"
+    assert "weld of the column to the plate" not in s.not_checked
+    calcsheet.simple_pdf(s, str(tmp_path / "w.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
+    t = ws_more.base_plate_moment_sheet("BP9", "W18X76", 26, 18, 1.5, 50, 4000, (60, 60), 1.0, 58, "ASTM F1554 Grade 36", 2, 2.0, 3.0, 0,
+                                        [dict(name="case", P=-10.0, M=M, V=0.0)], method, flange_weld=dict(size=0.1875, FEXX=70))
+    assert t.flange_weld["R"] == pytest.approx(R + 5.0, abs=0.1) and {x.check: x for x in t.rows}["flange weld, minimum size"].status == "FLAG"
+    assert not hasattr(ws_more.base_plate_moment_sheet("BP9", "W18X76", 26, 18, 1.5, 50, 4000, (60, 60), 1.0, 58, "F1554", 2, 2.0, 3.0, 0, [dict(name="c", P=0.0, M=M, V=0.0)], method), "flange_weld")
