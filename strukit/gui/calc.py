@@ -2454,6 +2454,7 @@ def takedown(project, members):
 
 
 # ---------------------------------------------------------------- building model: levels, grids, members placed on them
+MODEL_WALLS = ("shear_wall", "perforated_wall", "ftao_wall")
 MODEL_TOL = 0.25                                             # ft: how close two members must be in plan to be taken as bearing on each other
 
 
@@ -2499,10 +2500,10 @@ def model_place(project, member):
     if x1 is None or y1 is None:
         raise ValueError(f"{mark}: its position in plan cannot be read (type feet, or a grid name such as B or B+2.5)")
     p2 = None
-    if member.get("kind") in TAKEDOWN_BEAMS:
+    if member.get("kind") in TAKEDOWN_BEAMS + MODEL_WALLS:
         x2, y2 = _coord(v.get("at_x2"), gx), _coord(v.get("at_y2"), gy)
         if x2 is None or y2 is None:
-            raise ValueError(f"{mark}: a beam or joist needs the position of both ends")
+            raise ValueError(f"{mark}: a beam, joist or wall needs the position of both ends")
         p2 = (x2, y2)
     levels = [str(l.get("name") or "").strip() for l in mdl.get("levels") or []]
     lvl = str(v.get("at_level") or "").strip()
@@ -2572,7 +2573,7 @@ def model_links(project, members):
         mark = v.get("mark") or "(no mark)"
         if not str(v.get("mark") or "").strip():
             problems.append("A placed member has no mark; links are kept by mark"); continue
-        if kind in TAKEDOWN_FOOTINGS:
+        if kind in TAKEDOWN_FOOTINGS or kind in MODEL_WALLS:
             continue
         if kind in TAKEDOWN_POSTS:
             got = dict(supports=[dict(name="base", x_ft=0.0)])   # its loads come down the path; only the position is needed here
@@ -2625,6 +2626,125 @@ def model_links(project, members):
     return out
 
 
+def lateral_wind(project, members, wind_mark=None):
+    """Wind to the wall lines of the building model, flexible diaphragms: at each level the wind load per foot of building width (the main
+    system wind sheet between mid-story heights, the larger of its two directions) goes to the placed shear walls parallel to the wind by
+    tributary width between wall lines; each wall also takes the shear of the wall on the same line above it, and its chord force. Writes
+    the design shear, its source and the stacked chord force on each placed wall. Returns dict(members, lines, problems)."""
+    import copy, math
+    from .. import wind as _wind
+    ms = copy.deepcopy(members or [])
+    mdl = (project or {}).get("model") or {}
+    problems, lines = [], []
+    levels = []
+    for l in mdl.get("levels") or []:
+        nm = str(l.get("name") or "").strip()
+        try:
+            levels.append((nm, float(str(l.get("elev")).replace(",", ""))))
+        except (TypeError, ValueError):
+            if nm:
+                problems.append(f"Level {nm} needs an elevation for the wind distribution")
+    if len(levels) < 2 or problems:
+        return dict(members=members, lines=[], problems=problems or ["List at least two levels with elevations on the Project page"])
+    if any(b[1] <= a[1] for a, b in zip(levels, levels[1:])):
+        return dict(members=members, lines=[], problems=["The levels must be listed lowest first, each higher than the one before"])
+    winds = [m for m in ms if m.get("kind") == "wind_mwfrs" and (not wind_mark or (m.get("values") or {}).get("mark") == wind_mark)]
+    if not winds:
+        return dict(members=members, lines=[], problems=["The project needs a Wind Pressures, Main System sheet"])
+    try:
+        ws, _, _ = build("wind_mwfrs", winds[0]["values"], project)
+    except Missing as e:
+        return dict(members=members, lines=[], problems=["The wind sheet is not complete: " + "; ".join(e.items)])
+    except Exception as e:
+        return dict(members=members, lines=[], problems=[f"The wind sheet stopped: {e}"])
+    wmark = winds[0]["values"].get("mark") or "wind"
+    cases = ws.wind["cases"]
+    top = max(max(r["top_w"], r["top_l"]) for r in cases)
+    base_el = levels[0][1]
+    if levels[-1][1] - base_el > top + 0.05:
+        problems.append(f"The top level is {levels[-1][1] - base_el:g} ft above the lowest; the wind sheet's walls are {top:g} ft high")
+    asd = (project or {}).get("method") == "ASD"
+    fac = 0.6 if asd else 1.0
+    placed = []
+    for m in ms:
+        if m.get("kind") not in MODEL_WALLS + TAKEDOWN_BEAMS + TAKEDOWN_POSTS:
+            continue
+        try:
+            pl = model_place(project, m)
+        except ValueError as e:
+            problems.append(str(e)); continue
+        if pl:
+            placed.append((m, pl))
+    walls = [(m, pl) for m, pl in placed if m["kind"] in MODEL_WALLS]
+    if not walls:
+        return dict(members=members, lines=[], problems=problems + ["No shear wall is placed in the model yet (use the placement boxes on the wall screens)"])
+    carry = {}                                                # (direction, line position, level index) -> (shear, chord force, mark) coming down from above
+    for li in range(len(levels) - 1, 0, -1):
+        name, el = levels[li]
+        z_lo = (levels[li - 1][1] + el) / 2 - base_el
+        z_hi = top if li == len(levels) - 1 else (el + levels[li + 1][1]) / 2 - base_el
+        z_hi = min(z_hi, top)
+        try:
+            w = max(_wind.line_load(r, z_lo, z_hi)["w"] for r in cases)
+        except Exception as e:
+            problems.append(f"Level {name}: {e}"); continue
+        here = [(m, pl) for m, pl in placed if pl["level"] == name]
+        for axis, other, label in ((0, 1, "X"), (1, 0, "Y")):   # wind along `axis`; wall lines parallel to it sit at positions on the `other` axis
+            ws_here = [(m, pl) for m, pl in here if m["kind"] in MODEL_WALLS and abs(pl["p2"][axis] - pl["p1"][axis]) >= abs(pl["p2"][other] - pl["p1"][other])]
+            if not ws_here:
+                if any(m["kind"] in MODEL_WALLS for m, pl in here):
+                    problems.append(f"Level {name}: no placed wall runs in the {label} direction; wind in that direction is not distributed")
+                continue
+            ext = [c for m, pl in here for c in (pl["p1"][other], (pl["p2"] or pl["p1"])[other])]
+            lo, hi = min(ext), max(ext)
+            groups = []
+            for m, pl in sorted(ws_here, key=lambda t: (t[1]["p1"][other] + t[1]["p2"][other]) / 2):
+                pos = (pl["p1"][other] + pl["p2"][other]) / 2
+                if groups and abs(groups[-1][0] - pos) <= MODEL_TOL:
+                    groups[-1][1].append((m, pl))
+                else:
+                    groups.append([pos, [(m, pl)]])
+            if len(groups) < 2:
+                problems.append(f"Level {name}, wind in {label}: only one wall line; a flexible diaphragm needs a line each side (the whole load is put on that line)")
+            for gi, (pos, grp) in enumerate(groups):
+                a = lo if gi == 0 else (groups[gi - 1][0] + pos) / 2
+                b = hi if gi == len(groups) - 1 else (pos + groups[gi + 1][0]) / 2
+                trib = b - a
+                V_level = w * fac * trib
+                tot_len = sum(abs(pl["p2"][axis] - pl["p1"][axis]) for m, pl in grp) or 1.0
+                for m, pl in grp:
+                    share = abs(pl["p2"][axis] - pl["p1"][axis]) / tot_len
+                    v = m["values"]
+                    mark = v.get("mark") or "(no mark)"
+                    up = carry.get((axis, round(pos / MODEL_TOL), li + 1))
+                    V_up = up[0] * share if up else 0.0
+                    V = V_level * share + V_up
+                    src = (f"sheet {wmark}, level {name}, walls from {z_lo:g} to {z_hi:g} ft: {w:.1f} plf" + (" x 0.6" if asd else "") + f" x {trib:g} ft tributary"
+                           + (f" x {share:.2f} of the line" if share < 0.999 else "") + (f"; plus {V_up:,.0f} lb from {up[2]} above" if up else ""))
+                    v.update(V=str(round(V)), load="wind", v_source=src)
+                    if up and m["kind"] in ("shear_wall", "ftao_wall"):
+                        v.update(above_T=str(round(up[1])), above_source=f"largest chord force of shear wall {up[2]}, wind, {'ASD' if asd else 'LRFD'}")
+                    elif m["kind"] in ("shear_wall", "ftao_wall"):
+                        v.pop("above_T", None); v.pop("above_source", None)
+                    T = None
+                    try:
+                        sh, _, _ = build(m["kind"], v, project)
+                        T = (max(s_.T for s_ in sh.wall.segments) if m["kind"] == "shear_wall" else sh.wall_T if m["kind"] == "ftao_wall" else sh.wall.T)
+                    except Missing as e:
+                        problems.append(f"{mark}: not complete: " + "; ".join(e.items))
+                    except Exception as e:
+                        problems.append(f"{mark}: {e}")
+                    lines.append(dict(level=name, wind=label, at=pos, wall=mark, trib=trib, V=V, from_above=V_up, T=T))
+                    key = (axis, round(pos / MODEL_TOL), li)
+                    prev = carry.get(key)
+                    carry[key] = ((prev[0] if prev else 0.0) + V, max(prev[1] if prev else 0.0, T or 0.0), mark)
+            # a wall above with no wall line under it at this level
+            for (ax, kpos, lv), val in list(carry.items()):
+                if ax == axis and lv == li + 1 and not any(round(g[0] / MODEL_TOL) == kpos for g in groups):
+                    problems.append(f"Level {name}, wind in {label}: no wall line under {val[2]} (its {val[0]:,.0f} lb is not carried down by this distribution)")
+    return dict(members=ms, lines=lines, problems=problems)
+
+
 def model_plan(project, members):
     """What the plan view draws: per level, the placed members as lines (beams, joists) and points (posts, columns, footings)."""
     mdl = (project or {}).get("model") or {}
@@ -2637,7 +2757,7 @@ def model_plan(project, members):
             continue
         if not pl:
             continue
-        item = dict(mark=(m.get("values") or {}).get("mark") or "", kind=m.get("kind"), p1=pl["p1"], p2=pl["p2"])
+        item = dict(mark=(m.get("values") or {}).get("mark") or "", kind=m.get("kind"), p1=pl["p1"], p2=pl["p2"], wall=m.get("kind") in MODEL_WALLS)
         if m.get("kind") in TAKEDOWN_FOOTINGS:
             out.setdefault(pl["base"] if pl["base"] in out else (levels[0] if levels else ""), []).append(item)
         else:

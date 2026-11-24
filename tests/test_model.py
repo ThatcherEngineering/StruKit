@@ -63,3 +63,42 @@ def test_length_mismatch_and_plan():
     assert any("placed 20.00 ft long in the model, but its spans add up to 18.00 ft" in p for p in out["problems"])
     plan = calc.model_plan(PROJ, _building())
     assert plan["levels"] == ["Foundation", "Floor"] and len(plan["items"]["Floor"]) == 4 and {i["mark"] for i in plan["items"]["Foundation"]} == {"F1", "C1"}
+
+
+def _wall(mark, lengths, **place):
+    return dict(kind="shear_wall", values=dict(mark=mark, panel="Sheathing, 7/16 in, 8d common", spacing="6", panel_type="OSB", sides="one side", blocking="blocked", G="0.50", G_source="t",
+                h="9", lengths=lengths, load="wind", V="1", v_source="typed", holddown="no", **place))
+
+
+def test_wind_to_wall_lines():
+    """A 30 x 40 ft two-story box: wall lines on the two 40 ft sides and the two 30 ft sides at each story, and one interior line at the lower story."""
+    from strukit import wind
+    proj = dict(COMBOS, name="t", number="t", date="2026-11-23", model=dict(levels=[dict(name="Foundation", elev="0"), dict(name="Floor", elev="10"), dict(name="Roof", elev="20")],
+                                                                          grids_x=[], grids_y=[]))
+    W = dict(kind="wind_mwfrs", values=dict(mark="W1", V="115", V_source="t", exposure="C", exposure_basis="t", enclosure="enclosed", enclosure_basis="t", across="30", along="40",
+             roof="gable or flat", eave="20", h="20", theta="0", Kzt="1.0", Kzt_source="t"))
+    ms = [W]
+    for lv in ("Roof", "Floor"):
+        ms += [_wall(f"S-{lv}", "12, 12", at_level=lv, at_x1="0", at_y1="0", at_x2="40", at_y2="0"), _wall(f"N-{lv}", "12, 12", at_level=lv, at_x1="0", at_y1="30", at_x2="40", at_y2="30"),
+               _wall(f"W-{lv}", "10, 10", at_level=lv, at_x1="0", at_y1="0", at_x2="0", at_y2="30"), _wall(f"E-{lv}", "10, 10", at_level=lv, at_x1="40", at_y1="0", at_x2="40", at_y2="30")]
+    ms.append(_wall("Mid-Floor", "10", at_level="Floor", at_x1="20", at_y1="0", at_x2="20", at_y2="30"))
+    out = calc.lateral_wind(proj, ms)
+    assert out["problems"] == [], out["problems"]
+    L = {l["wall"]: l for l in out["lines"]}
+    cases = calc.build("wind_mwfrs", W["values"], proj)[0].wind["cases"]
+    w_roof = max(wind.line_load(r, 15, 20)["w"] for r in cases)
+    w_floor = max(wind.line_load(r, 5, 15)["w"] for r in cases)
+    # wind in X is taken by the lines running in X (S and N, 30 ft apart): half the 30 ft width each
+    assert L["S-Roof"]["V"] == pytest.approx(0.6 * w_roof * 15, rel=1e-6) and L["S-Roof"]["trib"] == 15 and L["S-Roof"]["from_above"] == 0
+    assert L["S-Floor"]["V"] == pytest.approx(0.6 * (w_roof + w_floor) * 15, rel=1e-6) and L["S-Floor"]["from_above"] == pytest.approx(L["S-Roof"]["V"])
+    # wind in Y: W and E at the roof (20 ft each); at the floor the interior line takes the middle 20 ft and the outer lines 10 ft, plus what comes from above
+    assert L["W-Roof"]["V"] == pytest.approx(0.6 * w_roof * 20, rel=1e-6)
+    assert L["Mid-Floor"]["V"] == pytest.approx(0.6 * w_floor * 20, rel=1e-6) and L["Mid-Floor"]["from_above"] == 0
+    assert L["W-Floor"]["V"] == pytest.approx(0.6 * w_floor * 10 + L["W-Roof"]["V"], rel=1e-6)
+    tot_y = L["W-Floor"]["V"] + L["E-Floor"]["V"] + L["Mid-Floor"]["V"]
+    assert tot_y == pytest.approx(0.6 * (w_roof + w_floor) * 40, rel=1e-6)                 # nothing lost: the base shear above mid-height of the first story
+    v = {m["values"]["mark"]: m["values"] for m in out["members"]}
+    assert float(v["S-Floor"]["above_T"]) == pytest.approx(L["S-Roof"]["T"], abs=1) and "from S-Roof above" in v["S-Floor"]["v_source"]
+    assert v["S-Roof"]["v_source"].startswith("sheet W1, level Roof, walls from 15 to 20 ft")
+    for m in out["members"]:
+        assert calc.results(m["kind"], m["values"], proj)["state"] == "done", m["values"]["mark"]

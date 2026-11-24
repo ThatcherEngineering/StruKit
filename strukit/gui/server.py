@@ -168,6 +168,8 @@ def api(path, body):
         except Exception as e:
             return dict(error=f"The diaphragm sheet stopped: {e}")
         return dict(reaction=sheet.diaphragm["reaction"], load=(body.get("values") or {}).get("load"), W=(body.get("values") or {}).get("W"))
+    if path == "/api/lateral_wind":
+        return calc.lateral_wind(body.get("project") or {}, body.get("members") or [])
     if path == "/api/model_links":
         return calc.model_links(body.get("project") or {}, body.get("members") or [])
     if path == "/api/model_plan":
