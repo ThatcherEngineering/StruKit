@@ -3917,6 +3917,14 @@ def frame_sheet(project, members):
                       ("Method", "Second-order elastic analysis, direct analysis method (AISC 360-22 Chapter C)"), ("Runs", str(out["runs"]))],
                      ["Member loads, self-weight and positions are those on each member's own sheet."], [(cb.name, cb.source) for cb in cbs], "Analysis", [], rows,
                      list(out["notes"]), ["Connections, base plates and foundations (their own sheets)", "Column shear and torsion", "Serviceability limits on drift (the designer's)"])
+    try:
+        view = model_view(project, members)
+        marks = {c["mark"] for c in out["columns"]} | {b["mark"] for b in out["beams"]} | {b["mark"] for b in out.get("braces") or []}
+        its = [i for i in view["items"] if i["mark"] in marks]
+        if its:
+            blocks.insert(0, dict(title="Frame", picture=("frame3d", dict(items=its)), lines=[]))
+    except Exception:
+        pass
     sh.blocks = blocks
     sh.problems = out["problems"]
     return sh

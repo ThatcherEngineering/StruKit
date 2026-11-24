@@ -1474,6 +1474,8 @@ def _block_picture(c, top, pic):
     name, d = pic
     if name == "snow":
         return _snow_picture(c, top, d)
+    if name == "frame3d":
+        return _frame3d_picture(c, top, d)
     if name == "shear_wall":
         return _shear_wall_picture(c, top, d)
     if name == "perforated_wall":
@@ -2099,6 +2101,47 @@ def _end_plate_picture(c, top, d):
     c.drawRightString(x0 - 8, yc - 10, f"{d['weld']:g} in. fillet, both sides of the web")
     _small(c, (LM + RM) / 2, y0 - 46, "face of the end plate, to scale; beam section shown behind the plate")
     return y0 - 54
+
+
+def _frame3d_picture(c, top, d):
+    """Parallel projection of the placed frame (columns, beams, braces) with member marks; not to a stated scale. d: items of calc.model_view."""
+    import math
+    items = [i for i in d["items"] if i.get("b") is not None and i.get("type") != "wall"]
+    if not items:
+        return top
+    yaw, tilt = math.radians(d.get("yaw", 30.0)), math.radians(d.get("tilt", 24.0))
+
+    def pr(p):
+        x, y, z = p
+        u = x * math.cos(yaw) + y * math.sin(yaw)
+        w = -x * math.sin(yaw) + y * math.cos(yaw)
+        return u, z * math.cos(tilt) + w * math.sin(tilt)
+    pts = [pr(i[k]) for i in items for k in ("a", "b")]
+    x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts)
+    y0, y1 = min(p[1] for p in pts), max(p[1] for p in pts)
+    Wd, Hd = RM - LM - 40, 190.0
+    sc = min(Wd / max(x1 - x0, 1e-6), Hd / max(y1 - y0, 1e-6))
+    ox = (LM + RM) / 2 - sc * (x0 + x1) / 2
+    oy = top - 14 - sc * y1
+    X = lambda p: ox + sc * p[0]
+    Y = lambda p: oy + sc * p[1]
+    many = len(items) > 40
+    for typ, wdt, col in (("column", 1.6, INK), ("brace", 0.7, (0.55, 0.2, 0.1)), ("beam", 1.1, (0.13, 0.21, 0.32)), ("joist", 0.5, (0.4, 0.45, 0.5))):
+        c.setLineWidth(wdt); c.setStrokeColorRGB(*col)
+        for i in items:
+            if i.get("type") == typ or (typ == "beam" and i.get("type") not in ("column", "brace", "joist")):
+                a, b = pr(i["a"]), pr(i["b"])
+                c.line(X(a), Y(a), X(b), Y(b))
+    c.setFillColorRGB(*GREY); c.setFont(FR, 5.5 if many else 6.5)
+    for i in items:
+        a, b = pr(i["a"]), pr(i["b"])
+        if many and i.get("type") == "brace":
+            continue
+        c.drawString((X(a) + X(b)) / 2 + 2, (Y(a) + Y(b)) / 2 + 2, str(i.get("mark") or ""))
+    c.setFillColorRGB(*INK); c.setStrokeColorRGB(*INK)
+    yb = oy + sc * y0 - 12
+    c.setFillColorRGB(*GREY); c.setFont(FR, 7); c.drawCentredString((LM + RM) / 2, yb, "View of the frame as analysed (not to scale)."); c.setFillColorRGB(*INK)
+    return yb - 10
 
 
 def _seat_picture(c, top, d):
