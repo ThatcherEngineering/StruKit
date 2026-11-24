@@ -223,9 +223,12 @@ FORMS = {
         tables=[T("cases", "Combined loads", [F("name", "Combination or run", "text"), F("P", "Axial compression", unit="kip"), F("Mx", "Moment, column strong axis", unit="kip-ft"),
                                               F("My", "Moment, column weak axis", unit="kip-ft")])]),
     "flush_end_plate": dict(
-        title="Flush End-Plate Moment Connection (two or four tension bolts)", code="AISC 360-22", mark="FEP",
+        title="End-Plate Moment Connection (flush, or four-bolt extended)", code="AISC 360-22", mark="FEP",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"),
-                F("n_rows", "Rows of tension bolts (two bolts a row)", "select", options=["1", "2"], required=False, help="blank = 1"),
+                F("config", "End plate", "select", options=["flush", "extended, four bolts (two outside and two inside the tension flange; beam side only)"], required=False, help="blank = flush"),
+                F("pfo", "Extended: outside of the tension flange to the outer bolts, pfo", unit="in", required=False),
+                F("n_shear", "Bolts at the compression flange counted for shear", required=False, help="blank = 2"),
+                F("n_rows", "Flush: rows of tension bolts (two bolts a row)", "select", options=["1", "2"], required=False, help="blank = 1"),
                 F("pb", "Spacing between the two rows, pb", unit="in", required=False),
                 F("col_side", "Checks on the support", "select", options=["column flange with a cap plate (two-bolt only)", "beam side only"], required=False,
                   help="blank = column flange with a cap plate"),
@@ -1582,8 +1585,9 @@ def build(kind, values, project):
         if not loads and not runs:
             r.miss.append("No load is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
-        cside = not str(values.get("col_side") or "").startswith("beam side")
-        nrow = 2 if str(values.get("n_rows") or "").strip() == "2" else 1
+        ext = str(values.get("config") or "").startswith("extended")
+        cside = not str(values.get("col_side") or "").startswith("beam side") and not ext
+        nrow = 2 if (str(values.get("n_rows") or "").strip() == "2" and not ext) else 1
         cn = lambda key: r.num(key, cside, label=r.labels[key]) if cside else None
         args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), (r.text("column", False) if cside else ""), cn("col_Fy"), cn("col_Fu"), r.text("steel_source"), r.num("bp"), r.num("tp"),
                 r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("g"), r.num("pfi"), r.num("w_flange"), r.num("w_web"),
@@ -1591,8 +1595,10 @@ def build(kind, values, project):
         if cside and not r.text("column", False):
             r.miss.append("Column is blank")
         pb_ = r.num("pb", nrow == 2, label="Spacing between the two rows")
+        pfo_ = r.num("pfo", ext, label="Extended: pfo")
+        nsh_ = r.num("n_shear", False)
         r.done()
-        return ws_more.flush_end_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or ""), n_rows=nrow, pb=pb_, col_side=cside), "simple", {}
+        return ws_more.flush_end_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or ""), n_rows=nrow, pb=pb_, col_side=cside, extended=ext, pfo=pfo_, n_shear=nsh_ or 2), "simple", {}
     if kind == "cap_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], P=x["P"], M=x["M"]) for x in r.rows("runs")]
