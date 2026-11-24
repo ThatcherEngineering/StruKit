@@ -298,22 +298,27 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
 
     # member data (left) and loading sketch (right)
     top = p.y
+    hss_kind = {"HSS-RECT": "rect", "HSS-ROUND": "round", "PIPE": "round"}.get(pr.get("type"))
+    depth_in = pr["d"] if hss_kind is None else (pr["OD"] if hss_kind == "round" else pr["Ht"])
     p.head("Member")
     p.kv([("Section", f"{sheet.shape}  (Fy = {sheet.Fy:g} ksi)"),
           ("Span", f"{sheet.span_ft:g} ft, simply supported"),
           ("Bracing", sheet.bracing_text),
-          ("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"),
-          ("", f"tf = {pr['tf']:g} in, tw = {pr['tw']:g} in"),
-          ("Properties", f"Zx = {pr['Zx']:g} in3, Sx = {pr['Sx']:g} in3"),
-          ("", f"Ix = {pr['Ix']:g} in4, ry = {pr['ry']:g} in"),
-          ("", f"rts = {pr['rts']:g} in, J = {pr['J']:g} in4, ho = {pr['ho']:g} in"),
+          ] + ([("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"),
+                ("", f"tf = {pr['tf']:g} in, tw = {pr['tw']:g} in"),
+                ("Properties", f"Zx = {pr['Zx']:g} in3, Sx = {pr['Sx']:g} in3"),
+                ("", f"Ix = {pr['Ix']:g} in4, ry = {pr['ry']:g} in"),
+                ("", f"rts = {pr['rts']:g} in, J = {pr['J']:g} in4, ho = {pr['ho']:g} in")] if hss_kind is None else
+               [("Dimensions", (f"OD = {pr['OD']:g} in" if hss_kind == "round" else f"H = {pr['Ht']:g} in, B = {pr['B']:g} in") + f", design t = {pr['tdes']:g} in"),
+                ("Properties", f"Zx = {pr['Zx']:g} in3, Sx = {pr['Sx']:g} in3"),
+                ("", f"Ix = {pr['Ix']:g} in4, ry = {pr['ry']:g} in, J = {pr['J']:g} in4")]) + [
           ("Source", "AISC Shapes Database v16.0")])
     bottom_left = p.y
     x0, w = 338, 166
     c.setFillColorRGB(*BLUE); c.setFont(FB, 8); c.drawString(x0, top - 4, "LOADING SKETCH")
     by = top - 64                                    # underside of the beam
-    hb, true_scale = memberart.elev_depth(sheet.span_ft * 12, pr["d"], w)
-    memberart.steel_elevation(c, x0, by, w, hb, pr["d"], pr["tf"])
+    hb, true_scale = memberart.elev_depth(sheet.span_ft * 12, depth_in, w)
+    memberart.steel_elevation(c, x0, by, w, hb, depth_in, pr["tf"] if hss_kind is None else max(pr["tdes"], depth_in * 0.06))
     c.setStrokeColorRGB(*BLUE); c.setFillColorRGB(0.91, 0.93, 0.96); c.setLineWidth(0.6)
     if any(ld["kind"] == "uniform" for ld in sheet.loads):
         c.rect(x0, by + hb + 4, w, 10, fill=1, stroke=1)
@@ -343,8 +348,11 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     # cut section, to scale
     sx = 536
     c.setFillColorRGB(*BLUE); c.setFont(FB, 8); c.drawCentredString(sx, top - 4, "SECTION")
-    memberart.steel_section(c, sx, top - 38, 40, 46, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
-    c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawCentredString(sx, top - 72, "to scale")
+    if hss_kind is None:
+        memberart.steel_section(c, sx, top - 38, 40, 46, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
+        c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawCentredString(sx, top - 72, "to scale")
+    else:
+        _hss_section(c, sx - 6, top - 36, 40.0, dict(kind=hss_kind, OD=pr.get("OD"), H=pr.get("Ht"), B=pr.get("B"), t=pr["tdes"]))
     c.setStrokeColorRGB(*INK)
     p.y = min(bottom_left, by - 34) - 2
 
@@ -398,6 +406,8 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
               page, pages, date)
     c, pr = p.c, sheet.props
     top = p.y
+    hss_kind = {"HSS-RECT": "rect", "HSS-ROUND": "round", "PIPE": "round"}.get(pr.get("type"))
+    depth_in = pr["d"] if hss_kind is None else (pr["OD"] if hss_kind == "round" else pr["Ht"])
     p.head("Member")
     p.kv([("Section", f"{sheet.shape}  (Fy = {sheet.Fy:g} ksi)"),
           ("Height", f"{sheet.height_ft:g} ft"),
