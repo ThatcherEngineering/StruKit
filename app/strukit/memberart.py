@@ -325,7 +325,7 @@ def _dim_v(c, y1, y2, x, text, font, ext_from=None):
     c.drawString(x + 3, (y1 + y2) / 2 - 2, text)
 
 
-def base_plate_plan(c, cx, cy, box_w, box_h, d, bf, tf, tw, N, B, support=None, font="Helvetica"):
+def base_plate_plan(c, cx, cy, box_w, box_h, d, bf, tf, tw, N, B, support=None, font="Helvetica", kind="I"):
     """Plan of a base plate, to scale: the column section on the plate, the concrete
     support dashed when it is larger than the plate, and dimension lines for the plate and
     the support (plate length N is drawn up the page, parallel to the column depth)."""
@@ -339,7 +339,19 @@ def base_plate_plan(c, cx, cy, box_w, box_h, d, bf, tf, tw, N, B, support=None, 
         c.setDash()
     c.setLineWidth(0.7); c.setStrokeColorRGB(*STEEL_LINE); c.setFillColorRGB(0.87, 0.90, 0.93)
     c.rect(cx - B * s / 2, cy - N * s / 2, B * s, N * s, fill=1, stroke=1)
-    steel_section(c, cx, cy, bf * s, d * s, d, bf, tf, tw)
+    if kind == "I":
+        steel_section(c, cx, cy, bf * s, d * s, d, bf, tf, tw)
+    else:                                                  # HSS or pipe: the tube wall, to scale
+        wall = max(tf * s, 1.4)
+        c.setFillColorRGB(*STEEL_FILL)
+        if kind == "round":
+            c.circle(cx, cy, d * s / 2, fill=1, stroke=1)
+            c.setFillColorRGB(0.87, 0.90, 0.93); c.circle(cx, cy, d * s / 2 - wall, fill=1, stroke=1)
+        else:
+            ro = min(1.5 * tf * s + 0.6, bf * s / 3)
+            c.roundRect(cx - bf * s / 2, cy - d * s / 2, bf * s, d * s, ro, fill=1, stroke=1)
+            c.setFillColorRGB(0.87, 0.90, 0.93)
+            c.roundRect(cx - bf * s / 2 + wall, cy - d * s / 2 + wall, bf * s - 2 * wall, d * s - 2 * wall, max(ro - wall, 0.5), fill=1, stroke=1)
     bottom, right = cy - sup[0] * s / 2, cx + sup[1] * s / 2
     _dim_h(c, cx - B * s / 2, cx + B * s / 2, bottom - 5, f"{B:g}", font, ext_from=cy - N * s / 2)
     _dim_v(c, cy - N * s / 2, cy + N * s / 2, right + 6, f"{N:g}", font, ext_from=cx + B * s / 2)

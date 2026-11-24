@@ -1226,7 +1226,7 @@ def _picture(c, top, pic):
     if name == "base_plate":
         _sketch_title(c, 470, top, "PLAN", centred=True)
         memberart.base_plate_plan(c, 470, top - 52, 170, 82, d["d"], d["bf"], d["tf"], d["tw"], d["N"], d["B"],
-                                  d["support"], font=FR)
+                                  d["support"], font=FR, kind=d.get("kind", "I"))
         _small(c, 470, top - 102, "dimensions in inches; to scale" + ("; concrete support dashed" if d["support"] else ""))
         return top - 106
     if name == "base_plate_moment":
