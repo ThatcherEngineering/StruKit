@@ -4365,7 +4365,7 @@ def summary_sheet(project, entries):
             lines.append(f"{title[:70]}"); last = title
         for check, dc, status, combo in got:
             n_all += 1; n_flag += status == "FLAG"
-            lines.append(f"{str(mark)[:6]:<7}{str(check)[:45]:<46}{dc:>6.2f}  {status:<6} {str(combo)[:48]}")
+            lines.append(f"{str(mark)[:6]:<7}{str(check)[:45]:<46}{dc:>6.2f}  {status:<6} {str(combo)}")
             if worst is None or dc > worst[1]:
                 worst = (mark, dc, check)
     if worst is None:

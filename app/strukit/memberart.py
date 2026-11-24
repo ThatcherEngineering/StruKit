@@ -322,7 +322,10 @@ def _dim_v(c, y1, y2, x, text, font, ext_from=None):
             c.line(ext_from, q, x + 2.5 if x > ext_from else x - 2.5, q)
         c.line(x - 1.6, q - 1.6, x + 1.6, q + 1.6)
     c.setFont(font, 6)
-    c.drawString(x + 3, (y1 + y2) / 2 - 2, text)
+    if ext_from is not None and x < ext_from:              # dimension line on the left of the part: text outside it, clear of the part
+        c.drawRightString(x - 3, (y1 + y2) / 2 - 2, text)
+    else:
+        c.drawString(x + 3, (y1 + y2) / 2 - 2, text)
 
 
 def base_plate_plan(c, cx, cy, box_w, box_h, d, bf, tf, tw, N, B, support=None, font="Helvetica", kind="I"):
