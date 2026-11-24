@@ -2758,8 +2758,7 @@ def wind_free_hip_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, t
             blk = dict(title=f"Wind {d['name'].capitalize()} (Figure 27.3-5)", lines=t,
                        after=[f"Each half of the plan is {0.5 * d['L']:g} ft by {d['B']:g} ft. Totals take the whole half at the slope of the planes facing the wind; plus is with the wind "
                               "and downward, minus is uplift. Af is the roof projected on a vertical plane normal to the wind, taken as for a pitched roof."])
-            if n_ == 0:
-                blk.update(head="Wind Across the Long Side", picture=("free_roof", dict(theta=d["theta"], h=h, L=d["L"], roof="pitched")))
+            blk.update(head="Wind Across the Long Side" if n_ == 0 else "Wind on the Hip End", picture=("free_roof", dict(theta=d["theta"], h=h, L=d["L"], roof="pitched")))
             sheet.blocks.append(blk)
             out.append(dict(d, totals=rows, Af=Af, F_min=wind.MIN_OPEN * Af))
         else:
@@ -3111,4 +3110,83 @@ def wind_enclosure_sheet(mark, walls, roof_gross, roof_open, openings_basis):
     sheet.blocks.append(dict(title="Partially Enclosed Buildings (Sect. 26.2)", lines=t2, after=["Partially enclosed: for a wall, all three conditions are met. A building that is not open, "
                                                                                                 "enclosed or partially enclosed is partially open."]))
     sheet.enclosure = r
+    return sheet
+
+
+def base_plate_uplift_sheet(mark, shape, col_Fy, N, B, t, Fy_plate, rod_d, rod_Fu, rod_source, gauge, pitch, weld, FEXX, cases, method):
+    """Base plate of a wide-flange column in net uplift, four anchor rods inside the column profile, two each side of the web: AISC Design Guide 1
+    (3rd Ed.) Example 4.7-3.  gauge: rod spacing across the web; pitch: rod spacing along the web.  One-way plate bending about the web face
+    over a 45 degree width from each rod; the web fillet welds each side over the same width; local stress in the web.
+    cases: dict(name, T) net uplift in kips at the level of `method`."""
+    from . import bolts, welds
+    from .steel_beam import SteelInputError
+    if method not in ("ASD", "LRFD"):
+        raise WorksheetError("method must be ASD or LRFD")
+    if not str(rod_source or "").strip():
+        raise WorksheetError(f"{mark}: give the anchor rod material (where Fu comes from)")
+    if not cases:
+        raise WorksheetError(f"{mark}: no load cases given")
+    try:
+        p = shapes.get(shape)
+    except shapes.ShapeError:
+        raise WorksheetError(f"{mark}: this sheet takes W, M, S and HP columns; '{shape}' is not one")
+    d, bf, tf, tw = p["d"], p["bf"], p["tf"], p["tw"]
+    if not (tw + 2 * rod_d < gauge < bf):
+        raise WorksheetError(f"{mark}: the rods must sit between the web and the flange tips (rod spacing across the web between {tw + 2 * rod_d:.2f} and {bf:g} in.)")
+    if not (0 < pitch < d - 2 * tf - 2 * rod_d):
+        raise WorksheetError(f"{mark}: the rods must sit between the flanges (rod spacing along the web under {d - 2 * tf - 2 * rod_d:.2f} in.)")
+    if N < d or B < bf:
+        raise WorksheetError(f"{mark}: the plate is smaller than the column")
+    for c in cases:
+        if "name" not in c or c.get("T") is None:
+            raise WorksheetError(f"{mark}: a load case needs a name and the net uplift T")
+    gov = max(cases, key=lambda c: c["T"])
+    T = gov["T"]
+    if T <= 0:
+        raise WorksheetError(f"{mark}: no case has net uplift; enter uplift as positive")
+    lrfd = method == "LRFD"
+    r = T / 4
+    try:
+        rod = bolts.tension(rod_d, f"FU={rod_Fu:g}", method).R_avail
+        wr = welds.fillet(weld, 1.0, 1, FEXX, 90.0, True, method=method)
+    except SteelInputError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    a = (gauge - tw) / 2
+    beff = min(2 * a, pitch)
+    M = r * a
+    Z = beff * t ** 2 / 4
+    Mc = 0.90 * Fy_plate * Z if lrfd else Fy_plate * Z / 1.67
+    t_req = math.sqrt(4 * M / (beff * 0.90 * Fy_plate)) if lrfd else math.sqrt(4 * 1.67 * M / (beff * Fy_plate))
+    rw = r / beff
+    wmin = welds.min_fillet_size(min(tw, t))
+    fweb, Fweb = 2 * rw / tw, (0.90 * col_Fy if lrfd else col_Fy / 1.67)
+    Line = footing_line
+    steps = [Line("Rod tension, T / 4", r, "kip", "statics", f"{gov['name']}: T = {T:.2f} kip on four rods"),
+             Line("Rod available tension", rod, "kip", "AISC 360-22 Sect. J3.7, Table J3.2", f"{rod_d:g} in. rod, Fu = {rod_Fu:g} ksi ({rod_source.strip()})"),
+             Line("a = (g - tw) / 2", a, "in", "AISC Design Guide 1 Example 4.7-3", f"g = {gauge:g} in., tw = {tw:g} in.; rod to the face of the web"),
+             Line("M = r a", M, "kip-in", "", "per rod, one-way bending about the web face"),
+             Line("beff", beff, "in", "AISC Design Guide 1 Sect. 4.3.2", "2a, 45 degrees from the rod" + (", limited to the rod spacing along the web" if pitch < 2 * a else "")),
+             Line("Z = beff t^2 / 4", f"{Z:.3f} in3", "", "", f"t = {t:g} in."),
+             Line("0.90 Fy Z" if lrfd else "Fy Z / 1.67", Mc, "kip-in", "AISC 360-22 Sect. F11", f"Fy = {Fy_plate:g} ksi; thickness required {t_req:.3f} in."),
+             Line("Weld force, r / beff", rw, "kip/in", "AISC Design Guide 1 Example 4.7-3", "one fillet weld each side of the web, each with the rods on its side"),
+             Line("Weld available strength", wr.R_avail, "kip/in", "AISC 360-22 Eq. J2-4, J2-5", f"{weld:g} in. fillet, E{FEXX:g}XX, loaded at 90 degrees"),
+             Line("Web stress, 2 (r / beff) / tw", fweb, "ksi", "AISC Design Guide 1 Example 4.7-3", f"against {'0.90 Fy' if lrfd else 'Fy / 1.67'} = {Fweb:.1f} ksi, Fy = {col_Fy:g} ksi")]
+    rows = [Row("anchor rod tension", gov["name"], r, rod, "kip", "AISC 360-22 Sect. J3.7", f"(4) {rod_d:g} in. rods"),
+            Row("plate bending", gov["name"], M, Mc, "kip-in", "AISC Design Guide 1 Sect. 4.3.2; AISC 360-22 Sect. F11", f"plate {t:g} in., required {t_req:.3f} in."),
+            Row("web weld", gov["name"], rw, wr.R_avail, "kip/in", "AISC 360-22 Sect. J2.4", f"{weld:g} in. fillet each side of the web"),
+            Row("web weld, minimum size", "", wmin, weld, "in", "AISC 360-22 Table J2.4", f"thinner part {min(tw, t):g} in."),
+            Row("column web at the weld", gov["name"], fweb, Fweb, "ksi", "AISC Design Guide 1 Example 4.7-3", "")]
+    info = [("Column", f"{shapes.normalize(shape)}, Fy = {col_Fy:g} ksi"),
+            ("Plate", f"{N:g} in. x {B:g} in. x {t:g} in., Fy = {Fy_plate:g} ksi"),
+            ("Anchor rods", f"(4) {rod_d:g} in., {rod_source.strip()}, Fu = {rod_Fu:g} ksi; {gauge:g} in. across the web, {pitch:g} in. along it, inside the column profile"),
+            ("Weld", f"{weld:g} in. fillet each side of the web, E{FEXX:g}XX")]
+    sheet = SimpleSheet(mark, "Column Base Plate in Uplift", "Base Plate", method, info, [f"{c['name']:<26} T = {c['T']:>8.2f} kip uplift" for c in cases], [],
+                        f"Rods, Plate and Web Weld ({gov['name']})", steps, rows,
+                        ["The uplift is concentric and shared equally by the four rods; prying is neglected.",
+                         "The plate bends one way about the face of the column web over a 45 degree width from each rod; the web welds and the web carry the rod forces over the same width.",
+                         "Rod strength is the steel strength only."],
+                        ["anchorage of the rods in the concrete: breakout, pullout, side blowout (ACI 318-19 Chapter 17)", "flange welds", "base shear", "moment with uplift"],
+                        picture=None)
+    sheet.blocks.append(dict(title="Base Plate Plan", head="Base Plate Plan", picture=("base_plate_uplift", dict(d=d, bf=bf, tf=tf, tw=tw, N=N, B=B, g=gauge, s=pitch, rod_d=rod_d, shape=shapes.normalize(shape)))))
+    sheet.uplift = dict(r=r, rod=rod, a=a, beff=beff, M=M, Mc=Mc, t_req=t_req, rw=rw, weld=wr.R_avail, fweb=fweb, Fweb=Fweb)
     return sheet
