@@ -3206,6 +3206,30 @@ def model_frame_sway(project, members):
             except Exception as e:
                 problems.append(f"The wind sheet could not be used: {e}"); need_w = False
 
+    need_e = any(abs(cb.factors.get("E", 0.0)) > 0 for cb in cbs)
+    eq_F, eq_mark = {}, ""
+    seis = [m for m in members or [] if m.get("kind") == "seismic_elf"]
+    if seis:
+        try:
+            es, _, _ = build("seismic_elf", seis[0]["values"], project)
+            story = {str(r_["name"]).strip(): float(r_["F"]) for r_ in es.seismic["rows"]}
+            eq_mark = seis[0]["values"].get("mark") or "seismic"
+            for lv in level_tops:
+                if lv in story:
+                    eq_F[lv] = story[lv]
+                elif need_e:
+                    problems.append(f"Level {lv} is not a level of seismic sheet {eq_mark} (the names must match); it gets no seismic force")
+        except Exception as e:
+            if need_e:
+                problems.append(f"The seismic sheet could not be used: {e}")
+    elif need_e:
+        problems.append("The combinations use seismic load (E) but the project has no Seismic Base Shear and Story Forces sheet; seismic is left out of this run")
+    if need_e and eq_F:
+        notes.append(f"Seismic (load case E): the story forces of sheet {eq_mark} at each level, shared to the column tops by tributary width, in each direction; the "
+                     "redundancy factor and the vertical effect are in the combination factors.")
+    if any(abs(cb.factors.get("Em", 0.0)) > 0 for cb in cbs):
+        notes.append("Combinations with overstrength (load case Em) are run on the frame for gravity only; Em applies to particular members and is not applied to the whole frame.")
+
     def spread(level, axis, total):
         """`total` kips in direction `axis` (0 = X, 1 = Y) shared to the column tops of a level by tributary width across the wind."""
         tops = level_tops[level]
@@ -3302,7 +3326,7 @@ def model_frame_sway(project, members):
     if any_tension_only:
         notes.append("With tension-only braces each run also carries 0.0001 of the gravity load across its direction, so that one brace of each cross line is working.")
 
-    def solve_run(nl, grav_members):
+    def solve_run(nl, grav_members, sf=0.8, second=True):
         """First- and second-order solutions. A tension-only brace works only while it is being stretched: the set of working braces is found by
         repeating the first-order solution (a slack brace keeps a millionth of its area, so the sign of its strain can still be read), then
         confirmed on the second-order solution."""
@@ -3315,13 +3339,13 @@ def model_frame_sway(project, members):
                 by_name[b["name"]].A = b["A"] * (SL if mark in slack else 1.0)
         try:
             r1 = r2 = None
-            for stage in ("first", "second"):
+            for stage in (("first", "second") if second else ("first",)):
                 for _ in range(12):
                     setA()
-                    r1 = fr.solve(nl, grav_members, second_order=False, stiffness_factor=0.8)
+                    r1 = fr.solve(nl, grav_members, second_order=False, stiffness_factor=sf)
                     rr = r1
                     if stage == "second":
-                        r2 = rr = fr.solve(nl, grav_members, second_order=True, n_sub=4, stiffness_factor=0.8)
+                        r2 = rr = fr.solve(nl, grav_members, second_order=True, n_sub=4, stiffness_factor=sf)
                     want = {mark for mark in tens if rr.stations[braces[mark]["name"]][0][0][0] > 0}       # shortening: slack
                     if want == slack:
                         break
@@ -3339,6 +3363,7 @@ def model_frame_sway(project, members):
     drift, col_res, beam_res, worst_ratio, runs, unchecked = {}, {}, {}, 0.0, 0, set()
     for cb in cbs:
         fW = cb.factors.get("W", 0.0) if need_w else 0.0
+        fE = cb.factors.get("E", 0.0) if eq_F else 0.0
         grav_nodes, grav_members, Y = {}, [], {nm: 0.0 for nm in order}
         for (nd, c), P in joint_loads.items():
             f_ = cb.factors.get(c, 0.0) * alpha
@@ -3357,14 +3382,14 @@ def model_frame_sway(project, members):
         for axis, sign in dirs:
             nl = {nd: [0, 0, -P, 0, 0, 0] for nd, P in grav_nodes.items()}
             for lv in order:
-                lat = 0.003 * max(Y[lv], 0.0) + (abs(fW) * alpha * wind_F[lv][axis] if (fW and lv in wind_F) else 0.0)
+                lat = 0.003 * max(Y[lv], 0.0) + (abs(fW) * alpha * wind_F[lv][axis] if (fW and lv in wind_F) else 0.0) + abs(fE) * alpha * eq_F.get(lv, 0.0)
                 for nd, share in spread(lv, axis, lat * sign).items():
                     nl.setdefault(nd, [0, 0, 0, 0, 0, 0])[axis] += share
                 if any_tension_only:                          # a nudge across the run so one brace of each cross line engages
                     for nd, share in spread(lv, 1 - axis, 0.0001 * max(Y[lv], 0.0)).items():
                         nl.setdefault(nd, [0, 0, 0, 0, 0, 0])[1 - axis] += share
             nl = {nd: tuple(v_) for nd, v_ in nl.items()}
-            label = f"{cb.name}, " + ("wind" if fW else "notional load") + f" in {'+' if sign > 0 else '-'}{'XY'[axis]}"
+            label = f"{cb.name}, " + ("wind" if fW else "seismic" if fE else "notional load") + f" in {'+' if sign > 0 else '-'}{'XY'[axis]}"
             try:
                 r1, r2, slack = solve_run(nl, grav_members)
             except Frame3DError as e:
@@ -3437,12 +3462,47 @@ def model_frame_sway(project, members):
                 if M / alpha > cur["M"]:
                     cur.update(M=M / alpha, M_combo=label)
                 cur["V"], cur["N"] = max(cur["V"], V / alpha), max(cur["N"], Nax / alpha)
+    # displacements for the drift checks: each lateral load alone, first-order, full stiffness
+    elastic = []
+    for kind_, F_of in (("wind", (lambda lv, ax: wind_F[lv][ax]) if wind_F else None), ("seismic", (lambda lv, ax: eq_F.get(lv, 0.0)) if eq_F else None)):
+        if F_of is None:
+            continue
+        for axis in (0, 1):
+            nl = {}
+            for lv in order:
+                for nd, share in spread(lv, axis, F_of(lv, axis)).items():
+                    nl.setdefault(nd, [0, 0, 0, 0, 0, 0])[axis] += share
+            try:
+                r1, _, _ = solve_run({nd: tuple(v_) for nd, v_ in nl.items()}, [], sf=1.0, second=False)
+            except Frame3DError:
+                continue
+            below, zb = 0.0, base_el
+            for lv in order:
+                d_ = abs(sum(r1.disp[nd][axis] for nd, _ in level_tops[lv]) / len(level_tops[lv]))
+                hs = (elev[lv] - zb) * 12.0
+                elastic.append(dict(load=kind_, level=lv, dir="XY"[axis], disp=d_, story=d_ - below, h=hs, ratio=(hs / (d_ - below)) if d_ - below > 1e-9 else None))
+                below, zb = d_, elev[lv]
+    if elastic:
+        notes.append("Drift table: each lateral load alone at its strength level (1.0 W; the seismic story forces), first-order, full stiffness. Wind drift limits are the "
+                     "designer's; seismic displacements go to the seismic sheet's drift check (Cd, Ie and the Table 12.12-1 limit).")
+    out_members = None
+    if eq_F and any(e_["load"] == "seismic" for e_ in elastic):
+        import copy
+        out_members = copy.deepcopy(members)
+        for m in out_members:
+            if m.get("kind") == "seismic_elf" and (m["values"].get("mark") or "seismic") == eq_mark:
+                for row in m["values"].get("levels") or []:
+                    got = [e_["disp"] for e_ in elastic if e_["load"] == "seismic" and e_["level"] == str(row.get("name") or "").strip()]
+                    if got:
+                        row["de"] = f"{max(got):.4f}"
+                m["values"]["de_source"] = "3D frame analysis, first-order, full stiffness, the larger of the two directions"
+                break
     notes.insert(0, f"Direct analysis method, AISC 360-22 Chapter C: {runs} second-order runs ({len(cbs)} {method_} combinations x four directions), stiffness x 0.8, "
                     "notional load 0.003 of the gravity load at each level with tau_b = 1.0" + (", loads x 1.6 and results / 1.6 (ASD)" if alpha != 1 else "") + ".")
     if worst_ratio > 1.5:
         problems.append(f"Second-order drift is {worst_ratio:.2f} times first-order drift (at the reduced stiffness). The frame is flexible; stiffen it.")
     return dict(levels=[drift[k_] for k_ in sorted(drift, key=lambda t: (elev[t[0]], t[1]))], columns=list(col_res.values()), beams=list(beam_res.values()), braces=list(brace_res.values()),
-                notes=notes, problems=problems, ratio=worst_ratio, runs=runs, method=method_,
+                notes=notes, problems=problems, ratio=worst_ratio, runs=runs, method=method_, elastic=elastic, members=out_members,
                 units="drift in.; column P kips (compression at the base), moments kip-in. about the column's strong and weak axes; beam M kip-in., V and axial kips")
 
 

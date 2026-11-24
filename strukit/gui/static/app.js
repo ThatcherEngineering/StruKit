@@ -799,6 +799,7 @@ function modelCard(changed) {
     let out;
     try { out = await post("/api/model_frame_sway", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
     SWAY = out; MODEL_NOTES = out.problems.concat(out.notes || []);
+    if (out.members) { out.members.forEach((nm, i) => { S.members[i].values = nm.values; }); setDirty(); await recalcAll(); }
     select("project");
     toast(out.levels.length ? "The frame was run free to sway by the direct analysis method: " + out.runs + " second-order runs." : "The sway frame was not run. See the notes under the plan.", 12000);
   } }, "Run the 3D frame free to sway (direct analysis method)");
@@ -824,6 +825,9 @@ function modelCard(changed) {
         el("tbody", {}, SWAY.columns.map(c => el("tr", {}, el("td", {}, c.mark), el("td", { title: c.P_combo }, n1(c.P) + " kip"), el("td", { title: c.Ms_combo }, n1(c.Ms / 12) + " kip-ft"), el("td", { title: c.Mw_combo }, n1(c.Mw / 12) + " kip-ft"), ratioCell(c))))),
       el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Beam", "Moment", "Shear", "Axial", "Axial + bending", "Shear check"].map(t => el("th", {}, t)))),
         el("tbody", {}, SWAY.beams.map(b => el("tr", {}, el("td", {}, b.mark), el("td", { title: b.M_combo }, n1(b.M / 12) + " kip-ft"), el("td", {}, n1(b.V) + " kip"), el("td", {}, n1(b.N) + " kip"), ratioCell(b), el("td", { class: b.v_ratio > 1 ? "st FLAG" : "" }, b.v_ratio == null ? "not checked" : b.v_ratio.toFixed(2)))))),
+      (SWAY.elastic && SWAY.elastic.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Drift under", "Level", "Dir.", "Displacement", "Story drift", "Story height / drift"].map(t => el("th", {}, t)))),
+        el("tbody", {}, SWAY.elastic.map(e => el("tr", {}, el("td", {}, e.load === "wind" ? "1.0 W" : "seismic story forces"), el("td", {}, e.level), el("td", {}, e.dir), el("td", {}, n1(e.disp, 3) + " in"),
+          el("td", {}, n1(e.story, 3) + " in"), el("td", {}, e.ratio == null ? "" : "H / " + Math.round(e.ratio).toLocaleString()))))) : null,
       (SWAY.braces && SWAY.braces.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Brace", "Takes", "Tension", "Compression", "Demand / capacity"].map(t => el("th", {}, t)))),
         el("tbody", {}, SWAY.braces.map(b => el("tr", {}, el("td", {}, b.mark), el("td", {}, b.tension_only ? "tension only" : "tension and compression"), el("td", { title: b.T_combo }, n1(b.T, 2) + " kip"),
           el("td", { title: b.C_combo }, n1(b.C, 2) + " kip"), el("td", { class: b.ratio > 1 ? "st FLAG" : "", title: b.ratio_combo }, b.ratio == null ? "not checked" : b.ratio.toFixed(2) + (b.ratio > 1 ? " FLAG" : " OK")))))) : null,

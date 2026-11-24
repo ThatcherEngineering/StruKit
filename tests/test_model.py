@@ -300,3 +300,31 @@ def test_braced_frame_single_angles_take_compression():
     # a brace whose end is not on the frame is reported
     ms[-1]["values"]["at_x2"] = ms[-1]["values"]["at_y2"] = "7"
     assert "not on a placed column or beam" in " ".join(calc.model_frame_sway(proj, ms)["problems"])
+
+
+def test_sway_frame_seismic_and_drift_displacements():
+    import math
+    proj, ms = _braced_box()
+    proj["combos_lrfd"] = [dict(expr="1.2D + 1.6L", source="t"), dict(expr="1.28D + 1.0E + 1.0L", source="t")]
+    eq = dict(kind="seismic_elf", values=dict(mark="EQ1", SDS="0.40", SD1="0.12", S1="0.08", TL="4", ground_source="t", R="3.25", R_source="t", Ie="1.0", Ie_source="t",
+              structure="all other structural systems", hn="12", risk="II", levels=[dict(name="Roof", w="80", h="12")]))
+    ms.append(eq)
+    V = calc.build("seismic_elf", eq["values"], proj)[0].seismic["V"]
+    out = calc.model_frame_sway(proj, ms)
+    assert out["problems"] == [], out["problems"]
+    assert any("seismic in +X" in l["combo"] or "seismic in -X" in l["combo"] for l in out["levels"])
+    Y = (1.28 + 1.0) * 40
+    X = next(l for l in out["levels"] if l["dir"] == "X")
+    T = (V + 0.003 * Y + Y * abs(X["second"]) / 144) / 2 / (20 / math.hypot(20, 12))
+    assert {b["mark"]: b for b in out["braces"]}["X1a"]["T"] == pytest.approx(T, rel=0.01)
+    # drift displacement: story forces alone, full stiffness, first-order: H L / (E A cos^3) for one working rod per face (plus a little column strain)
+    e = next(e for e in out["elastic"] if e["load"] == "seismic" and e["dir"] == "X")
+    c = 20 / math.hypot(20, 12)
+    d = (V / 2) * 240 / (29000 * math.pi * 0.75 ** 2 / 4 * c ** 3)
+    assert e["disp"] == pytest.approx(d, rel=0.03) and e["ratio"] == pytest.approx(144 / e["disp"])
+    # and it is written to the seismic sheet's drift column
+    sv = next(m for m in out["members"] if m["kind"] == "seismic_elf")["values"]
+    assert float(sv["levels"][0]["de"]) == pytest.approx(e["disp"], abs=1e-4) and "3D frame analysis" in sv["de_source"]
+    # no seismic sheet: said plainly, the rest still runs
+    out2 = calc.model_frame_sway(proj, ms[:-1])
+    assert "no Seismic Base Shear" in " ".join(out2["problems"]) and out2["levels"]

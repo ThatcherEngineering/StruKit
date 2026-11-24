@@ -168,3 +168,31 @@ def test_buckling_is_reported_and_first_order_unchanged():
         f.solve({"B": (0.1, 0.1, -1.05 * Pe_weak, 0, 0, 0)}, second_order=True)
     a = f.solve({"B": (1.0, 0, -50.0, 0, 0, 0)})
     assert a.disp["B"][0] == pytest.approx(336 ** 3 / (3 * E * 484))                        # first-order: no amplification
+
+
+def test_aisc_design_example_c1a_moment_frame_by_direct_analysis():
+    """AISC Design Examples v16.0, Example C.1A (LRFD): W12x65 columns 20 ft with pinned bases, 30 ft beam, 2.40 kip/ft, 36 kips at each column
+    top, a 144 kip leaning column, notional load 0.576 kip, stiffness x 0.8. Published: first-order drift 0.181 in., second-order 0.290 in.,
+    column axial 72.6 kips, column top moment 127 kip-ft. The beam size is in the example's figure, which the text copy on hand does not carry;
+    W18x40 is used and reproduces every published value (drift within 2 percent: the example's software may include shear deformation)."""
+    from strukit import shapes
+    c, b = shapes.get("W12X65"), shapes.get("W18X40")
+    E, G = 29000, 11200
+    f = Frame3D()
+    for n, x, z in (("a", 0, 0), ("b", 0, 240), ("c", 360, 240), ("d", 360, 0), ("e", 720, 0), ("g", 720, 240)):
+        f.node(n, x, 0, z)
+    f.member("c1", "a", "b", E, G, c["A"], c["Ix"], c["Iy"], c["J"]); f.member("c2", "d", "c", E, G, c["A"], c["Ix"], c["Iy"], c["J"])
+    f.member("bm", "b", "c", E, G, b["A"], b["Ix"], b["Iy"], b["J"])
+    f.member("lean", "e", "g", E, G, c["A"], c["Ix"], c["Iy"], c["J"], release_i=("my", "mz"), release_j=("my", "mz"))
+    f.member("link", "c", "g", E, G, 100, 10, 10, 1, release_i=("my", "mz"), release_j=("my", "mz"))
+    f.support("a", (1, 1, 1, 0, 0, 1)); f.support("d", (1, 1, 1, 0, 0, 1)); f.support("e", "fixed")
+    f.support("b", (0, 1, 0, 1, 0, 1)); f.support("c", (0, 1, 0, 1, 0, 1)); f.support("g", (0, 1, 0, 1, 1, 1))
+    nl = {"b": (0.576, 0, -36, 0, 0, 0), "c": (0, 0, -36, 0, 0, 0), "g": (0, 0, -144, 0, 0, 0)}
+    ml = [("bm", "global", (0, 0, -2.4 / 12))]
+    r1 = f.solve(nl, ml, second_order=False, stiffness_factor=0.8)
+    r2 = f.solve(nl, ml, second_order=True, n_sub=8, stiffness_factor=0.8)
+    drift = lambda r: (r.disp["b"][0] + r.disp["c"][0]) / 2
+    assert drift(r1) == pytest.approx(0.181, rel=0.02) and drift(r2) == pytest.approx(0.290, rel=0.02)
+    assert drift(r2) / drift(r1) == pytest.approx(1.60, abs=0.03)
+    st = r2.stations["c2"]
+    assert st[0][0][0] == pytest.approx(72.6, rel=0.005) and max(abs(q[1][4]) for q in st) / 12 == pytest.approx(127, rel=0.01)
