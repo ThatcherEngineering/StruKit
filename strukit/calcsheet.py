@@ -1369,7 +1369,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
     for b in sheet.blocks:
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
-                   230 if b["picture"][0] in ("anchorage", "perforated_wall", "base_biaxial", "frame3d") else 215 if b["picture"][0] == "lag" else 175)
+                   230 if b["picture"][0] in ("anchorage", "perforated_wall", "base_biaxial", "frame3d") else 250 if b["picture"][0] == "flush_end_plate" else 215 if b["picture"][0] == "lag" else 175)
             if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "collector", "nailed", "toe_nail", "lag", "bolted", "bolted_perp"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
@@ -1516,6 +1516,8 @@ def _block_picture(c, top, pic):
         return _seat_picture(c, top - 6, d)
     if name == "cap_plate":
         return _cap_plate_picture(c, top - 6, d)
+    if name == "flush_end_plate":
+        return _flush_end_plate_picture(c, top - 6, d)
     if name == "base_biaxial":
         return _base_biaxial_picture(c, top - 6, d)
     if name == "topo":
@@ -2204,6 +2206,49 @@ def _base_biaxial_picture(c, top, d):
     memberart._dim_v(c, yc + (B / 2 - eB) * sc, yc + B / 2 * sc, xc + N / 2 * sc + 16, f"{eB:g} in", FR, ext_from=xc + N / 2 * sc)
     _small(c, xc, yc - B / 2 * sc - 30, "plan, to scale. Mx bends the column about its strong axis (tension on a rod pair at one end of N); My about its weak axis.")
     return yc - B / 2 * sc - 38
+
+
+def _flush_end_plate_picture(c, top, d):
+    """Face of the end plate, to scale: plate, beam section behind it, the two tension bolts and the two compression-side bolts; plate width,
+    gage, pfi and beam depth dimensioned. Beside it a side view of the beam on the column flange with the cap plate, to the same scale."""
+    D, bf, tf, bp, tp, g, pfi, db = d["d"], d["bf"], d["tf"], d["bp"], d["tp"], d["g"], d["pfi"], d["db"]
+    dc, tcf, tcap = d["dc"], d["tcf"], d["tcap"]
+    Hp = D + 1.0
+    sc = min(170.0 / Hp, 9.0)
+    xc, yt = LM + 150, top - 26                       # plate centre line, top of plate
+    yb = yt - Hp * sc
+    y_top = yt - 0.5 * sc                             # top of the beam
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xc - bp / 2 * sc, yb, bp * sc, Hp * sc, fill=1, stroke=1)
+    c.setFillColorRGB(0.62, 0.68, 0.76)
+    c.rect(xc - bf / 2 * sc, y_top - tf * sc, bf * sc, tf * sc, fill=1, stroke=1); c.rect(xc - bf / 2 * sc, y_top - D * sc, bf * sc, tf * sc, fill=1, stroke=1)
+    c.rect(xc - 1.2, y_top - (D - tf) * sc, 2.4, (D - 2 * tf) * sc, fill=1, stroke=0)
+    c.setFillColorRGB(*INK)
+    y1, y2 = y_top - (tf + pfi) * sc, y_top - (D - tf - pfi) * sc
+    for yy in (y1, y2):
+        for sx in (-1, 1):
+            c.circle(xc + sx * g / 2 * sc, yy, max(db / 2 * sc, 1.8), fill=1, stroke=0)
+    memberart._dim_h(c, xc - bp / 2 * sc, xc + bp / 2 * sc, yt + 14, f"bp = {bp:g} in", FR, ext_from=yt)
+    memberart._dim_h(c, xc - g / 2 * sc, xc + g / 2 * sc, yb - 14, f"g = {g:g} in", FR, ext_from=y2)
+    memberart._dim_v(c, y1, y_top - tf * sc, xc + bp / 2 * sc + 14, f"pfi = {pfi:g} in", FR, ext_from=xc + g / 2 * sc)
+    memberart._dim_v(c, y_top - D * sc, y_top, xc - bp / 2 * sc - 16, f"d = {D:g} in", FR, ext_from=xc - bp / 2 * sc)
+    _small(c, xc, yb - 30, "face of the end plate, to scale; tension flange at the top")
+    # side view
+    xs = RM - 170                                      # outside face of the column flange
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xs, yb - 14, dc * sc, Hp * sc + 14, fill=1, stroke=1)
+    c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xs, yb - 14, tcf * sc, Hp * sc + 14, fill=1, stroke=0); c.rect(xs + (dc - tcf) * sc, yb - 14, tcf * sc, Hp * sc + 14, fill=1, stroke=0)
+    c.rect(xs, yt, dc * sc, max(tcap * sc, 2), fill=1, stroke=1)                                         # cap plate
+    c.setFillColorRGB(0.45, 0.5, 0.58); c.rect(xs - tp * sc, yb, tp * sc, Hp * sc, fill=1, stroke=1)   # end plate
+    c.setFillColorRGB(0.90, 0.92, 0.95); c.rect(xs - tp * sc - 70, y_top - D * sc, 70, D * sc, fill=1, stroke=1)
+    c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xs - tp * sc - 70, y_top - tf * sc, 70, tf * sc, fill=1, stroke=0); c.rect(xs - tp * sc - 70, y_top - D * sc, 70, tf * sc, fill=1, stroke=0)
+    c.setLineWidth(1.3)
+    for yy in (y1, y2):
+        c.line(xs - tp * sc - 5, yy, xs + tcf * sc + 5, yy)
+    c.setLineWidth(0.9); c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawString(xs - tp * sc - 66, y_top - D * sc / 2, d["beam"]); c.drawString(xs + tcf * sc + 8, yb + Hp * sc / 2, d["column"])
+    c.drawString(xs + 4, yt + max(tcap * sc, 2) + 4, f"cap plate {tcap:g} in"); c.drawRightString(xs - tp * sc - 2, yb - 9, f"end plate {tp:g} in")
+    _small(c, xs + dc * sc / 2 - 30, yb - 30, "side view, same scale; bolts shown as lines")
+    return yb - 38
 
 
 def _cap_plate_picture(c, top, d):
