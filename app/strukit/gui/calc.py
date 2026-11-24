@@ -180,8 +180,11 @@ FORMS = {
                                                F("count", "How many", required=False, help="2 for a pair of angles")]),
                 T("loads", "Force along the bolt line", [CASE, F("P", "Force", unit="kip"), F("label", "Note", "text", required=False)])]),
     "single_plate": dict(
-        title="Single-Plate Shear Connection to HSS", code="AISC 360-22", mark="SP",
-        fields=[F("column", "Column", "hss_shape"), F("col_Fy", "Column Fy", unit="ksi"), F("col_Fu", "Column Fu", unit="ksi"), F("col_source", "Source of the column Fy and Fu", "text"),
+        title="Single-Plate Shear Connection (shear tab)", code="AISC 360-22", mark="SP",
+        fields=[F("column", "HSS column", "hss_shape", required=False, help="leave blank for a column flange or girder web and fill the three support boxes"),
+                F("col_Fy", "HSS column Fy", unit="ksi", required=False), F("col_Fu", "HSS column Fu", unit="ksi", required=False), F("col_source", "Source of the column Fy and Fu", "text", required=False),
+                F("support_name", "Other support: what the plate is welded to", "text", required=False, help="for example: W14x90 column flange, or W24x55 girder web"),
+                F("support_t", "Other support: thickness at the weld", unit="in", required=False), F("support_Fu", "Other support: Fu", unit="ksi", required=False),
                 F("beam", "Beam", "shape"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fu", "text"),
                 F("tp", "Plate thickness", unit="in"), F("plate_Fy", "Plate Fy", unit="ksi"), F("plate_Fu", "Plate Fu", unit="ksi"), F("plate_source", "Source of the plate Fy and Fu", "text"),
                 F("d", "Bolt diameter", unit="in"), F("group", "Bolt type", "select", options=["A325", "A490", "F3148"]),
@@ -1375,11 +1378,13 @@ def build(kind, values, project):
         if not loads:
             r.miss.append("No reaction is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
-        args = (r.text("column"), r.num("col_Fy"), r.num("col_Fu"), r.text("col_source"), r.text("beam"), r.num("beam_Fu"), r.text("beam_source"), r.num("tp"), r.num("plate_Fy"),
+        hc = bool(r.text("column", False))
+        sup = None if hc else dict(name=r.text("support_name", True) or "", t=r.num("support_t", True, label="Other support: thickness at the weld"), Fu=r.num("support_Fu", True, label="Other support: Fu"))
+        args = (r.text("column", False) or "", r.num("col_Fy", hc), r.num("col_Fu", hc), r.text("col_source", hc) or "", r.text("beam"), r.num("beam_Fu"), r.text("beam_source"), r.num("tp"), r.num("plate_Fy"),
                 r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("n"), r.num("spacing"), r.num("lev"), r.num("leh"), r.num("a"),
                 r.text("holes"), r.num("weld"), r.num("FEXX"))
         r.done()
-        return ws_more.single_plate_sheet(mark, *args, loads, cb, m), "simple", {}
+        return ws_more.single_plate_sheet(mark, *args, loads, cb, m, support=sup), "simple", {}
     if kind in ("weld", "bolts"):
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
