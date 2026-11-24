@@ -3222,3 +3222,46 @@ def base_plate_uplift_sheet(mark, shape, col_Fy, N, B, t, Fy_plate, rod_d, rod_F
     sheet.blocks.append(dict(title="Base Plate Plan", head="Base Plate Plan", picture=("base_plate_uplift", dict(d=d, bf=bf, tf=tf, tw=tw, N=N, B=B, g=gauge, s=pitch, rod_d=rod_d, shape=shapes.normalize(shape)))))
     sheet.uplift = dict(r=r, rod=rod, a=a, beff=beff, M=M, Mc=Mc, t_req=t_req, rw=rw, weld=wr.R_avail, fweb=fweb, Fweb=Fweb)
     return sheet
+
+
+def tension_rod_sheet(mark, rod_d, Fy, Fu, steel_source, length_ft, loads, combos, method):
+    """Threaded steel rod in tension (hanger, tie, sag rod): tensile yielding of the body, AISC 360-22 Eq. D2-1, and the tensile strength of the
+    threaded part, Sect. J3.7 with Fnt = 0.75 Fu of Table J3.2 on the unthreaded body area.  loads: dict(case, P) kips, tension."""
+    from . import bolts
+    from .steel_beam import SteelInputError
+    if not (steel_source or "").strip():
+        raise WorksheetError(f"{mark}: say where Fy and Fu come from")
+    if not combos:
+        raise WorksheetError(f"{mark}: no load combinations given")
+    if not loads:
+        raise WorksheetError(f"{mark}: no loads given")
+    if rod_d is None or rod_d <= 0:
+        raise WorksheetError(f"{mark}: the rod diameter must be positive")
+    lrfd = method == "LRFD"
+    Ab = math.pi * rod_d ** 2 / 4
+    try:
+        thr = bolts.tension(rod_d, f"FU={Fu:g}", method)
+    except SteelInputError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    Py = Fy * Ab
+    Pyc = 0.90 * Py if lrfd else Py / 1.67
+    totals = {cb.name: sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads) for cb in combos}
+    worst = max(totals, key=lambda k: totals[k])
+    T = totals[worst]
+    if T <= 0:
+        raise WorksheetError(f"{mark}: no combination puts the rod in tension; enter tension as positive")
+    Ln = footing_line
+    steps = [Ln("Required tensile strength", T, "kip", worst, ""),
+             Ln("Ab", f"{Ab:.3f} in2", "", "", f"{rod_d:g} in. rod, unthreaded body"),
+             Ln("Tensile yielding, Pn = Fy Ab", Py, "kip", "AISC 360-22 Eq. D2-1", f"Fy = {Fy:g} ksi; " + ("0.90 Pn" if lrfd else "Pn / 1.67") + f" = {Pyc:.2f} kip"),
+             Ln("Threaded part, Rn = 0.75 Fu Ab", thr.Rn, "kip", "AISC 360-22 Eq. J3-1, Table J3.2", f"Fu = {Fu:g} ksi; " + ("0.75 Rn" if lrfd else "Rn / 2.00") + f" = {thr.R_avail:.2f} kip")]
+    rows = [Row("Tensile yielding", worst, T, Pyc, "kip", "AISC 360-22 Eq. D2-1", "rod body"),
+            Row("Tensile strength at the threads", worst, T, thr.R_avail, "kip", "AISC 360-22 Sect. J3.7", "threaded part")]
+    info = [("Rod", f"{rod_d:g} in. threaded rod, Fy = {Fy:g} ksi, Fu = {Fu:g} ksi ({steel_source.strip()})"), ("Length", f"{length_ft:g} ft")]
+    load_lines = [f"{x['case']:<3} {x['P']:>8.2f} kip" + (f"   {x['label']}" if x.get("label") else "") for x in loads]
+    sheet = SimpleSheet(mark, "Steel Tension Rod", "Member", method, info, load_lines, [(cb.name, cb.source) for cb in combos], f"Calculation ({worst})", steps, rows,
+                        ["Axial tension only; the rod carries no compression and no bending.", "The slenderness recommendation of AISC 360-22 Sect. D1 does not apply to rods."],
+                        ["nuts, washers, clevises, turnbuckles and the parts the rod connects to", "upset or welded ends", "fatigue"])
+    sheet.blocks.append(dict(title="Loading", head="Loading", picture=("tension", dict(T=f"{T:.2f} kip ({worst})", shape=f"{rod_d:g} in. rod", L=length_ft))))
+    sheet.tension = dict(T=T, Ab=Ab, Pyc=Pyc, Rn=thr.Rn, Rc=thr.R_avail)
+    return sheet
