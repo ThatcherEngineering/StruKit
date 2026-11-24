@@ -158,3 +158,38 @@ def test_wind_drift_limit_on_the_frame():
     # the limit without its source is not used, and says so
     no = calc.model_frame_sway(dict(proj, model=dict(proj["model"], drift_ratio="240", drift_factor="0.6")), ms)
     assert no["drift_checks"] == [] and "needs its source" in " ".join(no["problems"])
+
+
+def test_pitched_bents_from_the_quick_start():
+    """Three pitched bents (ridge midway, 3 in 12): the two rafter halves are rigid at the ridge with no support there; the frame balances with
+    the pitched open-roof wind sheet's totals."""
+    from strukit import shapes, wind
+    proj = dict(name="t", number="t", date="2026-11-24", method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6S", source="t"), dict(expr="0.9D + 1.0W", source="t")],
+                combos_asd=[dict(expr="D + S", source="t")])
+    th = math.degrees(math.atan(3 / 12))
+    W = dict(kind="wind_free_roof", values=dict(mark="WO1", V="115", V_source="t", exposure="C", exposure_basis="t", h="14", roof="pitched (gable)", theta=f"{th:.4f}", L="22", width="41",
+             flow="clear", flow_basis="t", Kzt="1.0", Kzt_source="t", model_axis="Y"))
+    spec = dict(n="3", spacing="20", end_start="0.5", end_end="0.5", col_spacing="18", cant_low="2", cant_high="2", height="12", slope="3", roof="pitched", ridge="",
+                col_shape="HSS8X8X1/2", col_Fy="46", raf_shape="W12X26", raf_Fy="50", base="fixed", D="6", S="30", Lr="")
+    out = calc.bent_building(proj, [W], spec)
+    assert out["problems"] == [] and out["added"] == 3 * 4 and "ridge 9 ft from line A at 14.25 ft" in out["notes"][0]
+    ms = out["members"]
+    view = {i["mark"]: i for i in calc.model_view(out["project"], ms)["items"]}
+    assert view["R2A"]["b"][2] == pytest.approx(14.25, abs=1e-3) and view["R2B"]["a"][2] == pytest.approx(14.25, abs=1e-3)
+    assert view["C2A"]["b"][2] == pytest.approx(12.0, abs=1e-3) and view["C2B"]["b"][2] == pytest.approx(12.0, abs=1e-3) and view["R2B"]["b"][2] == pytest.approx(11.5, abs=1e-3)
+    run = calc.model_frame_sway(out["project"], ms)
+    assert run["problems"] == [] and not any("Taken as bearing" in n for n in run["notes"])
+    ws = calc.build("wind_free_roof", W["values"], proj)[0].free_roof
+    Ls = 22 / math.cos(math.atan(3 / 12))
+    dead = (6 * Ls * 41 + 3 * shapes.get("W12X26")["W"] * Ls + 6 * shapes.hss("HSS8X8X1/2")["W"] * 12) / 1000
+    drag = ws["factor"] * 6 * wind.other_cf("square", 12 / (8 / 12)) * (8 / 12) * 12 / 1000
+    for row in ws["totals"]["rows"]:
+        side = "in +Y" if row["gamma"] == 0 else "in -Y"
+        a = next(a for a in run["audit"] if a["run"] == f"0.9D + 1.0W, wind across the roof {side}, Case {row['case']}")
+        assert a["Rz"] == pytest.approx(0.9 * dead + row["V"] / 1000, abs=0.15)
+        travel = 1 if row["gamma"] == 0 else -1
+        net = travel * (row["H"] / 1000 + drag)                                  # the sheet's H is plus with the wind
+        assert -a["Ry"] == pytest.approx(net + (1 if net > 0 else -1) * 0.003 * 0.9 * dead, abs=0.05)
+    # the ridge moment is carried: the beam end at the ridge has moment in the gravity run
+    ends = next(b for b in run["beams"] if b["mark"] == "R2A")["ends"]["right"]
+    assert max(e["M"] for e in ends) > 12.0

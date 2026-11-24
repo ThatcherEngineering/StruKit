@@ -878,7 +878,9 @@ function modelCard(changed) {
   const bentCard = el("details", {}, el("summary", {}, "Start a building of bents (carport, pavilion, shed frame)"),
     el("div", { class: "help" }, "Two columns and a rafter at every bent, rigid at the column tops. The roof loads go on each rafter by its tributary width. Everything added can be edited on its own screen afterward."),
     el("div", { class: "grid" }, bentFields.map(([k, label]) => field({ key: k, label, type: "text", required: false }, BENT, () => {})),
-      field({ key: "base", label: "Column bases", type: "select", options: ["pinned", "fixed"], required: false }, BENT, () => {})),
+      field({ key: "base", label: "Column bases", type: "select", options: ["pinned", "fixed"], required: false }, BENT, () => {}),
+      field({ key: "roof", label: "Roof", type: "select", options: ["single slope or level", "pitched (ridge between the column lines)"], required: false }, BENT, () => {}),
+      field({ key: "ridge", label: "Pitched: ridge from column line A, ft (blank = midway)", type: "text", required: false }, BENT, () => {})),
     el("div", { class: "fillbar" }, bentBtn));
   drawPlan();
   return el("div", { class: "card" }, el("h2", {}, "Building Model"), bentCard,
