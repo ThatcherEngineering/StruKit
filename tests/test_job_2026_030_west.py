@@ -1,6 +1,7 @@
 """A project like job 2026-030, Wayfarer Vans West Carport (test material only; built by jobs/2026_030_build_west.py): eight two-column bents
-with rigid knees and fixed bases run as one 3D frame free to sway. Reference numbers are the sealed report's (his metal-building workbook):
-portal column H1-1 0.29, portal rafter H1-1 0.30 to 0.35."""
+with rigid knees and fixed bases run as one 3D frame free to sway. The job's sealed report (his metal-building workbook) is NOT a reference: Zach, 2026-11-24 02:10, "don't use those wayfarer calcs as gospel...
+it was done before I knew any better". The checks here are statics and equilibrium; the two ratios are pinned to StruKit's own values only so a
+change in the frame shows up."""
 import json, math, os
 import pytest
 from strukit.gui import calc
@@ -20,7 +21,7 @@ def test_west_carport_as_a_3d_frame():
     # (Case A downward pressures at this roof angle: +31.88 psf on the windward half, +7.97 psf on the leeward half)
     w = (1.2 * 6.1 + 1.6 * 36.12 + 0.5 * (31.883 + 7.971) / 2) * 20 * 21.75 / 1000
     assert col["C4A"]["P"] + col["C4B"]["P"] == pytest.approx(w + 1.2 * (35.3 * 21.75 + 2 * 45.8 * 11.77) / 1000, rel=0.04)
-    assert col["C4A"]["ratio"] == pytest.approx(0.29, abs=0.04) and bm["R4"]["ratio"] == pytest.approx(0.32, abs=0.05)      # the sealed report's portal checks
+    assert col["C4A"]["ratio"] == pytest.approx(0.28, abs=0.02) and bm["R4"]["ratio"] == pytest.approx(0.35, abs=0.02)      # StruKit's own values (regression pin, not a reference)
     assert all(c["ratio"] < 1 for c in col.values()) and all(b["ratio"] < 1 for b in bm.values())
 
 
