@@ -108,3 +108,14 @@ def test_six_or_more_bolts():
     assert std.single_plate["C"] == pytest.approx(bolts.group_coefficient(6, 3.0, 2.0)) and std.single_plate["C"] == pytest.approx(5.45, abs=0.03)   # Manual Table 7-6
     lim = lambda sh: [r for r in sh.rows if r.check.startswith("Plate or beam web thickness")][0].capacity
     assert lim(std) == pytest.approx(0.75 / 2 - 1 / 16) and lim(sl) == pytest.approx(0.75 / 2 + 1 / 16)
+
+
+def test_through_plate_DG24_example_5_3():
+    """AISC Design Guide 24 (2nd Ed.) Example 5.3: W21x44 to HSS10x4x1/4 (slender wall), 3/8 in. through plate, 3/16 in. fillets, a = 2 in., B = 4 in."""
+    from strukit.ws_steel_beam import Combo as C
+    a = list(ARGS); a[0] = "HSS10X4X1/4"; a[20] = 0.1875
+    for method, R, Vf, vy, vr in (("LRFD", 75.0, 113, 203, 188), ("ASD", 50.0, 75.0, 135, 125.5)):
+        cb = [C("1.2D + 1.6L", {"D": 1.2, "L": 1.6}, "test")] if method == "LRFD" else [C("D + L", {"D": 1.0, "L": 1.0}, "test")]
+        t = single_plate_sheet("SP", *a, LOADS, cb, method, through=4.0).single_plate["through"]
+        assert t["Vf"] == pytest.approx(Vf, rel=0.01) and t["vy"] == pytest.approx(vy, rel=0.01) and t["vr"] == pytest.approx(vr, rel=0.01)
+        assert t["weld"] == pytest.approx((1.392 if method == "LRFD" else 0.928) * 3 * 14.5 * 2, rel=0.005)      # Manual Eq. 8-2 form used in the example

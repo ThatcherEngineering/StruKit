@@ -2911,7 +2911,7 @@ def wind_free_hip_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, t
 
 
 def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, beam_source, tp, plate_Fy, plate_Fu, plate_source,
-                       d, group, threads, n, spacing, lev, leh, a, holes, weld, FEXX, loads, combos, method, support=None, cope=None):
+                       d, group, threads, n, spacing, lev, leh, a, holes, weld, FEXX, loads, combos, method, support=None, cope=None, through=None):
     """Single-plate (shear tab) connection of a wide-flange beam to an HSS column: conventional configuration of AISC Manual Part 10 as worked
     in AISC Design Guide 24 (2nd Ed.) Example 5.1.  One vertical row of 2 to 12 bolts (Manual Table 10-9, read from the 15th Edition page image:
     2 to 5 bolts e = a/2; 6 to 12 bolts e = a/2 with SSLT holes and e = a with STD holes).  holes: "STD" or "SSLT" (horizontal short slots) in the plate; standard holes in the beam web.  loads: dict(case, P) kips.
@@ -3013,7 +3013,18 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
              Ln("Block shear", Rbs, "kip", "Eq. J4-5, Ubs = 1.0", f"Agv = {Agv_b:.2f}, Anv = {Anv_b:.2f}, Ant = {Ant_b:.3f} in2; Rn = {Rbs_n:.0f} kip"),
              Ln("Weld each side, 5/8 tp", w_req, "in", "AISC Manual Part 10", f"provided {weld:g} in. fillet each side, develops the plate"),
              ]
-    if hss_col:
+    thr = None
+    if through and hss_col:
+        Bt = through
+        Vf = R * (Bt + a) / Bt
+        wl_n = 2 * 0.60 * FEXX * 0.7071 * weld * L
+        thr = dict(B=Bt, Vf=Vf, weld=av(wl_n, 0.75, 2.00), vy=av(0.60 * col_Fy * t * L * 2, 1.00, 1.50), vr=av(0.60 * col_Fu * t * L * 2, 0.75, 2.00))
+        steps.pop()                                             # the 5/8 tp weld line is for a plate welded to the wall face
+        steps += [Ln("Reaction at the near wall weld, R (B + a) / B", Vf, "kip", "AISC Design Guide 24 Sect. 5.2.7, Figure 5-8", f"plate through {Bt:g} in. of column; a = {a:g} in."),
+                  Ln("Weld at one wall, two lines", thr["weld"], "kip", "AISC 360-22 Eq. J2-4", f"{weld:g} in. fillets each side of the plate, l = {L:g} in.; Rn = {wl_n:.0f} kip; " + fac(0.75, 2.00)),
+                  Ln("Column walls, shear yielding", thr["vy"], "kip", "Eq. J4-3", f"0.60 Fy t l, two planes; t = {t:g} in.; " + fac(1.00, 1.50)),
+                  Ln("Column walls, shear rupture", thr["vr"], "kip", "Eq. J4-4", f"0.60 Fu t l, two planes; " + fac(0.75, 2.00))]
+    elif hss_col:
         steps += [Ln("Column wall to develop the weld, tmin", t_min, "in", "AISC Design Guide 24 Sect. 3.4, Tables 3-2 and 3-3",
                      f"D FEXX / min(30.2 Fy, 22.6 Fu), D = {D16:g} sixteenths; wall t = {t:g} in."),
                   Ln("Column wall shear yielding (punching), Fu t l^2 / 5", punch, "kip-in", "AISC Manual Eq. 10-10", f"against R a = {R:.1f} x {a:g} = {R * a:.0f} kip-in; " + fac(0.75, 2.00)),
@@ -3028,7 +3039,12 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
             Row("Plate block shear", worst, R, Rbs, "kip", "AISC 360-22 Eq. J4-5", ""),
             Row("Fillet weld size, each side", "", w_req, weld, "in", "AISC Manual Part 10", "5/8 of the plate thickness"),
             ]
-    if hss_col:
+    if thr:
+        rows = [x for x in rows if x.check != "Fillet weld size, each side"]
+        rows += [Row("Weld of the through plate at the near wall", worst, thr["Vf"], thr["weld"], "kip", "AISC Design Guide 24 Sect. 5.2.7; AISC 360-22 Eq. J2-4", f"{weld:g} in. fillets, two lines"),
+                 Row("Column walls, shear yielding", worst, R, thr["vy"], "kip", "AISC 360-22 Eq. J4-3", "two planes"),
+                 Row("Column walls, shear rupture", worst, R, thr["vr"], "kip", "AISC 360-22 Eq. J4-4", "two planes")]
+    elif hss_col:
         rows += [Row("Column wall thickness at the weld", "", t_min, t, "in", "AISC Design Guide 24 Table 3-3", ""),
                  Row("Column wall shear yielding (punching)", worst, R * a, punch, "kip-in", "AISC Manual Eq. 10-10", ""),
                  Row(f"Column wall slenderness {lam_txt}", "", lam, lam_r, "", lam_src, "")]
@@ -3090,13 +3106,14 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
                          "and in the beam web, bolts snug-tight or pretensioned bearing-type.",
                          ("The beam end reaction is vertical shear only. The beam is coped at the top flange; the reaction is taken at the face of the support and the beam is braced "
                           "at the end of the cope." if cope else "The beam end reaction is vertical shear only; the beam is not coped at the connection."),
+                         "The plate passes through slots in both walls of the column and is welded to each wall on both sides of the plate." if thr else
                          ("The plate is welded to the flat of the column wall" + (" (round column: plate fitted to the wall)" if rnd else "") + ", centred on the column.") if hss_col else
                          "The support is stiff enough to take the connection as a conventional single plate (a column flange, or a girder web with framing on both sides or checked separately)."],
                         ([] if (Tdim or cope) else ["plate length against the beam T dimension (half of T to T, AISC Manual Part 10)"]) + ["axial force or torsion in the beam", "a cope at the bottom flange" if cope else "coped beams",
                          "the column as a member" if hss_col else "the support member, and its web or flange for the beam reaction", "erection and fit-up"])
     sheet.blocks.append(dict(title="Connection Elevation", head="Connection Elevation",
                              picture=("single_plate", dict(n=n, s=spacing, lev=lev, leh=leh, a=a, L=L, tp=tp, weld=weld, column=shapes.normalize(column) if hss_col else support["name"].strip(), beam=shapes.normalize(beam), d=d))))
-    sheet.single_plate = dict(cope=cp, R=R, C=C, rn=rn, e=e, brg_p=brg_p, brg_w=brg_w, Vy=Vy, Vr=Vr, Rbs=Rbs, punch=punch, t_min=t_min, L=L, lam=lam, lam_r=lam_r)
+    sheet.single_plate = dict(through=thr, cope=cp, R=R, C=C, rn=rn, e=e, brg_p=brg_p, brg_w=brg_w, Vy=Vy, Vr=Vr, Rbs=Rbs, punch=punch, t_min=t_min, L=L, lam=lam, lam_r=lam_r)
     return sheet
 
 
@@ -3522,6 +3539,84 @@ def base_plate_uplift_sheet(mark, shape, col_Fy, N, B, t, Fy_plate, rod_d, rod_F
                         picture=None)
     sheet.blocks.append(dict(title="Base Plate Plan", head="Base Plate Plan", picture=("base_plate_uplift", dict(d=d, bf=bf, tf=tf, tw=tw, N=N, B=B, g=gauge, s=pitch, rod_d=rod_d, shape=shapes.normalize(shape)))))
     sheet.uplift = dict(r=r, rod=rod, a=a, beff=beff, M=M, Mc=Mc, t_req=t_req, rw=rw, weld=wr.R_avail, fweb=fweb, Fweb=Fweb)
+    return sheet
+
+
+def angle_strut_sheet(mark, shape, Fy, steel_source, length_ft, attached, loads, combos, method):
+    """Single angle in compression, loaded through one leg at each end (brace, kicker, web member of a planar truss): AISC 360-22 Sect. E5(a)
+    effective slenderness with Sect. E3. attached: "long" or "short" leg (either for an equal-leg angle). loads: dict(case, P) kips, compression."""
+    if not (steel_source or "").strip():
+        raise WorksheetError(f"{mark}: say where Fy comes from")
+    if not combos:
+        raise WorksheetError(f"{mark}: no load combinations given")
+    if not loads:
+        raise WorksheetError(f"{mark}: no loads given")
+    try:
+        a = shapes.angle(shape)
+    except Exception:
+        raise WorksheetError(f"{mark}: '{shape}' is not a single angle in the shapes table")
+    if length_ft is None or length_ft <= 0:
+        raise WorksheetError(f"{mark}: the length must be positive")
+    bl, bs, t = max(a["b"], a["d"]), min(a["b"], a["d"]), a["t"]
+    equal = abs(bl - bs) < 1e-9
+    if not equal and attached not in ("long", "short"):
+        raise WorksheetError(f"{mark}: say whether the long or the short leg is the attached leg")
+    E = 29000.0
+    lam, lam_r = bl / t, 0.45 * math.sqrt(E / Fy)
+    if lam > lam_r:
+        raise WorksheetError(f"{mark}: b / t = {lam:.1f} is over 0.45 (E / Fy)^0.5 = {lam_r:.1f}; angles with slender legs (AISC 360-22 Sect. E7) are not covered")
+    if not equal and bl / bs >= 1.7:
+        raise WorksheetError(f"{mark}: the leg ratio {bl / bs:.2f} is 1.7 or more; Sect. E5 does not apply and the angle is designed for axial load with bending (Chapter H)")
+    L = length_ft * 12
+    short = (not equal) and attached == "short"
+    ra = a["ry"] if (equal or not short) else a["rx"]          # axis parallel to the attached leg
+    if equal:
+        ra = a["rx"]
+    L_ra = L / ra
+    if L_ra <= 80:
+        Lc_r, eq = 72 + 0.75 * L_ra, "Eq. E5-1"
+    else:
+        Lc_r, eq = 32 + 1.25 * L_ra, "Eq. E5-2"
+    extra = ""
+    if short:
+        add = 4 * ((bl / bs) ** 2 - 1)
+        Lc_r = max(Lc_r + add, 0.95 * L / a["rz"])
+        extra = f"; + 4 [(bl / bs)^2 - 1] = {add:.1f}, not less than 0.95 L / rz = {0.95 * L / a['rz']:.1f}"
+    if Lc_r > 200:
+        raise WorksheetError(f"{mark}: the effective slenderness Lc / r = {Lc_r:.0f} is over 200; Sect. E5 does not apply")
+    Fe = math.pi ** 2 * E / Lc_r ** 2
+    if Lc_r <= 4.71 * math.sqrt(E / Fy):
+        Fn, eqn = 0.658 ** (Fy / Fe) * Fy, "Eq. E3-2"
+    else:
+        Fn, eqn = 0.877 * Fe, "Eq. E3-3"
+    Pn = Fn * a["A"]
+    lrfd = method == "LRFD"
+    Pc = 0.90 * Pn if lrfd else Pn / 1.67
+    totals = {cb.name: sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads) for cb in combos}
+    worst = max(totals, key=lambda k: totals[k])
+    P = totals[worst]
+    if P <= 0:
+        raise WorksheetError(f"{mark}: no combination puts the angle in compression; enter compression as positive")
+    Ln = footing_line
+    leg = "either leg" if equal else f"the {attached} leg"
+    steps = [Ln("Required compressive strength", P, "kip", worst, ""),
+             Ln("b / t", f"{lam:.1f}", "", "AISC 360-22 Table B4.1a Case 3", f"limit 0.45 (E / Fy)^0.5 = {lam_r:.1f}: no slender elements; under 0.71 (E / Fy)^0.5, flexural-torsional buckling not required (Sect. E5)"),
+             Ln("L / ra", f"{L_ra:.1f}", "", "Sect. E5", f"L = {L:g} in., ra = {ra:g} in. about the axis parallel to the attached leg"),
+             Ln("Effective slenderness Lc / r", f"{Lc_r:.1f}", "", f"AISC 360-22 {eq}", ("72 + 0.75 L / ra" if eq.endswith("1") else "32 + 1.25 L / ra") + extra),
+             Ln("Fe", Fe, "ksi", "Eq. E3-4", ""),
+             Ln("Fn", Fn, "ksi", eqn, f"4.71 (E / Fy)^0.5 = {4.71 * math.sqrt(E / Fy):.0f}"),
+             Ln("Pn = Fn Ag", Pn, "kip", "Eq. E3-1", f"Ag = {a['A']:g} in2; " + ("0.90 Pn" if lrfd else "Pn / 1.67") + f" = {Pc:.2f} kip")]
+    rows = [Row("Axial compression", worst, P, Pc, "kip", "AISC 360-22 Sect. E5(a), E3", f"Lc / r = {Lc_r:.0f}"),
+            Row("Effective slenderness", "", Lc_r, 200.0, "", "AISC 360-22 Sect. E5", "200 maximum")]
+    info = [("Angle", f"{a['label']}, Ag = {a['A']:g} in2, Fy = {Fy:g} ksi ({steel_source.strip()})"), ("Length", f"{length_ft:g} ft between the end connections"),
+            ("Ends", f"connected through {leg} at both ends, welded or with two or more bolts")]
+    load_lines = [f"{x['case']:<3} {x['P']:>8.2f} kip" + (f"   {x['label']}" if x.get("label") else "") for x in loads]
+    sheet = SimpleSheet(mark, "Single-Angle Compression Member", "Member", method, info, load_lines, [(cb.name, cb.source) for cb in combos], f"Calculation ({worst})", steps, rows,
+                        ["An individual member or a web member of a planar truss, loaded in compression through the same leg at both ends, with no load between the ends (AISC 360-22 Sect. E5(a)).",
+                         "The end connections are welded or have at least two bolts."],
+                        ["the end connections and the parts the angle connects to", "tension in the angle under load reversal (Steel Tension Member sheet)", "bending from transverse load or self-weight"])
+    sheet.blocks.append(dict(title="Loading", head="Loading", picture=("tension", dict(T=f"{P:.2f} kip ({worst})", shape=a["label"], L=length_ft, compression=True))))
+    sheet.strut = dict(P=P, L_ra=L_ra, Lc_r=Lc_r, Fe=Fe, Fn=Fn, Pn=Pn, Pc=Pc)
     return sheet
 
 

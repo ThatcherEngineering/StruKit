@@ -25,7 +25,7 @@ def tab(mark, beam, n, d, s, lev, tp, weld, col=None, girder=None, a=3.0, leh=1.
     if col and not through:
         v.update(HSS, column=col)
     elif col:
-        v.update(support_name=f"through plate in {col}", support_t={"HSS5X5X3/8": "0.349", "HSS6X6X1/2": "0.465"}[col], support_Fu="58")
+        v.update(HSS, column=col, through={"HSS5X5X3/8": "5", "HSS6X6X1/2": "6"}[col])
     else:
         v.update(support_name=f"{girder} web, full-depth stiffener plate", support_t=str(TW[girder]), support_Fu="65")
         # cope at the top flange: not dimensioned on the details. Taken as: depth = girder k rounded up to 1/4 in.; length = half the girder flange
@@ -82,6 +82,10 @@ M.append(("stair_stringer", dict(mark="West stair stringer, lower flight", shape
 # Guard, detail 47 and S0 (50 plf or 200 lb): post spacing is not on the drawings; run at 4 ft.
 M.append(("guard", dict(mark="Det 47: guard, posts at 4 ft", rail="PIPE1-1/4STD", rail_Fy="35", rail_Fy_source="ASTM A53 Grade B, sheet S0 Steel Notes", post="HSS1-1/2X1-1/2X1/4",
           post_Fy="46", post_Fy_source="ASTM A500 Grade B, sheet S0 Steel Notes", spacing="4", height="3.5", uniform="applies")))
+# Deck brace, details 21 and 22: L3x3x1/4 at 5 ft o.c. under the cantilevered deck edge (1 ft 10 in. overhang, 3 ft backspan).
+# Vertical load at the brace = 0.197 ksf x (1.83 + 1.5) ft x 5 ft, split 72 / 125; brace at about 45 degrees: x 1.414; length about 2.5 ft.
+M.append(("angle_strut", dict(mark="Det 21, 22: deck brace L3x3x1/4", shape="L3X3X1/4", Fy="36", steel_source="ASTM A36, sheet S0 Steel Notes", length="2.5", attached="",
+          loads=[dict(case="D", P="1.70", label="72 psf x 3.33 ft x 5 ft x 1.414"), dict(case="L", P="2.94", label="125 psf x 3.33 ft x 5 ft x 1.414")])))
 json.dump(dict(format="strukit-project", version=1, project=proj, members=[dict(kind=k, values=v) for k, v in M]), open("/home/claude/jobs/2026-001/2026-001-Connections.strukit", "w"), indent=1)
 if __name__ == "__main__":
     for k, v in M:

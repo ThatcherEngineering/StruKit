@@ -13,7 +13,7 @@ def test_shear_tabs():
         for x in r["rows"]:
             if x["unit"] == "kip" and x["status"] != "OK":
                 over[m["values"]["mark"].split(":")[0]] = (x["check"], round(x["capacity"], 1))
-    assert len(D["members"]) == 26
+    assert len(D["members"]) == 27
     # with reactions taken off the framing plan, the only strength row over is the three-bolt W14x30 tab under FloorBeamD.3's 34.6 kips
     assert over == {"W14x30 three-bolt tab under the FloorBeamD.3 reaction": ("Bolt shear with eccentricity", 29.6)}
 

@@ -235,9 +235,11 @@
       "label": "FloorBeamY.2"
      }
     ],
-    "support_name": "through plate in HSS5X5X3/8",
-    "support_t": "0.349",
-    "support_Fu": "58"
+    "col_Fy": "46",
+    "col_Fu": "58",
+    "col_source": "ASTM A500 Grade B, sheet S0 Steel Notes",
+    "column": "HSS5X5X3/8",
+    "through": "5"
    }
   },
   {
@@ -314,9 +316,11 @@
       "label": "upper bound; plan takedown gives about 17.3 kips on line M"
      }
     ],
-    "support_name": "through plate in HSS6X6X1/2",
-    "support_t": "0.465",
-    "support_Fu": "58"
+    "col_Fy": "46",
+    "col_Fu": "58",
+    "col_source": "ASTM A500 Grade B, sheet S0 Steel Notes",
+    "column": "HSS6X6X1/2",
+    "through": "6"
    }
   },
   {
@@ -353,9 +357,11 @@
       "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: line K girder, 19 ft 10 in. span, three pairs of W14x30"
      }
     ],
-    "support_name": "through plate in HSS6X6X1/2",
-    "support_t": "0.465",
-    "support_Fu": "58"
+    "col_Fy": "46",
+    "col_Fu": "58",
+    "col_source": "ASTM A500 Grade B, sheet S0 Steel Notes",
+    "column": "HSS6X6X1/2",
+    "through": "6"
    }
   },
   {
@@ -1078,6 +1084,29 @@
     "spacing": "4",
     "height": "3.5",
     "uniform": "applies"
+   }
+  },
+  {
+   "kind": "angle_strut",
+   "values": {
+    "mark": "Det 21, 22: deck brace L3x3x1/4",
+    "shape": "L3X3X1/4",
+    "Fy": "36",
+    "steel_source": "ASTM A36, sheet S0 Steel Notes",
+    "length": "2.5",
+    "attached": "",
+    "loads": [
+     {
+      "case": "D",
+      "P": "1.70",
+      "label": "72 psf x 3.33 ft x 5 ft x 1.414"
+     },
+     {
+      "case": "L",
+      "P": "2.94",
+      "label": "125 psf x 3.33 ft x 5 ft x 1.414"
+     }
+    ]
    }
   }
  ]
