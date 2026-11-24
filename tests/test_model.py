@@ -102,3 +102,37 @@ def test_wind_to_wall_lines():
     assert v["S-Roof"]["v_source"].startswith("sheet W1, level Roof, walls from 15 to 20 ft")
     for m in out["members"]:
         assert calc.results(m["kind"], m["values"], proj)["state"] == "done", m["values"]["mark"]
+
+
+def _box():
+    proj = dict(COMBOS, name="t", number="t", date="2026-11-23", model=dict(levels=[dict(name="Foundation", elev="0"), dict(name="Floor", elev="10"), dict(name="Roof", elev="20")],
+                                                                          grids_x=[], grids_y=[]))
+    W = dict(kind="wind_mwfrs", values=dict(mark="W1", V="115", V_source="t", exposure="C", exposure_basis="t", enclosure="enclosed", enclosure_basis="t", across="30", along="40",
+             roof="gable or flat", eave="20", h="20", theta="0", Kzt="1.0", Kzt_source="t"))
+    E = dict(kind="seismic_elf", values=dict(mark="EQ1", SDS="1.0", SD1="0.6", S1="0.6", TL="8", ground_source="t", risk="II", system="Bearing wall: light-frame (wood) walls sheathed with wood structural panels",
+             Ie="1.0", Ie_source="t", structure="all other structural systems", hn="20", rho="1.3", rho_source="t", levels=[dict(name="Roof", w="40", h="20"), dict(name="Floor", w="60", h="10")]))
+    ms = [W, E]
+    for lv in ("Roof", "Floor"):
+        ms += [_wall(f"S-{lv}", "12, 12", at_level=lv, at_x1="0", at_y1="0", at_x2="40", at_y2="0"), _wall(f"N-{lv}", "12, 12", at_level=lv, at_x1="0", at_y1="30", at_x2="40", at_y2="30"),
+               _wall(f"W-{lv}", "10, 10", at_level=lv, at_x1="0", at_y1="0", at_x2="0", at_y2="30"), _wall(f"E-{lv}", "10, 10", at_level=lv, at_x1="40", at_y1="0", at_x2="40", at_y2="30")]
+    return proj, ms, E
+
+
+def test_seismic_to_wall_lines_and_governing():
+    proj, ms, E = _box()
+    rows = {r["name"]: r["F"] * 1000 for r in calc.build("seismic_elf", E["values"], proj)[0].seismic["rows"]}
+    out = calc.lateral_wind(proj, ms, load="seismic")
+    assert out["problems"] == [], out["problems"]
+    L = {l["wall"]: l for l in out["lines"]}
+    assert L["S-Roof"]["V"] == pytest.approx(0.7 * 1.3 * rows["Roof"] / 2, rel=1e-6) and L["W-Roof"]["V"] == pytest.approx(L["S-Roof"]["V"])
+    assert L["S-Floor"]["V"] == pytest.approx(0.7 * 1.3 * (rows["Roof"] + rows["Floor"]) / 2, rel=1e-6)
+    v = {m["values"]["mark"]: m["values"] for m in out["members"]}
+    assert v["S-Floor"]["load"] == "seismic" and "story force at Floor" in v["S-Floor"]["v_source"] and "x 1.3 x 0.7" in v["S-Floor"]["v_source"]
+    gov = calc.lateral_governing(proj, ms)
+    w = {l["wall"]: l["V"] for l in calc.lateral_wind(proj, ms)["lines"]}
+    g = {m["values"]["mark"]: m["values"] for m in gov["members"] if m["kind"] == "shear_wall"}
+    for mark, val in g.items():
+        assert val["load"] == ("seismic" if 1.4 * L[mark]["V"] > w[mark] else "wind"), mark
+    assert sum(1 for l in gov["lines"] if l["governs"]) == 8 and len(gov["lines"]) == 16
+    bad = dict(proj, model=dict(proj["model"], levels=[dict(name="Foundation", elev="0"), dict(name="Second", elev="10"), dict(name="Roof", elev="20")]))
+    assert any("names must match" in p for p in calc.lateral_wind(bad, ms, load="seismic")["problems"])

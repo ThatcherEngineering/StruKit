@@ -2626,11 +2626,13 @@ def model_links(project, members):
     return out
 
 
-def lateral_wind(project, members, wind_mark=None):
+def lateral_wind(project, members, wind_mark=None, load="wind"):
     """Wind to the wall lines of the building model, flexible diaphragms: at each level the wind load per foot of building width (the main
     system wind sheet between mid-story heights, the larger of its two directions) goes to the placed shear walls parallel to the wind by
     tributary width between wall lines; each wall also takes the shear of the wall on the same line above it, and its chord force. Writes
-    the design shear, its source and the stacked chord force on each placed wall. Returns dict(members, lines, problems)."""
+    the design shear, its source and the stacked chord force on each placed wall. Returns dict(members, lines, problems).
+    load="seismic": the same distribution of the story forces of the project's Seismic Base Shear sheet (levels matched by name; the force
+    at a level spread evenly over the building width, x the redundancy factor, x 0.7 for an ASD project)."""
     import copy, math
     from .. import wind as _wind
     ms = copy.deepcopy(members or [])
@@ -2648,23 +2650,37 @@ def lateral_wind(project, members, wind_mark=None):
         return dict(members=members, lines=[], problems=problems or ["List at least two levels with elevations on the Project page"])
     if any(b[1] <= a[1] for a, b in zip(levels, levels[1:])):
         return dict(members=members, lines=[], problems=["The levels must be listed lowest first, each higher than the one before"])
-    winds = [m for m in ms if m.get("kind") == "wind_mwfrs" and (not wind_mark or (m.get("values") or {}).get("mark") == wind_mark)]
+    seis = load == "seismic"
+    kind_src = "seismic_elf" if seis else "wind_mwfrs"
+    winds = [m for m in ms if m.get("kind") == kind_src and (not wind_mark or (m.get("values") or {}).get("mark") == wind_mark)]
     if not winds:
-        return dict(members=members, lines=[], problems=["The project needs a Wind Pressures, Main System sheet"])
+        return dict(members=members, lines=[], problems=["The project needs a " + ("Seismic Base Shear and Story Forces sheet" if seis else "Wind Pressures, Main System sheet")])
     try:
-        ws, _, _ = build("wind_mwfrs", winds[0]["values"], project)
+        ws, _, _ = build(kind_src, winds[0]["values"], project)
     except Missing as e:
-        return dict(members=members, lines=[], problems=["The wind sheet is not complete: " + "; ".join(e.items)])
+        return dict(members=members, lines=[], problems=[("The seismic sheet" if seis else "The wind sheet") + " is not complete: " + "; ".join(e.items)])
     except Exception as e:
-        return dict(members=members, lines=[], problems=[f"The wind sheet stopped: {e}"])
-    wmark = winds[0]["values"].get("mark") or "wind"
-    cases = ws.wind["cases"]
-    top = max(max(r["top_w"], r["top_l"]) for r in cases)
-    base_el = levels[0][1]
-    if levels[-1][1] - base_el > top + 0.05:
-        problems.append(f"The top level is {levels[-1][1] - base_el:g} ft above the lowest; the wind sheet's walls are {top:g} ft high")
+        return dict(members=members, lines=[], problems=[("The seismic sheet" if seis else "The wind sheet") + f" stopped: {e}"])
+    wmark = winds[0]["values"].get("mark") or ("seismic" if seis else "wind")
     asd = (project or {}).get("method") == "ASD"
-    fac = 0.6 if asd else 1.0
+    base_el = levels[0][1]
+    if seis:
+        story = {str(r_["name"]).strip(): float(r_["F"]) * 1000.0 for r_ in ws.seismic["rows"]}
+        try:
+            rho = float(winds[0]["values"].get("rho") or 1.0)
+        except ValueError:
+            rho = 1.0
+        fac = (0.7 if asd else 1.0) * rho
+        cases, top = [], levels[-1][1] - base_el
+        for nm, _ in levels[1:]:
+            if nm not in story:
+                problems.append(f"Level {nm} is not a level of seismic sheet {wmark} (the names must match)")
+    else:
+        cases = ws.wind["cases"]
+        top = max(max(r["top_w"], r["top_l"]) for r in cases)
+        if levels[-1][1] - base_el > top + 0.05:
+            problems.append(f"The top level is {levels[-1][1] - base_el:g} ft above the lowest; the wind sheet's walls are {top:g} ft high")
+        fac = 0.6 if asd else 1.0
     placed = []
     for m in ms:
         if m.get("kind") not in MODEL_WALLS + TAKEDOWN_BEAMS + TAKEDOWN_POSTS:
@@ -2684,19 +2700,28 @@ def lateral_wind(project, members, wind_mark=None):
         z_lo = (levels[li - 1][1] + el) / 2 - base_el
         z_hi = top if li == len(levels) - 1 else (el + levels[li + 1][1]) / 2 - base_el
         z_hi = min(z_hi, top)
-        try:
-            w = max(_wind.line_load(r, z_lo, z_hi)["w"] for r in cases)
-        except Exception as e:
-            problems.append(f"Level {name}: {e}"); continue
+        if seis:
+            if name not in story:
+                continue
+            w = None
+        else:
+            try:
+                w = max(_wind.line_load(r, z_lo, z_hi)["w"] for r in cases)
+            except Exception as e:
+                problems.append(f"Level {name}: {e}"); continue
         here = [(m, pl) for m, pl in placed if pl["level"] == name]
         for axis, other, label in ((0, 1, "X"), (1, 0, "Y")):   # wind along `axis`; wall lines parallel to it sit at positions on the `other` axis
             ws_here = [(m, pl) for m, pl in here if m["kind"] in MODEL_WALLS and abs(pl["p2"][axis] - pl["p1"][axis]) >= abs(pl["p2"][other] - pl["p1"][other])]
             if not ws_here:
                 if any(m["kind"] in MODEL_WALLS for m, pl in here):
-                    problems.append(f"Level {name}: no placed wall runs in the {label} direction; wind in that direction is not distributed")
+                    problems.append(f"Level {name}: no placed wall runs in the {label} direction; the load in that direction is not distributed")
                 continue
             ext = [c for m, pl in here for c in (pl["p1"][other], (pl["p2"] or pl["p1"])[other])]
             lo, hi = min(ext), max(ext)
+            if seis:
+                if hi - lo < 1e-6:
+                    problems.append(f"Level {name}: the plan has no width across the {label} direction"); continue
+                w = story[name] / (hi - lo)                  # the story force spread evenly over the building width
             groups = []
             for m, pl in sorted(ws_here, key=lambda t: (t[1]["p1"][other] + t[1]["p2"][other]) / 2):
                 pos = (pl["p1"][other] + pl["p2"][other]) / 2
@@ -2705,7 +2730,7 @@ def lateral_wind(project, members, wind_mark=None):
                 else:
                     groups.append([pos, [(m, pl)]])
             if len(groups) < 2:
-                problems.append(f"Level {name}, wind in {label}: only one wall line; a flexible diaphragm needs a line each side (the whole load is put on that line)")
+                problems.append(f"Level {name}, load in {label}: only one wall line; a flexible diaphragm needs a line each side (the whole load is put on that line)")
             for gi, (pos, grp) in enumerate(groups):
                 a = lo if gi == 0 else (groups[gi - 1][0] + pos) / 2
                 b = hi if gi == len(groups) - 1 else (pos + groups[gi + 1][0]) / 2
@@ -2719,11 +2744,12 @@ def lateral_wind(project, members, wind_mark=None):
                     up = carry.get((axis, round(pos / MODEL_TOL), li + 1))
                     V_up = up[0] * share if up else 0.0
                     V = V_level * share + V_up
-                    src = (f"sheet {wmark}, level {name}, walls from {z_lo:g} to {z_hi:g} ft: {w:.1f} plf" + (" x 0.6" if asd else "") + f" x {trib:g} ft tributary"
+                    src = ((f"sheet {wmark}, story force at {name} {story[name]:,.0f} lb over {hi - lo:g} ft" + (f" x {rho:g}" if rho != 1 else "") + (" x 0.7" if asd else "")
+                            if seis else f"sheet {wmark}, level {name}, walls from {z_lo:g} to {z_hi:g} ft: {w:.1f} plf" + (" x 0.6" if asd else "")) + f" x {trib:g} ft tributary"
                            + (f" x {share:.2f} of the line" if share < 0.999 else "") + (f"; plus {V_up:,.0f} lb from {up[2]} above" if up else ""))
-                    v.update(V=str(round(V)), load="wind", v_source=src)
+                    v.update(V=str(round(V)), load="seismic" if seis else "wind", v_source=src)
                     if up and m["kind"] in ("shear_wall", "ftao_wall"):
-                        v.update(above_T=str(round(up[1])), above_source=f"largest chord force of shear wall {up[2]}, wind, {'ASD' if asd else 'LRFD'}")
+                        v.update(above_T=str(round(up[1])), above_source=f"largest chord force of shear wall {up[2]}, {'seismic' if seis else 'wind'}, {'ASD' if asd else 'LRFD'}")
                     elif m["kind"] in ("shear_wall", "ftao_wall"):
                         v.pop("above_T", None); v.pop("above_source", None)
                     T = None
@@ -2734,15 +2760,36 @@ def lateral_wind(project, members, wind_mark=None):
                         problems.append(f"{mark}: not complete: " + "; ".join(e.items))
                     except Exception as e:
                         problems.append(f"{mark}: {e}")
-                    lines.append(dict(level=name, wind=label, at=pos, wall=mark, trib=trib, V=V, from_above=V_up, T=T))
+                    lines.append(dict(level=name, wind=label, at=pos, wall=mark, trib=trib, V=V, from_above=V_up, T=T, load="seismic" if seis else "wind"))
                     key = (axis, round(pos / MODEL_TOL), li)
                     prev = carry.get(key)
                     carry[key] = ((prev[0] if prev else 0.0) + V, max(prev[1] if prev else 0.0, T or 0.0), mark)
             # a wall above with no wall line under it at this level
             for (ax, kpos, lv), val in list(carry.items()):
                 if ax == axis and lv == li + 1 and not any(round(g[0] / MODEL_TOL) == kpos for g in groups):
-                    problems.append(f"Level {name}, wind in {label}: no wall line under {val[2]} (its {val[0]:,.0f} lb is not carried down by this distribution)")
+                    problems.append(f"Level {name}, load in {label}: no wall line under {val[2]} (its {val[0]:,.0f} lb is not carried down by this distribution)")
     return dict(members=ms, lines=lines, problems=problems)
+
+
+def lateral_governing(project, members):
+    """Wind and seismic both sent to the wall lines; each wall keeps the one that uses more of it. A wall's wind capacity is 1.4 times its
+    seismic capacity (SDPWS-2021 4.1.4), so seismic governs where 1.4 x the seismic shear is more than the wind shear. Returns
+    dict(members, lines (both loads, the governing one marked), problems)."""
+    w, e = lateral_wind(project, members, load="wind"), lateral_wind(project, members, load="seismic")
+    if not w["lines"] or not e["lines"]:
+        one = w if w["lines"] else e
+        probs = w["problems"] + [p_ for p_ in e["problems"] if p_ not in w["problems"]]
+        return dict(members=one["members"], lines=[dict(l, governs=True) for l in one["lines"]], problems=probs)
+    Vw, Ve = {l["wall"]: l["V"] for l in w["lines"]}, {l["wall"]: l["V"] for l in e["lines"]}
+    out, lines = [], []
+    for mw, me in zip(w["members"], e["members"]):
+        mark = (mw.get("values") or {}).get("mark")
+        out.append(me if (mark in Ve and 1.4 * Ve[mark] > Vw.get(mark, 0.0)) else mw)
+    for l in w["lines"] + e["lines"]:
+        seis_gov = 1.4 * Ve.get(l["wall"], 0.0) > Vw.get(l["wall"], 0.0)
+        lines.append(dict(l, governs=(l["load"] == "seismic") == seis_gov))
+    lines.sort(key=lambda l: (l["wall"], l["load"]))
+    return dict(members=out, lines=lines, problems=w["problems"] + [p_ for p_ in e["problems"] if p_ not in w["problems"]])
 
 
 def model_plan(project, members):
