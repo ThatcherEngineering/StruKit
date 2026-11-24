@@ -62,6 +62,16 @@ FORMS = {
                 T("leaning", "Loads leaning on this column (cantilever only)", [CASE, F("P", "P", unit="kip")]),
                 T("drift", "Drift limits at the top (cantilever only)",
                   [F("label", "Name", "text"), F("expr", "Loads", "text"), F("ratio", "Height /"), F("source", "Source", "text")])]),
+    "hss_column": dict(
+        title="HSS or Pipe Column", code="AISC 360-22", mark="HC",
+        fields=[F("shape", "Section", "text", help="square, rectangular or round HSS, or pipe, by its Manual label: HSS6x6x1/4, HSS8x4x3/16, HSS5.563x0.258, Pipe 4 STD"),
+                F("Fy", "Fy", unit="ksi"), F("Fy_source", "Where Fy comes from", "text", help="for example: ASTM A500 Grade C"),
+                F("height", "Height", unit="ft"), F("Kx", "Kx"), F("Ky", "Ky"), F("k_source", "K comes from", "text"),
+                F("self_weight", "Add self-weight", "select", options=["yes", "no"])],
+        tables=[T("loads", "Axial loads", [CASE, F("P", "P", unit="kip"), F("label", "Note", "text", required=False)]),
+                T("moments", "Moments (first-order)", [CASE, F("Mx", "Mx", unit="kip-ft", required=False), F("My", "My", unit="kip-ft", required=False),
+                                                       F("label", "Note", "text", required=False)],
+                  help="Optional. The largest moment along the height for each load case, for example an eccentric beam reaction.")]),
     "footing_iso": dict(
         title="Isolated Footing", code="ACI 318-19", mark="F",
         fields=[F("B", "Width, x", unit="ft"), F("L", "Length, y", unit="ft"), F("h", "Thickness", unit="in"),
@@ -1752,6 +1762,18 @@ def build(kind, values, project):
         r.done()
         return ws_more.bolted_connection_sheet(mark, D, rn, nr, sp, rs, end, edge, sh, st, sw, Gs, Es, ss, mt, mw, Gm, Em, ms, sense, wt, sv, loads, cb,
                                                local=loc, grain=gr, perp=pp, lag=lagd, steel=stl), "simple", {}
+    if kind == "hss_column":
+        m = method(project, r.miss)
+        cb = combos(project, r.miss, m)
+        ld, mo = r.rows("loads"), r.rows("moments")
+        if not ld:
+            r.miss.append("No axial load is entered")
+        cases_used([x["case"] for x in ld] + [x["case"] for x in mo], cb, r.miss)
+        args = (r.text("shape"), r.num("Fy"), r.text("Fy_source"), r.num("height"), r.num("Kx"), r.num("Ky"), r.text("k_source"))
+        sw = yes(r.text("self_weight"))
+        r.done()
+        return ws_more.hss_column_sheet(mark, *args, [dict(case=x["case"], P=x["P"], label=x.get("label") or "") for x in ld],
+                                        [dict(case=x["case"], Mx=x.get("Mx"), My=x.get("My"), label=x.get("label") or "") for x in mo], bool(sw), cb, m), "simple", {}
     if kind == "guard":
         m = method(project, r.miss)
         uni = (r.text("uniform") or "") != "exception"
