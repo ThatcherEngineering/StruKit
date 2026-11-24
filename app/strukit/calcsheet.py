@@ -1458,6 +1458,8 @@ def _block_picture(c, top, pic):
         return _collector_picture(c, top - 6, d)
     if name == "rain":
         return _rain_picture(c, top - 6, d)
+    if name == "hss_column":
+        return _hss_column_picture(c, top - 6, d)
     if name == "guard":
         return _guard_picture(c, top - 6, d)
     if name == "topo":
@@ -1935,6 +1937,59 @@ def _guard_picture(c, top, d):
     memberart._dim_v(c, yb, yt, x0 - 46, f"h {h:g} ft", FR)
     _small(c, (LM + RM) / 2, yb - 28, "elevation, to scale; loads are applied one at a time, in the direction that governs")
     return yb - 34
+
+
+def _hss_section(c, cx, cy, box, d):
+    """Cut section of a round or rectangular HSS to scale in a box, wall drawn at its design
+    thickness (not less than a visible line), dimensioned. Returns the scale."""
+    rnd = d["kind"] == "round"
+    W, H = (d["OD"], d["OD"]) if rnd else (d["B"], d["H"])
+    s_ = box / max(W, H)
+    tw = max(d["t"] * s_, 1.6)
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+    if rnd:
+        c.setFillColorRGB(*memberart.STEEL_FILL); c.circle(cx, cy, W * s_ / 2, fill=1, stroke=1)
+        c.setFillColorRGB(1, 1, 1); c.circle(cx, cy, W * s_ / 2 - tw, fill=1, stroke=1)
+        memberart._dim_h(c, cx - W * s_ / 2, cx + W * s_ / 2, cy - H * s_ / 2 - 8, f"OD {W:g}", FR, ext_from=cy)
+    else:
+        r_o = min(1.5 * d["t"] * s_ + 0.6, W * s_ / 3)
+        c.setFillColorRGB(*memberart.STEEL_FILL); c.roundRect(cx - W * s_ / 2, cy - H * s_ / 2, W * s_, H * s_, r_o, fill=1, stroke=1)
+        c.setFillColorRGB(1, 1, 1); c.roundRect(cx - W * s_ / 2 + tw, cy - H * s_ / 2 + tw, W * s_ - 2 * tw, H * s_ - 2 * tw, max(r_o - tw, 0.5), fill=1, stroke=1)
+        memberart._dim_h(c, cx - W * s_ / 2, cx + W * s_ / 2, cy - H * s_ / 2 - 8, f"{W:g}", FR, ext_from=cy - H * s_ / 2)
+        memberart._dim_v(c, cy - H * s_ / 2, cy + H * s_ / 2, cx + W * s_ / 2 + 7, f"{H:g}", FR, ext_from=cx + W * s_ / 2)
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawCentredString(cx, cy - H * s_ / 2 - 26, f"t = {d['t']:g} (design)")
+    return s_
+
+
+def _hss_column_picture(c, top, d):
+    """Elevation of the column with its axial loads (and a moment mark where moments are
+    entered) and height dimension, beside the cut section to scale."""
+    hh = 96.0
+    cx = (LM + RM) / 2 - 90
+    yb = top - 34 - hh
+    wdt = 9.0
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(*memberart.STEEL_FILL); c.setLineWidth(0.6)
+    c.rect(cx - wdt / 2, yb, wdt, hh, fill=1, stroke=1)
+    c.setStrokeColorRGB(0.55, 0.60, 0.66); c.setLineWidth(0.3)
+    c.line(cx - wdt / 2 + 1.6, yb, cx - wdt / 2 + 1.6, yb + hh); c.line(cx + wdt / 2 - 1.6, yb, cx + wdt / 2 - 1.6, yb + hh)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.9); c.line(cx - 16, yb, cx + 16, yb)
+    c.setFillColorRGB(0.20, 0.22, 0.25)
+    for yy in (yb + hh, yb):                              # held sideways at both ends
+        p_ = c.beginPath(); p_.moveTo(cx - wdt / 2 - 1, yy - (0 if yy > yb else -0)); p_.lineTo(cx - wdt / 2 - 8, yy + 3.5); p_.lineTo(cx - wdt / 2 - 8, yy - 3.5); p_.close()
+        c.drawPath(p_, fill=1, stroke=0)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow_down(c, cx, yb + hh + 20, yb + hh + 2, head=3.2)
+    c.setFont(FR, 6.5)
+    for k, txt in enumerate(d.get("axial") or []):
+        c.drawString(cx + 6, yb + hh + 15 - 7.5 * k, txt)
+    if d.get("moment"):
+        c.setLineWidth(0.7); c.arc(cx + 10, yb + hh - 34, cx + 26, yb + hh - 18, startAng=-70, extent=250)
+        c.drawString(cx + 30, yb + hh - 29, "M")
+    memberart._dim_v(c, yb, yb + hh, cx - 34, f"{d['height']:g} ft", FR)
+    _sketch_title(c, cx + 120, top - 4, "SECTION")
+    _hss_section(c, cx + 150, yb + hh / 2 + 4, 62.0, d)
+    _small(c, (LM + RM) / 2, yb - 24, f"{d['shape']}; elevation schematic, section to scale, dimensions in inches")
+    return yb - 30
 
 
 def _rain_picture(c, top, d):

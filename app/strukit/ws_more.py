@@ -2253,3 +2253,117 @@ def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_sour
     sheet.blocks.append(dict(title="Guard Elevation", head="Guard Elevation", picture=("guard", dict(S=S, h=h, rail=rail, post=post, uniform=uniform))))
     sheet.guard = dict(cases=cases, Mr=Mr, Vr=Vr, Mp=Mpst, Vp=Vpst)
     return sheet
+
+
+def hss_column_sheet(mark, shape, Fy, Fy_source, height_ft, Kx, Ky, k_source, loads, moments, self_weight, combos, method):
+    """HSS or pipe column with its ends held against sidesway, AISC 360-22: compression (E3, E7),
+    bending about either axis (F7, F8) from first-order moments entered by load case, the B1
+    multiplier (App. 8.1.2, Cm = 1.0, Pe1 with EI and the full height) and Eq. H1-1.
+    loads: [dict(case, P kips, label)]; moments: [dict(case, Mx, My kip-ft, label)]."""
+    from . import hss, shapes, steel_beamcol
+    from .steel_beam import SteelInputError
+    for nm, v in (("where Fy comes from", Fy_source), ("where the K factors come from", k_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: say {nm}")
+    if not combos:
+        raise WorksheetError(f"{mark}: no load combinations given")
+    for nm, v in (("the height", height_ft), ("Kx", Kx), ("Ky", Ky), ("Fy", Fy)):
+        if v is None or v <= 0:
+            raise WorksheetError(f"{mark}: {nm} must be positive")
+    if not loads:
+        raise WorksheetError(f"{mark}: no axial load given")
+    L_in = height_ft * 12.0
+    try:
+        pr = shapes.hss(shape)
+        st = hss.member(pr, Fy, Kx * L_in, Ky * L_in, Lb=L_in, Lv=L_in)
+    except (shapes.ShapeError, hss.HSSError) as e:
+        raise WorksheetError(f"{mark}: {e}")
+    rnd = st["kind"] == "round"
+    loads = [dict(x) for x in loads]
+    if self_weight:
+        loads.append(dict(case="D", P=pr["W"] * height_ft / 1000.0, label=f"self-weight {pr['W']:g} lb/ft x {height_ft:g} ft"))
+    av = lambda Rn, kind: hss.available(Rn, kind, method)
+    Pc, Mcx, Mcy = av(st["comp"]["Pn"], "compression"), av(st["fx"]["Mn"], "flexure") / 12, av(st["fy"]["Mn"], "flexure") / 12
+    res = []
+    for cb in combos:
+        P = sum(cb.factors.get(str(x["case"]), 0.0) * x["P"] for x in loads)
+        Mx = sum(cb.factors.get(str(x["case"]), 0.0) * (x.get("Mx") or 0.0) for x in moments or [])
+        My = sum(cb.factors.get(str(x["case"]), 0.0) * (x.get("My") or 0.0) for x in moments or [])
+        if P < 0:
+            raise WorksheetError(f"{mark}: combination {cb.name} puts the column in tension ({P:.1f} kips); tension members are not built on this screen")
+        o = dict(cb=cb, P=P, Mx=Mx, My=My, B1x=1.0, B1y=1.0, Pe1x=None, Pe1y=None)
+        try:
+            if Mx:
+                o["B1x"], o["Pe1x"] = steel_beamcol.b1(P, pr["Ix"], L_in, method)
+            if My:
+                o["B1y"], o["Pe1y"] = steel_beamcol.b1(P, pr["Iy"], L_in, method)
+        except SteelInputError as e:
+            raise WorksheetError(f"{mark}: {str(e).replace('steel column: ', '')}")
+        o["Mrx"], o["Mry"] = o["B1x"] * abs(Mx), o["B1y"] * abs(My)
+        o["val"], o["eq"] = steel_beamcol.interaction(P, Pc, o["Mrx"], Mcx, o["Mry"], Mcy)
+        res.append(o)
+    ga = max(res, key=lambda o: o["P"])
+    gc = max(res, key=lambda o: o["val"])
+    has_m = any(o["Mx"] or o["My"] for o in res)
+    Ln = footing_line
+    c = st["comp"]
+    sym = (lambda n, k: f"{n} / 1.67") if method == "ASD" else (lambda n, k: f"0.90 {n}")
+    steps = [Ln("Fy", Fy, "ksi", "", Fy_source.strip()),
+             Ln("Lcx = Kx L, Lcy = Ky L", f"{Kx * height_ft:g} ft, {Ky * height_ft:g} ft", "", "AISC 360-22 Sect. E2", f"Kx = {Kx:g}, Ky = {Ky:g} ({k_source.strip()})")]
+    if rnd:
+        steps += [Ln("D/t", f"{pr['D_t']:g}", "", "Table B4.1a Case 9", f"nonslender limit 0.11 E/Fy = {c['lam_r']:.1f}"),
+                  Ln("Lc / r", c["Lc_r"], "", "Sect. E2", f"r = {pr['rx']:g} in")]
+    else:
+        steps += [Ln("b/t, h/t", f"{pr['b_t']:g}, {pr['h_t']:g}", "", "Table B4.1a Case 6", f"nonslender limit 1.40 (E/Fy)^0.5 = {c['lam_r']:.1f}"),
+                  Ln("Lcx / rx, Lcy / ry", f"{c['Lc_rx']:.1f}, {c['Lc_ry']:.1f}", "", "Sect. E2", f"rx = {pr['rx']:g} in, ry = {pr['ry']:g} in")]
+    steps += [Ln("Fe = pi^2 E / (Lc/r)^2", c["Fe"], "ksi", "Eq. E3-4", ""),
+              Ln("Fn" if not rnd and c["slender_walls"] else "Fcr", c["Fcr"], "ksi", f"Eq. {c['eq']}", "")]
+    if not rnd and c["slender_walls"]:
+        for w in c["walls"]:
+            if w["Fel"] is not None:
+                steps += [Ln(f"{w['name']}: Fel = (c2 lambda_r / lambda)^2 Fy", w["Fel"], "ksi", "Eq. E7-5", "c1 = 0.20, c2 = 1.38 (Table E7.1)"),
+                          Ln(f"{w['name']}: be", f"{w['effective']:.2f} in", "", "Eq. E7-3", f"of {w['width']:.2f} in")]
+            else:
+                steps.append(Ln(f"{w['name']}: be = b", f"{w['width']:.2f} in", "", "Eq. E7-2", ""))
+        steps += [Ln("Ae", f"{c['Ae']:.2f} in2", "", "Sect. E7", f"Ag = {pr['A']:g} in2"), Ln("Pn = Fn Ae", c["Pn"], "kip", "Eq. E7-1", "")]
+    else:
+        steps.append(Ln("Pn = Fcr Ag", c["Pn"], "kip", "Eq. E3-1", f"Ag = {pr['A']:g} in2"))
+    steps.append(Ln(sym("Pn", "c"), Pc, "kip", "Sect. E1", ""))
+    if has_m:
+        for ax, f_, Mc in (("x", st["fx"], Mcx), ("y", st["fy"], Mcy)):
+            if rnd and ax == "y":
+                continue
+            nm = "Mn" if rnd else f"Mn{ax}"
+            cls = f"{f_['cls']}" if rnd else f"flange {f_['flange']}, web {f_['web']}"
+            steps += [Ln(nm, f_["Mn"] / 12, "kip-ft", f"Eq. {f_['eq']}", cls + ("" if rnd else f"; governs: {f_['governs']}")),
+                      Ln(sym(nm, "b"), Mc, "kip-ft", "Sect. F1", "")]
+        o = gc
+        for ax in ("x", "y"):
+            if o["Pe1" + ax]:
+                steps += [Ln(f"Pe1{ax} = pi^2 E I{ax} / Lc1^2", o["Pe1" + ax], "kip", "Eq. A-8-5", f"Lc1 = {height_ft:g} ft"),
+                          Ln(f"B1{ax}", f"{o['B1' + ax]:.3f}", "", "Eq. A-8-3", "Cm = 1.0; alpha = " + ("1.6" if method == "ASD" else "1.0")),
+                          Ln(f"Mr{ax} = B1{ax} M{ax}", o["Mr" + ax], "kip-ft", "Eq. A-8-1", f"first-order {abs(o['M' + ax]):.2f} kip-ft")]
+        steps.append(Ln("Pr / Pc", f"{o['P'] / Pc:.3f}", "", "Sect. H1.1", f"Pr = {o['P']:.1f} kip"))
+    rows = [Row("Axial compression", ga["cb"].name, ga["P"], Pc, "kip", "AISC 360-22 Sect. E3" + (", E7" if not rnd and c["slender_walls"] else ""), "")]
+    if has_m:
+        rows.append(Row("Compression and bending", gc["cb"].name, gc["val"], 1.0, "", f"AISC 360-22 {gc['eq']}",
+                        f"Pr = {gc['P']:.1f} kip, Mrx = {gc['Mrx']:.2f} kip-ft" + (f", Mry = {gc['Mry']:.2f} kip-ft" if gc["Mry"] else "")))
+    load_lines = [f"{x['case']:<3} P {x['P']:>8.2f} kip" + (f"   {x['label']}" if x.get("label") else "") for x in loads]
+    load_lines += [f"{x['case']:<3} Mx {(x.get('Mx') or 0):>7.2f} kip-ft   My {(x.get('My') or 0):>7.2f} kip-ft" + (f"   {x['label']}" if x.get("label") else "") for x in moments or []]
+    info = [("Section", f"{shapes.normalize(shape)}, Fy = {Fy:g} ksi ({Fy_source.strip()})"),
+            ("Height", f"{height_ft:g} ft; Kx = {Kx:g}, Ky = {Ky:g} ({k_source.strip()})"),
+            ("Ends", "held against sidesway at both ends")]
+    assume = ["The ends of the column are held against sidesway; stability by the effective length method (AISC 360-22 App. 7.2)."]
+    if has_m:
+        assume += ["Moments are first-order values entered by load case; the larger moment along the height is used with Cm = 1.0 (App. 8.1.2).",
+                   "Unbraced over the full height for bending."]
+    sheet = SimpleSheet(mark, "HSS or Pipe Column", "Column", method, info, load_lines, [(cb.name, cb.source) for cb in combos],
+                        f"Governing Calculation ({gc['cb'].name})", steps, rows, assume,
+                        ["shear", "torsion", "connections at each end, the base plate and anchorage", "tension", "columns free to sway (cantilevers, moment frames)",
+                         "concentrated forces on the HSS wall (AISC 360-22 Ch. K)"])
+    sheet.blocks.append(dict(title="Column and Section", head="Column and Section",
+                             picture=("hss_column", dict(kind=st["kind"], OD=pr.get("OD"), H=pr.get("Ht"), B=pr.get("B"), t=pr["tdes"], height=height_ft,
+                                                         shape=shapes.normalize(shape), axial=[f"{x['case']} {x['P']:.1f} kip" for x in loads],
+                                                         moment=has_m))))
+    sheet.hss = dict(Pc=Pc, Mcx=Mcx, Mcy=Mcy, res=res, strength=st)
+    return sheet
