@@ -343,3 +343,60 @@ def perforated(panel, spacing, panel_type, G, h, length, openings, V, load, meth
     if d is not None:
         L.append(Line("deflection", d, "in", "SDPWS Eq. 4.3-1, 4.3.4.2", f"v = v_max, b = sum of b_i; Ga = {Ga:g} kips/in"))
     return Perforated(rows, A_wall, A_o, A_fhs, Co, sum_b, vn, cap, v_max, T, d, Ga, L)
+
+
+def ftao(panel, spacing, panel_type, G, h, L1, Lo, L2, ho, sill, V, load, method, holddown_inside=None, sides=1):
+    """Shear wall with one opening designed for force transfer around the opening (SDPWS-2021
+    4.3.2.2, 4.3.3.3), forces by the Diekmann technique as published by APA (Force Transfer
+    Around Openings design examples; Technical Note T555). L1, L2: wall piers each side of
+    the opening; Lo: opening width; ho: clear height of the opening; sill: height of the
+    sheathing below it (0 for a door), ft. V at the level of `method`. Blocked panels."""
+    key = panel_key(panel)
+    if spacing not in SPACINGS or (load, method) not in FACTORS or panel_type not in ("OSB", "plywood") or sides not in (1, 2):
+        raise ShearWallError("shear wall: check the nail spacing, the load, the method, the panel type and the number of sides")
+    if G is None or not 0.2 < G < 1.0:
+        raise ShearWallError("shear wall: the specific gravity of the framing is missing or out of range")
+    if min(h, L1, Lo, L2, ho) <= 0 or sill < 0:
+        raise ShearWallError("shear wall: the wall height, pier lengths and opening size must be positive")
+    ha = h - ho - sill
+    if ha <= 0:
+        raise ShearWallError("shear wall: the opening and the sheathing below it leave no sheathing above the opening")
+    if min(L1, L2) < 2.0 - 1e-9:
+        raise ShearWallError("shear wall: each wall pier of a force-transfer shear wall is at least 2 ft long (SDPWS 4.3.2.2)")
+    L = L1 + Lo + L2
+    if h / L > 3.5 + 1e-9:
+        raise ShearWallError("shear wall: the wall as a whole is over the 3.5 aspect ratio limit (SDPWS 4.3.3.3)")
+    piers = []
+    for b in (L1, L2):
+        r = ho / b
+        if r > 3.5 + 1e-9:
+            raise ShearWallError(f"shear wall: a {b:g} ft pier beside a {ho:g} ft high opening is over the 3.5 aspect ratio limit (SDPWS 4.3.3.3)")
+        piers.append((b, r, 2 * b / ho if r > 2 else 1.0))
+    vn_t, ga_osb, ga_ply = TABLE_4_3A[key][SPACINGS.index(spacing)]
+    sg = min(1.0, 1.0 - (0.5 - G))
+    nail = 1.0
+    if key[2] == "10d":
+        if holddown_inside is None:
+            raise ShearWallError("shear wall: with 10d nails, say whether the hold-down is on the inside face of the end post (Table 4.3A note 10)")
+        nail = 0.92 if holddown_inside else 1.0
+    txt, fac = FACTORS[(load, method)]
+    v_cap = vn_t * sg * nail * sides * fac
+    H = V * h / L                                   # hold-down force
+    vh = V / (L1 + L2)                              # piers beside the opening
+    vv = H / (ha + sill)                            # sheathing above and below the opening
+    F = vv * Lo                                     # boundary force above (and below) the opening
+    F1, F2 = F * L1 / (L1 + L2), F * L2 / (L1 + L2) # corner (strap) forces
+    vc1, vc2 = F1 / L1, F2 / L2                     # corner zones
+    red = min(p[2] for p in piers)
+    lines = [Line("vn", vn_t, "plf", "SDPWS Table 4.3A", f"{panel}, edge nails at {spacing} in"),
+             Line("specific gravity factor, 1 - (0.5 - G)", sg, "", "Table 4.3A note 3", f"G = {G:g}"),
+             Line("design unit shear capacity", v_cap, "plf", "SDPWS 4.1.4", f"{load}, {method}: nominal {txt}" + (", both sides" if sides == 2 else "")),
+             Line("hold-down force, H = V h / L", H, "lb", "statics", f"L = {L:g} ft"),
+             Line("unit shear in the piers beside the opening, V / (L1 + L2)", vh, "plf", "Diekmann technique (APA T555)", ""),
+             Line("unit shear above and below the opening, H / (ha + hb)", vv, "plf", "Diekmann technique (APA T555)", f"ha = {ha:g} ft above, hb = {sill:g} ft below"),
+             Line("boundary force at the opening, F = vv Lo", F, "lb", "Diekmann technique (APA T555)", ""),
+             Line("corner force F1 = F L1 / (L1 + L2)", F1, "lb", "Diekmann technique (APA T555)", f"pier {L1:g} ft"),
+             Line("corner force F2 = F L2 / (L1 + L2)", F2, "lb", "Diekmann technique (APA T555)", f"pier {L2:g} ft"),
+             Line("unit shear in the corner zones, F1 / L1 = F2 / L2", vc1, "plf", "Diekmann technique (APA T555)", "")]
+    return dict(h=h, L=L, L1=L1, Lo=Lo, L2=L2, ho=ho, sill=sill, ha=ha, H=H, vh=vh, vv=vv, F=F, F1=F1, F2=F2, vc=vc1, v_cap=v_cap, piers=piers,
+                reduction=red, v_max=max(vh, vv, vc1), lines=lines, design_text=txt)

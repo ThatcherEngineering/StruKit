@@ -555,6 +555,27 @@ FORMS = {
                 F("chord_E", "Deflection: end post E", unit="psi", required=False),
                 F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
         tables=[]),
+    "ftao_wall": dict(
+        title="Wood Shear Wall, Force Transfer Around an Opening", code="SDPWS-2021", mark="FT",
+        fields=[F("panel", "Sheathing and nails", "select", options=list(shearwall.PANELS), help="SDPWS Table 4.3A; blocked"),
+                F("spacing", "Edge nail spacing", "select", options=["6", "4", "3", "2"], unit="in"),
+                F("panel_type", "Panel", "select", options=["OSB", "plywood"]),
+                F("sides", "Panels on", "select", options=["one side", "both sides (same panels and nailing)"]),
+                F("G", "Framing specific gravity, G", help="0.50 for Douglas Fir-Larch; NDS Table 12.3.3A"), F("G_source", "Where G comes from", "text"),
+                F("h", "Wall height", unit="ft"), F("L1", "Pier at the left of the opening", unit="ft", help="2 ft minimum"),
+                F("Lo", "Opening width", unit="ft"), F("L2", "Pier at the right of the opening", unit="ft", help="2 ft minimum"),
+                F("ho", "Opening clear height", unit="ft"), F("sill", "Sheathing height below the opening", unit="ft", required=False, help="blank or 0 for a door"),
+                F("load", "Load", "select", options=["wind", "seismic"]), F("V", "Design shear on the wall", unit="lb", help="at the project's design method (ASD or LRFD)"),
+                F("v_source", "Where the shear comes from", "text"),
+                F("holddown", "10d nails: hold-down on the inside face of the end post", "select", options=["yes", "no"], required=False, help="Table 4.3A note 10"),
+                F("hd_model", "Hold-down", "select", options=holddowns.MODELS, required=False, help="Simpson Strong-Tie catalog C-C-2026; blank = hold-down not checked"),
+                F("hd_stem", "Strap tie: stem wall width", "select", options=["6", "8"], unit="in", required=False),
+                F("hd_position", "Strap tie: position on the wall", "select", options=holddowns.POSITIONS, required=False),
+                F("hd_cracked", "Strap tie: concrete", "select", options=["cracked", "uncracked"], required=False),
+                F("hd_sdc", "Strap tie, seismic: Seismic Design Category", "select", options=["A or B", "C to F"], required=False),
+                F("above_T", "Stacked walls: chord force from the wall above", unit="lb", required=False),
+                F("above_source", "Stacked walls: where that force comes from", "text", required=False)],
+        tables=[]),
     "perforated_wall": dict(
         title="Perforated Wood Shear Wall", code="SDPWS-2021", mark="PSW",
         fields=[F("panel", "Sheathing and nails", "select", options=list(shearwall.PANELS), help="SDPWS Table 4.3A; blocked"),
@@ -1675,6 +1696,18 @@ def build(kind, values, project):
         cases_used([x["case"] for x in loads], cb, r.miss)
         r.done()
         return ws_wood.decking(mark, sp, gr, int(th), span, lay_, bool(rep), bool(wet), loads, cb, dc), "simple", {}
+    if kind == "ftao_wall":
+        m = method(project, r.miss)
+        args = (r.text("panel"), r.text("spacing"), r.text("panel_type"), r.num("G"), r.text("G_source"), r.num("h"), r.num("L1"), r.num("Lo"), r.num("L2"), r.num("ho"),
+                r.num("sill", False) or 0.0, r.num("V"), r.text("load"))
+        vs, sd_ = r.text("v_source"), r.text("sides") or ""
+        hdm = r.text("hd_model", False)
+        r.done()
+        return ws_more.ftao_wall_sheet(mark, args[0], int(args[1]), *args[2:], m, vs, yes(r.text("holddown", False)), 2 if sd_.startswith("both") else 1,
+                                       above_T=r.num("above_T", False) or 0.0, above_source=r.text("above_source", False) or "",
+                                       holddown=(dict(model=hdm, stem=r.text("hd_stem", False), position=r.text("hd_position", False),
+                                                      cracked={"cracked": True, "uncracked": False}.get(r.text("hd_cracked", False)),
+                                                      sdc_high={"A or B": False, "C to F": True}.get(r.text("hd_sdc", False))) if hdm else None)), "simple", {}
     if kind == "perforated_wall":
         m = method(project, r.miss)
         panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")

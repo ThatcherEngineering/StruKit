@@ -386,8 +386,8 @@ function fillCollectorBar(m, changed) {
 }
 
 function fillAboveBar(m, changed) {
-  if (m.kind !== "shear_wall") return null;
-  const src = S.members.filter(x => x !== m && (x.kind === "shear_wall" || x.kind === "perforated_wall"));
+  if (m.kind !== "shear_wall" && m.kind !== "ftao_wall") return null;
+  const src = S.members.filter(x => x !== m && (x.kind === "shear_wall" || x.kind === "perforated_wall" || x.kind === "ftao_wall"));
   if (!src.length) return null;
   const pick = el("select", {}, el("option", { value: "" }, "choose the wall above"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
   const go = el("button", { class: "btn", onclick: async () => {
@@ -491,7 +491,7 @@ function fillWindBar(m, changed) {
 }
 
 function fillBar(m, changed) {
-  if (m.kind === "shear_wall" || m.kind === "perforated_wall") { const a = fillWallBar(m, changed), b = fillAboveBar(m, changed); return b ? el("div", {}, a, b) : a; }
+  if (m.kind === "shear_wall" || m.kind === "perforated_wall" || m.kind === "ftao_wall") { const a = fillWallBar(m, changed), b = fillAboveBar(m, changed); return b ? el("div", {}, a, b) : a; }
   if (m.kind === "diaphragm") return fillDiaphragmBar(m, changed);
   if (m.kind === "collector") return fillCollectorBar(m, changed);
   if (m.kind === "seismic_elf") return fillDriftBar(m, changed);
