@@ -86,6 +86,14 @@ FORMS = {
                 F("live_psf", "Uniform live load", unit="psf"), F("live_P", "Concentrated live load", unit="lb"),
                 F("live_source", "Where the live loads come from", "text", help="for example: ASCE/SEI 7-22 Table 4.3-1, stairs: 100 psf or 300 lb")],
         tables=[]),
+    "tension_member": dict(
+        title="Steel Tension Member", code="AISC 360-22", mark="TM",
+        fields=[F("shape", "Section", "shape_any", help="W, M, S, HP, C, MC, HSS or pipe"), F("Fy", "Fy", unit="ksi"), F("Fu", "Fu", unit="ksi"),
+                F("steel_source", "Where Fy and Fu come from", "text", help="for example: ASTM A992"), F("length", "Length", unit="ft"),
+                F("n_holes", "Bolt holes across the critical section", required=False, help="blank or 0 for a welded end"),
+                F("bolt_d", "Bolt diameter", unit="in", required=False), F("hole_t", "Thickness of the part the holes are in", unit="in", required=False),
+                F("U", "Shear lag factor, U", help="AISC 360-22 Table D3.1"), F("U_source", "Which case of Table D3.1", "text", help="for example: Case 2, 1 - x/l, x = 0.831 in., l = 9 in.")],
+        tables=[T("loads", "Axial tension", [CASE, F("P", "Tension", unit="kip"), F("label", "Note", "text", required=False)])]),
     "hss_column": dict(
         title="HSS or Pipe Column", code="AISC 360-22", mark="HC",
         fields=[F("shape", "Section", "hss_shape", help="square, rectangular or round HSS, or pipe, by its Manual label: HSS6x6x1/4, HSS8x4x3/16, HSS5.563x0.258, Pipe 4 STD"),
@@ -1339,6 +1347,16 @@ def build(kind, values, project):
         args = (r.num("t"), r.num("b"), r.num("d"), r.num("span"), r.num("Fy"), r.text("Fy_source"), r.num("live_psf"), r.num("live_P"), r.text("live_source"))
         r.done()
         return ws_more.stair_tread_sheet(mark, *args, m), "simple", {}
+    if kind == "tension_member":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No tension is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        args = (r.text("shape"), r.num("Fy"), r.num("Fu"), r.text("steel_source"), r.num("length"), r.num("n_holes", False), r.num("bolt_d", False), r.num("hole_t", False),
+                r.num("U"), r.text("U_source"))
+        r.done()
+        return ws_more.tension_member_sheet(mark, *args, loads, cb, m), "simple", {}
     if kind == "single_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]

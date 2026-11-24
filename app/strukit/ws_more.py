@@ -2947,3 +2947,77 @@ def stair_tread_sheet(mark, t, b, d, span_ft, Fy, Fy_source, live_psf, live_P, l
     sheet.blocks.append(dict(title="Tread Section", head="Tread Section", picture=("tread", dict(b=b, t=t, d=d, span=Ls))))
     sheet.tread = dict(pr, wD=wD, wL=wL, cases=cases, Mn=Mn, Mc=Mc, Vn=Vn, Vc=Vc)
     return sheet
+
+
+def tension_member_sheet(mark, shape, Fy, Fu, steel_source, length_ft, n_holes, bolt_d, hole_t, U, U_source, loads, combos, method):
+    """Steel tension member: AISC 360-22 Chapter D.  Tensile yielding on the gross area (Eq. D2-1) and tensile rupture on the effective net area
+    (Eq. D2-2, Ae = An U, Eq. D3-1).  n_holes: bolt holes across the critical section (0 for a welded end), each deducted as (dh + 1/16) x hole_t
+    (Sect. B4.3b, standard holes).  U: shear lag factor, typed with its Table D3.1 case.  loads: dict(case, P) kips, tension."""
+    from . import bolts
+    from .steel_beam import SteelInputError
+    for nm, v in (("where Fy and Fu come from", steel_source), ("which case of Table D3.1 gives U", U_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: say {nm}")
+    if not combos:
+        raise WorksheetError(f"{mark}: no load combinations given")
+    if not loads:
+        raise WorksheetError(f"{mark}: no loads given")
+    if not 0 < U <= 1.0:
+        raise WorksheetError(f"{mark}: U is between 0 and 1.0")
+    pr = None
+    for get in (shapes.get, shapes.channel, shapes.hss):
+        try:
+            pr = get(shape)
+            break
+        except Exception:
+            continue
+    if pr is None:
+        raise WorksheetError(f"{mark}: '{shape}' is not in the shapes tables (W, M, S, HP, C, MC, HSS, pipe)")
+    n_holes = int(n_holes or 0)
+    Ag = pr["A"]
+    ded, dh = 0.0, None
+    if n_holes:
+        if not bolt_d or not hole_t:
+            raise WorksheetError(f"{mark}: with bolt holes, give the bolt diameter and the thickness of the part the holes are in")
+        try:
+            dh = bolts.standard_hole(bolt_d)
+        except SteelInputError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        ded = n_holes * (dh + 1 / 16) * hole_t
+    An = Ag - ded
+    if An <= 0:
+        raise WorksheetError(f"{mark}: the holes leave no net area")
+    Ae = An * U
+    lrfd = method == "LRFD"
+    Py, Pr_ = Fy * Ag, Fu * Ae
+    Pyc, Prc = (0.90 * Py, 0.75 * Pr_) if lrfd else (Py / 1.67, Pr_ / 2.00)
+    totals = {cb.name: sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads) for cb in combos}
+    worst = max(totals, key=lambda k: totals[k])
+    T = totals[worst]
+    if T <= 0:
+        raise WorksheetError(f"{mark}: no combination puts the member in tension; enter tension as positive")
+    rmin = min(pr["rx"], pr["ry"])
+    slen = length_ft * 12 / rmin
+    Ln = footing_line
+    steps = [Ln("Required tensile strength", T, "kip", worst, ""),
+             Ln("Ag", Ag, "in2", shapes.SOURCE, shapes.normalize(shape)),
+             Ln("An = Ag - n (dh + 1/16) t", An, "in2", "AISC 360-22 Sect. B4.3b",
+                f"{n_holes} holes, dh = {dh:g} in. (Table J3.3, {bolt_d:g} in. bolts), t = {hole_t:g} in." if n_holes else "no holes at the critical section"),
+             Ln("U", f"{U:g}", "", "AISC 360-22 Table D3.1", U_source.strip()),
+             Ln("Ae = An U", Ae, "in2", "Eq. D3-1", ""),
+             Ln("Tensile yielding, Pn = Fy Ag", Py, "kip", "Eq. D2-1", f"Fy = {Fy:g} ksi; " + ("0.90 Pn" if lrfd else "Pn / 1.67") + f" = {Pyc:.1f} kip"),
+             Ln("Tensile rupture, Pn = Fu Ae", Pr_, "kip", "Eq. D2-2", f"Fu = {Fu:g} ksi; " + ("0.75 Pn" if lrfd else "Pn / 2.00") + f" = {Prc:.1f} kip"),
+             Ln("L / r", f"{slen:.0f}", "", "Sect. D1, User Note", f"L = {length_ft:g} ft, least r = {rmin:g} in.; preferably not over 300")]
+    rows = [Row("Tensile yielding", worst, T, Pyc, "kip", "AISC 360-22 Eq. D2-1", "gross section"),
+            Row("Tensile rupture", worst, T, Prc, "kip", "AISC 360-22 Eq. D2-2", "effective net section"),
+            Row("Slenderness L / r", "", slen, 300.0, "", "AISC 360-22 Sect. D1, User Note", "recommended limit")]
+    info = [("Section", f"{shapes.normalize(shape)}, Fy = {Fy:g} ksi, Fu = {Fu:g} ksi ({steel_source.strip()})"),
+            ("Length", f"{length_ft:g} ft"),
+            ("End connection", (f"bolted: {n_holes} holes across the section for {bolt_d:g} in. bolts in {hole_t:g} in. material" if n_holes else "welded, no holes") + f"; U = {U:g} ({U_source.strip()})")]
+    load_lines = [f"{x['case']:<3} {x['P']:>8.2f} kip" + (f"   {x['label']}" if x.get("label") else "") for x in loads]
+    sheet = SimpleSheet(mark, "Steel Tension Member", "Member", method, info, load_lines, [(cb.name, cb.source) for cb in combos], f"Calculation ({worst})", steps, rows,
+                        ["Axial tension only, applied through the centroid of the section.", "Standard bolt holes; holes in one line across the section (no stagger)."],
+                        ["the end connection: bolts, welds, block shear and the connected parts", "bending or compression in the member", "staggered holes (Sect. B4.3b)",
+                         "pin-connected members and eyebars (Sect. D5, D6)"])
+    sheet.tension = dict(T=T, Ag=Ag, An=An, Ae=Ae, Pyc=Pyc, Prc=Prc, slen=slen)
+    return sheet
