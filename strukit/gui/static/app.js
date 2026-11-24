@@ -646,6 +646,96 @@ function fillBar(m, changed) {
 }
 
 // ---------------------------------------------------------------- pages
+// ---------------------------------------------------------------- building model
+const MODEL_KINDS = () => TD_BEAMS.concat(TD_POSTS, ["footing_iso", "footing_cont"]);
+function modelOf() { const p = S.project; p.model = p.model || {}; ["levels", "grids_x", "grids_y"].forEach(k => { p.model[k] = p.model[k] || []; }); return p.model; }
+
+// Placement boxes on a member screen: where the member sits in the building model. Optional; a member works without them.
+function placementCard(m, changed) {
+  if (!MODEL_KINDS().includes(m.kind)) return null;
+  const mdl = modelOf(), levels = mdl.levels.map(l => (l.name || "").trim()).filter(Boolean);
+  if (!levels.length) return el("div", { class: "help" }, "To place this member in the building model, list the levels (and grids, if you use them) on the Project page first. Placement is optional.");
+  const beam = TD_BEAMS.includes(m.kind), post = TD_POSTS.includes(m.kind), ftg = !beam && !post;
+  const pos = "feet, or a grid name such as B or B+2.5";
+  const fs = [];
+  if (!ftg) fs.push({ key: "at_level", label: beam ? "Level it frames" : "Level at its top", type: "select", options: levels, required: false });
+  if (post) fs.push({ key: "at_base", label: "Level at its base", type: "select", options: levels, required: false, help: "blank = " + levels[0] });
+  fs.push({ key: "at_x1", label: beam ? "Left end, X" : "Position, X", type: "text", required: false, help: pos }, { key: "at_y1", label: beam ? "Left end, Y" : "Position, Y", type: "text", required: false, help: pos });
+  if (beam) fs.push({ key: "at_x2", label: "Right end, X", type: "text", required: false, help: pos }, { key: "at_y2", label: "Right end, Y", type: "text", required: false, help: pos });
+  return el("div", {}, el("h2", {}, "Place in the Building Model (optional)"), el("div", { class: "grid" }, fs.map(f => field(f, m.values, changed))),
+    el("div", { class: "help" }, "Placed members are linked by position with “Link members by position” on the Project page: what sits under each support takes its reaction."));
+}
+
+function planSvg(plan, level) {
+  const items = plan.items[level] || [];
+  const pts = [];
+  items.forEach(i => { pts.push(i.p1); if (i.p2) pts.push(i.p2); });
+  plan.grids_x.forEach(g => pts.push([g[1], null])); plan.grids_y.forEach(g => pts.push([null, g[1]]));
+  const xs = pts.map(p => p[0]).filter(v => v != null), ys = pts.map(p => p[1]).filter(v => v != null);
+  if (!xs.length || !ys.length) return el("div", { class: "small" }, "Nothing is placed on this level yet.");
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const w = (x1 - x0) || 10, h = (y1 - y0) || 10, pad = Math.max(w, h) * 0.14, fsz = Math.max(w, h) * 0.042;
+  const X = x => x - x0 + pad, Y = y => h - (y - y0) + pad;
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${w + 2 * pad} ${h + 2 * pad}`); svg.setAttribute("class", "frame");
+  const add = (tag, a, text) => { const n = document.createElementNS(ns, tag); for (const k in a) n.setAttribute(k, a[k]); if (text) n.textContent = text; svg.append(n); };
+  plan.grids_x.forEach(g => { add("line", { x1: X(g[1]), y1: pad * 0.45, x2: X(g[1]), y2: h + 1.55 * pad, stroke: "#9AA6B4", "stroke-width": fsz * 0.06, "stroke-dasharray": `${fsz * 0.5} ${fsz * 0.3}` });
+    add("text", { x: X(g[1]), y: pad * 0.36, "font-size": fsz, fill: "#3A4756", "text-anchor": "middle" }, g[0]); });
+  plan.grids_y.forEach(g => { add("line", { x1: pad * 0.45, y1: Y(g[1]), x2: w + 1.55 * pad, y2: Y(g[1]), stroke: "#9AA6B4", "stroke-width": fsz * 0.06, "stroke-dasharray": `${fsz * 0.5} ${fsz * 0.3}` });
+    add("text", { x: pad * 0.3, y: Y(g[1]) + fsz * 0.35, "font-size": fsz, fill: "#3A4756", "text-anchor": "middle" }, g[0]); });
+  items.forEach(i => {
+    if (i.p2) {
+      const joist = false;
+      add("line", { x1: X(i.p1[0]), y1: Y(i.p1[1]), x2: X(i.p2[0]), y2: Y(i.p2[1]), stroke: "#213651", "stroke-width": fsz * 0.28, "stroke-linecap": "round" });
+      const horiz = Math.abs(i.p2[0] - i.p1[0]) >= Math.abs(i.p2[1] - i.p1[1]);
+      add("text", { x: (X(i.p1[0]) + X(i.p2[0])) / 2 + (horiz ? 0 : fsz * 0.4), y: (Y(i.p1[1]) + Y(i.p2[1])) / 2 - (horiz ? fsz * 0.4 : 0), "font-size": fsz, fill: "#1B2430", "text-anchor": horiz ? "middle" : "start" }, i.mark);
+    } else if (i.kind === "footing_iso" || i.kind === "footing_cont") {
+      const s = fsz * 1.6;
+      add("rect", { x: X(i.p1[0]) - s, y: Y(i.p1[1]) - s, width: 2 * s, height: 2 * s, fill: "none", stroke: "#3A4756", "stroke-width": fsz * 0.1, "stroke-dasharray": `${fsz * 0.4} ${fsz * 0.25}` });
+      add("text", { x: X(i.p1[0]) + s * 1.15, y: Y(i.p1[1]) + s * 1.0, "font-size": fsz, fill: "#3A4756" }, i.mark);
+    } else {
+      const s = fsz * 0.55;
+      add("rect", { x: X(i.p1[0]) - s, y: Y(i.p1[1]) - s, width: 2 * s, height: 2 * s, fill: i.below ? "#1B2430" : "none", stroke: "#1B2430", "stroke-width": fsz * 0.14 });
+      add("text", { x: X(i.p1[0]) + s * 1.5, y: Y(i.p1[1]) - s * 1.3, "font-size": fsz, fill: "#1B2430" }, i.mark);
+    }
+  });
+  return svg;
+}
+
+let PLAN_LEVEL = null;
+function modelCard(changed) {
+  const mdl = modelOf();
+  const lv = { key: "levels", label: "Levels (lowest first)", columns: [{ key: "name", label: "Level", type: "text", required: true }, { key: "elev", label: "Elevation", unit: "ft", type: "text", required: false }] };
+  const gx = { key: "grids_x", label: "Grid lines across (X)", columns: [{ key: "name", label: "Grid", type: "text", required: true }, { key: "at", label: "At X", unit: "ft", type: "text", required: true }] };
+  const gy = { key: "grids_y", label: "Grid lines up the plan (Y)", columns: [{ key: "name", label: "Grid", type: "text", required: true }, { key: "at", label: "At Y", unit: "ft", type: "text", required: true }],
+    help: "Grids are optional: a member can be placed by feet alone. Where a grid has the same name as a number, the grid is meant." };
+  const holder = el("div", {});
+  const levels = mdl.levels.map(l => (l.name || "").trim()).filter(Boolean);
+  const pickLevel = el("select", {}, levels.map(l => el("option", { value: l }, l)));
+  if (PLAN_LEVEL && levels.includes(PLAN_LEVEL)) pickLevel.value = PLAN_LEVEL; else if (levels.length) pickLevel.value = levels[levels.length - 1];
+  const drawPlan = async () => {
+    holder.textContent = ""; PLAN_LEVEL = pickLevel.value;
+    if (!levels.length) return;
+    try { const plan = await post("/api/model_plan", { project: S.project, members: S.members }); holder.append(planSvg(plan, pickLevel.value)); } catch (e) { toast(e.message, 9000); }
+  };
+  pickLevel.addEventListener("change", drawPlan);
+  const link = el("button", { class: "btn", onclick: async () => {
+    let out;
+    try { out = await post("/api/model_links", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
+    out.members.forEach((nm, i) => { S.members[i].values = nm.values; });
+    LINKS = out.links; MODEL_NOTES = out.problems;
+    setDirty(); await recalcAll(); select("project");
+    toast(out.placed + " member" + (out.placed === 1 ? "" : "s") + " placed; " + out.made + " link" + (out.made === 1 ? "" : "s") + " made by position; the load path is recalculated." + (out.problems.length ? " See the notes under the plan." : ""), 12000);
+  } }, "Link members by position");
+  drawPlan();
+  return el("div", { class: "card" }, el("h2", {}, "Building Model"),
+    el("div", { class: "help" }, "Optional. List the levels and grids, place members on their own screens, then link them by position. Every member can still be checked alone."),
+    table(lv, mdl.levels, changed), table(gx, mdl.grids_x, changed), table(gy, mdl.grids_y, changed),
+    el("div", { class: "fillbar" }, link, levels.length ? el("span", { class: "small" }, " Plan of level ") : null, levels.length ? pickLevel : null),
+    holder, (MODEL_NOTES && MODEL_NOTES.length) ? el("ul", { class: "msg small" }, MODEL_NOTES.map(t => el("li", {}, t))) : null);
+}
+let MODEL_NOTES = [];
+
 function drawMain() {
   const main = $("#main"); main.textContent = "";
   if (sel === "project") return drawProject(main);
@@ -654,7 +744,7 @@ function drawMain() {
   const markF = { key: "mark", label: "Mark", type: "text", required: true };
   const left = el("div", { class: "card" }, fillBar(m, changed), el("h2", {}, form.title),
     el("div", { class: "grid" }, field(markF, m.values, () => { changed(); drawNav(); }), form.fields.map(f => field(f, m.values, changed))),
-    form.tables.map(t => { m.values[t.key] = m.values[t.key] || []; return table(t, m.values[t.key], changed); }));
+    form.tables.map(t => { m.values[t.key] = m.values[t.key] || []; return table(t, m.values[t.key], changed); }), placementCard(m, changed));
   main.append(el("div", { class: "head" }, el("h1", {}, (m.values.mark || "New member") + " · " + form.title), el("span", { class: "small" }, form.code), el("span", { class: "sp" }),
     el("button", { class: "btn pri", onclick: () => printSheet(m) }, "Print Calc Sheet"),
     el("button", { class: "btn", onclick: () => { const c = JSON.parse(JSON.stringify(m)); c.values.mark = ""; S.members.splice(sel + 1, 0, c); setDirty(); select(sel + 1); } }, "Duplicate"),
@@ -699,6 +789,7 @@ function drawProject(main) {
   main.append(el("div", { class: "head" }, el("h1", {}, "Project")),
     el("div", { class: "cols" }, el("div", { class: "card" }, el("h2", {}, "Job"), el("div", { class: "grid" }, fs.map(f => field(f, p, () => { changed(); drawFile(); }))),
       el("div", { class: "grid" }, seis.map(f => field(f, p, changed))), el("div", { class: "fillbar" }, fillBtns), table(asd, p.combos_asd, changed), table(lrfd, p.combos_lrfd, changed)),
+      modelCard(changed),
       el("div", { class: "card" }, el("h2", {}, "Members"),
         S.members.length ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Mark", "Type", "Result"].map(t => el("th", {}, t)))),
           el("tbody", {}, S.members.map((m, i) => { const r = R.get(m) || {}; const st = r.state === "done" ? r.status : r.state === "stopped" ? "Stopped" : "Not complete";

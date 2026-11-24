@@ -2453,6 +2453,202 @@ def takedown(project, members):
     return dict(members=ms, links=report, problems=problems)
 
 
+# ---------------------------------------------------------------- building model: levels, grids, members placed on them
+MODEL_TOL = 0.25                                             # ft: how close two members must be in plan to be taken as bearing on each other
+
+
+def _coord(text, grids):
+    """A plan coordinate typed as a number of feet, a grid name, or a grid name with an offset ("B+2.5", "3-1")."""
+    t = str(text if text is not None else "").strip()
+    if not t:
+        return None
+    names = {str(g.get("name") or "").strip().upper(): g for g in grids or []}
+    if t.upper() not in names:                               # a grid name wins over a number: with a grid named 2, "2" is the grid
+        try:
+            return float(t.replace(",", ""))
+        except ValueError:
+            pass
+    base, off = t.upper(), 0.0
+    for sign in ("+", "-"):
+        if sign in t[1:]:
+            i = t.rindex(sign)
+            try:
+                off = float(t[i:])
+                base = t[:i].strip().upper()
+            except ValueError:
+                pass
+            break
+    if base in names:
+        try:
+            return float(str(names[base].get("at")).replace(",", "")) + off
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def model_place(project, member):
+    """Where a member sits in the building model, from its placement boxes: dict(level, base, p1=(x, y), p2=(x, y) or None), or None
+    when it is not placed. Raises ValueError with a plain message when the boxes are filled but cannot be read."""
+    v = member.get("values") or {}
+    mdl = (project or {}).get("model") or {}
+    if not str(v.get("at_x1") or "").strip() and not str(v.get("at_level") or "").strip():
+        return None
+    mark = v.get("mark") or "(no mark)"
+    gx, gy = mdl.get("grids_x") or [], mdl.get("grids_y") or []
+    x1, y1 = _coord(v.get("at_x1"), gx), _coord(v.get("at_y1"), gy)
+    if x1 is None or y1 is None:
+        raise ValueError(f"{mark}: its position in plan cannot be read (type feet, or a grid name such as B or B+2.5)")
+    p2 = None
+    if member.get("kind") in TAKEDOWN_BEAMS:
+        x2, y2 = _coord(v.get("at_x2"), gx), _coord(v.get("at_y2"), gy)
+        if x2 is None or y2 is None:
+            raise ValueError(f"{mark}: a beam or joist needs the position of both ends")
+        p2 = (x2, y2)
+    levels = [str(l.get("name") or "").strip() for l in mdl.get("levels") or []]
+    lvl = str(v.get("at_level") or "").strip()
+    if member.get("kind") in TAKEDOWN_FOOTINGS:
+        lvl = lvl or (levels[0] if levels else "")
+    elif lvl not in levels:
+        raise ValueError(f"{mark}: its level, '{lvl}', is not in the list of levels on the Project page")
+    base = str(v.get("at_base") or "").strip() or (levels[0] if levels else "")
+    return dict(level=lvl, base=base, p1=(x1, y1), p2=p2)
+
+
+def model_links(project, members):
+    """Links the placed members by position: under each support of a placed beam or joist, and under the base of each placed post or column,
+    the member that carries it (a post or column whose top is at that level, else a beam passing under the point, else a footing) takes its
+    reaction. Earlier links made this way are replaced; links picked by hand are kept. Then the whole load path is recalculated. Returns
+    dict(members, links, problems, placed)."""
+    import copy, math
+    ms = copy.deepcopy(members or [])
+    problems, placed = [], []
+    for m in ms:
+        try:
+            pl = model_place(project, m)
+        except ValueError as e:
+            problems.append(str(e)); pl = None
+        if pl:
+            placed.append((m, pl))
+    # drop the links made by position last time
+    for m in ms:
+        v = m.get("values") or {}
+        if isinstance(v.get("link"), dict) and v["link"].get("auto"):
+            v.pop("link", None)
+        if isinstance(v.get("loads"), list):
+            v["loads"] = [r for r in v["loads"] if not (isinstance(r, dict) and isinstance(r.get("link"), dict) and r["link"].get("auto"))]
+    dist = lambda a, b: math.hypot(a[0] - b[0], a[1] - b[1])
+
+    def along(pt, pl):                                       # (distance from p1 along the member, offset from its line), or None when off its ends
+        (ax, ay), (bx, by) = pl["p1"], pl["p2"]
+        L = math.hypot(bx - ax, by - ay)
+        if L < 1e-6:
+            return None
+        t = ((pt[0] - ax) * (bx - ax) + (pt[1] - ay) * (by - ay)) / L
+        off = abs((pt[0] - ax) * (by - ay) - (pt[1] - ay) * (bx - ax)) / L
+        return (t, off) if -MODEL_TOL <= t <= L + MODEL_TOL else None
+
+    def carrier(pt, level, me, want_footing):
+        posts = [(m, pl) for m, pl in placed if m is not me and m["kind"] in TAKEDOWN_POSTS and pl["level"] == level and dist(pl["p1"], pt) <= MODEL_TOL]
+        if posts:
+            return posts, None
+        beams = []
+        for m, pl in placed:
+            if m is me or m["kind"] not in TAKEDOWN_BEAMS or pl["level"] != level:
+                continue
+            a = along(pt, pl)
+            if a and a[1] <= MODEL_TOL:
+                beams.append((m, pl, max(0.0, a[0])))
+        if beams:
+            return [(m, pl) for m, pl, _ in beams], [x for _, _, x in beams]
+        if want_footing:
+            foots = [(m, pl) for m, pl in placed if m["kind"] in TAKEDOWN_FOOTINGS and dist(pl["p1"], pt) <= MODEL_TOL]
+            if foots:
+                return foots, None
+        return [], None
+
+    made = 0
+    for m, pl in placed:
+        v, kind = m["values"], m["kind"]
+        mark = v.get("mark") or "(no mark)"
+        if not str(v.get("mark") or "").strip():
+            problems.append("A placed member has no mark; links are kept by mark"); continue
+        if kind in TAKEDOWN_FOOTINGS:
+            continue
+        if kind in TAKEDOWN_POSTS:
+            got = dict(supports=[dict(name="base", x_ft=0.0)])   # its loads come down the path; only the position is needed here
+        else:
+            got = case_reactions(kind, v, project)
+            if "error" in got:
+                problems.append(f"{mark}: {got['error']}"); continue
+        if kind in TAKEDOWN_BEAMS:
+            (ax, ay), (bx, by) = pl["p1"], pl["p2"]
+            Lm = math.hypot(bx - ax, by - ay)
+            Lt = max(s_["x_ft"] for s_ in got["supports"])
+            num = lambda key: float(str(v.get(key) or 0).replace(",", "") or 0)
+            Lt_all = Lt + num("oh_right")
+            if abs(Lm - Lt_all) > max(0.1, 0.005 * Lt_all):
+                problems.append(f"{mark}: placed {Lm:.2f} ft long in the model, but its spans add up to {Lt_all:.2f} ft"); continue
+            pts = [(s_, (ax + (bx - ax) * s_["x_ft"] / Lm, ay + (by - ay) * s_["x_ft"] / Lm), pl["level"], False) for s_ in got["supports"]]
+        else:
+            pts = [(got["supports"][0], pl["p1"], pl["base"], True)]
+        for sup, pt, level, want_footing in pts:
+            cs, xs = carrier(pt, level, m, want_footing)
+            if not cs:
+                problems.append(f"{mark}, {sup['name']}: nothing in the model is under it at ({pt[0]:g}, {pt[1]:g}) ft on level {level}")
+                continue
+            if len(cs) > 1:
+                problems.append(f"{mark}, {sup['name']}: more than one member is under it ({', '.join((c[0]['values'].get('mark') or '?') for c in cs)}); link it by hand")
+                continue
+            tgt = cs[0][0]
+            tv = tgt["values"]
+            lk = dict(src=v["mark"], support=sup["name"], count=1, auto=True)
+            if tgt["kind"] in TAKEDOWN_FOOTINGS:
+                tv["link"] = lk
+            else:
+                if tgt["kind"] in TAKEDOWN_BEAMS:
+                    sp = num("spacing") if kind in TAKEDOWN_BEAMS else 0
+                    if sp > 0:
+                        lk.update(mode="line", spacing_in=sp, x="")
+                    else:
+                        lk["x"] = f"{xs[0]:.3f}".rstrip("0").rstrip(".")
+                rows = tv.setdefault("loads", [])
+                # a link picked by hand for the same member and support stays; the positional one is not added on top of it
+                if any(isinstance(r, dict) and isinstance(r.get("link"), dict) and r["link"].get("src") == lk["src"] and r["link"].get("support") == lk["support"] for r in rows):
+                    continue
+                rows.append(dict(case="D", kind="point", mag="0", mag2="", x1=lk.get("x", ""), x2="", label="", link=lk) if tgt["kind"] in TAKEDOWN_BEAMS
+                            else dict(case="D", P="0", label="", link=lk))
+            made += 1
+    out = takedown(project, ms)
+    out["problems"] = problems + out["problems"]
+    out["placed"] = len(placed)
+    out["made"] = made
+    return out
+
+
+def model_plan(project, members):
+    """What the plan view draws: per level, the placed members as lines (beams, joists) and points (posts, columns, footings)."""
+    mdl = (project or {}).get("model") or {}
+    levels = [str(l.get("name") or "").strip() for l in mdl.get("levels") or [] if str(l.get("name") or "").strip()]
+    out = {lv: [] for lv in levels}
+    for m in members or []:
+        try:
+            pl = model_place(project, m)
+        except ValueError:
+            continue
+        if not pl:
+            continue
+        item = dict(mark=(m.get("values") or {}).get("mark") or "", kind=m.get("kind"), p1=pl["p1"], p2=pl["p2"])
+        if m.get("kind") in TAKEDOWN_FOOTINGS:
+            out.setdefault(pl["base"] if pl["base"] in out else (levels[0] if levels else ""), []).append(item)
+        else:
+            out.setdefault(pl["level"], []).append(item)
+            if m.get("kind") in TAKEDOWN_POSTS and pl["base"] in out and pl["base"] != pl["level"]:
+                out[pl["base"]].append(dict(item, below=True))
+    gx = [(str(g.get("name") or ""), _coord(g.get("at"), [])) for g in mdl.get("grids_x") or []]
+    gy = [(str(g.get("name") or ""), _coord(g.get("at"), [])) for g in mdl.get("grids_y") or []]
+    return dict(levels=levels, items=out, grids_x=[g for g in gx if g[1] is not None], grids_y=[g for g in gy if g[1] is not None])
+
+
 def _governing(out, project):
     """Adds to each support the largest downward reaction under the project's ASD combinations (service) and LRFD combinations (strength),
     each with the combination's name, for a footing."""
