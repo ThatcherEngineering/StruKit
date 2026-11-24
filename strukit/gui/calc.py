@@ -3773,6 +3773,83 @@ def sheet_pdf(kind, values, project, path):
     return path
 
 
+def frame_sheet(project, members):
+    """The 3D frame run (model_frame_sway) as a calc sheet for the package, or None when the project has no placed frame or the run did not finish."""
+    from ..ws_more import SimpleSheet
+    from ..ws_steel_beam import Row
+    try:
+        out = model_frame_sway(project, members)
+    except Exception:
+        return None
+    if not out.get("levels") or not (out.get("columns") or out.get("beams")):
+        return None
+    m_ = out["method"]
+    rows = []
+    for c in out["columns"]:
+        if c.get("ratio") is not None:
+            rows.append(Row(f"column {c['mark']}, axial + bending", c["ratio_combo"], c["ratio"], 1.0, "", f"AISC 360-22 Eq. {c['eq']}",
+                            f"Pr = {c['at']['P']:.1f} kip, Mrx = {c['at']['Mx'] / 12:.1f} kip-ft, Mry = {c['at']['My'] / 12:.1f} kip-ft; "
+                            f"Pc = {c['cap']['Pc']:.1f} kip, Mcx = {c['cap']['Mcx'] / 12:.1f} kip-ft, Mcy = {c['cap']['Mcy'] / 12:.1f} kip-ft"))
+    for b in out["beams"]:
+        if b.get("ratio") is not None:
+            rows.append(Row(f"beam {b['mark']}, axial + bending", b["ratio_combo"], b["ratio"], 1.0, "", f"AISC 360-22 Eq. {b['eq']}",
+                            f"Pr = {b['at']['P']:.1f} kip, Mr = {abs(b['at']['Mx']) / 12:.1f} kip-ft ({'top' if b['at']['Mx'] >= 0 else 'bottom'} flange in compression); "
+                            f"Pc = {b['cap']['Pc']:.1f} kip, Mc = {b['cap']['Mcx'] / 12:.1f} kip-ft"))
+            rows.append(Row(f"beam {b['mark']}, shear", b["M_combo"], b["v_ratio"], 1.0, "", "AISC 360-22 Ch. G", f"Vr = {b['V']:.1f} kip"))
+    for b in out.get("braces") or []:
+        if b.get("ratio") is not None:
+            rows.append(Row(f"brace {b['mark']}, axial", b["ratio_combo"], b["ratio"], 1.0, "", "AISC 360-22 Ch. D, E",
+                            f"tension {b['T']:.2f} kip, compression {b['C']:.2f} kip" + ("; tension only" if b["tension_only"] else "")))
+    blocks = [dict(title="Sway of Each Level (reduced stiffness, with notional loads)", lines=[f"{'Level':<10}{'Dir.':<6}{'First-order':>13}{'Second-order':>14}{'Ratio':>8}   Governing run"] + [
+        f"{l['level']:<10}{l['dir']:<6}{abs(l['first']):>10.3f} in{abs(l['second']):>11.3f} in{l['ratio']:>8.2f}   {l['combo']}" for l in out["levels"]])]
+    if out.get("elastic"):
+        blocks.append(dict(title="Drift under Each Lateral Load Alone (first-order, full stiffness, strength level)", lines=[
+            f"{'Load':<10}{'Level':<10}{'Dir.':<6}{'Displacement':>14}{'Story drift':>13}{'Height / drift':>16}"] + [
+            f"{e['load']:<10}{e['level']:<10}{e['dir']:<6}{e['disp']:>11.3f} in{e['story']:>10.3f} in{('H / ' + format(round(e['ratio']), ',')) if e['ratio'] else '':>16}" for e in out["elastic"]]))
+    blocks.append(dict(title=f"Column Base Forces, Largest of Each over Every Run ({m_} level)", lines=[
+        f"{'Column':<9}{'Compression':>13}{'Uplift':>10}{'M strong':>13}{'M weak':>13}"] + [
+        f"{c['mark']:<9}{c['P']:>9.1f} kip{c['T']:>6.1f} kip{c['Ms'] / 12:>7.1f} kip-ft{c['Mw'] / 12:>7.1f} kip-ft" for c in out["columns"]]))
+    blocks.append(dict(title=f"Sum of the Base Reactions in Each Run ({m_} level)", lines=[f"{'Rx':>9}{'Ry':>9}{'Rz':>9}   Run"] + [
+        f"{a['Rx']:>9.2f}{a['Ry']:>9.2f}{a['Rz']:>9.2f}   {a['run']}" for a in out["audit"]], after=["kips; Rz is upward on the structure."]))
+    cbs = combos(project or {}, [], m_)
+    n = lambda k, w: f"{len(out[k])} {w}" + ("" if len(out[k]) == 1 else "s")
+    sh = SimpleSheet("FR", "3D Frame Analysis", "Frame", m_,
+                     [("Members", ", ".join([n("columns", "column"), n("beams", "beam")] + ([n("braces", "brace")] if out.get("braces") else []))),
+                      ("Method", "Second-order elastic analysis, direct analysis method (AISC 360-22 Chapter C)"), ("Runs", str(out["runs"]))],
+                     ["Member loads, self-weight and positions are those on each member's own sheet."], [(cb.name, cb.source) for cb in cbs], "Analysis", [], rows,
+                     list(out["notes"]), ["Connections, base plates and foundations (their own sheets)", "Column shear and torsion", "Serviceability limits on drift (the designer's)"])
+    sh.blocks = blocks
+    sh.problems = out["problems"]
+    return sh
+
+
+def summary_sheet(project, entries):
+    """Design summary: every check of every sheet in the package in one table, with the governing check first. entries: (mark, title, sheet)."""
+    from ..ws_more import SimpleSheet
+    lines, worst, n_flag, n_all = [f"{'Mark':<7}{'Check':<46}{'D/C':>6}  {'Result':<6} Combination"], None, 0, 0
+    last = None
+    for mark, title, sheet in entries:
+        got = [(r.check, r.dc, r.status, r.combo) for r in getattr(sheet, "rows", [])] + \
+              [(f"member {r['member']} ({r['shape']})", r["ratio"], r["status"], r["combo"]) for r in getattr(sheet, "member_rows", [])]
+        if not got:
+            continue
+        if title != last:
+            lines.append(f"{title[:70]}"); last = title
+        for check, dc, status, combo in got:
+            n_all += 1; n_flag += status == "FLAG"
+            lines.append(f"{str(mark)[:6]:<7}{str(check)[:45]:<46}{dc:>6.2f}  {status:<6} {str(combo)[:48]}")
+            if worst is None or dc > worst[1]:
+                worst = (mark, dc, check)
+    if worst is None:
+        return None
+    m_ = (project or {}).get("method") or ""
+    sh = SimpleSheet("SUM", "Design Summary", "Summary", m_,
+                     [("Checks", f"{n_all}"), ("Status", "ALL CHECKS OK" if not n_flag else f"{n_flag} FLAGGED"), ("Governing", f"{worst[0]}: {worst[2]}, D/C {worst[1]:.2f}")],
+                     [], [], "", [], [], ["D/C is demand over capacity; 1.00 is the limit. Each check is worked on its own sheet."], [])
+    sh.blocks = [dict(title="Every Check", lines=lines)]
+    return sh
+
+
 def package_pdf(project, members, path, cover=True):
     """Every member that calculates, in the order listed, behind a cover sheet.
     Returns (sheets, skipped marks)."""
@@ -3800,6 +3877,16 @@ def package_pdf(project, members, path, cover=True):
         contents.append(dict(mark=mark, title=FORMS[m["kind"]]["title"], code=code, flags=flags))
     if not items:
         raise WorksheetError("no member is complete yet, so there is nothing to print")
+    fs = frame_sheet(project, members)
+    if fs is not None:
+        items.append(("simple", fs, "AISC 360-22", {}))
+        flags = sum(r.status == "FLAG" for r in fs.rows)
+        flag_lines += [f"FR: {r.check}, D/C {r.dc:.2f} ({r.combo})" for r in fs.rows if r.status == "FLAG"]
+        contents.append(dict(mark="FR", title="3D Frame Analysis", code="AISC 360-22", flags=flags))
+    sm = summary_sheet(project, [(c["mark"], c["title"], it[1]) for c, it in zip(contents, items)])
+    if sm is not None:
+        items.insert(0, ("simple", sm, "", {}))
+        contents.insert(0, dict(mark="SUM", title="Design Summary", code="", flags=0))
     cov = None
     if cover:
         def lst(key):

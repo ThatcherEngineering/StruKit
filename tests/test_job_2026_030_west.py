@@ -39,3 +39,17 @@ def test_west_carport_wind_cases_balance_with_the_wind_sheet():
         assert a["Rz"] == pytest.approx(0.9 * dead + row["V"] / 1000, abs=0.15)
         assert abs(a["Ry"]) == pytest.approx(abs(row["H"]) / 1000 + 0.003 * 0.9 * dead, abs=0.02)      # roof push plus the notional load (0.003 of the gravity load), the same way
     assert max(c["T"] for c in out["columns"]) > 1.0 and "Case B" in max(out["columns"], key=lambda c: c["T"])["T_combo"]
+
+
+def test_west_carport_package_has_the_summary_and_the_frame_sheet(tmp_path):
+    import subprocess
+    d = json.load(open(os.path.join(HERE, "data", "job_2026_030_west.strukit")))
+    proj, ms = d["project"], d["members"]
+    fs = calc.frame_sheet(proj, ms)
+    assert fs is not None and len(fs.rows) == 16 + 2 * 8 and fs.ok and len(fs.blocks) == 4
+    sm = calc.summary_sheet(proj, [("FR", "3D Frame Analysis", fs)])
+    assert dict(sm.info)["Status"] == "ALL CHECKS OK" and dict(sm.info)["Checks"] == "32" and "D/C" in dict(sm.info)["Governing"]
+    n, skipped = calc.package_pdf(proj, ms, str(tmp_path / "p.pdf"))
+    assert n >= 12
+    # a project with no building model prints no frame sheet, and still gets the summary
+    assert calc.frame_sheet(dict(proj, model={}), ms) is None
