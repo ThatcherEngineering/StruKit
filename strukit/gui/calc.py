@@ -545,10 +545,11 @@ FORMS = {
                 F("exposure", "Exposure category", "select", options=["B", "C", "D"], help="ASCE 7-22 Sect. 26.7"),
                 F("exposure_basis", "Basis of the exposure category", "text"),
                 F("h", "Mean roof height, h", unit="ft"),
-                F("roof", "Roof", "select", options=["monoslope", "pitched (gable)", "troughed"]),
+                F("roof", "Roof", "select", options=["monoslope", "pitched (gable)", "troughed", "hip"]),
+                F("theta_hip", "Hip roof: angle of the hip ends", unit="deg", required=False),
                 F("theta", "Roof angle", unit="deg", help="0 to 45 degrees"),
-                F("L", "Roof dimension L", unit="ft", help="horizontal: in the direction of the slope for a monoslope roof, edge to edge for a pitched or troughed roof"),
-                F("width", "Roof dimension perpendicular to L", unit="ft", required=False, help="optional: gives the total horizontal and vertical force on the roof and the minimum of Sect. 27.1.5"),
+                F("L", "Roof dimension L", unit="ft", help="horizontal: in the direction of the slope for a monoslope roof, edge to edge for a pitched or troughed roof, the shorter plan dimension for a hip roof"),
+                F("width", "Roof dimension perpendicular to L", unit="ft", required=False, help="gives the total horizontal and vertical force on the roof and the minimum of Sect. 27.1.5; needed for a hip roof (the longer plan dimension)"),
                 F("flow", "Wind flow under the roof", "select", options=["clear", "obstructed"], help="obstructed: more than 50 percent blockage below the roof (Figure 27.3-4 note 2)"),
                 F("flow_basis", "Basis of clear or obstructed flow", "text", help="for example: open below, picnic tables only"),
                 F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
@@ -1563,7 +1564,12 @@ def build(kind, values, project):
     if kind == "wind_free_roof":
         args = (r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h"), r.num("theta"), r.num("L"))
         fl, fb, kzt, ks_ = r.text("flow"), r.text("flow_basis"), r.num("Kzt"), r.text("Kzt_source")
-        rf = {"pitched (gable)": "pitched", "troughed": "troughed"}.get(r.text("roof") or "", "monoslope")
+        rf = {"pitched (gable)": "pitched", "troughed": "troughed", "hip": "hip"}.get(r.text("roof") or "", "monoslope")
+        if rf == "hip":
+            th2, ln = r.num("theta_hip", True, label="Hip roof: angle of the hip ends"), r.num("width", True, label="Roof dimension perpendicular to L (the building length)")
+            r.done()
+            return ws_more.wind_free_hip_sheet(mark, args[0], args[1], args[2], args[3], args[4], args[5], th2, args[6], ln, fl == "obstructed", fb, kzt, ks_,
+                                               r.num("elevation", False), r.text("elevation_source", False) or ""), "simple", {}
         r.done()
         return ws_more.wind_free_roof_sheet(mark, *args, fl == "obstructed", fb, kzt, ks_, r.num("elevation", False), r.text("elevation_source", False) or "", roof=rf, width=r.num("width", False)), "simple", {}
     if kind == "wind_pressure":

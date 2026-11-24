@@ -867,3 +867,32 @@ def free_roof_totals(r, theta, L, B, roof="monoslope"):
         out.append(dict(gamma=x["gamma"], case=x["case"], H=H, V=V))
     Af = B * (L * t if roof == "monoslope" else 0.5 * L * t)
     return dict(rows=out, Af=Af, F_min=MIN_OPEN * Af)
+
+
+def free_roof_hip(V, exposure, h, theta, theta_hip, L, length, obstructed=False, Kzt=1.0, Ke=1.0):
+    """Open building with a hip roof. ASCE/SEI 7-22 has no free-roof figure for hip roofs; by the
+    Thatcher Engineering standard of 2026-11-23 the roof is taken as a pitched free roof in each
+    direction: wind across the long side with the main slope theta and L (eave to eave), wind on
+    the hip end with the hip-end slope theta_hip and the building length. Where h over that
+    direction's dimension is outside Figure 27.3-5 (0.25 to 1.0) the zones of Figure 27.3-7 are
+    given for that direction instead. Returns dict(qh, Kh, factor, dirs=[...])."""
+    for nm, v in (("the mean roof height", h), ("the roof dimension L", L), ("the building length", length)):
+        if v is None or v <= 0:
+            raise WindError(f"wind: {nm} must be positive")
+    qh, kh = velocity_pressure(V, exposure, h, Kzt, Ke)
+    k = qh * KD_MWFRS * G_RIGID
+    col = 1 if obstructed else 0
+    dirs = []
+    for name, th, dim, other in (("across the long side", theta, L, length), ("on the hip end", theta_hip, length, L)):
+        hl = h / dim
+        d = dict(name=name, theta=th, L=dim, B=other, h_over_L=hl, across=None, parallel=None)
+        if 0.25 <= hl <= 1.0:
+            cn = free_pitched_cn(th, obstructed)
+            d["across"] = [dict(gamma=0, case=c, CNW=cn[c][0], CNL=cn[c][1], pW=k * cn[c][0], pL=k * cn[c][1]) for c in ("A", "B")]
+        else:
+            if th is None or th < 0 or th > 45:
+                raise WindError("wind: a free roof is between 0 and 45 degrees")
+            d["parallel"] = [dict(zone=z, x0=i * h, x1=(i + 1) * h if i < 2 else None, A=c_["A"][col], B=c_["B"][col], pA=k * c_["A"][col], pB=k * c_["B"][col])
+                             for i, (z, c_) in enumerate(FREE_PARALLEL)]
+        dirs.append(d)
+    return dict(qh=qh, Kh=kh, factor=k, dirs=dirs)

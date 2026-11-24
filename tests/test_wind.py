@@ -695,3 +695,29 @@ def test_troughed_free_roof(tmp_path):
     s, _, _ = calc.build("wind_free_roof", v, {})
     assert "Troughed" in s.title and s.free_roof["across"][0]["CNW"] == pytest.approx(-1.4)
     calcsheet.simple_pdf(s, str(tmp_path / "t.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+
+
+def test_open_hip_roof_by_the_thatcher_standard(tmp_path):
+    """Ruling of 2026-11-23 18:10 ("Yes add hip"): an open hip roof is a pitched free roof (Figure 27.3-5) in each direction.  30 ft by 50 ft, main slopes
+    18.75 degrees, hip ends 30 degrees, h = 14 ft: across the long side h/L = 0.47, CN as the pitched roof at 18.75 degrees; on the hip end h/L = 0.28,
+    CN at 30 degrees (A 1.3 / 0.3, B -0.1 / -0.9).  A 30 ft by 80 ft roof has h/L = 0.175 on the hip end: Figure 27.3-7 zones there."""
+    import math
+    from strukit import calcsheet
+    from strukit.gui import calc
+    r = wind.free_roof_hip(115, "C", 14.0, 18.75, 30.0, 30.0, 50.0)
+    g = wind.free_roof(115, "C", 14.0, 18.75, 30.0, roof="pitched")
+    d1, d2 = r["dirs"]
+    assert [(x["pW"], x["pL"]) for x in d1["across"]] == [(x["pW"], x["pL"]) for x in g["across"]]
+    assert [(x["CNW"], x["CNL"]) for x in d2["across"]] == [(1.3, 0.3), (-0.1, -0.9)] and d2["h_over_L"] == pytest.approx(0.28)
+    long = wind.free_roof_hip(115, "C", 14.0, 18.75, 30.0, 30.0, 80.0)["dirs"][1]
+    assert long["across"] is None and [z["A"] for z in long["parallel"]] == [-0.8, -0.6, -0.3]
+    v = dict(mark="WO4", V="115", V_source="Hazard Tool", exposure="C", exposure_basis="open terrain", h="14", roof="hip", theta="18.75", theta_hip="30", L="30", width="50",
+             flow="clear", flow_basis="open below", Kzt="1.0", Kzt_source="flat site", elevation="", elevation_source="")
+    s, kind, _ = calc.build("wind_free_roof", v, {})
+    k = r["factor"]
+    t2 = s.free_roof["dirs"][1]["totals"][0]
+    assert kind == "simple" and "Hip" in s.title and t2["H"] == pytest.approx((1.3 - 0.3) * k * 25 * 30 * math.tan(math.radians(30))) and t2["V"] == pytest.approx(1.6 * k * 750)
+    calcsheet.simple_pdf(s, str(tmp_path / "h.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    s2, _, _ = calc.build("wind_free_roof", dict(v, width="80"), {})
+    calcsheet.simple_pdf(s2, str(tmp_path / "h2.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    assert calc.results("wind_free_roof", dict(v, theta_hip=""), {})["state"] == "incomplete" and calc.results("wind_free_roof", dict(v, width=""), {})["state"] == "incomplete"
