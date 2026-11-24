@@ -2,14 +2,15 @@
 Tables 2 and 3) and ESR-1153 (Weyerhaeuser TJI joists, Table 3).
 Usage: python tools/parse_ijoists.py ESR-1336.txt ESR-1153.txt
 
-BCI: only the series in Boise's West Specifier Guide MTP-W7000 are kept (5000-1.7,
-6000-1.8, 6500-1.8, 60-2.0, 90-2.0); joist weights are from that guide. "" = not permitted
+BCI: the series in Boise's West Specifier Guide MTP-W7000 are kept (5000-1.7,
+6000-1.8, 6500-1.8, 60-2.0, 90-2.0), joist weights from that guide, plus 4500S-1.8 at 11-7/8 in. "" = not permitted
 without web stiffeners."""
 import csv, re, sys
 
 DEP = {"9 1/2": 9.5, "11 7/8": 11.875}
-KEEP = {"5000-1.7": "5000", "6000-1.8": "6000", "6500-1.8": "6500", "60-2.0": "60", "90-2.0": "90"}
-WEIGHT = {("5000-1.7", 9.5): 2.0, ("5000-1.7", 11.875): 2.3, ("5000-1.7", 14): 2.5,
+KEEP = {"4500S-1.8": "4500", "5000-1.7": "5000", "6000-1.8": "6000", "6500-1.8": "6500", "60-2.0": "60", "90-2.0": "90"}
+# 4500S-1.8 (added 2026-11-23 for job 2026-011): not in the West guide; the 11-7/8 in. weight is the one StruCalc printed in that job's sealed package
+WEIGHT = {("4500S-1.8", 11.875): 2.4, ("5000-1.7", 9.5): 2.0, ("5000-1.7", 11.875): 2.3, ("5000-1.7", 14): 2.5,
           ("6000-1.8", 9.5): 2.2, ("6000-1.8", 11.875): 2.5, ("6000-1.8", 14): 2.7, ("6000-1.8", 16): 2.9,
           ("6500-1.8", 9.5): 2.3, ("6500-1.8", 11.875): 2.6, ("6500-1.8", 14): 3.0, ("6500-1.8", 16): 3.2,
           ("60-2.0", 11.875): 2.9, ("60-2.0", 14): 3.1, ("60-2.0", 16): 3.3,

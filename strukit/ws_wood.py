@@ -177,8 +177,9 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
                 f"reaction {gr['R']:,.0f} lb on {b:g} in x {bearing_in:g} in; Cb = 1.0 at the end of a member")]
     if len(lay.spans) > 1:
         gi = max(out, key=lambda o: o["Rint"])
-        rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), Fperp_adj, "psi", rows[-1].source,
-                        f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = 1.0"))
+        Cb_int = (bearing_int_in + 0.375) / bearing_int_in if bearing_int_in < 6 else 1.0          # NDS 3.10.4, Eq. 3.10-2: bearing under 6 in., not at a member end
+        rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), Fperp_adj * Cb_int, "psi", rows[-1].source + ", 3.10.4",
+                        f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = (lb + 0.375) / lb = {Cb_int:.3f}"))
     for dc in defl_checks:
         wd = contbeam.deflection(lay, E_adj * I, by_case, dc.factors, dc.ratio, snow_partial)
         if wd is None:
@@ -265,7 +266,7 @@ def beam(mark, species, grade, size, plies, span_ft, loads, combos, defl_checks,
     if not lay.simple:
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
-                                    "uses Cb = 1.0.")
+                                    "under 6 in. long takes the bearing area factor Cb (NDS 3.10.4).")
         sheet.assumptions.insert(2, "Snow load (case S) is applied balanced and in the partial loadings of ASCE/SEI 7-22 Sect. 7.5.1."
                                  if snow_partial else
                                  "Partial snow loading is not applied: the member spans perpendicular to the ridge of a gable roof "
@@ -597,8 +598,9 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
                 f"reaction {gr['R']:,.0f} lb on {b:g} in x {bearing_in:g} in; Cb = 1.0 at the end of a member")]
     if len(lay.spans) > 1:
         gi = max(out, key=lambda o: o["Rint"])
-        rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), ref["Fc_perp"], "psi", rows[-1].source,
-                        f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = 1.0"))
+        Cb_int = (bearing_int_in + 0.375) / bearing_int_in if bearing_int_in < 6 else 1.0          # NDS 3.10.4, Eq. 3.10-2: bearing under 6 in., not at a member end
+        rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), ref["Fc_perp"] * Cb_int, "psi", rows[-1].source + ", 3.10.4",
+                        f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = (lb + 0.375) / lb = {Cb_int:.3f}"))
     for dc in defl_checks:
         wd = contbeam.deflection(lay, ref["E"] * I, by_case, dc.factors, dc.ratio, snow_partial)
         if wd is None:
@@ -686,7 +688,7 @@ def lvl_beam(mark, grade, thickness, depth, plies, span_ft, loads, combos, defl_
     if not lay.simple:
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
-                                    "uses Cb = 1.0.")
+                                    "under 6 in. long takes the bearing area factor Cb (NDS 3.10.4).")
         sheet.assumptions.insert(2, "Snow load (case S) is applied balanced and in the partial loadings of ASCE/SEI 7-22 Sect. 7.5.1."
                                  if snow_partial else
                                  "Partial snow loading is not applied: the member spans perpendicular to the ridge of a gable roof "
@@ -1027,8 +1029,9 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
                 f"reaction {gr['R']:,.0f} lb on {b:g} in x {bearing_in:g} in; Cb = 1.0 at the end of a member")]
     if len(lay.spans) > 1:
         gi = max(out, key=lambda o: o["Rint"])
-        rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), Fperp, "psi", rows[-1].source,
-                        f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = 1.0"))
+        Cb_int = (bearing_int_in + 0.375) / bearing_int_in if bearing_int_in < 6 else 1.0          # NDS 3.10.4, Eq. 3.10-2: bearing under 6 in., not at a member end
+        rows.append(Row("bearing at interior support", gi["cb"].name, gi["Rint"] / (b * bearing_int_in), Fperp * Cb_int, "psi", rows[-1].source + ", 3.10.4",
+                        f"reaction {gi['Rint']:,.0f} lb on {b:g} in x {bearing_int_in:g} in; Cb = (lb + 0.375) / lb = {Cb_int:.3f}"))
     for dc in defl_checks:
         wd = contbeam.deflection(lay, E_adj * I, by_case, dc.factors, dc.ratio, snow_partial)
         if wd is None:
@@ -1108,7 +1111,7 @@ def glulam_beam(mark, stress_class, southern_pine, b, d, span_ft, loads, combos,
     if not lay.simple:
         sheet.assumptions.insert(1, "Live load (cases L and Lr) is placed on every combination of whole spans and overhangs, and each "
                                     "check uses the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3). Bearing at interior supports "
-                                    "uses Cb = 1.0.")
+                                    "under 6 in. long takes the bearing area factor Cb (NDS 3.10.4).")
         sheet.assumptions.insert(2, "Snow load (case S) is applied balanced and in the partial loadings of ASCE/SEI 7-22 Sect. 7.5.1."
                                  if snow_partial else
                                  "Partial snow loading is not applied: the member spans perpendicular to the ridge of a gable roof "

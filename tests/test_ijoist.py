@@ -35,7 +35,7 @@ def test_bci_data_matches_the_boise_guide():
             j = ij.joist(f"BCI {ser}", d)
             assert (j["M"], j["EI"] / 1e6, j["K"] / 1e6, j["V"], j["Re_short"], j["Re_short_ws"], j["Re_35"], j["Re_35_ws"]) == g, (ser, d)
             n += 1
-    assert n == 19 and sum(1 for k in ij.JOISTS if k[0] == "BCI") == 19
+    assert n == 19 and sum(1 for k in ij.JOISTS if k[0] == "BCI") == 20       # 19 in the Boise West guide, plus 4500S-1.8 x 11-7/8 (ESR-1336 only)
 
 
 def test_tji_data():
@@ -50,7 +50,10 @@ def test_tji_data():
     with pytest.raises(ij.IJoistError, match="web stiffeners"):
         ij.end_reaction(j, 3.5, False)
     assert ij.end_reaction(ij.joist("TJI 210", 11.875), 2.625, False)[0] == pytest.approx((1005 + 1460) / 2)      # note 4
-    assert ij.end_reaction(ij.joist("BCI 6000-1.8", 11.875), 2.5, False)[0] == 1175
+    assert ij.end_reaction(ij.joist("BCI 6000-1.8", 11.875), 1.5, False)[0] == 1175
+    assert ij.end_reaction(ij.joist("BCI 6000-1.8", 11.875), 2.5, False)[0] == pytest.approx(1175 + (1425 - 1175) / 2)        # ESR-1336 Sect. 4.2: interpolation permitted
+    # job 2026-011 Floor Joist: BCI 4500S-1.8 x 11-7/8 on 3 in.: StruCalc's bearing strength 1306.3 lb
+    assert ij.end_reaction(ij.joist("BCI 4500S-1.8", 11.875), 3.0, False)[0] == pytest.approx(1306.25)
 
 
 def _live_at_l480(span):

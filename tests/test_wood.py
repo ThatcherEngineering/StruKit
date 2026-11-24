@@ -490,3 +490,20 @@ def test_mixed_southern_pine_table_4b(tmp_path):
     s, _, _ = calc.build("wood_beam", f, proj)
     assert next(x for x in s.rows if x.check == "bending").capacity == pytest.approx(1380.0) and "Mixed Southern Pine" in dict(s.info)["Member"]
     calcsheet.simple_pdf(s, str(tmp_path / "m.pdf"), "Job", "2018 NDS", "Nov 23, 2026")
+
+
+def test_bearing_area_factor_at_interior_supports_and_loads_snapped_to_the_beam_end():
+    """NDS 3.10.4, Eq. 3.10-2: Cb = (lb + 0.375) / lb for a bearing under 6 in. long that is not at a member end: 3 in. -> 1.125 (Table 3.10.4 lists 1.13),
+    6 in. -> 1.0.  Job 2026-011 Floor Beam A: (2) 1.75 x 11.875 2.1E 2800 over three 9.0833 ft spans with loads typed to 27.25 ft (0.0012 in. past the end):
+    StruCalc's interior bearing strength is 843.8 psi = 750 x 1.125, and with every span loaded its interior bearing stress is 719.1 psi."""
+    from strukit.gui import calc
+    u = lambda case, mag, x1="", x2="": dict(case=case, kind="uniform", mag=str(mag), mag2="", x1=str(x1), x2=str(x2), label="")
+    v = dict(mark="FBA", grade="2.1E 2800", thickness="1.75", depth="11.875", plies="2", span="9.0833", more_spans="9.0833, 9.0833", lu_neg="9.0833", bearing="3", bearing_int="3",
+             snow_partial="apply", bracing="supported throughout", repetitive="no", unit_weight="",
+             loads=[u("D", 582.5, 0, 19.2917), u("D", 425, 19.2917, 27.25), u("D", 145.6, 0, 19.2917), u("D", 106.25, 19.2917, 27.25), u("D", 10.68)], defl=[])
+    s, _, _ = calc.build("lvl_beam", v, dict(method="ASD", combos_asd=[dict(expr="D", source="test combination")]))
+    r = {x.check: x for x in s.rows}
+    assert r["bearing at interior support"].capacity == pytest.approx(843.75) and r["bearing at interior support"].demand == pytest.approx(719.1, abs=0.3)
+    assert r["bearing at support"].capacity == 750.0
+    s6, _, _ = calc.build("lvl_beam", dict(v, bearing_int="6"), dict(method="ASD", combos_asd=[dict(expr="D", source="test combination")]))
+    assert {x.check: x for x in s6.rows}["bearing at interior support"].capacity == 750.0
