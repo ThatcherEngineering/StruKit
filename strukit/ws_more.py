@@ -611,6 +611,64 @@ def perforated_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, leng
     return sheet
 
 
+def ftao_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, L1, Lo, L2, ho, sill, V, load, method, v_source, holddown_inside=None, sides=1,
+                    above_T=0.0, above_source="", holddown=None):
+    """Wood shear wall with one opening, designed for force transfer around the opening (see shearwall.ftao)."""
+    for nm, v in (("the source of the framing specific gravity", G_source), ("the source of the design shear", v_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if V is None or V <= 0:
+        raise WorksheetError(f"{mark}: the design shear must be a positive number")
+    if above_T and not (above_source or "").strip():
+        raise WorksheetError(f"{mark}: where the chord force from the wall above comes from is blank")
+    try:
+        w = shearwall.ftao(panel, spacing, panel_type, G, h, L1, Lo, L2, ho, sill or 0.0, V, load, method, holddown_inside, sides)
+    except shearwall.ShearWallError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    T = w["H"] + (above_T or 0.0)
+    src = "SDPWS-2021 4.3.2.2, Table 4.3A, 4.1.4"
+    rows = [Row("unit shear in the piers beside the opening", f"{load}, {method}", w["vh"], w["v_cap"] * w["reduction"], "plf", src + ", Table 4.3.3",
+                "capacity x 2 b / h for a pier over 2:1" if w["reduction"] < 1 else ""),
+            Row("unit shear above and below the opening", f"{load}, {method}", w["vv"], w["v_cap"], "plf", src, ""),
+            Row("unit shear in the corner zones", f"{load}, {method}", w["vc"], w["v_cap"], "plf", src, ""),
+            Row("wall pier length", "", 2.0, min(L1, L2), "ft", "SDPWS-2021 4.3.2.2 item 2", "2 ft minimum")]
+    hd = None
+    if holddown:
+        from . import holddowns
+        try:
+            hd = holddowns.check(holddown["model"], T, G, load, method, stem=holddown.get("stem"), position=holddown.get("position"),
+                                 cracked=holddown.get("cracked"), sdc_high=holddown.get("sdc_high"))
+        except holddowns.HoldDownError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        rows.append(Row("hold-down tension", f"{load}, {method}", T, hd["capacity"], "lb", hd["source"], hd["text"]))
+    info = [("Sheathing", f"wood structural panels, {panel}, {panel_type}, {'both sides' if sides == 2 else 'one side'}, blocked; edge nails at {spacing:g} in; "
+             "the same sheathing and nailing on all sheathed areas"),
+            ("Framing", f"specific gravity G = {G:g} ({G_source.strip()})"),
+            ("Wall", f"{h:g} ft high, {w['L']:g} ft long; piers {L1:g} ft and {L2:g} ft; opening {Lo:g} ft wide x {ho:g} ft high, {w['sill']:g} ft of sheathing below and {w['ha']:g} ft above"),
+            ("Design Shear", f"{V:,.0f} lb, {load}, {method} ({v_source.strip()})")]
+    if above_T:
+        info.append(("Wall Above", f"chord force {above_T:,.0f} lb at each end ({above_source.strip()})"))
+    if hd:
+        info.append(("Hold-Down", f"Simpson Strong-Tie {hd['model']} at each end of the wall"))
+    text = [f"Hold-down at each end of the wall: tension and compression {T:,.0f} lb" + (f" ({w['H']:,.0f} lb this story + {above_T:,.0f} lb from above)" if above_T else ""),
+            f"Strap and blocking at each corner of the opening, each way along the top and bottom of the opening: {max(w['F1'], w['F2']):,.0f} lb "
+            f"({w['F1']:,.0f} lb toward the {L1:g} ft pier, {w['F2']:,.0f} lb toward the {L2:g} ft pier)",
+            f"Bottom plate shear anchorage: {w['vh']:,.0f} plf at the piers"]
+    sheet = SimpleSheet(
+        mark, "Wood Shear Wall, Force Transfer Around an Opening", "Wall", f"{load}, {method}", info, [], [], "Capacity and Forces", w["lines"], rows,
+        ["Designed for force transfer around the opening (SDPWS 4.3.2.2); internal forces by the Diekmann technique (APA Technical Note T555).",
+         "Hold-downs at the two ends of the wall only. Chord forces are from overturning of the wall alone; dead load is not counted against uplift."],
+        ["straps, blocking and their nailing at the corners of the opening (designed for the corner force shown)", "the hold-down anchor rod and its anchorage; the end posts" if hd else
+         "hold-downs and their connections", "anchor bolts and plate washers (SDPWS 4.3.6.4.3)", "collector over the full length of the wall and its connection to the diaphragm (SDPWS 4.3.2.2 item 5)",
+         "construction requirements of SDPWS 4.3.6 and 4.3.7.1", "deflection"])
+    sheet.blocks.append(dict(title="Wall Forces", head="Wall Forces", steps=[], text=text,
+                             picture=("perforated_wall", dict(h=h, L=w["L"], openings=[dict(x=L1, w=Lo, h=ho, sill=w["sill"])],
+                                                              segs=[dict(x=0.0, b=L1, counted=L1), dict(x=L1 + Lo, b=L2, counted=L2)], V=V, T=T))))
+    sheet.wall = w
+    sheet.wall_T = T
+    return sheet
+
+
 def snow_drift_sheet(mark, pg, pg_source, W2, W2_source, ps_lower, ps_source, lu_upper, lu_lower, step_ft, sliding=None, parapet=False, separation=None):
     """Drift on a lower roof at a roof step and sliding snow from the upper roof,
     ASCE/SEI 7-22 Sect. 7.7.1 and 7.9 (see snow.lower_roof). sliding: None or

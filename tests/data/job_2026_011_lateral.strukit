@@ -158,20 +158,22 @@
    }
   },
   {
-   "kind": "shear_wall",
+   "kind": "ftao_wall",
    "values": {
     "G": "0.50",
     "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "mark": "Line 1, main level",
     "panel": "Sheathing, 7/16 in, 8d common",
     "spacing": "6",
     "panel_type": "OSB",
     "sides": "one side",
-    "blocking": "blocked",
     "h": "9",
+    "L1": "2.17",
+    "Lo": "3",
+    "L2": "2.67",
+    "ho": "1.5",
+    "sill": "5.17",
     "load": "wind",
-    "holddown": "no",
-    "mark": "Line 1, main level",
-    "lengths": "2.67",
     "V": "1523",
     "v_source": "roof diaphragm 1523 lb, half the diaphragm load to each line"
    }
@@ -235,7 +237,7 @@
     "hd_stem": "8",
     "hd_position": "end wall",
     "hd_cracked": "cracked",
-    "above_T": "5134",
+    "above_T": "1748",
     "above_source": "largest chord force of shear wall Line 1, main level, wind, ASD"
    }
   },

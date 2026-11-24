@@ -48,10 +48,17 @@ for (lev, ln), seg in SEG.items():
     story = "main level" if lev == "Roof" else "lower level"
     src = (f"roof diaphragm {R[('Roof', ln)]:.0f} lb" + (f" + main floor diaphragm {R[('Main floor', ln)]:.0f} lb" if lev == "Main floor" else "")) + ", half the diaphragm load to each line"
     v = dict(SW, mark=f"Line {ln}, {story}", lengths=seg, V=f"{V:.0f}", v_source=src)
+    if (lev, ln) == ("Roof", "1"):
+        # Line 1, main level: no pier is long enough to stand alone; the two piers either side of the middle 3016 awning window (2 ft 2 in. and 2 ft 8 in.,
+        # sheet A2.2 dimension string) are designed together for force transfer around that window (1 ft 6 in. high; head taken at 6 ft 8 in.).
+        M.append(("ftao_wall", dict(G, mark="Line 1, main level", panel=SW["panel"], spacing="6", panel_type="OSB", sides="one side", h="9", L1="2.17", Lo="3", L2="2.67",
+                  ho="1.5", sill="5.17", load="wind", V=f"{V:.0f}", v_source=src)))
+        continue
     if lev == "Main floor":
-        up, _, _ = calc.build("shear_wall", next(x for k, x in M if x["mark"] == f"Line {ln}, main level"), proj)
+        kk, vv = next((k, x) for k, x in M if x["mark"] == f"Line {ln}, main level")
+        up, _, _ = calc.build(kk, vv, proj)
         v.update(hd_model="STHD14", hd_stem="8", hd_position="end wall", hd_cracked="cracked")
-        v.update(above_T=f"{max(g.T for g in up.wall.segments):.0f}", above_source=f"largest chord force of shear wall Line {ln}, main level, wind, ASD")
+        v.update(above_T=f"{(up.wall_T if kk == 'ftao_wall' else max(g.T for g in up.wall.segments)):.0f}", above_source=f"largest chord force of shear wall Line {ln}, main level, wind, ASD")
     M.append(("shear_wall", v))
 json.dump(dict(format="strukit-project", version=1, project=proj, members=[dict(kind=k, values=v) for k, v in M]), open("/home/claude/jobs/2026-011/2026-011-Lateral.strukit", "w"), indent=1)
 print({k: round(v) for k, v in R.items()})

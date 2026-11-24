@@ -177,7 +177,7 @@ def api(path, body):
         except Exception as e:
             return dict(error=f"The wall above stopped: {e}")
         w = sheet.wall
-        T = max(s.T for s in w.segments) if kind == "shear_wall" else w.T
+        T = max(s.T for s in w.segments) if kind == "shear_wall" else sheet.wall_T if kind == "ftao_wall" else w.T
         return dict(T=T, load=(body.get("values") or {}).get("load"))
     if path == "/api/snow_loads":
         try:

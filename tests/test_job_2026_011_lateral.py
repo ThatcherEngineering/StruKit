@@ -13,21 +13,22 @@ def test_lateral_lines():
         got[m["values"]["mark"]] = r["status"]
     assert len(got) == 12
     flagged = [k for k, v in got.items() if v != "OK"]
-    assert flagged == ["Line 1, main level", "Line 1, lower level"]     # one 2 ft 8 in. pier between the awning windows, and the hold-down below it
+    assert flagged == []          # Line 1 main level by force transfer around the middle awning window
 
 
 def test_holddown_forces():
     """Lower-level chord tension includes the wall above (stacked walls)."""
     T, own = {}, {}
     for m in D["members"]:
+        s, _, _ = calc.build(m["kind"], m["values"], D["project"])
         if m["kind"] == "shear_wall":
-            s, _, _ = calc.build("shear_wall", m["values"], D["project"])
             T[m["values"]["mark"]] = max(g.T for g in s.wall.segments)
             own[m["values"]["mark"]] = max(t for t, _ in s.wall.own)
-    assert abs(T["Line A, main level"] - 725) < 5 and abs(own["Line B, lower level"] - 1636) < 5
-    assert abs(T["Line A, lower level"] - (1205.5 + 725)) < 5          # 3,650 x 9 / 27.25 + the wall above
-    assert abs(T["Line B, lower level"] - (1636 + 784)) < 5
-    assert abs(T["Line 1, lower level"] - (2139.6 + 5134)) < 5
+        elif m["kind"] == "ftao_wall":
+            T[m["values"]["mark"]] = s.wall_T
+    assert abs(T["Line 1, main level"] - 1523 * 9 / 7.84) < 2          # V h / L
+    assert abs(T["Line A, lower level"] - (1205.5 + 725)) < 5 and abs(T["Line B, lower level"] - (1636 + 784)) < 5
+    assert abs(T["Line 1, lower level"] - (2139.6 + 1748)) < 5 and T["Line 1, lower level"] < 4410
 
 
 def test_stack_needs_source():
