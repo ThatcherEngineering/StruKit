@@ -2791,7 +2791,29 @@ def wind_free_hip_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, t
             sheet.blocks.append(dict(title=f"Wind {d['name'].capitalize()} (Figure 27.3-7)", lines=t,
                                      after=["Zones are measured horizontally from the windward edge of the roof, in the wind direction."]))
             out.append(dict(d, totals=None))
-    sheet.free_roof = dict(r, dirs=out)
+    # Components and cladding (Zach's ruling of 2026-11-23 19:00): the pitched free roof figure, 30.5-2, on each roof plane at that plane's slope
+    cc = {}
+    for nm, th in (("main roof planes", theta), ("hip-end roof planes", theta_hip)):
+        try:
+            c_ = wind.free_cc(V, exposure, h, th, min(L, length), "pitched", obstructed, Kzt, Ke)
+        except wind.WindError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        aa = c_["a"] ** 2
+        t4 = [f"p = qh Kd G CN = {c_['factor']:.2f} CN psf (Eq. 30.5-1); a = {c_['a']:.1f} ft, a^2 = {aa:,.0f} ft2, 4 a^2 = {4 * aa:,.0f} ft2",
+              f"{'effective wind area':<26}{'zone 3':>22}{'zone 2':>22}{'zone 1':>22}"]
+        for x in c_["rows"]:
+            ar = f"{x['hi']:,.0f} ft2 or less" if x["lo"] == 0 else f"over {x['lo']:,.0f} to {x['hi']:,.0f} ft2" if x["hi"] else f"over {x['lo']:,.0f} ft2"
+            t4.append(f"{ar:<26}" + "".join(f"{'CN ' + format(x['zones'][z][0], '.2f') + ' / ' + format(x['zones'][z][1], '.2f'):>22}" for z in (3, 2, 1)))
+            t4.append(f"{'':<26}" + "".join(f"{format(x['zones'][z][2], '.1f') + ' / ' + format(x['zones'][z][3], '.1f') + ' psf':>22}" for z in (3, 2, 1)))
+        sheet.blocks.append(dict(title=f"Components and Cladding, {nm.capitalize()} at {th:g} Degrees (Figure 30.5-2)", lines=t4,
+                                 after=["Zone 3 is the strip within a of an edge of the roof plane, zone 2 the next strip, from a to 2a, and zone 1 the rest; the eaves, the hips and the "
+                                        "ridge are edges of each plane. Net pressures normal to the roof, plus toward the top surface and minus away from it; each element is designed "
+                                        "for both. Not less than 16 psf either way (Sect. 30.2.2). Kd = 0.85, G = 0.85."]))
+        cc[nm] = c_
+    sheet.not_checked = [t for t in sheet.not_checked if "30.5-1" not in t]
+    sheet.assumptions.append("Components and cladding (Thatcher Engineering standard): each roof plane takes the pitched free roof coefficients of Figure 30.5-2 at its own slope, "
+                             "with the hips taken as edges.")
+    sheet.free_roof = dict(r, dirs=out, cc=cc)
     return sheet
 
 
@@ -2986,7 +3008,25 @@ def stair_tread_sheet(mark, t, b, d, span_ft, Fy, Fy_source, live_psf, live_P, l
     cases = [("uniform", (gD * wD + gL * wL) * Ls ** 2 / 8, (gD * wD + gL * wL) * Ls / 2),
              ("concentrated", gD * wD * Ls ** 2 / 8 + gL * live_P * Ls / 4, gD * wD * Ls / 2 + gL * live_P)]
     gm, gv = max(cases, key=lambda c: c[1]), max(cases, key=lambda c: c[2])
-    Mn = min(Fy * pr["Zx"], 1.6 * Fy * pr["S"])
+    # The tread plate between the legs is a stiffened element in uniform compression: limits of AISC 360-22 Table B4.1b Case 17 and the
+    # flange local buckling provisions of Sect. F7.2 (Eq. F7-2, and F7-3 with the effective width of Eq. F7-4), Zach's ruling of 2026-11-23 19:00.
+    Mp = min(Fy * pr["Zx"], 1.6 * Fy * pr["S"])
+    wpl = b - 2 * t
+    lam = wpl / t
+    rE = math.sqrt(29000 / Fy)
+    lam_pf, lam_rf = 1.12 * rE, 1.40 * rE
+    be, Se = wpl, None
+    if lam <= lam_pf:
+        cls, Mn, eq = "compact", Mp, "Eq. F6-1"
+    elif lam <= lam_rf:
+        cls, eq = "noncompact", "Eq. F7-2"
+        Mn = min(Mp - (Mp - Fy * min(pr["S"], pr["S_top"])) * (lam - lam_pf) / (lam_rf - lam_pf), Mp)
+    else:
+        cls, eq = "slender", "Eq. F7-3"
+        be = min(1.92 * t * rE * (1 - 0.38 / lam * rE), wpl)
+        pe = bent_plate_tread(b - (wpl - be), t, d)
+        Se = min(pe["S"], pe["S_top"])
+        Mn = Fy * Se
     Mc = (0.90 * Mn if lrfd else Mn / 1.67) * 1000 / 12
     lam_v = 1.10 * math.sqrt(5.34 * 29000 / Fy)
     if pr["h_t"] > lam_v:
@@ -3008,11 +3048,15 @@ def stair_tread_sheet(mark, t, b, d, span_ft, Fy, Fy_source, live_psf, live_P, l
         steps += [Ln(f"M, {nm} live load", M_, "lb-ft", "statics", "w L^2 / 8" if nm == "uniform" else "wD L^2 / 8 + P L / 4, P at mid-span"),
                   Ln(f"V, {nm} live load", V_, "lb", "statics", "w L / 2" if nm == "uniform" else "wD L / 2 + P, P beside a support")]
     steps += [Ln("Leg b / t", f"{bt_leg:.1f}", "", "AISC 360-22 Table B4.1b Case 13", f"compact limit 0.38 (E / Fy)^0.5 = {lam_p:.1f}"),
-              Ln("Mn = Fy Zx, not over 1.6 Fy Sx", Mn * 1000 / 12, "lb-ft", "AISC 360-22 Eq. F6-1", f"Fy = {Fy:g} ksi ({Fy_source.strip()})"),
+              Ln("Tread plate b / t", f"{lam:.1f}", "", "AISC 360-22 Table B4.1b Case 17", f"flat width {wpl:g} in. between the legs; limits {lam_pf:.1f} and {lam_rf:.1f}: {cls}"),
+              *([Ln("be = 1.92 t (E/Fy)^0.5 [1 - 0.38 (E/Fy)^0.5 / (b/t)]", be, "in", "AISC 360-22 Eq. F7-4", f"effective width of the tread plate, of {wpl:g} in."),
+                 Ln("Se", f"{Se:.3f} in3", "", "AISC 360-22 Sect. F7.2(c)", "section with the effective width of the tread plate")] if cls == "slender" else []),
+              Ln("Mp = Fy Zx, not over 1.6 Fy Sx", Mp * 1000 / 12, "lb-ft", "AISC 360-22 Eq. F6-1", f"Fy = {Fy:g} ksi ({Fy_source.strip()})"),
+              Ln("Mn", Mn * 1000 / 12, "lb-ft", f"AISC 360-22 {eq}", {"compact": "Mn = Mp", "noncompact": "between Mp and Fy S", "slender": "Mn = Fy Se"}[cls]),
               Ln(f"{sym} Mn", Mc, "lb-ft", "AISC 360-22 Sect. F1", ""),
               Ln("Vn = 0.6 Fy Aw Cv1", Vn * 1000, "lb", "AISC 360-22 Eq. G2-1", f"Aw = 2 t d = {Aw:.3f} in2; h / t = {pr['h_t']:.2f} under {lam_v:.1f}, Cv1 = 1.0"),
               Ln(f"{sym} Vn", Vc, "lb", "AISC 360-22 Sect. G1", "")]
-    rows = [Row("Tread bending", cname, gm[1], Mc, "lb-ft", "AISC 360-22 Sect. F6", f"{gm[0]} live load governs"),
+    rows = [Row("Tread bending", cname, gm[1], Mc, "lb-ft", "AISC 360-22 Sect. F6" + ("" if cls == "compact" else ", F7.2"), f"{gm[0]} live load governs; tread plate {cls}"),
             Row("Tread shear", cname, gv[2], Vc, "lb", "AISC 360-22 Sect. G2", f"{gv[0]} live load governs"),
             Row("Leg width to thickness", "", bt_leg, lam_p, "", "AISC 360-22 Table B4.1b Case 13", "legs compact")]
     info = [("Tread", f"bent plate {t:g} in., {b:g} in. wide with {d:g} in. legs turned down at both edges"),
@@ -3022,11 +3066,12 @@ def stair_tread_sheet(mark, t, b, d, span_ft, Fy, Fy_source, live_psf, live_P, l
     sheet = SimpleSheet(mark, "Stair Tread, Bent Plate", "Tread", method, info, [], [(cname, csrc)], "Loads and Strength", steps, rows,
                         ["The tread spans simply between the stringers and carries the live load on its own width.",
                          "The concentrated load is at mid-span for bending and beside a support for shear; it does not act with the uniform live load.",
-                         "Section properties are for square corners."],
-                        [f"local buckling of the tread plate between the legs (width to thickness {bt_plate:.0f})", "deflection and vibration of the tread",
+                         "Section properties are for square corners.",
+                         "The tread plate between the legs is taken as a stiffened element in uniform compression."],
+                        ["deflection and vibration of the tread",
                          "the tread to stringer connection", "nosings, risers and slip resistance"])
     sheet.blocks.append(dict(title="Tread Section", head="Tread Section", picture=("tread", dict(b=b, t=t, d=d, span=Ls))))
-    sheet.tread = dict(pr, wD=wD, wL=wL, cases=cases, Mn=Mn, Mc=Mc, Vn=Vn, Vc=Vc)
+    sheet.tread = dict(pr, wD=wD, wL=wL, cases=cases, Mn=Mn, Mc=Mc, Vn=Vn, Vc=Vc, plate=cls, be=be, Se=Se, Mp=Mp, lam=lam)
     return sheet
 
 
