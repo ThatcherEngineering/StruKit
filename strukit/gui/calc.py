@@ -538,6 +538,22 @@ FORMS = {
                 F("located", "Site is in the upper half of the hill or ridge, or near the crest of the escarpment", "select", options=["yes", "no"], help="Sect. 26.8.1, condition 1"),
                 F("heights", "Heights above ground for Kzt", "text", "ft", help="separated by commas, for example 0, 15, 30; Kzt is largest at the ground")],
         tables=[]),
+    "wind_free_roof": dict(
+        title="Wind Pressures, Open Building (monoslope free roof)", code="ASCE/SEI 7-22", mark="WO",
+        fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
+                F("V_source", "Where V comes from", "text"),
+                F("exposure", "Exposure category", "select", options=["B", "C", "D"], help="ASCE 7-22 Sect. 26.7"),
+                F("exposure_basis", "Basis of the exposure category", "text"),
+                F("h", "Mean roof height, h", unit="ft"),
+                F("theta", "Roof angle", unit="deg", help="0 to 45 degrees"),
+                F("L", "Roof dimension in the direction of the slope, L", unit="ft", help="horizontal"),
+                F("flow", "Wind flow under the roof", "select", options=["clear", "obstructed"], help="obstructed: more than 50 percent blockage below the roof (Figure 27.3-4 note 2)"),
+                F("flow_basis", "Basis of clear or obstructed flow", "text", help="for example: open below, picnic tables only"),
+                F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
+                F("Kzt_source", "Where Kzt comes from", "text", help="for example: no hill, ridge or escarpment, Sect. 26.8.1"),
+                F("elevation", "Ground elevation above sea level", unit="ft", required=False, help="blank = Ke taken as 1.0"),
+                F("elevation_source", "Where the elevation comes from", "text", required=False)],
+        tables=[]),
     "wind_pressure": dict(
         title="Wind Velocity Pressure", code="ASCE/SEI 7-22", mark="WV",
         fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
@@ -1542,6 +1558,11 @@ def build(kind, values, project):
         hs = r.nums("heights") if r.text("heights") else []
         r.done()
         return ws_more.wind_kzt_sheet(mark, shape, ex, eb, H, Lh, gs, x, (side or "").startswith("downwind"), bool(loc), hs), "simple", {}
+    if kind == "wind_free_roof":
+        args = (r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h"), r.num("theta"), r.num("L"))
+        fl, fb, kzt, ks_ = r.text("flow"), r.text("flow_basis"), r.num("Kzt"), r.text("Kzt_source")
+        r.done()
+        return ws_more.wind_free_roof_sheet(mark, *args, fl == "obstructed", fb, kzt, ks_, r.num("elevation", False), r.text("elevation_source", False) or ""), "simple", {}
     if kind == "wind_pressure":
         V, vs, ex, eb, h = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h")
         kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")

@@ -586,3 +586,44 @@ def test_kzt_api_for_the_wind_screens():
     assert got["applies"] and got["rows"] == [dict(z=0.0, Kzt=pytest.approx(2.11, abs=0.005)), dict(z=33.0, Kzt=pytest.approx(1.926, abs=0.002))]
     assert not server.api("/api/kzt", dict(values=dict(v, located="no"), project={}))["applies"]
     assert "not complete" in server.api("/api/kzt", dict(values=dict(v, H=""), project={}))["error"]
+
+
+def test_monoslope_free_roof_against_the_published_carport_example():
+    """Wind Design Manual (SEAOC/ICC) Design Example 16, Tables 16-1 and 16-2: monoslope carport at 10 degrees, clear flow, V = 100 mph, Kh = 0.875
+    (Exposure C at 17.5 ft), qh with Kd = 19.1 psf, G = 0.85: CN -0.70 / -1.10 and -1.57 / 0.0 for gamma = 0, 1.03 / 1.53 and 1.67 / 0.40 for gamma = 180;
+    pressures -11.4 / -17.8, -25.4 / 0.0, 16.8 / 24.9, 27.0 / 6.5 psf.  Figure 27.3-4 and 27.3-7 values as read from the ASCE/SEI 7-22 page images."""
+    cn = wind.free_mono_cn(10.0)
+    assert cn[0]["A"] == pytest.approx((-0.70, -1.10), abs=0.005) and cn[0]["B"] == pytest.approx((-1.567, 0.0), abs=0.005)
+    assert cn[180]["A"] == pytest.approx((1.033, 1.533), abs=0.005) and cn[180]["B"] == pytest.approx((1.667, 0.40), abs=0.005)
+    r = wind.free_roof_monoslope(100, "C", 17.5, 10.0, 26.0)
+    assert r["Kh"] == pytest.approx(0.875) and r["qh"] * 0.85 == pytest.approx(19.1, rel=0.005)
+    got = {(x["gamma"], x["case"]): (x["pW"], x["pL"]) for x in r["across"]}
+    for key, book in (((0, "A"), (-11.4, -17.8)), ((0, "B"), (-25.4, 0.0)), ((180, "A"), (16.8, 24.9)), ((180, "B"), (27.0, 6.5))):
+        assert got[key] == pytest.approx(book, rel=0.01, abs=0.05)
+    assert wind.free_mono_cn(5.0)[0]["A"] == (1.2, 0.3) and wind.free_mono_cn(45.0, True)[180]["B"] == (2.1, 0.4)
+    assert wind.free_mono_cn(7.5)[0]["A"] == pytest.approx((-0.6, -1.0)) and wind.free_mono_cn(26.25)[0]["A"] == pytest.approx((-1.65, -1.7))
+    assert [(z["A"], z["B"]) for z in r["parallel"]] == [(-0.8, 0.8), (-0.6, 0.5), (-0.3, 0.3)]
+    assert [(z["A"], z["B"]) for z in wind.free_roof_monoslope(100, "C", 17.5, 10.0, 26.0, obstructed=True)["parallel"]] == [(-1.2, 0.5), (-0.9, 0.5), (-0.6, 0.3)]
+    assert wind.free_roof_monoslope(100, "C", 10.0, 3.0, 60.0)["across"] is None                # h/L 0.17 under 5 degrees: Figure 27.3-7 only (note 4)
+    with pytest.raises(wind.WindError):
+        wind.free_roof_monoslope(100, "C", 10.0, 10.0, 60.0)
+    with pytest.raises(wind.WindError):
+        wind.free_mono_cn(50.0)
+
+
+def test_open_building_screen(tmp_path):
+    from strukit import calcsheet
+    from strukit.gui import calc
+    v = dict(mark="WO1", V="100", V_source="Hazard Tool", exposure="C", exposure_basis="open terrain", h="17.5", theta="10", L="26", flow="clear", flow_basis="vehicles only",
+             Kzt="1.0", Kzt_source="flat site", elevation="", elevation_source="")
+    s, kind, _ = calc.build("wind_free_roof", v, {})
+    got = {(x["gamma"], x["case"]): (x["pW"], x["pL"]) for x in s.free_roof["across"]}
+    assert kind == "simple" and got[(180, "A")] == pytest.approx((16.8, 24.9), rel=0.01)                 # Wind Design Manual Table 16-2
+    calcsheet.simple_pdf(s, str(tmp_path / "o.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    ob, _, _ = calc.build("wind_free_roof", dict(v, flow="obstructed", theta="30"), {})
+    assert ob.free_roof["across"][0]["CNW"] == -1.5 and ob.free_roof["parallel"][0]["A"] == -1.2
+    low, _, _ = calc.build("wind_free_roof", dict(v, h="10", theta="3", L="60"), {})
+    assert low.free_roof["across"] is None
+    calcsheet.simple_pdf(low, str(tmp_path / "l.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    assert calc.results("wind_free_roof", dict(v, h="10", L="60"), {})["state"] == "stopped"
+    assert calc.results("wind_free_roof", dict(v, flow_basis=""), {})["state"] == "incomplete"
