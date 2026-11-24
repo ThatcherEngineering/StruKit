@@ -90,6 +90,13 @@ FORMS = {
                 F("live_psf", "Uniform live load", unit="psf"), F("live_P", "Concentrated live load", unit="lb"),
                 F("live_source", "Where the live loads come from", "text", help="for example: ASCE/SEI 7-22 Table 4.3-1, stairs: 100 psf or 300 lb")],
         tables=[]),
+    "angle_strut": dict(
+        title="Single-Angle Compression Member (brace or kicker)", code="AISC 360-22", mark="AS",
+        fields=[F("shape", "Angle", "shape_tension", help="single angle by its Manual label, for example L3x3x1/4"),
+                F("Fy", "Fy", unit="ksi"), F("steel_source", "Where Fy comes from", "text", help="for example: ASTM A36"),
+                F("length", "Length between the end connections", unit="ft"),
+                F("attached", "Attached leg", "select", options=["long", "short"], required=False, help="unequal-leg angles; either for an equal-leg angle")],
+        tables=[T("loads", "Axial compression", [CASE, F("P", "Compression", unit="kip"), F("label", "Note", "text", required=False)])]),
     "tension_member": dict(
         title="Steel Tension Member", code="AISC 360-22", mark="TM",
         fields=[F("shape", "Section", "shape_tension", required=False, help="W, M, S, HP, C, MC, HSS, pipe or single angle (for example L3x3x3/16); blank for a threaded rod"),
@@ -218,6 +225,8 @@ FORMS = {
                 F("a", "Weld line to bolt line, a", unit="in", help="3-1/2 in. or less"),
                 F("holes", "Holes in the plate", "select", options=["STD", "SSLT"], help="SSLT = horizontal short slots"),
                 F("weld", "Fillet weld size, each side", unit="in"), F("FEXX", "Electrode strength", unit="ksi"),
+                F("through", "Through plate: column dimension the plate passes through", unit="in", required=False,
+                  help="blank = the plate is welded to the face of the column wall; for a through plate, the outside dimension of the HSS along the plate"),
                 F("cope_dc", "Coped beam: cope depth at the top flange", unit="in", required=False, help="blank = the beam is not coped; then the next five boxes are not used"),
                 F("cope_c", "Coped beam: cope length", unit="in", required=False),
                 F("cope_setback", "Coped beam: setback of the beam end from the support", unit="in", required=False, help="usually 1/2 in."),
@@ -1424,6 +1433,15 @@ def build(kind, values, project):
         args = (r.num("t"), r.num("b"), r.num("d"), r.num("span"), r.num("Fy"), r.text("Fy_source"), r.num("live_psf"), r.num("live_P"), r.text("live_source"))
         r.done()
         return ws_more.stair_tread_sheet(mark, *args, m), "simple", {}
+    if kind == "angle_strut":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        args = (r.text("shape"), r.num("Fy"), r.text("steel_source"), r.num("length"), r.text("attached", False) or "")
+        r.done()
+        return ws_more.angle_strut_sheet(mark, *args, loads, cb, m), "simple", {}
     if kind == "tension_member":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
@@ -1489,8 +1507,9 @@ def build(kind, values, project):
             cope = dict(dc=r.num("cope_dc", False), c=r.num("cope_c", True, label="Coped beam: cope length"), setback=r.num("cope_setback", True, label="Coped beam: setback"),
                         lev=r.num("cope_lev", True, label="Coped beam: cut edge to the first bolt"), leh=r.num("cope_leh", True, label="Coped beam: bolt line to the beam end"),
                         Fy=r.num("beam_Fy", True, label="Coped beam: beam Fy"))
+        thr_ = r.num("through", False)
         r.done()
-        return ws_more.single_plate_sheet(mark, *args, loads, cb, m, support=sup, cope=cope), "simple", {}
+        return ws_more.single_plate_sheet(mark, *args, loads, cb, m, support=sup, cope=cope, through=thr_), "simple", {}
     if kind in ("weld", "bolts"):
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
