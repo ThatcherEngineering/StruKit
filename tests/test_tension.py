@@ -35,3 +35,17 @@ def test_inputs_and_screen():
     s, kind, _ = calc.build("tension_member", v, proj)
     assert kind == "simple" and s.ok
     assert calc.results("tension_member", dict(v, U_source=""), proj)["state"] == "incomplete"
+
+
+def test_single_angle_hanger_design_guide_34_example_10_1_6():
+    """AISC Design Guide 34 Example 10.1.6: L3x3x3/16, ASTM A36 (36 / 58 ksi), RD = 0.310 kip, RL = 0.839 kip: Pu = 1.71 / Pa = 1.15 kips;
+    yielding 35.3 / 23.5 kips; rupture 35.6 / 23.7 kips (Manual Table 5-2, which takes Ae = 0.75 Ag)."""
+    from strukit import shapes
+    a = shapes.angle("L3x3x3/16")
+    assert a["A"] == 1.09 and a["rz"] == 0.586 and len(shapes.angle_labels()) == 137
+    loads = [dict(case="D", P=0.310), dict(case="L", P=0.839)]
+    for method, cb, T, py, pr in (("LRFD", Combo("1.2D + 1.6L", {"D": 1.2, "L": 1.6}, "t"), 1.71, 35.3, 35.6), ("ASD", Combo("D + L", {"D": 1, "L": 1}, "t"), 1.15, 23.5, 23.7)):
+        s = tension_member_sheet("H1", "L3X3X3/16", 36, 58, "ASTM A36", 5.83, 0, None, None, 0.75, "Ae = 0.75 Ag", loads, [cb], method)
+        o = s.tension
+        assert o["T"] == pytest.approx(T, abs=0.01) and o["Pyc"] == pytest.approx(py, abs=0.06) and o["Prc"] == pytest.approx(pr, abs=0.06)
+        assert o["slen"] == pytest.approx(5.83 * 12 / 0.586) and s.ok

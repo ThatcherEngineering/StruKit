@@ -2506,7 +2506,7 @@ def stair_stringer_sheet(mark, shape, Fy, run_ft, riser_in, tread_in, trib_ft, d
     k = math.hypot(riser_in, tread_in) / tread_in                 # slope ratio, sloped length over run
     cos = 1.0 / k
     pr = None
-    for get in (shapes.get, shapes.channel, shapes.hss):
+    for get in (shapes.get, shapes.channel, shapes.hss, shapes.angle):
         try:
             pr = get(shape)
             break
@@ -3019,14 +3019,14 @@ def tension_member_sheet(mark, shape, Fy, Fu, steel_source, length_ft, n_holes, 
     if not 0 < U <= 1.0:
         raise WorksheetError(f"{mark}: U is between 0 and 1.0")
     pr = None
-    for get in (shapes.get, shapes.channel, shapes.hss):
+    for get in (shapes.get, shapes.channel, shapes.hss, shapes.angle):
         try:
             pr = get(shape)
             break
         except Exception:
             continue
     if pr is None:
-        raise WorksheetError(f"{mark}: '{shape}' is not in the shapes tables (W, M, S, HP, C, MC, HSS, pipe)")
+        raise WorksheetError(f"{mark}: '{shape}' is not in the shapes tables (W, M, S, HP, C, MC, HSS, pipe, single angle)")
     n_holes = int(n_holes or 0)
     Ag = pr["A"]
     ded, dh = 0.0, None
@@ -3050,7 +3050,7 @@ def tension_member_sheet(mark, shape, Fy, Fu, steel_source, length_ft, n_holes, 
     T = totals[worst]
     if T <= 0:
         raise WorksheetError(f"{mark}: no combination puts the member in tension; enter tension as positive")
-    rmin = min(pr["rx"], pr["ry"])
+    rmin = min(pr["rx"], pr["ry"], pr.get("rz", 1e9))
     slen = length_ft * 12 / rmin
     Ln = footing_line
     steps = [Ln("Required tensile strength", T, "kip", worst, ""),

@@ -119,7 +119,7 @@ _pdfs = {}
 
 def api(path, body):
     if path == "/api/info":
-        return dict(version=__version__, forms=calc.FORMS, shapes=shapes.labels(), hss_shapes=shapes.hss_labels(), channel_shapes=shapes.channel_labels(),
+        return dict(version=__version__, forms=calc.FORMS, shapes=shapes.labels(), hss_shapes=shapes.hss_labels(), channel_shapes=shapes.channel_labels(), angle_shapes=shapes.angle_labels(),
                     recent=[p for p in load_settings().get("recent", []) if os.path.exists(p)],
                     today=time.strftime("%Y-%m-%d"), combo_sets=loadcombos.SETS)
     if path == "/api/seismic_combos":
