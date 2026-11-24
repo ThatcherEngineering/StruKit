@@ -93,3 +93,22 @@ def test_west_carport_minimum_wind_case():
     dead = (6.1 * 21.75 * 131 + 8 * shapes.hss("HSS10X6X3/8")["W"] * 21.75 + 16 * shapes.hss("HSS8X8X1/2")["W"] * 11.77) / 1000
     a = next(a for a in out["audit"] if a["run"] == "0.9D + 1.0W, minimum wind across the roof in +Y (Sect. 27.1.5)")
     assert -a["Ry"] == pytest.approx(ws["totals"]["F_min"] / 1000 + 0.003 * 0.9 * dead, abs=0.02) and a["Rz"] == pytest.approx(0.9 * dead, abs=0.05)
+
+
+def test_frame_column_base_forces_reach_the_base_plate_and_footing_screens():
+    d = json.load(open(os.path.join(HERE, "data", "job_2026_030_west.strukit")))
+    proj, ms = d["project"], d["members"]
+    col = next(m for m in ms if m["values"]["mark"] == "C4A")
+    got = calc.reactions("hss_column", col["values"], proj, ms)
+    assert got["bases"] == ["strong-axis moment", "weak-axis moment"] and got["messages"] == []
+    lr = calc.model_frame_sway(proj, ms)
+    c = next(c for c in lr["columns"] if c["mark"] == "C4A")
+    st = [r for r in got["strength"] if r["base"] == "weak-axis moment"]
+    sv = [r for r in got["service"] if r["base"] == "weak-axis moment"]
+    assert 1 <= len(st) <= 4 and 1 <= len(sv) <= 4
+    assert max(r["M"] for r in st) == pytest.approx(max(b["Mw"] for b in c["base"]) * 1000 / 12, rel=1e-6)          # the largest base moment of the LRFD run
+    assert max(r["P"] for r in st) == pytest.approx(max(b["P"] for b in c["base"]) * 1000, rel=1e-6)
+    assert min(r["P"] for r in st) == pytest.approx(min(b["P"] for b in c["base"]) * 1000, rel=1e-6)
+    assert max(r["M"] for r in sv) < max(r["M"] for r in st) and all(r["wt_factor"] for r in st) and all(r["wt_factor"] is None for r in sv)
+    # a column that is not placed still goes the old way
+    assert "error" in calc.reactions("hss_column", dict(col["values"], at_x1=""), proj, ms) or calc.reactions("hss_column", dict(col["values"], at_x1=""), proj, ms).get("bases") is not None
