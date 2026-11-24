@@ -648,7 +648,8 @@ function fillBar(m, changed) {
 // ---------------------------------------------------------------- pages
 // ---------------------------------------------------------------- building model
 const MODEL_WALLS = ["shear_wall", "perforated_wall", "ftao_wall"];
-const MODEL_KINDS = () => TD_BEAMS.concat(TD_POSTS, ["footing_iso", "footing_cont"], MODEL_WALLS);
+const FRAME_BRACES = ["tension_member", "angle_strut"];
+const MODEL_KINDS = () => TD_BEAMS.concat(TD_POSTS, ["footing_iso", "footing_cont"], MODEL_WALLS, FRAME_BRACES);
 function modelOf() { const p = S.project; p.model = p.model || {}; ["levels", "grids_x", "grids_y"].forEach(k => { p.model[k] = p.model[k] || []; }); return p.model; }
 
 // Placement boxes on a member screen: where the member sits in the building model. Optional; a member works without them.
@@ -657,19 +658,22 @@ function placementCard(m, changed) {
   const mdl = modelOf(), levels = mdl.levels.map(l => (l.name || "").trim()).filter(Boolean);
   if (!levels.length) return el("div", { class: "help" }, "To place this member in the building model, list the levels (and grids, if you use them) on the Project page first. Placement is optional.");
   const wall = MODEL_WALLS.includes(m.kind);
-  const beam = TD_BEAMS.includes(m.kind) || wall, post = TD_POSTS.includes(m.kind), ftg = !beam && !post;
+  const brace = FRAME_BRACES.includes(m.kind);
+  const beam = TD_BEAMS.includes(m.kind) || wall || brace, post = TD_POSTS.includes(m.kind) || brace, ftg = !beam && !post;
   const pos = "feet, or a grid name such as B or B+2.5";
   const fs = [];
-  if (!ftg) fs.push({ key: "at_level", label: wall ? "Level at its top (the floor or roof it braces)" : beam ? "Level it frames" : "Level at its top", type: "select", options: levels, required: false });
-  if (post) fs.push({ key: "at_base", label: "Level at its base", type: "select", options: levels, required: false, help: "blank = " + levels[0] });
-  fs.push({ key: "at_x1", label: beam ? "Left end, X" : "Position, X", type: "text", required: false, help: pos }, { key: "at_y1", label: beam ? "Left end, Y" : "Position, Y", type: "text", required: false, help: pos });
-  if (beam) fs.push({ key: "at_x2", label: "Right end, X", type: "text", required: false, help: pos }, { key: "at_y2", label: "Right end, Y", type: "text", required: false, help: pos });
+  if (!ftg) fs.push({ key: "at_level", label: wall ? "Level at its top (the floor or roof it braces)" : brace ? "Level at its upper end" : beam ? "Level it frames" : "Level at its top", type: "select", options: levels, required: false });
+  if (post) fs.push({ key: "at_base", label: brace ? "Level at its lower end" : "Level at its base", type: "select", options: levels, required: false, help: "blank = " + levels[0] });
+  fs.push({ key: "at_x1", label: brace ? "Lower end, X" : beam ? "Left end, X" : "Position, X", type: "text", required: false, help: pos }, { key: "at_y1", label: brace ? "Lower end, Y" : beam ? "Left end, Y" : "Position, Y", type: "text", required: false, help: pos });
+  if (beam) fs.push({ key: "at_x2", label: brace ? "Upper end, X" : "Right end, X", type: "text", required: false, help: pos }, { key: "at_y2", label: brace ? "Upper end, Y" : "Right end, Y", type: "text", required: false, help: pos });
+  if (brace) fs.push({ key: "at_brace", label: "In the 3D frame this brace takes", type: "select", options: ["tension only", "tension and compression"], required: false, help: m.kind === "tension_member" ? "blank = tension only" : "blank = tension and compression" });
   if (m.kind === "steel_beam") fs.push({ key: "at_fix_i", label: "Left end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false, help: "blank = pinned (shear connection)" },
     { key: "at_fix_j", label: "Right end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false });
   if (m.kind === "steel_column" || m.kind === "hss_column") fs.push({ key: "at_base_fix", label: "Base (3D frame)", type: "select", options: ["pinned", "fixed"], required: false, help: "blank = pinned" },
     { key: "at_web", label: "Web runs along (3D frame)", type: "select", options: ["X", "Y"], required: false, help: "the direction in which the column bends about its strong axis; blank = X" });
   return el("div", {}, el("h2", {}, "Place in the Building Model (optional)"), el("div", { class: "grid" }, fs.map(f => field(f, m.values, changed))),
     el("div", { class: "help" }, wall ? "Placed walls take their wind shear from “Send the wind to the wall lines” on the Project page."
+      : brace ? "A placed brace is part of the 3D frame when it is run free to sway (Project page). Each end must be on a placed column or beam, or come down to the lowest level."
       : "Placed members are linked by position with “Link members by position” on the Project page: what sits under each support takes its reaction."));
 }
 
@@ -820,6 +824,9 @@ function modelCard(changed) {
         el("tbody", {}, SWAY.columns.map(c => el("tr", {}, el("td", {}, c.mark), el("td", { title: c.P_combo }, n1(c.P) + " kip"), el("td", { title: c.Ms_combo }, n1(c.Ms / 12) + " kip-ft"), el("td", { title: c.Mw_combo }, n1(c.Mw / 12) + " kip-ft"), ratioCell(c))))),
       el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Beam", "Moment", "Shear", "Axial", "Axial + bending", "Shear check"].map(t => el("th", {}, t)))),
         el("tbody", {}, SWAY.beams.map(b => el("tr", {}, el("td", {}, b.mark), el("td", { title: b.M_combo }, n1(b.M / 12) + " kip-ft"), el("td", {}, n1(b.V) + " kip"), el("td", {}, n1(b.N) + " kip"), ratioCell(b), el("td", { class: b.v_ratio > 1 ? "st FLAG" : "" }, b.v_ratio == null ? "not checked" : b.v_ratio.toFixed(2)))))),
+      (SWAY.braces && SWAY.braces.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Brace", "Takes", "Tension", "Compression", "Demand / capacity"].map(t => el("th", {}, t)))),
+        el("tbody", {}, SWAY.braces.map(b => el("tr", {}, el("td", {}, b.mark), el("td", {}, b.tension_only ? "tension only" : "tension and compression"), el("td", { title: b.T_combo }, n1(b.T, 2) + " kip"),
+          el("td", { title: b.C_combo }, n1(b.C, 2) + " kip"), el("td", { class: b.ratio > 1 ? "st FLAG" : "", title: b.ratio_combo }, b.ratio == null ? "not checked" : b.ratio.toFixed(2) + (b.ratio > 1 ? " FLAG" : " OK")))))) : null,
       el("div", { class: "help" }, "Largest value of each over every run, at the " + SWAY.method + " level. Axial + bending is demand over capacity (1.00 is the limit); hover for the governing run. The member screens are not changed.")) : null,
     (WIND_LINES && WIND_LINES.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Level", "Dir.", "Wall", "Load", "Tributary", "Shear", "From above", "Chord"].map(t => el("th", {}, t)))),
       el("tbody", {}, WIND_LINES.map(l => el("tr", { style: l.governs === false ? "opacity:.55" : "" }, el("td", {}, l.level), el("td", {}, l.wind), el("td", {}, l.wall), el("td", {}, (l.load || "wind") + (l.governs ? " (governs)" : "")), el("td", {}, l.trib.toFixed(1) + " ft"),
