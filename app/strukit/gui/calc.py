@@ -222,6 +222,23 @@ FORMS = {
                 F("loads_from", "Loads come from", "text", required=False)],
         tables=[T("cases", "Combined loads", [F("name", "Combination or run", "text"), F("P", "Axial compression", unit="kip"), F("Mx", "Moment, column strong axis", unit="kip-ft"),
                                               F("My", "Moment, column weak axis", unit="kip-ft")])]),
+    "flush_end_plate": dict(
+        title="Two-Bolt Flush End-Plate Moment Connection", code="AISC 360-22", mark="FEP",
+        fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"),
+                F("column", "Column (the beam frames to its flange at the column top)", "shape"), F("col_Fy", "Column Fy", unit="ksi"), F("col_Fu", "Column Fu", unit="ksi"),
+                F("steel_source", "Source of the beam and column steel", "text"),
+                F("bp", "End plate width", unit="in"), F("tp", "End plate thickness", unit="in"), F("plate_Fy", "Plate Fy", unit="ksi"), F("plate_Fu", "Plate Fu", unit="ksi"),
+                F("plate_source", "Source of the plate Fy and Fu", "text"),
+                F("d", "Bolt diameter", unit="in", help="two bolts inside the tension flange, two inside the compression flange"),
+                F("group", "Bolt type", "select", options=["A325", "A490", "F3148"]), F("threads", "Threads", "select", options=["N", "X"]),
+                F("g", "Gage", unit="in"), F("pfi", "Inside of the tension flange to the bolts, pfi", unit="in"),
+                F("w_flange", "Flange fillet weld, both sides", unit="in"), F("w_web", "Web fillet weld, both sides", unit="in"),
+                F("below", "End plate past the compression flange weld", unit="in", help="from the outside of the flange weld to the end of the plate"),
+                F("tcap", "Column cap plate thickness", unit="in"), F("bcp", "Column cap plate width", unit="in"),
+                F("w_cap_flange", "Cap plate to column flange fillet (one side)", unit="in"), F("w_cap_web", "Cap plate to column web fillets (both sides)", unit="in"),
+                F("FEXX", "Electrode strength", unit="ksi")],
+        tables=[T("loads", "Loads at the connection", [CASE, F("M", "Moment", unit="kip-ft"), F("T", "Beam axial tension", unit="kip", required=False), F("V", "Shear", unit="kip", required=False),
+                                                       F("label", "Note", "text", required=False)])]),
     "cap_plate": dict(
         title="Beam over HSS Column, Cap Plate Moment Connection", code="AISC 360-22", mark="CP",
         fields=[F("beam", "Beam (continuous over the column)", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
@@ -1551,6 +1568,17 @@ def build(kind, values, project):
         args = (r.text("shape"), r.num("N"), r.num("B"), r.num("t"), r.num("Fy"), r.num("fc"), r.num("area_ratio"), r.num("rod_d"), _fu, _src, r.num("rod_edge"), r.num("rod_side"))
         r.done()
         return ws_more.base_plate_biaxial_sheet(mark, *args, cases, m), "simple", {}
+    if kind == "flush_end_plate":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        loads = [dict(case=x["case"], M=x["M"], T=x["T"] or 0.0, V=x["V"] or 0.0, **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), r.text("column"), r.num("col_Fy"), r.num("col_Fu"), r.text("steel_source"), r.num("bp"), r.num("tp"), r.num("plate_Fy"),
+                r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("g"), r.num("pfi"), r.num("w_flange"), r.num("w_web"), r.num("below"),
+                r.num("tcap"), r.num("bcp"), r.num("w_cap_flange"), r.num("w_cap_web"), r.num("FEXX"))
+        r.done()
+        return ws_more.flush_end_plate_sheet(mark, *args, loads, cb, m), "simple", {}
     if kind == "cap_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], P=x["P"], M=x["M"]) for x in r.rows("runs")]
