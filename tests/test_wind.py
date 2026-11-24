@@ -721,3 +721,28 @@ def test_open_hip_roof_by_the_thatcher_standard(tmp_path):
     s2, _, _ = calc.build("wind_free_roof", dict(v, width="80"), {})
     calcsheet.simple_pdf(s2, str(tmp_path / "h2.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
     assert calc.results("wind_free_roof", dict(v, theta_hip=""), {})["state"] == "incomplete" and calc.results("wind_free_roof", dict(v, width=""), {})["state"] == "incomplete"
+
+
+def test_free_roof_cladding_figures_30_5():
+    """ASCE/SEI 7-22 Figures 30.5-1 to 30.5-3, values read from the page images.  Checks on the transcription: in every table the three area bands step
+    zone 3 -> zone 2 -> zone 1, the plus values run close to 2 : 1.5 : 1, and the 0 degree rows of all three roofs are the same flat roof.
+    Hand check: 115 mi/h, C, h = 12 ft, monoslope 15 degrees, 20 ft by 30 ft: qh = 0.00256 x 0.85 x 115^2 = 28.78 psf; p = 28.78 x 0.85 x 0.85 CN = 20.79 CN;
+    a = max(min(2.0, 4.8), 0.8, 3) = 3 ft; zone 3 at 9 ft2 or less: 3.6 and -3.8 -> 74.9 and -79.0 psf; over 36 ft2: 1.8 and -1.9 -> 37.4 and -39.5 psf."""
+    for roof, t in wind.FREE_CC.items():
+        for obs in (False, True):
+            assert sorted(t[obs]) == [0, 7.5, 15, 30, 45]
+            for th, (z3, z2, z1) in t[obs].items():
+                assert z3[0] >= z2[0] >= z1[0] > 0 and z3[1] <= z2[1] <= z1[1] < 0
+                assert 1.8 <= z3[0] / z1[0] <= 2.1 and 1.4 <= z2[0] / z1[0] <= 1.65
+    assert wind.FREE_CC["monoslope"][False][0] == wind.FREE_CC["pitched"][False][0] == wind.FREE_CC["troughed"][False][0]
+    assert wind.FREE_CC["monoslope"][True][0] == wind.FREE_CC["pitched"][True][0] == wind.FREE_CC["troughed"][True][0]
+    c = wind.free_cc(115, "C", 12.0, 15.0, 20.0, "monoslope")
+    assert c["a"] == 3.0 and c["factor"] == pytest.approx(20.79, abs=0.01)
+    r0, r1, r2 = c["rows"]
+    assert r0["zones"][3][2:] == pytest.approx((74.9, -79.0), abs=0.1) and r2["zones"][3][2:] == pytest.approx((37.4, -39.5), abs=0.1)
+    assert r1["zones"][3] == r1["zones"][2] == r0["zones"][2] and r2["zones"][1] == r0["zones"][1]
+    assert wind.free_cc_cn(22.5, "pitched")[0] == pytest.approx((2.4, -2.0))
+    low = wind.free_cc(90, "B", 12.0, 30.0, 20.0, "pitched", obstructed=True)["rows"][2]["zones"][1]
+    assert low[2] == 16.0 and low[3] <= -16.0
+    with pytest.raises(wind.WindError):
+        wind.free_cc_cn(50, "pitched")
