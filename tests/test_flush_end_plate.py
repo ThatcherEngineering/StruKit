@@ -42,3 +42,21 @@ def test_flush_end_plate_flags_and_stops():
         calc.build("flush_end_plate", dict(V, g="6.5", loads=L(800, 3.3, 25.8)), P)
     with pytest.raises(Exception, match="shallower than the column"):
         calc.build("flush_end_plate", dict(V, beam="W10X33", loads=L(300, 0, 10)), P)
+
+
+def test_flush_end_plate_takes_runs_and_a_frame_beam_end_gives_them():
+    runs = [dict(name="run A", M=str(800 / 12), T="3.30", V="25.8")]
+    s = calc.build("flush_end_plate", dict(V, loads=[], runs=runs, loads_from="forces at the left end of beam BM"), dict(PROJ, method="LRFD"))[0]
+    assert s.ep["Meq"] == pytest.approx(829, rel=0.002) and s.ok and "left end of beam BM" in s.combo_lines[0][0]
+    import sys, os
+    sys.path.insert(0, os.path.dirname(__file__))
+    import test_model
+    proj, ms = test_model._portal(base="fixed")
+    got = calc.frame_beam_end(proj, ms, "BM")
+    assert got["method"] == "LRFD" and set(got["ends"]) == {"left", "right"} and got["ends"]["left"]
+    run = calc.model_frame_sway(proj, ms)
+    b = run["beams"][0]
+    col = {c["mark"]: c for c in run["columns"]}
+    top = max(max(r["M"] for r in got["ends"]["left"]), max(r["M"] for r in got["ends"]["right"]))
+    assert top == pytest.approx(max(col["CL"]["Ms"], col["CR"]["Ms"]) / 12, rel=0.02)          # the beam end moment is the column top moment at a two-member joint
+    assert max(r["V"] for r in got["ends"]["left"]) == pytest.approx(b["V"], rel=0.05)

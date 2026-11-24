@@ -3431,7 +3431,7 @@ def base_plate_biaxial_sheet(mark, shape, N, B, tp, Fy_plate, fc_psi, area_ratio
 
 
 def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, steel_source, bp, tp, plate_Fy, plate_Fu, plate_source, d, group, threads, g, pfi,
-                          w_flange, w_web, below, tcap, bcp, w_cap_flange, w_cap_web, FEXX, loads, combos, method):
+                          w_flange, w_web, below, tcap, bcp, w_cap_flange, w_cap_web, FEXX, loads, combos, method, runs=None, runs_from=""):
     """Two-bolt flush unstiffened end-plate moment connection, a wide-flange beam to the flange of a wide-flange column at the column top (with a
     column cap plate), thick end-plate procedure: AISC Design Guide 39 Sect. 5.1 and Table 5-2 as worked in Example 5.2-1.
     loads: dict(case, M kip-ft, T kips of beam axial tension, V kips). below: distance from the outside of the compression flange weld to the
@@ -3441,7 +3441,7 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
     for nm, v in (("the source of the beam and column steel", steel_source), ("the source of the plate Fy and Fu", plate_source)):
         if not (v or "").strip():
             raise WorksheetError(f"{mark}: {nm} is blank")
-    if not combos or not loads:
+    if not runs and (not combos or not loads):
         raise WorksheetError(f"{mark}: loads and load combinations are needed")
     try:
         bm, col = shapes.get(beam), shapes.get(column)
@@ -3468,11 +3468,11 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
     h1 = db_ - 1.5 * tbf - pfi
     bp_eff = min(bp, bbf + max(tp, 1.0))
     cases = []
-    for cb in combos:
-        M = abs(sum(cb.factors.get(ld["case"], 0.0) * ld["M"] for ld in loads)) * 12.0
-        T = sum(cb.factors.get(ld["case"], 0.0) * ld.get("T", 0.0) for ld in loads)
-        V = abs(sum(cb.factors.get(ld["case"], 0.0) * ld.get("V", 0.0) for ld in loads))
-        cases.append(dict(name=cb.name, M=M, T=max(T, 0.0), V=V, Meq=M + max(T, 0.0) / 2 * (db_ - tbf)))
+    src = [(r_["name"], abs(r_["M"]) * 12.0, r_.get("T") or 0.0, abs(r_.get("V") or 0.0)) for r_ in runs] if runs else \
+        [(cb.name, abs(sum(cb.factors.get(ld["case"], 0.0) * ld["M"] for ld in loads)) * 12.0, sum(cb.factors.get(ld["case"], 0.0) * ld.get("T", 0.0) for ld in loads),
+          abs(sum(cb.factors.get(ld["case"], 0.0) * ld.get("V", 0.0) for ld in loads))) for cb in combos]
+    for name_, M, T, V in src:
+        cases.append(dict(name=name_, M=M, T=max(T, 0.0), V=V, Meq=M + max(T, 0.0) / 2 * (db_ - tbf)))
     wm = max(cases, key=lambda c: c["Meq"])
     wv = max(cases, key=lambda c: c["V"])
     Meq = wm["Meq"]
@@ -3560,8 +3560,13 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
             ("End Plate", f"{bp:g} in. wide x {tp:g} in., Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()}); gage {g:g} in., pfi = {pfi:g} in."),
             ("Bolts", f"(2) {d:g} in. {group}-{threads} at the tension flange and (2) at the compression flange"),
             ("Welds", f"flange {w_flange:g} in., web {w_web:g} in. fillets both sides; cap plate {tcap:g} x {bcp:g} in., {w_cap_flange:g} in. fillet to the column flange, {w_cap_web:g} in. fillets to the web; E{FEXX:g}XX")]
-    load_lines = [f"{x_['case']:<3} M = {x_['M']:>7.2f} kip-ft   T = {x_.get('T', 0.0):>6.2f} kip   V = {x_.get('V', 0.0):>6.2f} kip" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
-    sheet = SimpleSheet(mark, "Two-Bolt Flush End-Plate Moment Connection", "Connection", method, info, load_lines, [(cb.name, cb.source) for cb in combos], "Calculation", steps, rows,
+    if runs:
+        load_lines = [f"M = {abs(r_['M']):>7.2f} kip-ft   T = {(r_.get('T') or 0.0):>6.2f} kip   V = {abs(r_.get('V') or 0.0):>6.2f} kip   {r_['name']}" for r_ in runs]
+        combo_lines = [(f"Combined loads at the {method} level" + (f": {runs_from.strip()}" if (runs_from or "").strip() else ""), "")]
+    else:
+        load_lines = [f"{x_['case']:<3} M = {x_['M']:>7.2f} kip-ft   T = {x_.get('T', 0.0):>6.2f} kip   V = {x_.get('V', 0.0):>6.2f} kip" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
+        combo_lines = [(cb.name, cb.source) for cb in combos]
+    sheet = SimpleSheet(mark, "Two-Bolt Flush End-Plate Moment Connection", "Connection", method, info, load_lines, combo_lines, "Calculation", steps, rows,
                         ["Thick end plate: the plate and the column flange are each strong enough for 1.10 Meq, so the bolts carry no prying force.",
                          "The shear is carried by the two bolts at the compression flange. Tearout does not govern at those holes: the bolt force is toward the middle of the end plate and down the column flange.",
                          "The beam's compression flange is at least a column depth below the column top (Ct = 1.0). The panel zone strength is Eq. J10-9: panel zone deformation is not in the analysis and the column axial load is small against its yield load."],
