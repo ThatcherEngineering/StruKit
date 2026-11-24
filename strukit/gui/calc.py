@@ -933,7 +933,7 @@ FORMS = {
         tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="kip"), F("label", "Note", "text", required=False)])]),
     "base_plate_moment": dict(
         title="Base Plate with Moment", code="AISC 360-22, AISC Design Guide 1, ACI 318-19", mark="BPM",
-        fields=[F("shape", "Column", "shape"), F("N", "Plate length (direction of the moment)", unit="in"),
+        fields=[F("shape", "Column", "shape_col", help="W, M, S or HP shape, or square or rectangular HSS"), F("N", "Plate length (direction of the moment)", unit="in"),
                 F("B", "Plate width", unit="in"), F("t", "Plate thickness", unit="in"), F("Fy", "Plate Fy", unit="ksi"),
                 F("fc", "Concrete f'c", unit="psi"),
                 F("full", "Plate covers the whole support", "select", options=["yes", "no"]),

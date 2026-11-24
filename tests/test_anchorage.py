@@ -277,3 +277,24 @@ def test_sheet_notes_are_factual_not_a_design_log():
     text = " ".join(s.assumptions + s.not_checked + [r.note for r in s.rows]).lower()
     for phrase in ("would give", "thatcher engineering standard", "ruled", "on file", "lower value", "is not used for"):
         assert phrase not in text
+
+
+def test_base_plate_with_moment_under_a_square_hss_by_hand(tmp_path):
+    """AISC Design Guide 1 (3rd Ed.) Sect. 4.3.7 with the HSS yield lines of Sect. 4.3.1.  HSS4x4x1/4 (design t 0.233 in.) on a 10 x 10 plate, Fy 36,
+    f'c 3 ksi, full support, two rods each side 1.5 in. from the end (f = 3.5 in.), LRFD, Pu = 2 kips, Mu = 40 kip-in.:
+    fp = 0.65(0.85)(3) = 1.6575 ksi, q = 16.575 kip/in.; Y = 8.5 - (8.5^2 - 2(40 + 2(3.5))/16.575)^0.5 = 0.3404 in.; T = qY - P = 3.643 kips;
+    m = n = (10 - 0.95(4))/2 = 3.10 in. (an I-shape of the same size would have n = 3.40); x = 3.5 - 2 + 0.233/2 = 1.6165 in.;
+    width = min(10, 2(2)(1.6165)) = 6.466 in.; plate moments: bearing m 1.653, bearing n 1.6575(3.1^2)/2 = 7.964, tension 0.911 kip-in./in.;
+    t = (4(7.964)/(0.9(36)))^0.5 = 0.992 in."""
+    from strukit import base_plate, calcsheet
+    from strukit.gui import calc
+    mc = base_plate.moment_case("LRFD", 2.0, 40.0, 4.0, 4.0, 10, 10, 3.5, 1.6575, 36.0, "LRFD", 2, 0.233, kind="rect")
+    assert mc.Y == pytest.approx(0.3404, abs=0.0005) and mc.T == pytest.approx(3.643, abs=0.005) and mc.x == pytest.approx(1.6165)
+    assert mc.b_eff == pytest.approx(6.466) and mc.t_req == pytest.approx(0.992, abs=0.001) and mc.t_govern == "bearing side, cantilever n"
+    wide = base_plate.moment_case("LRFD", 2.0, 40.0, 4.0, 4.0, 10, 10, 3.5, 1.6575, 36.0, "LRFD", 2, 0.233)
+    assert wide.t_req == pytest.approx((4 * 1.6575 * 3.4 ** 2 / 2 / (0.9 * 36)) ** 0.5, abs=0.001)
+    v = _typed(shape="HSS8x8x3/8")
+    s, kind, _ = calc.build("base_plate_moment", v, PROJECT)
+    assert kind == "simple" and "HSS8X8X3/8" in dict(s.info)["Column"] and "moment about its x axis" in dict(s.info)["Column"]
+    calcsheet.simple_pdf(s, str(tmp_path / "bpm.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
+    assert calc.results("base_plate_moment", _typed(shape="Pipe 8 STD"), PROJECT)["state"] == "stopped"

@@ -181,7 +181,19 @@ def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod
         raise WorksheetError(f"{mark}: support must be 'full' or the support's (length, width)")
     if n_rods < 1 or rod_edge <= 0 or rod_edge >= N / 2:
         raise WorksheetError(f"{mark}: the rods must be between the plate end and the plate centre")
-    p = shapes.get(shape)
+    col_kind = "I"
+    try:
+        p = shapes.get(shape)
+    except shapes.ShapeError:
+        try:
+            h_ = shapes.hss(shape)
+        except shapes.ShapeError:
+            raise WorksheetError(f"{mark}: shape '{shape}' is not in the {shapes.SOURCE} I-shape or HSS tables")
+        if h_["type"] != "HSS-RECT":
+            raise WorksheetError(f"{mark}: round HSS and pipe columns with moment are outside AISC Design Guide 1; this screen takes I-shapes and "
+                                 "square or rectangular HSS")
+        col_kind = "rect"
+        p = dict(d=h_["Ht"], bf=h_["B"], tf=h_["tdes"], tw=h_["tdes"], kind="rect")
     A1 = N * B
     A2 = A1 if support == "full" else base_plate.similar_area(N, B, support[0], support[1])
     k = 0.65 if method == "LRFD" else 1 / 2.31
@@ -196,7 +208,7 @@ def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod
             if c.get(key) is None:
                 raise WorksheetError(f"{mark}: a load case is missing '{key}'")
         mc = base_plate.moment_case(c["name"], c["P"], c["M"] * 12, p["d"], p["bf"], N, B, f_rod, fp, Fy_plate,
-                                    method, n_rods, p["tf"])
+                                    method, n_rods, p["tf"], kind=col_kind)
         per_rod = mc.T / n_rods
         v_rod = abs(c["V"]) / n_shear if n_shear else 0.0
         v_av = bolts.shear(rod_d, grp, "N", 1, method).R_avail
@@ -246,12 +258,14 @@ def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod
              Line("bearing length, Y", g.Y, "in", "DG1 Eq. 4-42 or 4-58"),
              Line("rod tension, T = q_max Y - P", g.T, "kip", "DG1 Eq. 4-55"),
              Line("m = (N - 0.95 d) / 2", (N - 0.95 * p["d"]) / 2, "in", "DG1 Eq. 4-10"),
-             Line("n = (B - 0.8 bf) / 2", (B - 0.8 * p["bf"]) / 2, "in", "DG1 Eq. 4-11"),
+             (Line("n = (B - 0.8 bf) / 2", (B - 0.8 * p["bf"]) / 2, "in", "DG1 Eq. 4-11") if col_kind == "I" else
+              Line("n = (B - 0.95 b) / 2", (B - 0.95 * p["bf"]) / 2, "in", "DG1 Sect. 4.3.1 (HSS)")),
              Line("x = f - d/2 + tf/2", g.x, "in", "DG1 Eq. 4-61", "rods to the centre of the column flange"),
              Line("plate width resisting the rod tension", g.b_eff, "in", "DG1 Sect. 4.3.2 item 4",
                   "45 degree distribution from each rod, not more than B"),
              Line("t required", o_t := max(x["mc"].t_req for x in out), "in", "DG1 Eq. 4-51, 4-52, 4-62")]
-    info = [("Column", f"{shapes.normalize(shape)}  (d = {p['d']:g} in, bf = {p['bf']:g} in), moment about its strong axis"),
+    info = [("Column", f"{shapes.normalize(shape)}  " + (f"(d = {p['d']:g} in, bf = {p['bf']:g} in), moment about its strong axis" if col_kind == "I" else
+                                                        f"(H = {p['d']:g} in, B = {p['bf']:g} in, design t = {p['tf']:g} in), moment about its x axis")),
             ("Plate", f"{N:g} in (in the direction of the moment) x {B:g} in x {t:g} in thick, Fy = {Fy_plate:g} ksi"),
             ("Anchor Rods", f"({2 * n_rods}) {rod_d:g} in diameter, {n_rods} each side, {rod_edge:g} in from the plate "
                             f"ends, {rod_side_edge:g} in from the sides; Fu = {rod_Fu:g} ksi ({rod_source})"),
@@ -282,7 +296,7 @@ def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod
          "distribution from each rod to the column flange (Sect. 4.3.2).",
          "Rod strengths are steel strengths only. Grout strength is not counted."],
         not_checked,
-        picture=("base_plate_moment", dict(d=p["d"], bf=p["bf"], tf=p["tf"], tw=p["tw"], N=N, B=B, n=n_rods,
+        picture=("base_plate_moment", dict(d=p["d"], bf=p["bf"], tf=p["tf"], tw=p["tw"], N=N, B=B, n=n_rods, kind=col_kind,
                                            edge=rod_edge, side=rod_side_edge, rod_d=rod_d, Y=g.Y, T=g.T,
                                            t=t, case=g.name)),
         governing=gov["c"]["name"])
@@ -331,7 +345,8 @@ def _anchorage(mark, p, N, B, support, fc_psi, rod_d, rod_Fu, n_rods, rod_edge, 
         for key in ("name", "P", "M", "V"):
             if c.get(key) is None:
                 raise WorksheetError(f"{mark}: a factored load case is missing '{key}'")
-        mc = base_plate.moment_case(c["name"], c["P"], c["M"] * 12, p["d"], p["bf"], N, B, f_rod, fp, Fy_plate, "LRFD", n_rods, p["tf"])
+        mc = base_plate.moment_case(c["name"], c["P"], c["M"] * 12, p["d"], p["bf"], N, B, f_rod, fp, Fy_plate, "LRFD", n_rods, p["tf"],
+                                    kind=p.get("kind", "I"))
         dem, inter, rt, rv = anch.demands(res, mc.T, c["V"])
         runs.append(dict(c=c, T=mc.T, dem=dem, inter=inter, rt=rt, rv=rv))
         loads.append(f"{c['name']:<26} Pu = {c['P']:>7.2f} kip   Mu = {c['M']:>7.2f} kip-ft   Vu = {c['V']:>6.2f} kip   "

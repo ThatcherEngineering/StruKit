@@ -115,7 +115,7 @@ class MomentCase:
     b_eff: float = 0.0           # plate width resisting the rod tension, in
 
 
-def moment_case(name, P, M, d, bf, N, B, f_rod, fp_avail, Fy_plate, method, n_rods, tf=0.0):
+def moment_case(name, P, M, d, bf, N, B, f_rod, fp_avail, Fy_plate, method, n_rods, tf=0.0, kind="I"):
     """One load case on a base plate with moment: AISC Design Guide 1, 3rd Ed. (2024),
     Sect. 4.3.7.
 
@@ -160,7 +160,8 @@ def moment_case(name, P, M, d, bf, N, B, f_rod, fp_avail, Fy_plate, method, n_ro
         e = M / P if P > 0 else float("inf")
         uplift = True
     # plate bending, per inch of width
-    m, n = (N - 0.95 * d) / 2, (B - 0.8 * bf) / 2
+    # rectangular HSS: yield lines at 0.95 of the depth and of the width (DG1 Sect. 4.3.1, HSS and pipe); x to the centre of the HSS wall
+    m, n = (N - 0.95 * d) / 2, (B - (0.8 if kind == "I" else 0.95) * bf) / 2
     cands = []
     if m > 0:
         Mb = fb * m * m / 2 if Y >= m else fb * Y * (m - Y / 2)
