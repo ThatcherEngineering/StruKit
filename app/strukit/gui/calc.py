@@ -3586,6 +3586,9 @@ def model_frame_sway(project, members):
                     cur.update(P=P / alpha, P_combo=label)
                 if -P / alpha > cur["T"]:
                     cur.update(T=-P / alpha, T_combo=label)
+                b0 = st_[0][0]
+                cur.setdefault("base", []).append(dict(run=label, P=float(b0[0]) / alpha, Ms=abs(float(b0[4])) / alpha, Mw=abs(float(b0[5])) / alpha,
+                                                       Vs=abs(float(b0[2])) / alpha, Vw=abs(float(b0[1])) / alpha, fD=cb.factors.get("D", 0.0)))
                 if Ms / alpha > cur["Ms"]:
                     cur.update(Ms=Ms / alpha, Ms_combo=label)
                 if Mw / alpha > cur["Mw"]:
@@ -3727,11 +3730,39 @@ def _governing(out, project):
     return out
 
 
-def reactions(kind, values, project):
+def frame_reactions(project, members, mark):
+    """Base forces of one column of the placed 3D frame, from the sway run at the ASD level (service) and the LRFD level (strength), in the
+    shape of reactions(): the runs with the largest moment, the largest shear, the largest compression and the least compression or largest
+    uplift, for bending about the column's strong axis and about its weak axis (two "bases" to choose from). Units: lb, lb-ft."""
+    out = dict(bases=["strong-axis moment", "weak-axis moment"], service=[], strength=[], messages=[])
+    for which, key in (("ASD", "service"), ("LRFD", "strength")):
+        run = model_frame_sway(dict(project or {}, method=which), members)
+        if not run.get("levels"):
+            out["messages"].append(f"{which} combinations: " + ("; ".join(run.get("problems") or []) or "the frame did not run"))
+            continue
+        col = next((c for c in run["columns"] if c["mark"] == mark), None)
+        if col is None or not col.get("base"):
+            out["messages"].append(f"{mark} is not a column of the placed frame"); continue
+        for base, mk_, vk in (("strong-axis moment", "Ms", "Vs"), ("weak-axis moment", "Mw", "Vw")):
+            picks = []
+            for chooser in (lambda b: b[mk_], lambda b: b[vk], lambda b: b["P"], lambda b: -b["P"]):
+                b = max(col["base"], key=chooser)
+                if b not in picks:
+                    picks.append(b)
+            for b in picks:
+                out[key].append(dict(base=base, name=b["run"], P=b["P"] * 1000.0, M=b[mk_] * 1000.0 / 12.0, V=b[vk] * 1000.0, wt_factor=(b["fD"] or None) if key == "strength" else None))
+    return out
+
+
+def reactions(kind, values, project, members=None):
     """Base reactions of a steel column or a frame for every ASD combination (service) and
     every LRFD combination (factored), so a footing or base plate can take them without
     retyping. Each list is the member run with that list of combinations; for a cantilevered
     column or a frame that is a second-order analysis at that load level. Units: lb, lb-ft."""
+    if kind in FRAME_COLS and members and str((values or {}).get("at_x1") or "").strip() and str((values or {}).get("at_level") or "").strip():
+        got = frame_reactions(project, members, (values or {}).get("mark"))
+        if got["service"] or got["strength"] or kind == "hss_column":
+            return got
     if kind not in ("steel_column", "frame", "guard"):
         return dict(error="Loads can be taken from a steel column, a moment frame or a guard.")
     out = dict(bases=[], service=[], strength=[], messages=[])

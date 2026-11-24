@@ -594,7 +594,7 @@ function fillBar(m, changed) {
   if (TD_BEAMS.includes(m.kind) || TD_TARGET_P.includes(m.kind)) { const b = fillTakedownBar(m, changed); if (b) return b; }
   if (m.kind === "footing_cont") return fillFootingTakedownBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
-  const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame" || (x.kind === "guard" && m.kind === "base_plate_moment"));
+  const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame" || (x.kind === "hss_column" && x.values.at_x1 && x.values.at_level) || (x.kind === "guard" && m.kind === "base_plate_moment"));
   const td = m.kind === "footing_iso" ? fillFootingTakedownBar(m, changed) : null;
   if (!src.length && td) return td;
   if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame" + (m.kind === "base_plate_moment" ? ", or a guard post," : "") + " once the project has one.");
@@ -606,8 +606,8 @@ function fillBar(m, changed) {
     if (pick.value === "") return;
     const s = S.members[+pick.value];
     try {
-      got = await post("/api/reactions", { kind: s.kind, values: s.values, project: S.project });
-      if (got.bases.length > 1) { got.bases.forEach(b => base.append(el("option", { value: b }, "base " + b))); base.style.display = ""; }
+      got = await post("/api/reactions", { kind: s.kind, values: s.values, project: S.project, members: S.members });
+      if (got.bases.length > 1) { got.bases.forEach(b => base.append(el("option", { value: b }, /moment$/.test(b) ? b : "base " + b))); base.style.display = ""; }
       if (got.messages.length) toast(got.messages.join("  "), 12000);
     } catch (e) { toast(e.message, 9000); }
   });
@@ -623,6 +623,7 @@ function fillBar(m, changed) {
       m.values.cases_lrfd = S.project.method === "LRFD" ? [] : st.map(r => ({ name: r.name, P: f(r.P), M: f(r.M), V: f(r.V) }));
       if (S.project.method !== "LRFD" && !st.length) toast("The rod anchorage in the concrete needs the LRFD combinations too (ACI 318 is strength design). Add them on the Project page and fill again.", 12000);
       m.values.loads_from = s.kind === "guard" ? "post base moment and shear of guard " + (s.values.mark || "") + ", no axial load"
+        : /moment$/.test(b) ? "base forces of column " + (s.values.mark || "") + " in the 3D frame analysis, " + b + ", second-order analysis"
         : "base reactions of " + (s.values.mark || "member") + (got.bases.length > 1 ? " at " + b : "") + (s.kind === "frame" || (s.values.ends || "").startsWith("free") ? ", second-order analysis" : "");
       if (s.kind === "guard") { m.values.shape = m.values.shape || s.values.post; toast("Guard post base loads filled. The guard load acts in any direction: check the plate with the moment about each axis if the base is not the same both ways.", 12000); }
       changed(); drawMain(); return;
