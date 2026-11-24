@@ -2865,3 +2865,85 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
                              picture=("single_plate", dict(n=n, s=spacing, lev=lev, leh=leh, a=a, L=L, tp=tp, weld=weld, column=shapes.normalize(column), beam=shapes.normalize(beam), d=d))))
     sheet.single_plate = dict(R=R, C=C, rn=rn, e=e, brg_p=brg_p, brg_w=brg_w, Vy=Vy, Vr=Vr, Rbs=Rbs, punch=punch, t_min=t_min, L=L, lam=lam, lam_r=lam_r)
     return sheet
+
+
+def bent_plate_tread(b, t, d):
+    """Section of a bent plate tread, legs turned down at both edges: width b, thickness t, overall depth d (in.), square corners.
+    Bending about the horizontal axis. Returns dict(A, y, Ix, S, S_top, Zx, h_t)."""
+    if not (t > 0 and b > 2 * t and d > t):
+        raise WorksheetError("tread: need a width over two thicknesses and a leg depth over the thickness")
+    A1, A2 = b * t, 2 * t * (d - t)
+    A = A1 + A2
+    yl = t + (d - t) / 2
+    y = (A1 * t / 2 + A2 * yl) / A
+    I = b * t ** 3 / 12 + A1 * (y - t / 2) ** 2 + 2 * t * (d - t) ** 3 / 12 + A2 * (yl - y) ** 2
+    yp = A / (2 * b)
+    if yp > t:
+        raise WorksheetError("tread: legs this deep put the plastic neutral axis below the plate; outside this sheet")
+    Z = b * yp ** 2 / 2 + b * (t - yp) ** 2 / 2 + A2 * (yl - yp)
+    return dict(A=A, y=y, Ix=I, S=I / (d - y), S_top=I / y, Zx=Z, h_t=(d - t) / t)
+
+
+def stair_tread_sheet(mark, t, b, d, span_ft, Fy, Fy_source, live_psf, live_P, live_source, method):
+    """Bent plate stair tread spanning between stringers: AISC Design Guide 34 Example 10.2.2.  Uniform live load on the tread width, or the
+    concentrated load at mid-span (bending) and beside a support (shear), not together; self-weight from the section."""
+    for nm, v in (("where the plate yield stress comes from", Fy_source), ("where the live loads come from", live_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: say {nm}")
+    for nm, v in (("the span", span_ft), ("Fy", Fy), ("the uniform live load", live_psf), ("the concentrated live load", live_P)):
+        if v is None or v <= 0:
+            raise WorksheetError(f"{mark}: {nm} must be positive")
+    pr = bent_plate_tread(b, t, d)
+    Ln = footing_line
+    lrfd = method == "LRFD"
+    gD, gL = (1.2, 1.6) if lrfd else (1.0, 1.0)
+    cname = "1.2D + 1.6L" if lrfd else "D + L"
+    csrc = "ASCE/SEI 7-22 Sect. 2.3.1, combination 2" if lrfd else "ASCE/SEI 7-22 Sect. 2.4.1, combination 2"
+    wD = 490.0 * pr["A"] / 144.0                                   # lb/ft
+    wL = live_psf * b / 12.0
+    Ls = span_ft
+    cases = [("uniform", (gD * wD + gL * wL) * Ls ** 2 / 8, (gD * wD + gL * wL) * Ls / 2),
+             ("concentrated", gD * wD * Ls ** 2 / 8 + gL * live_P * Ls / 4, gD * wD * Ls / 2 + gL * live_P)]
+    gm, gv = max(cases, key=lambda c: c[1]), max(cases, key=lambda c: c[2])
+    Mn = min(Fy * pr["Zx"], 1.6 * Fy * pr["S"])
+    Mc = (0.90 * Mn if lrfd else Mn / 1.67) * 1000 / 12
+    lam_v = 1.10 * math.sqrt(5.34 * 29000 / Fy)
+    if pr["h_t"] > lam_v:
+        raise WorksheetError(f"{mark}: the legs are too slender for Cv1 = 1.0 (h/t = {pr['h_t']:.1f} over {lam_v:.1f}); outside this sheet")
+    Aw = 2 * t * d
+    Vn = 0.6 * Fy * Aw
+    Vc = (0.90 * Vn if lrfd else Vn / 1.67) * 1000
+    lam_p = 0.38 * math.sqrt(29000 / Fy)
+    bt_leg, bt_plate = d / t, (b - 2 * t) / t
+    sym = "0.90" if lrfd else "1 / 1.67"
+    steps = [Ln("A", pr["A"], "in2", "section", f"plate {t:g} in., {b:g} in. wide, legs down {d:g} in. overall; square corners"),
+             Ln("Ix", f"{pr['Ix']:.3f} in4", "", "section", f"centroid {pr['y']:.3f} in. below the top"),
+             Ln("Sx", f"{pr['S']:.3f} in3", "", "section", "to the tips of the legs"),
+             Ln("Zx", f"{pr['Zx']:.3f} in3", "", "section", ""),
+             Ln("wD", wD, "lb/ft", "490 lb/ft3 x A", "tread self-weight"),
+             Ln("wL", wL, "lb/ft", live_source.strip(), f"{live_psf:g} psf on the {b:g} in. tread"),
+             Ln("P", live_P, "lb", live_source.strip(), "concentrated, not with the uniform live load")]
+    for nm, M_, V_ in cases:
+        steps += [Ln(f"M, {nm} live load", M_, "lb-ft", "statics", "w L^2 / 8" if nm == "uniform" else "wD L^2 / 8 + P L / 4, P at mid-span"),
+                  Ln(f"V, {nm} live load", V_, "lb", "statics", "w L / 2" if nm == "uniform" else "wD L / 2 + P, P beside a support")]
+    steps += [Ln("Leg b / t", f"{bt_leg:.1f}", "", "AISC 360-22 Table B4.1b Case 13", f"compact limit 0.38 (E / Fy)^0.5 = {lam_p:.1f}"),
+              Ln("Mn = Fy Zx, not over 1.6 Fy Sx", Mn * 1000 / 12, "lb-ft", "AISC 360-22 Eq. F6-1", f"Fy = {Fy:g} ksi ({Fy_source.strip()})"),
+              Ln(f"{sym} Mn", Mc, "lb-ft", "AISC 360-22 Sect. F1", ""),
+              Ln("Vn = 0.6 Fy Aw Cv1", Vn * 1000, "lb", "AISC 360-22 Eq. G2-1", f"Aw = 2 t d = {Aw:.3f} in2; h / t = {pr['h_t']:.2f} under {lam_v:.1f}, Cv1 = 1.0"),
+              Ln(f"{sym} Vn", Vc, "lb", "AISC 360-22 Sect. G1", "")]
+    rows = [Row("Tread bending", cname, gm[1], Mc, "lb-ft", "AISC 360-22 Sect. F6", f"{gm[0]} live load governs"),
+            Row("Tread shear", cname, gv[2], Vc, "lb", "AISC 360-22 Sect. G2", f"{gv[0]} live load governs"),
+            Row("Leg width to thickness", "", bt_leg, lam_p, "", "AISC 360-22 Table B4.1b Case 13", "legs compact")]
+    info = [("Tread", f"bent plate {t:g} in., {b:g} in. wide with {d:g} in. legs turned down at both edges"),
+            ("Steel", f"Fy = {Fy:g} ksi ({Fy_source.strip()})"),
+            ("Span", f"{Ls:g} ft between stringers, simple span"),
+            ("Live load", f"{live_psf:g} psf or {live_P:g} lb concentrated ({live_source.strip()})")]
+    sheet = SimpleSheet(mark, "Stair Tread, Bent Plate", "Tread", method, info, [], [(cname, csrc)], "Loads and Strength", steps, rows,
+                        ["The tread spans simply between the stringers and carries the live load on its own width.",
+                         "The concentrated load is at mid-span for bending and beside a support for shear; it does not act with the uniform live load.",
+                         "Section properties are for square corners."],
+                        [f"local buckling of the tread plate between the legs (width to thickness {bt_plate:.0f})", "deflection and vibration of the tread",
+                         "the tread to stringer connection", "nosings, risers and slip resistance"])
+    sheet.blocks.append(dict(title="Tread Section", head="Tread Section", picture=("tread", dict(b=b, t=t, d=d, span=Ls))))
+    sheet.tread = dict(pr, wD=wD, wL=wL, cases=cases, Mn=Mn, Mc=Mc, Vn=Vn, Vc=Vc)
+    return sheet

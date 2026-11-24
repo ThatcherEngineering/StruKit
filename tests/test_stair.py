@@ -39,3 +39,27 @@ def test_stringer_other_sections_and_stops(tmp_path):
     assert calc.results("stair_stringer", dict(V, extra_note=""), ASD)["state"] == "stopped"
     assert calc.results("stair_stringer", dict(V, dead_note=""), ASD)["state"] == "incomplete"
     assert calc.results("stair_stringer", dict(V, shape="L4X4X1/4"), ASD)["state"] == "stopped"
+
+
+def test_bent_plate_tread_design_guide_34_example_10_2_2(tmp_path):
+    """DG 34 Example 10.2.2 (pp. 88-90): 3/16 in. plate, 12 in. wide, 2 in. legs, 3 ft span, Fy = 26.7 ksi, 60 psf or 1 kip.  Published (software section,
+    bend radii): A 2.88 in2, Ix 0.711 in4, Sx 0.426 in3, Zx 0.773 in3; ASD Va 0.105 / 1.02 kips, Ma 0.0788 / 0.761 kip-ft, Vn/Omega 7.20 kips,
+    Mn/Omega 0.909 kip-ft; LRFD Vu 1.62 kips, Mu 1.21 kip-ft, 10.8 kips, 1.36 kip-ft.  StruKit's square-corner section is within 2 percent."""
+    import pytest
+    from strukit import calcsheet
+    from strukit.gui import calc
+    from strukit.ws_more import bent_plate_tread, stair_tread_sheet
+    pr = bent_plate_tread(12.0, 0.1875, 2.0)
+    assert pr["A"] == pytest.approx(2.88, rel=0.02) and pr["Ix"] == pytest.approx(0.711, rel=0.01) and pr["S"] == pytest.approx(0.426, rel=0.005) and pr["Zx"] == pytest.approx(0.773, rel=0.005)
+    a = stair_tread_sheet("TR1", 0.1875, 12.0, 2.0, 3.0, 26.7, "approximate, A786", 60.0, 1000.0, "OSHA industrial stair", "ASD")
+    (_, Mu_, Vu_), (_, Mc_, Vc_) = a.tread["cases"]
+    assert Vu_ == pytest.approx(105, abs=1) and Mu_ == pytest.approx(78.8, abs=0.5) and Vc_ == pytest.approx(1020, rel=0.005) and Mc_ == pytest.approx(761, abs=1.5)
+    assert a.tread["Vc"] == pytest.approx(7200, rel=0.005) and a.tread["Mc"] == pytest.approx(909, rel=0.005) and a.ok
+    l = stair_tread_sheet("TR1", 0.1875, 12.0, 2.0, 3.0, 26.7, "approximate, A786", 60.0, 1000.0, "OSHA industrial stair", "LRFD")
+    assert l.tread["cases"][1][2] == pytest.approx(1620, rel=0.005) and l.tread["cases"][1][1] == pytest.approx(1210, rel=0.005)
+    assert l.tread["Vc"] == pytest.approx(10800, rel=0.005) and l.tread["Mc"] == pytest.approx(1360, rel=0.01)
+    v = dict(mark="TR1", t="0.1875", b="12", d="2", span="3", Fy="26.7", Fy_source="approx", live_psf="60", live_P="1000", live_source="OSHA")
+    s, kind, _ = calc.build("stair_tread", v, dict(method="ASD"))
+    calcsheet.simple_pdf(s, str(tmp_path / "t.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
+    assert calc.results("stair_tread", dict(v, live_source=""), dict(method="ASD"))["state"] == "incomplete"
+    assert not stair_tread_sheet("TR1", 0.1875, 12.0, 2.0, 4.0, 26.7, "x", 100.0, 1000.0, "y", "ASD").ok

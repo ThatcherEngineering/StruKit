@@ -78,6 +78,14 @@ FORMS = {
                 F("occupancy", "Live load", "select", options=["stairs and exit ways", "one- and two-family dwellings"], help="100 psf or 40 psf, ASCE 7-22 Table 4.3-1"),
                 F("braced", "Treads and risers brace the stringer", "select", options=["yes", "no"])],
         tables=[T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text"), F("ratio", "Run /"), F("source", "Source", "text")])]),
+    "stair_tread": dict(
+        title="Stair Tread (bent plate)", code="AISC 360-22", mark="TR",
+        fields=[F("t", "Plate thickness", unit="in"), F("b", "Tread width", unit="in"), F("d", "Leg depth, overall", unit="in", help="legs turned down at both edges"),
+                F("span", "Span between stringers", unit="ft"), F("Fy", "Plate yield stress, Fy", unit="ksi"),
+                F("Fy_source", "Where that Fy comes from", "text", help="for example: ASTM A36; raised pattern floor plate (A786) has no specified yield, verify"),
+                F("live_psf", "Uniform live load", unit="psf"), F("live_P", "Concentrated live load", unit="lb"),
+                F("live_source", "Where the live loads come from", "text", help="for example: ASCE/SEI 7-22 Table 4.3-1, stairs: 100 psf or 300 lb")],
+        tables=[]),
     "hss_column": dict(
         title="HSS or Pipe Column", code="AISC 360-22", mark="HC",
         fields=[F("shape", "Section", "hss_shape", help="square, rectangular or round HSS, or pipe, by its Manual label: HSS6x6x1/4, HSS8x4x3/16, HSS5.563x0.258, Pipe 4 STD"),
@@ -1326,6 +1334,11 @@ def build(kind, values, project):
         lay = ws_frame.layout(bays, stories, base, cs, bs, roof=roof, rise_ft=rise or 0.0, rafter_shape=rs, shape_of=over)
         s = ws_frame.run(mark, lay, Fy, loads, cb, m, sw, ub, leaning=lean, drift_checks=dc)
         return s, "frame", {}
+    if kind == "stair_tread":
+        m = method(project, r.miss)
+        args = (r.num("t"), r.num("b"), r.num("d"), r.num("span"), r.num("Fy"), r.text("Fy_source"), r.num("live_psf"), r.num("live_P"), r.text("live_source"))
+        r.done()
+        return ws_more.stair_tread_sheet(mark, *args, m), "simple", {}
     if kind == "single_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
