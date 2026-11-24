@@ -924,7 +924,7 @@ FORMS = {
         tables=[]),
     "base_plate": dict(
         title="Base Plate", code="AISC 360-22", mark="BP",
-        fields=[F("shape", "Column", "shape"), F("N", "Plate length (along column depth)", unit="in"),
+        fields=[F("shape", "Column", "shape_col", help="W, M, S or HP shape, HSS or pipe"), F("N", "Plate length (along column depth)", unit="in"),
                 F("B", "Plate width", unit="in"), F("t", "Plate thickness", unit="in"), F("Fy", "Plate Fy", unit="ksi"),
                 F("fc", "Concrete f'c", unit="psi"),
                 F("full", "Plate covers the whole support", "select", options=["yes", "no"]),

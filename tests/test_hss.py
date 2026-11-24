@@ -182,3 +182,27 @@ def test_guard_of_square_hss_by_hand():
     assert r["Post bending"].source == "AISC 360-22 Sect. F7, H1" and dict(s.info)["Post base"].startswith("M = 875 lb-ft, V = 250 lb")
     mixed, _, _ = calc.build("guard", dict(v, rail="HSS1.900x0.145", rail_Fy="46"), dict(method="LRFD"))
     assert {x.check: x for x in mixed.rows}["Top rail bending"].source == "AISC 360-22 Sect. F8"
+
+
+def test_base_plate_under_hss_and_pipe_columns(tmp_path):
+    """AISC Design Guide 1 (3rd Ed.) Sect. 4.3.1: rectangular HSS, yield lines at 0.95 of the depth and width; round HSS and pipe, at 0.8 of the
+    diameter; lambda n' not used.  By hand, LRFD, HSS6x6x1/4 on a 12 x 12 plate, Pu = 96 kips, Fy 36 ksi: m = n = (12 - 5.7)/2 = 3.15 in.;
+    fp = 96/144 = 0.667 ksi; t = 3.15 (2(0.667)/(0.9(36)))^0.5 = 0.639 in.  Pipe 6 STD (OD 6.625): m = (12 - 5.30)/2 = 3.35 in., t = 0.680 in."""
+    from strukit import base_plate, calcsheet
+    from strukit.gui import calc
+    r = base_plate.check(6.0, 6.0, 12, 12, 36.0, 3.0, 144, 96.0, "LRFD", kind="rect")
+    assert r.t_min == pytest.approx(0.639, abs=0.001) and [l.value for l in r.lines if l.label.startswith("m =")] == [pytest.approx(3.15)]
+    assert base_plate.check(6.625, 6.625, 12, 12, 36.0, 3.0, 144, 96.0, "LRFD", kind="round").t_min == pytest.approx(0.680, abs=0.001)
+    i = base_plate.check(6.0, 6.0, 12, 12, 36.0, 3.0, 144, 96.0, "LRFD")                 # I-shape path unchanged: n uses 0.8 bf
+    assert [l.value for l in i.lines if l.label.startswith("n =")] == [pytest.approx(3.6)]
+    lrfd = dict(method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="ASCE/SEI 7-22 Sect. 2.3.1, combination 2")])
+    v = dict(mark="BP3", shape="HSS6x6x1/4", N="12", B="12", t="0.75", Fy="36", fc="3000", full="yes", sup_N="", sup_B="", loads=[dict(case="D", P="20", label=""), dict(case="L", P="45", label="")])
+    s, kind, kw = calc.build("base_plate", v, lrfd)
+    rows = {x.check: x for x in s.rows}
+    assert rows["plate thickness"].demand == pytest.approx(3.15 * (2 * (96 / 144) / (0.9 * 36)) ** 0.5, abs=0.001) and "Design Guide 1" in rows["plate thickness"].source
+    calcsheet.simple_pdf(s, str(tmp_path / "bp.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
+    p, _, _ = calc.build("base_plate", dict(v, shape="Pipe 6 STD"), lrfd)
+    assert {x.check: x for x in p.rows}["plate thickness"].demand == pytest.approx(0.680, abs=0.001)
+    calcsheet.simple_pdf(p, str(tmp_path / "pp.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
+    assert calc.results("base_plate", dict(v, shape="C12X20.7"), lrfd)["state"] == "stopped"
+    assert calc.results("base_plate", dict(v, N="5", B="5"), lrfd)["state"] == "stopped"

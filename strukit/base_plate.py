@@ -37,7 +37,7 @@ def similar_area(N, B, support_N, support_B):
     return N * B * k * k
 
 
-def check(d, bf, N, B, Fy_plate, fc, A2, Pr, method="ASD"):
+def check(d, bf, N, B, Fy_plate, fc, A2, Pr, method="ASD", kind="I"):
     """d, bf: column depth and flange width. N: plate length (parallel to d); B: plate
     width. fc in ksi. A2: similar concentric support area (use N x B for a plate covering
     the whole support, which gives Eq. J8-1). Pr: required axial compression for the
@@ -61,6 +61,25 @@ def check(d, bf, N, B, Fy_plate, fc, A2, Pr, method="ASD"):
     Pc = 0.65 * Pp if method == "LRFD" else Pp / 2.31
     L.append(Line("phi_c Pp" if method == "LRFD" else "Pp / Omega_c", Pc, "kip",
                   "Sect. J8: phi_c = 0.65, Omega_c = 2.31"))
+    if kind not in ("I", "rect", "round"):
+        raise SteelInputError("base plate: the column is an I-shape, a rectangular HSS or a round HSS or pipe")
+    if kind != "I":
+        # AISC Design Guide 1, 3rd Ed., Sect. 4.3.1, "Base Plate Yielding Limit (HSS and Pipe)": yield lines at 0.95 times the depth
+        # and width of a rectangular HSS, at 0.8 times the diameter of a round HSS or pipe; lambda n' is not used.
+        k_ = 0.95 if kind == "rect" else 0.8
+        m, n = (N - k_ * d) / 2, (B - k_ * bf) / 2
+        ell = max(m, n)
+        if ell <= 0:
+            raise SteelInputError("base plate: the plate does not extend past the column")
+        fp = Pr / A1
+        t_min = ell * math.sqrt(2 * fp / (0.90 * Fy_plate)) if method == "LRFD" else ell * math.sqrt(1.67 * 2 * fp / Fy_plate)
+        nm = ("0.95 H", "0.95 B") if kind == "rect" else ("0.8 D", "0.8 D")
+        L += [Line(f"m = (N - {nm[0]}) / 2", m, "in", "AISC Design Guide 1 Sect. 4.3.1 (HSS and pipe)"),
+              Line(f"n = (B - {nm[1]}) / 2", n, "in", "AISC Design Guide 1 Sect. 4.3.1 (HSS and pipe)"),
+              Line("l = max(m, n)", ell, "in", "AISC Design Guide 1 Sect. 4.3.1"),
+              Line("fp = Pr / (B N)", fp, "ksi", "bearing stress under the plate"),
+              Line("t min", t_min, "in", "Manual Eq. 14-7a" if method == "LRFD" else "Manual Eq. 14-7b")]
+        return BasePlateResult(Pp, Pc, t_min, L)
     m = (N - 0.95 * d) / 2
     n = (B - 0.8 * bf) / 2
     n1 = math.sqrt(d * bf) / 4

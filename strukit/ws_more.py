@@ -45,18 +45,31 @@ def base_plate_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, loads, com
         raise WorksheetError(f"{mark}: no loads given")
     if support != "full" and (not isinstance(support, (tuple, list)) or len(support) != 2):
         raise WorksheetError(f"{mark}: support must be 'full' or the support's (length, width)")
-    p = shapes.get(shape)
+    kind = "I"
+    try:
+        p = shapes.get(shape)
+    except shapes.ShapeError:
+        try:
+            h_ = shapes.hss(shape)
+        except shapes.ShapeError:
+            raise WorksheetError(f"{mark}: shape '{shape}' is not in the {shapes.SOURCE} I-shape, HSS or pipe tables")
+        kind = "rect" if h_["type"] == "HSS-RECT" else "round"
+        p = dict(d=h_["Ht"], bf=h_["B"], tf=h_["tdes"], tw=h_["tdes"]) if kind == "rect" else dict(d=h_["OD"], bf=h_["OD"], tf=h_["tdes"], tw=h_["tdes"])
     totals = {cb.name: sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads) for cb in combos}
     worst = max(totals, key=lambda k: totals[k])
     A2 = N * B if support == "full" else base_plate.similar_area(N, B, support[0], support[1])
-    res = base_plate.check(p["d"], p["bf"], N, B, Fy_plate, fc_psi / 1000.0, A2, totals[worst], method)
+    try:
+        res = base_plate.check(p["d"], p["bf"], N, B, Fy_plate, fc_psi / 1000.0, A2, totals[worst], method, kind=kind)
+    except base_plate.SteelInputError as e:
+        raise WorksheetError(f"{mark}: {str(e).replace('base plate: ', '')}")
     rows = [Row("bearing on concrete", worst, totals[worst], res.P_avail, "kip",
                 "AISC 360-22 Sect. J8, " + ("Eq. J8-1" if support == "full" else "Eq. J8-2"),
                 f"A1 = {N * B:g} in2; A2 = {A2:g} in2"),
             Row("plate thickness", worst, res.t_min, t, "in",
-                "AISC Manual Part 14, Eq. 14-2 to 14-7",
+                "AISC Manual Part 14, Eq. 14-2 to 14-7" if kind == "I" else "AISC Design Guide 1 Sect. 4.3.1, Manual Eq. 14-7",
                 "demand is the minimum thickness, capacity is the thickness provided")]
-    info = [("Column", f"{shapes.normalize(shape)}  (d = {p['d']:g} in, bf = {p['bf']:g} in)"),
+    info = [("Column", f"{shapes.normalize(shape)}  " + (f"(d = {p['d']:g} in, bf = {p['bf']:g} in)" if kind == "I" else
+                                                        f"(H = {p['d']:g} in, B = {p['bf']:g} in)" if kind == "rect" else f"(OD = {p['d']:g} in)")),
             ("Plate", f"{N:g} in (along the column depth) x {B:g} in x {t:g} in thick, Fy = {Fy_plate:g} ksi"),
             ("Concrete", f"f'c = {fc_psi:,.0f} psi"),
             ("Support", "plate covers the full support" if support == "full" else
@@ -71,7 +84,7 @@ def base_plate_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, loads, com
          "The plate is centred on the concrete support. Grout strength is not counted."],
         ["moment, uplift or shear at the column base", "anchor rods (ACI 318-19 Chapter 17)",
          "weld of the column to the plate", "the concrete pedestal or footing itself"],
-        picture=("base_plate", dict(d=p["d"], bf=p["bf"], tf=p["tf"], tw=p["tw"], N=N, B=B,
+        picture=("base_plate", dict(d=p["d"], bf=p["bf"], tf=p["tf"], tw=p["tw"], N=N, B=B, kind=kind,
                                     support=None if support == "full" else tuple(support))),
         governing=worst)
 
