@@ -267,9 +267,15 @@ def api(path, body):
         _pdfs[token] = tmp
         return dict(url=f"/pdf/{token}.pdf", **extra)
     if path == "/api/open":
-        p = body.get("path") or _file_dialog(False, "Open a StruKit project")
+        p = body.get("path") or _file_dialog(False, "Open a StruKit project, or a StruCalc project to bring across",
+                                             filt_text="StruKit or StruCalc project (*.strukit;*.vtx)\0*.strukit;*.vtx\0All files\0*.*\0\0")
         if not p:
             return dict(cancelled=True)
+        if str(p).lower().endswith(".vtx"):
+            # a StruCalc project: read it into a new, unsaved StruKit project; the StruCalc file itself is never written to
+            from .. import strucalc
+            data, notes = strucalc.convert(p)
+            return dict(path=None, data=data, imported=os.path.basename(str(p)), notes=notes)
         data = json.loads(Path(p).read_text(encoding="utf-8"))
         if data.get("format") != "strukit-project":
             raise ValueError("that file is not a StruKit project")

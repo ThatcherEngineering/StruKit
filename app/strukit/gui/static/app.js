@@ -626,6 +626,11 @@ async function open(p = null) {
     const r = await post("/api/open", { path: p });
     if (r.cancelled) return;
     load(r.data, r.path);
+    if (r.imported) {
+      setDirty(true);
+      toast("Brought across from StruCalc file " + r.imported + ": " + r.data.members.length + " members. It is a new StruKit project; save it under its own name."
+        + (r.notes && r.notes.length ? " Not carried across: " + r.notes.join(" | ") : ""), 30000);
+    }
   } catch (e) { toast("Could not open: " + e.message, 9000); }
 }
 function migrate(d) {      // an older project file has one list of combinations, for its own method
