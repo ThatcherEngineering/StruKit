@@ -1501,6 +1501,8 @@ def _block_picture(c, top, pic):
         return _guard_picture(c, top - 6, d)
     if name == "tread":
         return _tread_picture(c, top - 6, d)
+    if name == "tension":
+        return _tension_picture(c, top - 6, d)
     if name == "single_plate":
         return _single_plate_picture(c, top - 6, d)
     if name == "topo":
@@ -1964,6 +1966,23 @@ def _tread_picture(c, top, d):
     c.drawRightString(x0 - 8, y1 - 13, f"span {d['span']:g} ft")
     _small(c, (LM + RM) / 2, y0 - 30, "tread cross section; spans between the stringers")
     return y0 - 38
+
+
+def _tension_picture(c, top, d):
+    """The member in elevation with the tension pulling at each end, its length dimensioned and the section named."""
+    x0, x1 = (LM + RM) / 2 - 110, (LM + RM) / 2 + 110
+    y = top - 30
+    c.setFillColorRGB(0.74, 0.79, 0.86); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    c.rect(x0, y - 5, x1 - x0, 10, fill=1, stroke=1)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow(c, x1 + 4, y, x1 + 34, y, head=4)
+    _arrow(c, x0 - 4, y, x0 - 34, y, head=4)
+    c.setFont(FR, 6.5)
+    c.drawString(x1 + 38, y - 2, d["T"]); c.drawRightString(x0 - 38, y - 2, d["T"])
+    c.setFillColorRGB(*INK); c.drawCentredString((x0 + x1) / 2, y + 9, d["shape"])
+    memberart._dim_h(c, x0, x1, y - 16, f"{d['L']:g} ft", FR, ext_from=y - 5)
+    _small(c, (LM + RM) / 2, y - 36, "member in tension; not to scale")
+    return y - 44
 
 
 def _single_plate_picture(c, top, d):

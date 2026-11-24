@@ -555,6 +555,11 @@ FORMS = {
                 F("W2", "Winter wind parameter, W2 (gable)", required=False, help="from the ASCE 7 Hazard Tool; Fig. 7.6-1"),
                 F("W2_source", "Where W2 comes from (gable)", "text", required=False)],
         tables=[]),
+    "wind_enclosure": dict(
+        title="Wind Enclosure Classification", code="ASCE/SEI 7-22", mark="WE",
+        fields=[F("roof_gross", "Roof gross area", unit="ft2"), F("roof_open", "Roof openings", unit="ft2", required=False),
+                F("openings_basis", "What is counted as an opening", "text", help="for example: overhead doors taken as open; windows rated for the design pressure taken as closed")],
+        tables=[T("walls", "Walls", [F("name", "Wall", "text"), F("gross", "Gross area", unit="ft2"), F("open", "Openings", unit="ft2")])]),
     "wind_kzt": dict(
         title="Wind Topographic Factor (Kzt)", code="ASCE/SEI 7-22", mark="WT",
         fields=[F("shape", "Topographic feature", "select", options=["2D ridge", "2D escarpment", "3D axisymmetrical hill"], help="ASCE 7-22 Figure 26.8-1"),
@@ -1357,6 +1362,13 @@ def build(kind, values, project):
                 r.num("U"), r.text("U_source"))
         r.done()
         return ws_more.tension_member_sheet(mark, *args, loads, cb, m), "simple", {}
+    if kind == "wind_enclosure":
+        walls = [dict(name=x["name"], gross=x["gross"], open=x["open"]) for x in r.rows("walls")]
+        if not walls:
+            r.miss.append("No walls are entered")
+        rg, ro, ob = r.num("roof_gross"), r.num("roof_open", False), r.text("openings_basis")
+        r.done()
+        return ws_more.wind_enclosure_sheet(mark, walls, rg, ro or 0.0, ob), "simple", {}
     if kind == "single_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]

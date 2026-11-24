@@ -3019,5 +3019,41 @@ def tension_member_sheet(mark, shape, Fy, Fu, steel_source, length_ft, n_holes, 
                         ["Axial tension only, applied through the centroid of the section.", "Standard bolt holes; holes in one line across the section (no stagger)."],
                         ["the end connection: bolts, welds, block shear and the connected parts", "bending or compression in the member", "staggered holes (Sect. B4.3b)",
                          "pin-connected members and eyebars (Sect. D5, D6)"])
+    sheet.blocks.append(dict(title="Loading", head="Loading", picture=("tension", dict(T=f"{T:.1f} kip ({worst})", shape=shapes.normalize(shape), L=length_ft))))
     sheet.tension = dict(T=T, Ag=Ag, An=An, Ae=Ae, Pyc=Pyc, Prc=Prc, slen=slen)
+    return sheet
+
+
+def wind_enclosure_sheet(mark, walls, roof_gross, roof_open, openings_basis):
+    """Enclosure classification of a building and its internal pressure coefficient (see wind.enclosure)."""
+    if not (openings_basis or "").strip():
+        raise WorksheetError(f"{mark}: say what is counted as an opening")
+    try:
+        r = wind.enclosure(walls, roof_gross, roof_open or 0.0)
+    except wind.WindError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    yn = lambda b: "yes" if b else "no"
+    t = [f"{'wall':<18}{'Ao ft2':>10}{'Ag ft2':>10}{'Ao/Ag':>8}{'80% open':>10}{'limit ft2':>11}{'Ao <= limit':>13}"]
+    t2 = [f"{'wall':<18}{'Aoi ft2':>10}{'Agi ft2':>10}{'Ao > 1.10 Aoi':>15}{'Ao > limit':>12}{'Aoi/Agi':>9}{'<= 0.20':>9}"]
+    for x in r["walls"]:
+        t.append(f"{x['name'][:17]:<18}{x['Ao']:>10,.0f}{x['Ag']:>10,.0f}{x['ratio']:>8.2f}{yn(x['open80']):>10}{x['limit']:>11.2f}{yn(x['small']):>13}")
+        t2.append(f"{x['name'][:17]:<18}{x['Aoi']:>10,.0f}{x['Agi']:>10,.0f}{yn(x['c1']):>15}{yn(x['c2']):>12}{x['balance']:>9.2f}{yn(x['c3']):>9}")
+    cls = r["classification"]
+    Ln = footing_line
+    why = {"open": "every wall is at least 80% open", "enclosed": "the openings in every wall are within the smaller of 4 ft2 and 1% of the wall",
+           "partially enclosed": f"wall '{r['governing']}' meets all three conditions", "partially open": "not open, not enclosed and not partially enclosed"}[cls]
+    steps = [Ln("Classification", cls, "", "ASCE/SEI 7-22 Sect. 26.2, 26.12", why),
+             Ln("GCpi", f"+{r['GCpi']:.2f} and -{r['GCpi']:.2f}" if r["GCpi"] else "0.00", "", "Table 26.13-1", "")]
+    info = [("Walls", f"{len(walls)} walls, {sum(w['gross'] for w in walls):,.0f} ft2 gross, {sum(w['open'] for w in walls):,.0f} ft2 of openings"),
+            ("Roof", f"{roof_gross:,.0f} ft2 gross, {roof_open or 0:,.0f} ft2 of openings"),
+            ("Openings", openings_basis.strip())]
+    sheet = SimpleSheet(mark, "Wind Enclosure Classification", "Building", "Chapter 26", info, [], [], "Classification", steps, [],
+                        ["Each wall is taken in turn as the wall that receives positive external pressure.",
+                         "Ao: openings in that wall; Ag: gross area of that wall; Aoi and Agi: openings and gross area of the rest of the envelope, walls and roof."],
+                        ["glazing in wind-borne debris regions (Sect. 26.12.3)", "buildings with large volumes, reduction factor Ri (Sect. 26.13.1)"])
+    sheet.blocks.append(dict(title="Open and Enclosed Buildings (Sect. 26.2)", lines=t, after=["Open: every wall at least 80% open. Enclosed: in every wall, openings not over the smaller "
+                                                                                              "of 4 ft2 and 1% of the wall (the limit)."]))
+    sheet.blocks.append(dict(title="Partially Enclosed Buildings (Sect. 26.2)", lines=t2, after=["Partially enclosed: for a wall, all three conditions are met. A building that is not open, "
+                                                                                                "enclosed or partially enclosed is partially open."]))
+    sheet.enclosure = r
     return sheet

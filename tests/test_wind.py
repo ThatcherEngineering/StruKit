@@ -746,3 +746,29 @@ def test_free_roof_cladding_figures_30_5():
     assert low[2] == 16.0 and low[3] <= -16.0
     with pytest.raises(wind.WindError):
         wind.free_cc_cn(50, "pitched")
+
+
+def test_enclosure_classification_wind_design_manual_example_1(tmp_path):
+    """Wind Design Manual (2018 IBC / ASCE 7-16) Design Example 1, pp. 4-8; the definitions are unchanged in ASCE/SEI 7-22 Sect. 26.2 (pdf pp. 322-323).
+    1a: windward 5,000 ft2 open, two side walls 3,000 ft2 open each, leeward and roof closed: partially open, GCpi 0.18.
+    1b: side openings 2,250 ft2 each: 5,000 > 1.10 x 4,500 = 4,950, balance 4,500 / 24,500 = 18%: partially enclosed, GCpi 0.55."""
+    from strukit import calcsheet
+    from strukit.gui import calc
+    w = lambda side: [dict(name="windward", gross=5000, open=5000), dict(name="side 1", gross=side, open=side), dict(name="side 2", gross=side, open=side),
+                      dict(name="leeward", gross=5000, open=0)]
+    a = wind.enclosure(w(3000), 15000)
+    assert a["classification"] == "partially open" and a["GCpi"] == 0.18
+    b = wind.enclosure(w(2250), 15000)
+    assert b["classification"] == "partially enclosed" and b["GCpi"] == 0.55 and b["governing"] == "windward"
+    assert b["walls"][0]["Aoi"] == 4500 and b["walls"][0]["Agi"] == 24500 and b["walls"][0]["balance"] == pytest.approx(0.18, abs=0.005)
+    box = [dict(name=n, gross=1000, open=o) for n, o in (("N", 3.0), ("S", 0.0), ("E", 4.0), ("W", 0.0))]
+    assert wind.enclosure(box, 2000)["classification"] == "enclosed"
+    assert wind.enclosure([dict(name=n, gross=1000, open=850) for n in "NSEW"], 2000)["classification"] == "open"
+    box[0]["open"] = 60.0                                    # one door open: 60 > 1.1 x 4, over the limit, balance tiny
+    assert wind.enclosure(box, 2000)["classification"] == "partially enclosed"
+    v = dict(mark="WE1", roof_gross="15000", roof_open="", openings_basis="doors taken as open",
+             walls=[dict(name=x["name"], gross=str(x["gross"]), open=str(x["open"])) for x in w(2250)])
+    s, kind, _ = calc.build("wind_enclosure", v, {})
+    assert kind == "simple" and s.enclosure["classification"] == "partially enclosed"
+    calcsheet.simple_pdf(s, str(tmp_path / "e.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    assert calc.results("wind_enclosure", dict(v, openings_basis=""), {})["state"] == "incomplete"

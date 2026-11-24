@@ -946,3 +946,36 @@ def free_cc(V, exposure, h, theta, least_dim, roof="monoslope", obstructed=False
     for band, lo, hi, zs in (("a^2 or less", 0.0, a * a, (z3, z2, z1)), ("over a^2 to 4 a^2", a * a, 4 * a * a, (z2, z2, z1)), ("over 4 a^2", 4 * a * a, None, (z1, z1, z1))):
         rows.append(dict(band=band, lo=lo, hi=hi, zones={n: (c[0], c[1], max(k * c[0], MIN_CC), min(k * c[1], -MIN_CC)) for n, c in zip((3, 2, 1), zs)}))
     return dict(qh=qh, Kh=kh, a=a, factor=k, figure=FREE_CC_FIGURE[roof], rows=rows)
+
+
+def enclosure(walls, roof_gross, roof_open=0.0):
+    """Enclosure classification, ASCE/SEI 7-22 Sect. 26.2 definitions (pdf pp. 322-323) and Sect. 26.12.  walls: list of dict(name, gross, open), ft2,
+    each wall taken in turn as the wall that receives positive external pressure; roof_gross, roof_open: ft2.
+    Open: every wall Ao >= 0.8 Ag.  Enclosed: every wall Ao <= the smaller of 0.01 Ag and 4 ft2.  Partially enclosed: for some wall Ao > 1.10 Aoi,
+    Ao > the smaller of 4 ft2 and 0.01 Ag, and Aoi / Agi <= 0.20.  Partially open: none of these.
+    Returns dict(classification, GCpi, walls=[per-wall values], governing wall)."""
+    if not walls:
+        raise WindError("wind: enter the walls of the building")
+    if roof_gross is None or roof_gross <= 0 or roof_open < 0 or roof_open > roof_gross:
+        raise WindError("wind: the roof needs a gross area, and openings between zero and that area")
+    for w in walls:
+        if w["gross"] <= 0 or w["open"] < 0 or w["open"] > w["gross"]:
+            raise WindError(f"wind: wall '{w['name']}' needs a gross area, and openings between zero and that area")
+    tot_o, tot_g = sum(w["open"] for w in walls) + roof_open, sum(w["gross"] for w in walls) + roof_gross
+    out = []
+    for w in walls:
+        Ao, Ag = w["open"], w["gross"]
+        Aoi, Agi = tot_o - Ao, tot_g - Ag
+        lim = min(0.01 * Ag, 4.0)
+        out.append(dict(name=w["name"], Ao=Ao, Ag=Ag, Aoi=Aoi, Agi=Agi, ratio=Ao / Ag, limit=lim, open80=Ao >= 0.8 * Ag, small=Ao <= lim,
+                        c1=Ao > 1.10 * Aoi, c2=Ao > lim, c3=Aoi / Agi <= 0.20, balance=Aoi / Agi))
+    gov = None
+    if all(x["open80"] for x in out):
+        cls = "open"
+    elif all(x["small"] for x in out):
+        cls = "enclosed"
+    else:
+        pe = [x for x in out if x["c1"] and x["c2"] and x["c3"]]
+        cls = "partially enclosed" if pe else "partially open"
+        gov = pe[0]["name"] if pe else None
+    return dict(classification=cls, GCpi=GCPI[cls], walls=out, governing=gov)
