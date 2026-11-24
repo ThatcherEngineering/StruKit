@@ -1,2 +1,2 @@
-StruKit build 0.159.0
-commit 15738dcc876e8a96a75f16793165747c6a10031b
+StruKit build 0.160.0
+commit 1be2d3d5c404624f7bdcf7d6012828d63ff62fef
