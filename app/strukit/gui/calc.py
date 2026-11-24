@@ -239,6 +239,7 @@ FORMS = {
                 F("through", "Through plate: column dimension the plate passes through", unit="in", required=False,
                   help="blank = the plate is welded to the face of the column wall; for a through plate, the outside dimension of the HSS along the plate"),
                 F("cope_dc", "Coped beam: cope depth at the top flange", unit="in", required=False, help="blank = the beam is not coped; then the next five boxes are not used"),
+                F("cope_dcb", "Coped beam: cope depth at the bottom flange", unit="in", required=False, help="blank = top flange only; both copes the same length"),
                 F("cope_c", "Coped beam: cope length", unit="in", required=False),
                 F("cope_setback", "Coped beam: setback of the beam end from the support", unit="in", required=False, help="usually 1/2 in."),
                 F("cope_lev", "Coped beam: cut edge to the first bolt", unit="in", required=False),
@@ -1525,7 +1526,7 @@ def build(kind, values, project):
                 r.text("holes"), r.num("weld"), r.num("FEXX"))
         cope = None
         if r.num("cope_dc", False):
-            cope = dict(dc=r.num("cope_dc", False), c=r.num("cope_c", True, label="Coped beam: cope length"), setback=r.num("cope_setback", True, label="Coped beam: setback"),
+            cope = dict(dc=r.num("cope_dc", False), dcb=r.num("cope_dcb", False), c=r.num("cope_c", True, label="Coped beam: cope length"), setback=r.num("cope_setback", True, label="Coped beam: setback"),
                         lev=r.num("cope_lev", True, label="Coped beam: cut edge to the first bolt"), leh=r.num("cope_leh", True, label="Coped beam: bolt line to the beam end"),
                         Fy=r.num("beam_Fy", True, label="Coped beam: beam Fy"))
         thr_ = r.num("through", False)

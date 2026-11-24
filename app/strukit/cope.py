@@ -74,3 +74,27 @@ def web_block_shear(tw, Fy, Fu, n, spacing, lev, leh, hole):
     Anv = Agv - (n - 0.5) * hole * tw
     Ant = (leh - 0.5 * hole) * tw
     return dict(Agv=Agv, Anv=Anv, Ant=Ant, Rn=min(0.60 * Fu * Anv, 0.60 * Fy * Agv) + Fu * Ant)
+
+
+def double_cope(d, tw, Fy, Fu, dct, dcb, c, e, holes=0, hole=0.0):
+    """Beam end coped at both flanges, equal cope lengths c: the remaining web as a rectangular bar, AISC 360-22 Sect. F11 with Lb = c and
+    Cb by AISC Manual Eq. 9-21, as worked in AISC Design Examples v16.0 Example II.A-7. dct, dcb: cope depths at the top (compression) and
+    bottom flanges."""
+    if min(dct, dcb, c, e) <= 0:
+        raise CopeError("cope: the cope depths, cope length and e must be positive")
+    hc = d - dct - dcb
+    if hc <= 1.0:
+        raise CopeError("cope: the copes leave no web")
+    Cb = max((3 + math.log(c / d)) * (1 - dct / d), 1.84)
+    Sc, Zc = tw * hc ** 2 / 6, tw * hc ** 2 / 4
+    My, Mp = Fy * Sc, Fy * Zc
+    lam = c * hc / tw ** 2
+    if lam <= 0.08 * E / Fy:
+        Mn, eq = Mp, "Mn = Mp (Eq. F11-1)"
+    elif lam <= 1.9 * E / Fy:
+        Mn, eq = min(Cb * (1.52 - 0.274 * lam * Fy / E) * My, Mp), "Mn = Cb [1.52 - 0.274 (Lb d / t^2) Fy / E] My, not over Mp (Eq. F11-3)"
+    else:
+        Mn, eq = min(1.9 * E * Cb / lam * Sc, Mp), "Mn = Fcr Sx, Fcr = 1.9 E Cb / (Lb d / t^2), not over Mp (Eq. F11-4, F11-5)"
+    Agv = hc * tw
+    Anv = Agv - holes * hole * tw
+    return dict(hc=hc, Cb=Cb, Sc=Sc, Zc=Zc, My=My, Mp=Mp, lam=lam, Mn=Mn, eq=eq, e=e, R_flex=Mn / e, Agv=Agv, Anv=Anv, R_vy=0.60 * Fy * Agv, R_vr=0.60 * Fu * Anv)
