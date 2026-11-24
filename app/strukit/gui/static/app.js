@@ -323,9 +323,49 @@ function fillRainBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the rain load from"), pick, go);
 }
 
+function fillDriftBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "snow_drift");
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose a snow drift sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 snow drift")));
+  const how = el("select", {}, el("option", { value: "left" }, "member runs out from the wall, wall at its left end"),
+    el("option", { value: "right" }, "member runs out from the wall, wall at its right end"), el("option", { value: "par" }, "member parallel to the wall, at this distance (ft):"));
+  const dist = el("input", { type: "text", size: 5, style: "display:none", placeholder: "ft" });
+  how.addEventListener("change", () => { dist.style.display = how.value === "par" ? "" : "none"; });
+  const num = v => { const x = parseFloat(v); return isFinite(x) ? x : 0; };
+  const go = el("button", { class: "btn", onclick: async () => {
+    if (pick.value === "") return toast("Choose the snow drift sheet first.");
+    const s = S.members[+pick.value];
+    let got;
+    try { got = await post("/api/snow_drift", { values: s.values, project: S.project }); } catch (e) { return toast(e.message, 12000); }
+    const mark = s.values.mark || "snow drift sheet", tag = "sheet " + mark + ":";
+    const r1 = x => String(Math.round(x * 10) / 10), r2 = x => String(Math.round(x * 100) / 100);
+    const at = x => got.pd * Math.max(0, 1 - x / got.width);
+    let row;
+    if (how.value === "par") {
+      const d = parseFloat(dist.value);
+      if (!isFinite(d) || d < 0) return toast("Type the distance from the wall to the member, in feet (to the edge of its tributary strip nearest the wall).");
+      if (d >= got.extent) return toast("At " + d + " ft the member is beyond the drift (" + r2(got.extent) + " ft wide). Nothing was added.", 10000);
+      row = { case: "S", kind: "area", mag: r1(at(d)), mag2: "", x1: "", x2: "", label: tag + " " + got.kind + " drift surcharge at " + d + " ft from the wall" };
+    } else {
+      const L = num(m.values.oh_left) + num(m.values.span) + String(m.values.more_spans || "").split(",").reduce((a, v) => a + num(v), 0) + num(m.values.oh_right);
+      if (!(L > 0)) return toast("Enter the span of the member first.");
+      const x = Math.min(got.extent, L);
+      row = how.value === "left"
+        ? { case: "S", kind: "area", mag: r1(got.pd), mag2: r1(at(x)), x1: "0", x2: r2(x), label: tag + " " + got.kind + " drift surcharge, wall at the left end" }
+        : { case: "S", kind: "area", mag: r1(at(x)), mag2: r1(got.pd), x1: r2(L - x), x2: r2(L), label: tag + " " + got.kind + " drift surcharge, wall at the right end" };
+    }
+    m.values.loads = (m.values.loads || []).filter(r => !(String(r.label || "").startsWith(tag)) && (r.case || r.mag));
+    m.values.loads.push(row);
+    changed(); drawMain();
+    toast("Drift surcharge added (peak " + r1(got.pd) + " psf, " + r2(got.extent) + " ft wide), on top of the balanced snow load: add that too if it is not on the member yet."
+      + (got.sliding ? " The sliding snow on that sheet is a separate case and is not carried over." : ""), 14000);
+  } }, "Add Drift");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the snow drift from"), pick, how, dist, go);
+}
+
 function fillLoadsBar(m, changed) {
-  const a = fillSnowBar(m, changed), b = fillLiveBar(m, changed), c = fillRainBar(m, changed);
-  return (a || b || c) ? el("div", {}, a, b, c) : null;
+  const a = fillSnowBar(m, changed), d = fillDriftBar(m, changed), b = fillLiveBar(m, changed), c = fillRainBar(m, changed);
+  return (a || b || c || d) ? el("div", {}, a, d, b, c) : null;
 }
 
 function fillCollectorBar(m, changed) {
