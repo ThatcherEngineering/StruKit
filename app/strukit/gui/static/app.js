@@ -647,7 +647,8 @@ function fillBar(m, changed) {
 
 // ---------------------------------------------------------------- pages
 // ---------------------------------------------------------------- building model
-const MODEL_KINDS = () => TD_BEAMS.concat(TD_POSTS, ["footing_iso", "footing_cont"]);
+const MODEL_WALLS = ["shear_wall", "perforated_wall", "ftao_wall"];
+const MODEL_KINDS = () => TD_BEAMS.concat(TD_POSTS, ["footing_iso", "footing_cont"], MODEL_WALLS);
 function modelOf() { const p = S.project; p.model = p.model || {}; ["levels", "grids_x", "grids_y"].forEach(k => { p.model[k] = p.model[k] || []; }); return p.model; }
 
 // Placement boxes on a member screen: where the member sits in the building model. Optional; a member works without them.
@@ -655,15 +656,17 @@ function placementCard(m, changed) {
   if (!MODEL_KINDS().includes(m.kind)) return null;
   const mdl = modelOf(), levels = mdl.levels.map(l => (l.name || "").trim()).filter(Boolean);
   if (!levels.length) return el("div", { class: "help" }, "To place this member in the building model, list the levels (and grids, if you use them) on the Project page first. Placement is optional.");
-  const beam = TD_BEAMS.includes(m.kind), post = TD_POSTS.includes(m.kind), ftg = !beam && !post;
+  const wall = MODEL_WALLS.includes(m.kind);
+  const beam = TD_BEAMS.includes(m.kind) || wall, post = TD_POSTS.includes(m.kind), ftg = !beam && !post;
   const pos = "feet, or a grid name such as B or B+2.5";
   const fs = [];
-  if (!ftg) fs.push({ key: "at_level", label: beam ? "Level it frames" : "Level at its top", type: "select", options: levels, required: false });
+  if (!ftg) fs.push({ key: "at_level", label: wall ? "Level at its top (the floor or roof it braces)" : beam ? "Level it frames" : "Level at its top", type: "select", options: levels, required: false });
   if (post) fs.push({ key: "at_base", label: "Level at its base", type: "select", options: levels, required: false, help: "blank = " + levels[0] });
   fs.push({ key: "at_x1", label: beam ? "Left end, X" : "Position, X", type: "text", required: false, help: pos }, { key: "at_y1", label: beam ? "Left end, Y" : "Position, Y", type: "text", required: false, help: pos });
   if (beam) fs.push({ key: "at_x2", label: "Right end, X", type: "text", required: false, help: pos }, { key: "at_y2", label: "Right end, Y", type: "text", required: false, help: pos });
   return el("div", {}, el("h2", {}, "Place in the Building Model (optional)"), el("div", { class: "grid" }, fs.map(f => field(f, m.values, changed))),
-    el("div", { class: "help" }, "Placed members are linked by position with “Link members by position” on the Project page: what sits under each support takes its reaction."));
+    el("div", { class: "help" }, wall ? "Placed walls take their wind shear from “Send the wind to the wall lines” on the Project page."
+      : "Placed members are linked by position with “Link members by position” on the Project page: what sits under each support takes its reaction."));
 }
 
 function planSvg(plan, level) {
@@ -686,7 +689,7 @@ function planSvg(plan, level) {
   items.forEach(i => {
     if (i.p2) {
       const joist = false;
-      add("line", { x1: X(i.p1[0]), y1: Y(i.p1[1]), x2: X(i.p2[0]), y2: Y(i.p2[1]), stroke: "#213651", "stroke-width": fsz * 0.28, "stroke-linecap": "round" });
+      add("line", { x1: X(i.p1[0]), y1: Y(i.p1[1]), x2: X(i.p2[0]), y2: Y(i.p2[1]), stroke: i.wall ? "#8A5A2B" : "#213651", "stroke-width": fsz * (i.wall ? 0.7 : 0.28), "stroke-linecap": i.wall ? "butt" : "round" });
       const horiz = Math.abs(i.p2[0] - i.p1[0]) >= Math.abs(i.p2[1] - i.p1[1]);
       add("text", { x: (X(i.p1[0]) + X(i.p2[0])) / 2 + (horiz ? 0 : fsz * 0.4), y: (Y(i.p1[1]) + Y(i.p2[1])) / 2 - (horiz ? fsz * 0.4 : 0), "font-size": fsz, fill: "#1B2430", "text-anchor": horiz ? "middle" : "start" }, i.mark);
     } else if (i.kind === "footing_iso" || i.kind === "footing_cont") {
@@ -727,14 +730,25 @@ function modelCard(changed) {
     setDirty(); await recalcAll(); select("project");
     toast(out.placed + " member" + (out.placed === 1 ? "" : "s") + " placed; " + out.made + " link" + (out.made === 1 ? "" : "s") + " made by position; the load path is recalculated." + (out.problems.length ? " See the notes under the plan." : ""), 12000);
   } }, "Link members by position");
+  const lat = el("button", { class: "btn", onclick: async () => {
+    let out;
+    try { out = await post("/api/lateral_wind", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
+    if (out.lines.length) out.members.forEach((nm, i) => { S.members[i].values = nm.values; });
+    WIND_LINES = out.lines; MODEL_NOTES = out.problems;
+    setDirty(); await recalcAll(); select("project");
+    toast(out.lines.length ? out.lines.length + " wall" + (out.lines.length === 1 ? "" : "s") + " given the wind shear by tributary width, stacked from the top down." : "The wind was not distributed. See the notes under the plan.", 12000);
+  } }, "Send the wind to the wall lines");
   drawPlan();
   return el("div", { class: "card" }, el("h2", {}, "Building Model"),
     el("div", { class: "help" }, "Optional. List the levels and grids, place members on their own screens, then link them by position. Every member can still be checked alone."),
     table(lv, mdl.levels, changed), table(gx, mdl.grids_x, changed), table(gy, mdl.grids_y, changed),
-    el("div", { class: "fillbar" }, link, levels.length ? el("span", { class: "small" }, " Plan of level ") : null, levels.length ? pickLevel : null),
-    holder, (MODEL_NOTES && MODEL_NOTES.length) ? el("ul", { class: "msg small" }, MODEL_NOTES.map(t => el("li", {}, t))) : null);
+    el("div", { class: "fillbar" }, link, lat, levels.length ? el("span", { class: "small" }, " Plan of level ") : null, levels.length ? pickLevel : null),
+    holder,
+    (WIND_LINES && WIND_LINES.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Level", "Wind", "Wall", "Tributary", "Shear", "From above", "Chord"].map(t => el("th", {}, t)))),
+      el("tbody", {}, WIND_LINES.map(l => el("tr", {}, el("td", {}, l.level), el("td", {}, l.wind), el("td", {}, l.wall), el("td", {}, l.trib.toFixed(1) + " ft"),
+        el("td", {}, Math.round(l.V).toLocaleString() + " lb"), el("td", {}, l.from_above ? Math.round(l.from_above).toLocaleString() + " lb" : ""), el("td", {}, l.T == null ? "" : Math.round(l.T).toLocaleString() + " lb"))))) : null, (MODEL_NOTES && MODEL_NOTES.length) ? el("ul", { class: "msg small" }, MODEL_NOTES.map(t => el("li", {}, t))) : null);
 }
-let MODEL_NOTES = [];
+let MODEL_NOTES = [], WIND_LINES = [];
 
 function drawMain() {
   const main = $("#main"); main.textContent = "";
