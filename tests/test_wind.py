@@ -576,3 +576,13 @@ def test_topographic_factor_screen_and_sheet(tmp_path):
     assert not flat.kzt["applies"] and all(r["Kzt"] == 1.0 for _, r in flat.kzt["rows"])
     assert calc.results("wind_kzt", dict(v, Lh=""), {})["state"] == "incomplete"
     assert calc.results("wind_kzt", dict(v, heights=""), {})["state"] == "incomplete"
+
+
+def test_kzt_api_for_the_wind_screens():
+    from strukit.gui import server
+    v = dict(mark="WT1", shape="2D escarpment", exposure="D", exposure_basis="open water", H="266", Lh="320", geometry_source="topo", x="100",
+             side="downwind of the crest", located="yes", heights="0, 33")
+    got = server.api("/api/kzt", dict(values=v, project={}))
+    assert got["applies"] and got["rows"] == [dict(z=0.0, Kzt=pytest.approx(2.11, abs=0.005)), dict(z=33.0, Kzt=pytest.approx(1.926, abs=0.002))]
+    assert not server.api("/api/kzt", dict(values=dict(v, located="no"), project={}))["applies"]
+    assert "not complete" in server.api("/api/kzt", dict(values=dict(v, H=""), project={}))["error"]

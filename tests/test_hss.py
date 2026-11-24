@@ -167,3 +167,18 @@ def test_steel_beam_screen_takes_hss_and_pipe(tmp_path):
     assert calc.results("steel_beam", dict(v, shape="HSS99x9"), lrfd)["state"] == "stopped"
     assert calc.results("steel_column", dict(mark="C1", shape="HSS6x6x1/4", Fy="50", height="12", ends="held sideways (braced)", Kx="1", Ky="1", k_source="x",
                                              self_weight="no", loads=[dict(case="D", P="5")], lateral=[], leaning=[], drift=[]), lrfd)["state"] == "stopped"
+
+
+def test_guard_of_square_hss_by_hand():
+    """HSS2x2x1/8 rail and HSS2x2x3/16 posts, Fy 50 ksi, 5 ft spacing, 3.5 ft high, ASD.  Rail: Mn = Fy Z (compact), Mc = Mn / 1.67 about each
+    axis; for a load in any direction Mc = Mcx / 2^0.5 for a square section.  Post: 50 lb/ft x 5 ft x 3.5 ft = 875 lb-ft governs over 200 x 3.5 = 700."""
+    from strukit.gui import calc
+    v = dict(mark="GD2", rail="HSS2x2x1/8", rail_Fy="50", rail_Fy_source="A500 C", post="HSS2x2x3/16", post_Fy="50", post_Fy_source="A500 C", spacing="5", height="3.5", uniform="applies")
+    s, _, _ = calc.build("guard", v, dict(method="ASD"))
+    r = {x.check: x for x in s.rows}
+    zr, zp = shapes.hss("HSS2x2x1/8")["Zx"], shapes.hss("HSS2x2x3/16")["Zx"]
+    assert r["Top rail bending"].capacity == pytest.approx(50 * zr / 1.67 / 2 ** 0.5 * 1000 / 12, rel=1e-6)
+    assert r["Post bending"].capacity == pytest.approx(50 * zp / 1.67 / 2 ** 0.5 * 1000 / 12, rel=1e-6) and r["Post bending"].demand == pytest.approx(875.0)
+    assert r["Post bending"].source == "AISC 360-22 Sect. F7, H1" and dict(s.info)["Post base"].startswith("M = 875 lb-ft, V = 250 lb")
+    mixed, _, _ = calc.build("guard", dict(v, rail="HSS1.900x0.145", rail_Fy="46"), dict(method="LRFD"))
+    assert {x.check: x for x in mixed.rows}["Top rail bending"].source == "AISC 360-22 Sect. F8"

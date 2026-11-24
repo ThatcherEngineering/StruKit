@@ -178,6 +178,14 @@ def api(path, body):
         r = sheet.snow
         return dict(pf=r.pf, ps=r.ps, balanced=r.balanced, pm=r.pm, uniform_design=r.uniform_design, unbalanced=bool(r.unbalanced),
                     governs=("minimum snow load pm" if r.pm > r.balanced else "balanced snow load ps" + (" plus rain-on-snow" if r.rain_on_snow else "")))
+    if path == "/api/kzt":
+        try:
+            sheet, _, _ = calc.build("wind_kzt", body.get("values") or {}, body.get("project") or {})
+        except calc.Missing as e:
+            return dict(error="The topographic factor sheet is not complete: " + "; ".join(e.items))
+        except Exception as e:
+            return dict(error=f"The topographic factor sheet stopped: {e}")
+        return dict(applies=sheet.kzt["applies"], rows=[dict(z=z, Kzt=round(r["Kzt"], 3)) for z, r in sheet.kzt["rows"]])
     if path == "/api/live_loads":
         vals = body.get("values") or {}
         try:
