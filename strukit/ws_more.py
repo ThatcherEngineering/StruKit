@@ -2897,6 +2897,11 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
                  Row(f"Column wall slenderness {lam_txt}", "", lam, lam_r, "", lam_src, "")]
     else:
         rows.append(Row("Support thickness at the weld", "", t_min, t, "in", "AISC Manual Eq. 9-2", support["name"].strip()))
+    Tdim = bm.get("T")
+    if Tdim:
+        steps.append(Ln("Beam T dimension", Tdim, "in", shapes.SOURCE, f"{shapes.normalize(beam)}; plate length between T / 2 = {Tdim / 2:.2f} in. and T"))
+        rows += [Row("Plate length, not less than T / 2", "", Tdim / 2, L, "in", "AISC Manual Part 10", f"l = {L:g} in."),
+                 Row("Plate length, not over T", "", L, Tdim, "in", "AISC Manual Part 10", "fits between the web fillets")]
     if holes == "STD":
         rows.append(Row("Plate or beam web thickness, rotational ductility", "", min(tp, tw), d / 2 + 1 / 16, "in", "AISC Manual Table 10-9", "the thinner of the two; d / 2 + 1/16 in."))
     info = [("Column", f"{shapes.normalize(column)}, Fy = {col_Fy:g} ksi, Fu = {col_Fu:g} ksi ({col_source.strip()})") if hss_col else
@@ -2913,7 +2918,7 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
                          "The beam end reaction is vertical shear only; the beam is not coped at the connection.",
                          ("The plate is welded to the flat of the column wall" + (" (round column: plate fitted to the wall)" if rnd else "") + ", centred on the column.") if hss_col else
                          "The support is stiff enough to take the connection as a conventional single plate (a column flange, or a girder web with framing on both sides or checked separately)."],
-                        ["plate length against the beam T dimension (half of T to T, AISC Manual Part 10)", "axial force or torsion in the beam", "coped beams",
+                        ([] if Tdim else ["plate length against the beam T dimension (half of T to T, AISC Manual Part 10)"]) + ["axial force or torsion in the beam", "coped beams",
                          "the column as a member" if hss_col else "the support member, and its web or flange for the beam reaction", "erection and fit-up"])
     sheet.blocks.append(dict(title="Connection Elevation", head="Connection Elevation",
                              picture=("single_plate", dict(n=n, s=spacing, lev=lev, leh=leh, a=a, L=L, tp=tp, weld=weld, column=shapes.normalize(column) if hss_col else support["name"].strip(), beam=shapes.normalize(beam), d=d))))

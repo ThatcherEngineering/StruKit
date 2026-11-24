@@ -40,7 +40,9 @@ def test_design_guide_24_example_5_1(method, R, bolt, bp, bw, vy, vr, bs, punch,
     assert o["Vy"] == pytest.approx(vy, rel=0.005) and o["Vr"] == pytest.approx(vr, rel=0.006) and o["Rbs"] == pytest.approx(bs, rel=0.006)
     assert o["punch"] / 2.0 == pytest.approx(punch, rel=0.005) and o["t_min"] == pytest.approx(0.200, abs=0.001)
     assert o["L"] == 14.5 and o["lam"] == 14.2 and o["lam_r"] == pytest.approx(33.7, abs=0.05)
-    assert s.ok and len(s.rows) == 10
+    assert s.ok and len(s.rows) == 12
+    tl = {r.check: r for r in s.rows}
+    assert tl["Plate length, not less than T / 2"].demand == pytest.approx(9.19, abs=0.005) and tl["Plate length, not over T"].capacity == 18.375     # T = 18-3/8 in., lmin 9.19 in. in the example
     calcsheet.simple_pdf(s, str(tmp_path / "sp.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
 
 
@@ -52,7 +54,7 @@ def test_limits_and_flags():
     with pytest.raises(WorksheetError, match="2 bolt diameters"):
         _run("ASD", leh=1.25)
     std = _run("ASD", holes="STD")                      # 3/8 plate and 0.35 web against 3/4 / 2 + 1/16 = 0.4375 in.
-    assert len(std.rows) == 11 and std.rows[-1].status == "OK"
+    assert len(std.rows) == 13 and std.rows[-1].status == "OK"
     assert _run("ASD", holes="STD", tp=0.5).rows[-1].status == "OK"      # the web, 0.35 in., still satisfies it
     assert [r.check for r in _run("ASD", weld=0.1875).rows if r.status != "OK"] == ["Fillet weld size, each side"]
     thin = _run("ASD", column="HSS8X8X1/8")
@@ -82,7 +84,9 @@ def test_design_example_ii_a_17a_plate_to_column_flange(method, cb, R, vy, vr, b
     assert o["R"] == pytest.approx(R) and o["e"] == 1.5 and o["C"] == pytest.approx(3.54, abs=0.02) and o["L"] == 11.5
     assert o["Vy"] == pytest.approx(vy, rel=0.005) and o["Vr"] == pytest.approx(vr, rel=0.006) and o["Rbs"] == pytest.approx(bs, rel=0.006)
     assert o["t_min"] == pytest.approx(0.143, abs=0.001) and o["punch"] is None
-    assert [r.check for r in s.rows][-2:] == ["Support thickness at the weld", "Plate or beam web thickness, rotational ductility"] and s.rows[-1].capacity == pytest.approx(0.4375) and s.ok
+    names = [r.check for r in s.rows]
+    assert "Support thickness at the weld" in names and names[-1] == "Plate or beam web thickness, rotational ductility" and s.rows[-1].capacity == pytest.approx(0.4375) and s.ok
+    assert {r.check: r for r in s.rows}["Plate length, not less than T / 2"].demand == pytest.approx(13.625 / 2)
     calcsheet.simple_pdf(s, str(tmp_path / "s.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
 
 
