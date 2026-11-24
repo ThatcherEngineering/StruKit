@@ -345,6 +345,9 @@ def _sway(sheet, chk, lateral, combos, sway, leaning, drift_checks):
             raise WorksheetError(f"{mark}: combination {cb.name} puts the column in tension; not covered")
         Pl = sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in leaning)
         r = alpha * P / Pns
+        if r >= 1.0:
+            raise WorksheetError(f"{sheet.mark}: combination {cb.name}: the axial load ({alpha:g} x {P:.1f} kips) reaches the cross-section strength "
+                                 f"Pns = {Pns:.0f} kips; the column is too small")
         tau = 1.0 if r <= 0.5 else 4 * r * (1 - r)
         o = dict(P=P, Pl=Pl, tau=tau, M={"x": 0.0, "y": 0.0}, M1={"x": 0.0, "y": 0.0},
                  V={"x": 0.0, "y": 0.0}, N={}, ratio={}, res={}, Cb=1.0)
