@@ -193,3 +193,34 @@ def test_pitched_bents_from_the_quick_start():
     # the ridge moment is carried: the beam end at the ridge has moment in the gravity run
     ends = next(b for b in run["beams"] if b["mark"] == "R2A")["ends"]["right"]
     assert max(e["M"] for e in ends) > 12.0
+
+
+def test_unbalanced_snow_on_pitched_bents():
+    """Pitched bents with a gable roof snow sheet: every combination with S and no wind is also run with the Sect. 7.6.1 unbalanced load each way.
+    Check: the total vertical reaction equals dead plus the unbalanced snow on the plan area, by hand from the snow sheet's own values."""
+    from strukit import shapes
+    proj = dict(name="t", number="t", date="2026-11-24", method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6S", source="t")], combos_asd=[dict(expr="D + S", source="t")])
+    SN = dict(kind="snow", values=dict(mark="SN1", pg="40", pg_source="t", risk="II", roughness="C", exposure="partially exposed", thermal="unheated, open-air, kept just above freezing, or cold ventilated roof",
+              roof="gable or hip", rise="3", slippery="no", W="11", simple="no", W2="0.45", W2_source="t"))
+    rs = calc.build("snow", SN["values"], proj)[0].snow
+    assert rs.unbalanced and rs.unbalanced["surcharge"] > 0
+    spec = dict(n="3", spacing="20", end_start="0", end_end="0", col_spacing="18", cant_low="2", cant_high="2", height="12", slope="3", roof="pitched", ridge="",
+                col_shape="HSS8X8X1/2", col_Fy="46", raf_shape="W12X26", raf_Fy="50", base="fixed", D="6", S=f"{rs.balanced:.4f}", Lr="")
+    out = calc.bent_building(proj, [SN], spec)
+    run = calc.model_frame_sway(out["project"], out["members"])
+    assert run["problems"] == [] and run["runs"] == 4 + 4 and any("Unbalanced snow" in n for n in run["notes"])
+    u = rs.unbalanced
+    cosr = math.cos(math.atan(3 / 12))
+    Ls = 22 / cosr
+    dead = (6 * Ls * 40 + 3 * shapes.get("W12X26")["W"] * Ls + 6 * shapes.hss("HSS8X8X1/2")["W"] * 12) / 1000
+    # the generated S load is per foot of rafter length (psf x tributary on the sloped length), so the hand total uses the sloped lengths too
+    half = 11 / cosr
+    ext = min(u["extent"], 11) / cosr
+    snow_unb = (u["windward"] * half + u["leeward"] * half + u["surcharge"] * ext) * 40 / 1000
+    a = next(a for a in run["audit"] if "unbalanced snow, leeward side toward +Y, notional load in +Y" in a["run"])
+    assert a["Rz"] == pytest.approx(1.2 * dead + 1.6 * snow_unb, rel=0.01)
+    bal = next(a for a in run["audit"] if a["run"] == "1.2D + 1.6S, notional load in +Y")
+    assert bal["Rz"] == pytest.approx(1.2 * dead + 1.6 * rs.balanced * Ls * 40 / 1000, rel=0.01)
+    # a single-slope building has no ridge: no unbalanced runs
+    mono = calc.bent_building(proj, [SN], dict(spec, roof="", slope="1"))
+    assert calc.model_frame_sway(mono["project"], mono["members"])["runs"] == 4
