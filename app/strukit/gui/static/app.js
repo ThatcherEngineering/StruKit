@@ -287,9 +287,27 @@ function fillLiveBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take a reduced live load from"), pick, row, go);
 }
 
+function fillRainBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "rain_load");
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose a rain load sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 rain load")));
+  const go = el("button", { class: "btn", onclick: async () => {
+    if (pick.value === "") return toast("Choose the rain load sheet first.");
+    const s = S.members[+pick.value];
+    let got;
+    try { got = await post("/api/rain_load", { values: s.values, project: S.project }); } catch (e) { return toast(e.message, 12000); }
+    const mark = s.values.mark || "rain load sheet", tag = "sheet " + mark + ":";
+    m.values.loads = (m.values.loads || []).filter(r => !(String(r.label || "").startsWith(tag)) && (r.case || r.mag));
+    m.values.loads.push({ case: "R", kind: "area", mag: String(Math.round(got.R * 10) / 10), mag2: "", x1: "", x2: "", label: tag + " rain load R" });
+    changed(); drawMain();
+    toast("Rain load " + got.R.toFixed(1) + " psf added as an area load, case R, uniform over the member. It needs the member spacing, and load case R in the project's combinations.", 14000);
+  } }, "Add Rain Load");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the rain load from"), pick, go);
+}
+
 function fillLoadsBar(m, changed) {
-  const a = fillSnowBar(m, changed), b = fillLiveBar(m, changed);
-  return (a || b) ? el("div", {}, a, b) : null;
+  const a = fillSnowBar(m, changed), b = fillLiveBar(m, changed), c = fillRainBar(m, changed);
+  return (a || b || c) ? el("div", {}, a, b, c) : null;
 }
 
 function fillCollectorBar(m, changed) {

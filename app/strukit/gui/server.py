@@ -186,6 +186,16 @@ def api(path, body):
         except Exception as e:
             return dict(error=f"The topographic factor sheet stopped: {e}")
         return dict(applies=sheet.kzt["applies"], rows=[dict(z=z, Kzt=round(r["Kzt"], 3)) for z, r in sheet.kzt["rows"]])
+    if path == "/api/rain_load":
+        try:
+            sheet, _, _ = calc.build("rain_load", body.get("values") or {}, body.get("project") or {})
+        except calc.Missing as e:
+            return dict(error="The rain load sheet is not complete: " + "; ".join(e.items))
+        except Exception as e:
+            return dict(error=f"The rain load sheet stopped: {e}")
+        if sheet.rain["R"] is None:
+            return dict(error="The rain load sheet has no rain load: its bay is unstable under ponding.")
+        return dict(R=sheet.rain["R"], ponding=sheet.rain["pond"] is not None)
     if path == "/api/live_loads":
         vals = body.get("values") or {}
         try:
