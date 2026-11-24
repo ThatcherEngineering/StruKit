@@ -1499,6 +1499,8 @@ def _block_picture(c, top, pic):
         return _hss_column_picture(c, top - 6, d)
     if name == "guard":
         return _guard_picture(c, top - 6, d)
+    if name == "tread":
+        return _tread_picture(c, top - 6, d)
     if name == "single_plate":
         return _single_plate_picture(c, top - 6, d)
     if name == "topo":
@@ -1940,6 +1942,28 @@ def _topo_picture(c, top, d):
         memberart._dim_h(c, min(xc, xs), max(xc, xs), y0 + hgt + 32, f"x {d['x']:g} ft", FR)
     _small(c, (LM + RM) / 2, y0 - 34, "schematic section, not to scale; Lh is measured upwind from the crest to half the height H")
     return y0 - 40
+
+
+def _tread_picture(c, top, d):
+    """Cross section of the bent plate tread, to scale with the thickness drawn not less than a visible line: width, leg depth and thickness."""
+    b, t, dd = d["b"], d["t"], d["d"]
+    sc = min(170.0 / b, 30.0 / dd)
+    tt = max(t * sc, 1.6)
+    x0 = (LM + RM) / 2 - b * sc / 2
+    y1 = top - 26
+    y0 = y1 - dd * sc
+    c.setFillColorRGB(0.74, 0.79, 0.86); c.setStrokeColorRGB(*INK); c.setLineWidth(0.6)
+    p = c.beginPath()
+    for i, (x, y) in enumerate(((x0, y0), (x0, y1), (x0 + b * sc, y1), (x0 + b * sc, y0), (x0 + b * sc - tt, y0), (x0 + b * sc - tt, y1 - tt), (x0 + tt, y1 - tt), (x0 + tt, y0))):
+        (p.moveTo if i == 0 else p.lineTo)(x, y)
+    p.close(); c.drawPath(p, fill=1, stroke=1)
+    memberart._dim_h(c, x0, x0 + b * sc, y0 - 10, f"{b:g} in", FR, ext_from=y0)
+    memberart._dim_v(c, y0, y1, x0 + b * sc + 12, f"{dd:g} in", FR, ext_from=x0 + b * sc)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawRightString(x0 - 8, y1 - 4, f"PL {t:g} in.")
+    c.drawRightString(x0 - 8, y1 - 13, f"span {d['span']:g} ft")
+    _small(c, (LM + RM) / 2, y0 - 30, "tread cross section; spans between the stringers")
+    return y0 - 38
 
 
 def _single_plate_picture(c, top, d):
