@@ -548,6 +548,7 @@ FORMS = {
                 F("roof", "Roof", "select", options=["monoslope", "pitched (gable)"]),
                 F("theta", "Roof angle", unit="deg", help="0 to 45 degrees"),
                 F("L", "Roof dimension L", unit="ft", help="horizontal: in the direction of the slope for a monoslope roof, eave to eave for a pitched roof"),
+                F("width", "Roof dimension perpendicular to L", unit="ft", required=False, help="optional: gives the total horizontal and vertical force on the roof and the minimum of Sect. 27.1.5"),
                 F("flow", "Wind flow under the roof", "select", options=["clear", "obstructed"], help="obstructed: more than 50 percent blockage below the roof (Figure 27.3-4 note 2)"),
                 F("flow_basis", "Basis of clear or obstructed flow", "text", help="for example: open below, picnic tables only"),
                 F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
@@ -1564,7 +1565,7 @@ def build(kind, values, project):
         fl, fb, kzt, ks_ = r.text("flow"), r.text("flow_basis"), r.num("Kzt"), r.text("Kzt_source")
         rf = "pitched" if (r.text("roof") or "").startswith("pitched") else "monoslope"
         r.done()
-        return ws_more.wind_free_roof_sheet(mark, *args, fl == "obstructed", fb, kzt, ks_, r.num("elevation", False), r.text("elevation_source", False) or "", roof=rf), "simple", {}
+        return ws_more.wind_free_roof_sheet(mark, *args, fl == "obstructed", fb, kzt, ks_, r.num("elevation", False), r.text("elevation_source", False) or "", roof=rf, width=r.num("width", False)), "simple", {}
     if kind == "wind_pressure":
         V, vs, ex, eb, h = r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h")
         kzt, ks_ = r.num("Kzt"), r.text("Kzt_source")
