@@ -327,7 +327,8 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
         if any(ld["kind"] == "uniform" for ld in sheet.loads):
             c.rect(x0, by + hb + 4, w, 10, fill=1, stroke=1)
         c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
-        for xx in (x0 + 3, x0 + w - 3):
+        sup_x = [x0 + 3 + (w - 6) * v / sheet.span_ft for v in getattr(sheet, "supports", None) or (0.0, sheet.span_ft)]
+        for xx in sup_x:
             t = c.beginPath(); t.moveTo(xx, by - 1); t.lineTo(xx - 6, by - 12); t.lineTo(xx + 6, by - 12); t.close()
             c.drawPath(t, fill=0, stroke=1)
         for ld in sheet.loads:
@@ -337,7 +338,15 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
                 t = c.beginPath(); t.moveTo(xx, by + hb + 1); t.lineTo(xx - 3, by + hb + 8); t.lineTo(xx + 3, by + hb + 8); t.close()
                 c.drawPath(t, fill=1, stroke=0)
         c.setFillColorRGB(*GREY); c.setFont(FM, 7.5)
-        c.drawCentredString(x0 + w / 2, by - 22, f"L = {sheet.span_ft:g} ft")
+        if getattr(sheet, "supports", None):
+            c.setFont(FM, 6.5)
+            marks = [x0 + 3] + sup_x + [x0 + w - 3]
+            vals = [0.0] + list(sheet.supports) + [sheet.span_ft]
+            for (xa_, xb_), (va_, vb_) in zip(zip(marks[:-1], marks[1:]), zip(vals[:-1], vals[1:])):
+                if vb_ - va_ > 1e-6:
+                    c.drawCentredString((xa_ + xb_) / 2, by - 22, f"{vb_ - va_:g} ft")
+        else:
+            c.drawCentredString(x0 + w / 2, by - 22, f"L = {sheet.span_ft:g} ft")
         if not true_scale:
             c.setFont(FR, 6); c.drawCentredString(x0 + w / 2, by - 30, "side view: depth enlarged for clarity")
         uni = [f"{ld['case']} {ld['w']:.3f}" for ld in sheet.loads if ld["kind"] == "uniform"]
@@ -375,8 +384,7 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     p.y -= 2
     p.head("Load Combinations")
     for cb in combos:
-        ra, rb = sheet.reactions[cb.name]
-        p.text(f"{cb.name:<18} reactions {ra:.2f} / {rb:.2f} kip", font=FM, size=8, dy=10)
+        p.text(f"{cb.name:<18} reactions " + " / ".join(f"{v:.2f}" for v in sheet.reactions[cb.name]) + " kip", font=FM, size=8, dy=10)
         p.text(cb.source, size=7.5, color=GREY, x=LM + 12)
 
     # diagrams for the governing combination
