@@ -163,3 +163,46 @@ def bolt_line(d, group, n, spacing, edge, plies, threads="N", planes=1, deformat
         lines.append(Line(f"bolt {i + 1} effective Rn", cands[lim], "kip", "J3.7 User Note",
                           f"limited by {lim}"))
     return BoltResult(total, _avail(total, method), ", ".join(sorted(set(limits))), lines)
+
+
+# Minimum edge distance from the centre of a standard hole, AISC 360-22 Table J3.4, in.
+TABLE_J3_4 = {0.5: 0.75, 0.625: 0.875, 0.75: 1.0, 0.875: 1.125, 1.0: 1.25, 1.125: 1.5, 1.25: 1.625}
+
+
+def min_edge(d):
+    """Table J3.4; over 1-1/4 in.: 1.25 d."""
+    if d > 1.25:
+        return 1.25 * d
+    if d not in TABLE_J3_4:
+        raise SteelInputError(f"bolt: no Table J3.4 edge distance for a {d:g} in. bolt")
+    return TABLE_J3_4[d]
+
+
+def group_coefficient(n, spacing, e):
+    """Coefficient C for one vertical row of n bolts at the given spacing carrying a vertical force at eccentricity e from the row
+    (AISC Manual Table 7-6, angle 0): available strength of the group = C x the strength of one bolt.  Instantaneous centre of rotation
+    method, AISC Manual Part 7: bolt force R = Rult (1 - exp(-10 delta))^0.55, delta = 0.34 in. at the bolt farthest from the centre.
+    Reproduces the tabulated values quoted in the AISC Design Examples v16 and Design Guide 24 (see the tests)."""
+    import math
+    if n < 1 or spacing <= 0 or e < 0:
+        raise SteelInputError("bolt group: need at least one bolt, a positive spacing and an eccentricity of zero or more")
+    if e == 0 or n == 1:
+        return float(n) if e == 0 else 0.0 if n == 1 and e > 0 else float(n)
+    ys = [(i - (n - 1) / 2) * spacing for i in range(n)]
+
+    def forces(r0):
+        ds = [math.hypot(r0, y) for y in ys]
+        dm = max(ds)
+        R = [(1 - math.exp(-10 * 0.34 * d / dm)) ** 0.55 for d in ds]
+        Pv = sum(r * r0 / d for r, d in zip(R, ds))            # vertical equilibrium
+        Pm = sum(r * d for r, d in zip(R, ds)) / (e + r0)      # moment about the instantaneous centre
+        return Pv, Pm
+    lo, hi = 1e-6, 1e4
+    for _ in range(200):
+        mid = math.sqrt(lo * hi)
+        Pv, Pm = forces(mid)
+        if Pv < Pm:
+            lo = mid
+        else:
+            hi = mid
+    return sum(forces(math.sqrt(lo * hi))) / 2

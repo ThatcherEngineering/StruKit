@@ -1499,6 +1499,8 @@ def _block_picture(c, top, pic):
         return _hss_column_picture(c, top - 6, d)
     if name == "guard":
         return _guard_picture(c, top - 6, d)
+    if name == "single_plate":
+        return _single_plate_picture(c, top - 6, d)
     if name == "topo":
         return _topo_picture(c, top - 6, d)
     if name == "nailed":
@@ -1938,6 +1940,46 @@ def _topo_picture(c, top, d):
         memberart._dim_h(c, min(xc, xs), max(xc, xs), y0 + hgt + 32, f"x {d['x']:g} ft", FR)
     _small(c, (LM + RM) / 2, y0 - 34, "schematic section, not to scale; Lh is measured upwind from the crest to half the height H")
     return y0 - 40
+
+
+def _single_plate_picture(c, top, d):
+    """Elevation of the shear tab, to scale: the column wall at the left, the plate, the bolts and the beam end; a, the horizontal edge
+    distance, the vertical edge distances, the bolt spacing and the plate length dimensioned; weld and plate called out."""
+    n, s_, lev, leh, a, L = d["n"], d["s"], d["lev"], d["leh"], d["a"], d["L"]
+    sc = min(130.0 / L, 15.0)
+    xw = (LM + RM) / 2 - 60                                   # face of the column wall
+    yc = top - 22 - L * sc / 2 - 8
+    y0, y1 = yc - L * sc / 2, yc + L * sc / 2
+    colw = 26
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+    c.rect(xw - colw, y0 - 20, colw, L * sc + 40, fill=1, stroke=0)
+    c.line(xw, y0 - 20, xw, y1 + 20); c.line(xw - colw, y0 - 20, xw - colw, y1 + 20)
+    xb = xw + 0.5 * sc                                        # beam end, 1/2 in. clear of the column
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.6)
+    c.line(xb, y0 - 14, xb, y1 + 14)
+    for yy in (y0 - 14, y1 + 14):
+        c.line(xb, yy, xb + (a + leh) * sc + 46, yy)
+    c.setDash(2, 2); c.line(xb + (a + leh) * sc + 46, y0 - 14, xb + (a + leh) * sc + 46, y1 + 14); c.setDash()
+    c.setFillColorRGB(0.74, 0.79, 0.86); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+    c.rect(xw, y0, (a + leh) * sc, L * sc, fill=1, stroke=1)
+    c.setFillColorRGB(1, 1, 1)
+    ys = [y1 - (lev + k * s_) * sc for k in range(n)]
+    for y in ys:
+        c.circle(xw + a * sc, y, max(1.8, d["d"] * sc / 2), fill=1, stroke=1)
+    memberart._dim_h(c, xw, xw + a * sc, y0 - 26, f"a {a:g} in", FR, ext_from=y0)
+    memberart._dim_h(c, xw + a * sc, xw + (a + leh) * sc, y0 - 42, f"{leh:g} in", FR, ext_from=y0)
+    xr = xw + (a + leh) * sc + 56
+    memberart._dim_v(c, ys[0], y1, xr, f"{lev:g} in", FR, ext_from=xw + (a + leh) * sc)
+    memberart._dim_v(c, ys[1], ys[0], xr, f"{s_:g} in" + (" typ." if n > 2 else ""), FR, ext_from=xw + (a + leh) * sc)
+    memberart._dim_v(c, y0, ys[-1], xr, f"{lev:g} in", FR, ext_from=xw + (a + leh) * sc)
+    memberart._dim_v(c, y0, y1, xr + 44, f"l {L:g} in", FR)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawRightString(xw - colw - 6, yc + 8, d["column"])
+    c.drawRightString(xw - colw - 6, yc - 1, f"PL {d['tp']:g} in.")
+    c.drawRightString(xw - colw - 6, yc - 10, f"{d['weld']:g} in. fillet each side")
+    c.drawString(xb + (a + leh) * sc + 4, y1 + 17, d["beam"])
+    _small(c, (LM + RM) / 2, y0 - 62, "elevation, to scale; beam web shown behind the plate")
+    return y0 - 70
 
 
 def _guard_picture(c, top, d):

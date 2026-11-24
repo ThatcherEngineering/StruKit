@@ -163,6 +163,20 @@ FORMS = {
                                                F("has_edge", "Edge in load direction", "select", options=["yes", "no"]),
                                                F("count", "How many", required=False, help="2 for a pair of angles")]),
                 T("loads", "Force along the bolt line", [CASE, F("P", "Force", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "single_plate": dict(
+        title="Single-Plate Shear Connection to HSS", code="AISC 360-22", mark="SP",
+        fields=[F("column", "Column", "hss_shape"), F("col_Fy", "Column Fy", unit="ksi"), F("col_Fu", "Column Fu", unit="ksi"), F("col_source", "Source of the column Fy and Fu", "text"),
+                F("beam", "Beam", "shape"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fu", "text"),
+                F("tp", "Plate thickness", unit="in"), F("plate_Fy", "Plate Fy", unit="ksi"), F("plate_Fu", "Plate Fu", unit="ksi"), F("plate_source", "Source of the plate Fy and Fu", "text"),
+                F("d", "Bolt diameter", unit="in"), F("group", "Bolt type", "select", options=["A325", "A490", "F3148"]),
+                F("threads", "Threads", "select", options=["N", "X"], help="N = in the shear plane, X = excluded"),
+                F("n", "Number of bolts", help="one vertical row, 2 to 5"), F("spacing", "Bolt spacing", unit="in"),
+                F("lev", "Vertical edge distance", unit="in", help="bolt centre to the top and bottom of the plate"),
+                F("leh", "Horizontal edge distance", unit="in", help="bolt centre to the free end of the plate"),
+                F("a", "Weld line to bolt line, a", unit="in", help="3-1/2 in. or less"),
+                F("holes", "Holes in the plate", "select", options=["STD", "SSLT"], help="SSLT = horizontal short slots"),
+                F("weld", "Fillet weld size, each side", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
+        tables=[T("loads", "Beam end reaction", [CASE, F("P", "Reaction", unit="kip"), F("label", "Note", "text", required=False)])]),
     "wood_beam": dict(
         title="Wood Beam", code="2018 NDS", mark="WB",
         fields=[F("species", "Species", "select",
@@ -1310,6 +1324,17 @@ def build(kind, values, project):
         lay = ws_frame.layout(bays, stories, base, cs, bs, roof=roof, rise_ft=rise or 0.0, rafter_shape=rs, shape_of=over)
         s = ws_frame.run(mark, lay, Fy, loads, cb, m, sw, ub, leaning=lean, drift_checks=dc)
         return s, "frame", {}
+    if kind == "single_plate":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No reaction is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        args = (r.text("column"), r.num("col_Fy"), r.num("col_Fu"), r.text("col_source"), r.text("beam"), r.num("beam_Fu"), r.text("beam_source"), r.num("tp"), r.num("plate_Fy"),
+                r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("n"), r.num("spacing"), r.num("lev"), r.num("leh"), r.num("a"),
+                r.text("holes"), r.num("weld"), r.num("FEXX"))
+        r.done()
+        return ws_more.single_plate_sheet(mark, *args, loads, cb, m), "simple", {}
     if kind in ("weld", "bolts"):
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
