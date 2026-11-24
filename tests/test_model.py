@@ -187,7 +187,7 @@ def test_sway_frame_by_direct_analysis():
     proj, ms = _portal()
     out = calc.model_frame_sway(proj, ms)
     # in-plane (X) the moment frame works; out of plane (Y) two pinned-base columns with nothing else are a mechanism: reported in plain words
-    assert out["levels"] == [] and "needs moment connections, fixed column bases, or both, in each direction" in out["problems"][-1]
+    assert out["levels"] == [] and "needs braces, moment connections, fixed column bases, or a mix, in each direction" in out["problems"][-1]
     proj, ms = _portal(base="fixed")
     out = calc.model_frame_sway(proj, ms)
     assert out["problems"] == [] and out["runs"] == 4 and {(l["level"], l["dir"]) for l in out["levels"]} == {("Roof", "X"), ("Roof", "Y")}
@@ -217,7 +217,7 @@ def test_sway_frame_asd_and_pinned_beam_mechanism():
     assert {c["mark"]: c["P"] for c in asd["columns"]}["CL"] == pytest.approx((0.4 + 1.2) * 15, rel=0.02)
     assert asd["columns"][0]["P"] < lr["columns"][0]["P"]
     proj, ms = _portal(fix="pinned", base="")                                              # pinned beam, pinned bases: nothing resists sway
-    assert "needs moment connections" in calc.model_frame_sway(proj, ms)["problems"][-1]
+    assert "needs braces, moment connections" in calc.model_frame_sway(proj, ms)["problems"][-1]
 
 
 def test_sway_frame_member_checks():
@@ -240,3 +240,63 @@ def test_sway_frame_member_checks():
     assert b["ratio"] > 0.3 and b["v_ratio"] == pytest.approx(b["V"] / steel_beam.check(pb, 50, 0.01, 1.0, "LRFD").V_avail)
     # the bottom flange in compression at the moment connections uses the unbraced beam length: a longer beam in hogging is weaker
     assert steel_beam.check(pb, 50, 360, 1.0, "LRFD").M_avail < steel_beam.check(pb, 50, 0.01, 1.0, "LRFD").M_avail
+
+
+def _braced_box(brace_kind="rod"):
+    """20 x 20 ft bay, 12 ft high: four pinned-base HSS columns, four pinned beams, X bracing on all four faces."""
+    proj = dict(method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[dict(expr="D + L", source="t")], name="t", number="t", date="2026-11-23",
+                model=dict(levels=[dict(name="Base", elev="0"), dict(name="Roof", elev="12")], grids_x=[], grids_y=[]))
+    ms = []
+    for i, (x, y) in enumerate([(0, 0), (20, 0), (20, 20), (0, 20)]):
+        ms.append(dict(kind="hss_column", values=dict(mark=f"C{i+1}", shape="HSS6X6X1/4", Fy="50", at_level="Roof", at_base="Base", at_x1=str(x), at_y1=str(y), self_weight="no", loads=[])))
+    for i, (a, b) in enumerate([((0, 0), (20, 0)), ((0, 20), (20, 20)), ((0, 0), (0, 20)), ((20, 0), (20, 20))]):
+        ms.append(dict(kind="steel_beam", values=dict(mark=f"B{i+1}", shape="W12X26", Fy="50", span="20", more_spans="", oh_left="", oh_right="", bracing="continuous", brace_pts="", self_weight="no",
+                  loads=[dict(case="D", kind="uniform", mag="1.0", x1="", x2="", label=""), dict(case="L", kind="uniform", mag="1.0", x1="", x2="", label="")] if i < 2 else [], defl=DEFL,
+                  at_level="Roof", at_x1=str(a[0]), at_y1=str(a[1]), at_x2=str(b[0]), at_y2=str(b[1]))))
+        for k, (lo, hi) in enumerate(((a, b), (b, a))):
+            if brace_kind == "rod":
+                ms.append(dict(kind="tension_member", values=dict(mark=f"X{i+1}{'ab'[k]}", shape="", rod_d="0.75", Fy="36", Fu="58", at_level="Roof", at_base="Base",
+                          at_x1=str(lo[0]), at_y1=str(lo[1]), at_x2=str(hi[0]), at_y2=str(hi[1]), loads=[])))
+            elif k == 0:
+                ms.append(dict(kind="angle_strut", values=dict(mark=f"X{i+1}", shape="L8X8X3/4", Fy="36", steel_source="t", length="23.3", attached="long", at_level="Roof", at_base="Base",
+                          at_x1=str(lo[0]), at_y1=str(lo[1]), at_x2=str(hi[0]), at_y2=str(hi[1]), loads=[])))
+    return proj, ms
+
+
+def test_braced_frame_tension_only_rods():
+    import math
+    proj, ms = _braced_box()
+    out = calc.model_frame_sway(proj, ms)
+    assert out["problems"] == [], out["problems"]
+    Y = (1.2 + 1.6) * 1.0 * 40                               # factored gravity on the level, kips
+    X = next(l for l in out["levels"] if l["dir"] == "X")
+    T = (0.003 * Y + Y * abs(X["second"]) / 144) / 2 / (20 / math.hypot(20, 12))     # notional load + P-Delta shear; each braced face takes half; one diagonal works
+    br = {b["mark"]: b for b in out["braces"]}
+    assert len(br) == 8 and all(b["tension_only"] and b["C"] == 0 for b in br.values())
+    assert br["X1a"]["T"] == pytest.approx(T, rel=0.01) and br["X1b"]["T"] == pytest.approx(T, rel=0.01)     # one works for +X, the other for -X
+    Pt = min(0.9 * 36 * math.pi * 0.75 ** 2 / 4, 0.75 * 0.75 * 58 * math.pi * 0.75 ** 2 / 4)
+    assert br["X1a"]["Pt"] == pytest.approx(Pt) and br["X1a"]["ratio"] == pytest.approx(br["X1a"]["T"] / Pt)
+    cols = {c["mark"]: c for c in out["columns"]}
+    assert sum(c["P"] for c in cols.values()) == pytest.approx(Y, rel=0.01)
+
+
+def test_braced_frame_single_angles_take_compression():
+    proj, ms = _braced_box("angle")
+    out = calc.model_frame_sway(proj, ms)
+    assert out["problems"] == [], out["problems"]
+    br = {b["mark"]: b for b in out["braces"]}
+    assert len(br) == 4 and all(not b["tension_only"] for b in br.values())
+    import math
+    H = 0.003 * (1.2 + 1.6) * 40 / 2 / (20 / math.hypot(20, 12))
+    assert (br["X1"]["T"] + br["X1"]["C"]) / 2 == pytest.approx(H, rel=0.03) and br["X1"]["Pc"] and br["X1"]["Pc"] < br["X1"]["Pt"]
+    # an angle too slender for Sect. E5 that goes into compression is reported, not passed over
+    for m in ms:
+        if m["kind"] == "angle_strut":
+            m["values"]["shape"] = "L4X4X3/8"
+    assert "goes into compression in the frame and has no compression strength" in " ".join(calc.model_frame_sway(proj, ms)["problems"])
+    for m in ms:
+        if m["kind"] == "angle_strut":
+            m["values"]["shape"] = "L8X8X3/4"
+    # a brace whose end is not on the frame is reported
+    ms[-1]["values"]["at_x2"] = ms[-1]["values"]["at_y2"] = "7"
+    assert "not on a placed column or beam" in " ".join(calc.model_frame_sway(proj, ms)["problems"])

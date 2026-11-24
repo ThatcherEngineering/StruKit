@@ -2500,10 +2500,10 @@ def model_place(project, member):
     if x1 is None or y1 is None:
         raise ValueError(f"{mark}: its position in plan cannot be read (type feet, or a grid name such as B or B+2.5)")
     p2 = None
-    if member.get("kind") in TAKEDOWN_BEAMS + MODEL_WALLS:
+    if member.get("kind") in TAKEDOWN_BEAMS + MODEL_WALLS + FRAME_BRACES:
         x2, y2 = _coord(v.get("at_x2"), gx), _coord(v.get("at_y2"), gy)
         if x2 is None or y2 is None:
-            raise ValueError(f"{mark}: a beam, joist or wall needs the position of both ends")
+            raise ValueError(f"{mark}: a beam, joist, wall or brace needs the position of both ends")
         p2 = (x2, y2)
     levels = [str(l.get("name") or "").strip() for l in mdl.get("levels") or []]
     lvl = str(v.get("at_level") or "").strip()
@@ -2809,7 +2809,7 @@ def model_view(project, members):
     items = []
     for m in members or []:
         kind = m.get("kind")
-        if kind not in TAKEDOWN_BEAMS + TAKEDOWN_POSTS + TAKEDOWN_FOOTINGS + MODEL_WALLS:
+        if kind not in TAKEDOWN_BEAMS + TAKEDOWN_POSTS + TAKEDOWN_FOOTINGS + MODEL_WALLS + FRAME_BRACES:
             continue
         try:
             pl = model_place(project, m)
@@ -2825,7 +2825,9 @@ def model_view(project, members):
         if pl["level"] not in el:
             continue
         z = el[pl["level"]]
-        if kind in TAKEDOWN_POSTS:
+        if kind in FRAME_BRACES:
+            items.append(dict(mark=mark, kind=kind, type="brace", a=(*pl["p1"], el.get(pl["base"], levels[0][1])), b=(*pl["p2"], z)))
+        elif kind in TAKEDOWN_POSTS:
             zb = el.get(pl["base"], levels[0][1])
             items.append(dict(mark=mark, kind=kind, type="column", a=(*pl["p1"], zb), b=(*pl["p1"], z)))
         elif kind in MODEL_WALLS:
@@ -2843,6 +2845,7 @@ def model_view(project, members):
 
 
 FRAME_BEAMS, FRAME_COLS = ("steel_beam",), ("steel_column", "hss_column")
+FRAME_BRACES = ("tension_member", "angle_strut")
 
 
 def _frame_section(kind, v):
@@ -2875,7 +2878,7 @@ def _model_frame_build(project, members, sway=False):
     problems, notes = [], []
     placed = []
     for m in members or []:
-        if m.get("kind") not in FRAME_BEAMS + FRAME_COLS:
+        if m.get("kind") not in FRAME_BEAMS + FRAME_COLS + (FRAME_BRACES if sway else ()):
             continue
         try:
             pl = model_place(project, m)
@@ -2883,7 +2886,7 @@ def _model_frame_build(project, members, sway=False):
             problems.append(str(e)); continue
         if not pl:
             continue
-        if pl["level"] not in elev or (m["kind"] in FRAME_COLS and pl["base"] not in elev):
+        if pl["level"] not in elev or (m["kind"] in FRAME_COLS + FRAME_BRACES and pl["base"] not in elev):
             problems.append(f"{(m.get('values') or {}).get('mark')}: its level needs an elevation on the Project page"); continue
         placed.append((m, pl))
     left_out = sorted({(m.get("values") or {}).get("mark") or "(no mark)" for m in members or []
@@ -2912,6 +2915,9 @@ def _model_frame_build(project, members, sway=False):
         v = m["values"]
         if m["kind"] in FRAME_COLS:
             pts.setdefault(pl["level"], []).append(pl["p1"]); pts.setdefault(pl["base"], []).append(pl["p1"])
+            continue
+        if m["kind"] in FRAME_BRACES:
+            pts.setdefault(pl["level"], []).append(pl["p2"]); pts.setdefault(pl["base"], []).append(pl["p1"])
             continue
         num = lambda key: float(str(v.get(key) or 0).replace(",", "") or 0)
         spans = [num("span")] + [float(t) for t in str(v.get("more_spans") or "").replace(";", ",").split(",") if t.strip()]
@@ -3057,7 +3063,46 @@ def _model_frame_build(project, members, sway=False):
         fr.support(nd, "fixed")
     if extra:
         notes.append("Taken as bearing on a support (nothing in the frame is under them): " + "; ".join(f"{mark} at {x:g} ft" for nd, mark, x in extra) + ".")
-    return dict(fr=fr, cases=cases, joint_loads=joint_loads, beam_loads=beam_loads, col_nodes=col_nodes, extra=extra, notes=notes, problems=problems, placed=placed,
+    # diagonal braces (sway runs only): pinned at both ends, axial force only
+    braces = {}
+    low = min(elev.values())
+    for m, pl in placed:
+        if m["kind"] not in FRAME_BRACES:
+            continue
+        v = m["values"]; mark = v.get("mark")
+        try:
+            name = str(v.get("shape") or "").strip()
+            if name:
+                pr = None
+                for get in (shapes.angle, shapes.get, shapes.channel, shapes.hss):
+                    try:
+                        pr = get(name); break
+                    except Exception:
+                        continue
+                if pr is None:
+                    raise ValueError(f"'{name}' is not in the shapes table")
+                A, I1, I2, J = pr["A"], pr.get("Ix") or 1.0, pr.get("Iy") or 1.0, max(pr.get("J") or 0.0, 1e-3)
+            else:
+                d = float(v.get("rod_d") or 0)
+                if d <= 0:
+                    raise ValueError("it needs a section or a rod diameter")
+                pr, A = None, math.pi * d * d / 4
+                I1 = I2 = math.pi * d ** 4 / 64; J = 2 * I1
+        except (ValueError, TypeError) as e:
+            problems.append(f"{mark}: {e}"); continue
+        za, zb = elev[pl["base"]], elev[pl["level"]]
+        ka = (round(pl["p1"][0] / 0.05), round(pl["p1"][1] / 0.05), round(za / 0.05)); kb = (round(pl["p2"][0] / 0.05), round(pl["p2"][1] / 0.05), round(zb / 0.05))
+        if kb not in node_at or (ka not in node_at and abs(za - low) > 1e-6):
+            problems.append(f"{mark}: an end of this brace is not on a placed column or beam of the frame"); continue
+        new_base = ka not in node_at
+        na, nb_ = node(*pl["p1"], za), node(*pl["p2"], zb)
+        if new_base:
+            fr.support(na, "fixed")                           # a brace that comes down to the foundation beside no column
+        fr.member("br:" + mark, na, nb_, E_, G_, A, I1, I2, J, release_i=("my", "mz"), release_j=("my", "mz"))
+        t_only = str(v.get("at_brace") or "").strip().lower()
+        t_only = (m["kind"] == "tension_member") if not t_only else t_only.startswith("tension only")
+        braces[mark] = dict(name="br:" + mark, A=A, pr=pr, kind=m["kind"], values=v, tension_only=t_only, L=math.dist(fr.nodes[na], fr.nodes[nb_]))
+    return dict(fr=fr, cases=cases, joint_loads=joint_loads, beam_loads=beam_loads, col_nodes=col_nodes, extra=extra, notes=notes, problems=problems, placed=placed, braces=braces,
                 level_tops=level_tops, beam_elems=beam_elems, level_of_node=level_of_node, elev=elev, FT=FT)
 
 
@@ -3226,12 +3271,72 @@ def model_frame_sway(project, members):
                      "bottom flange is in compression the unbraced length is the distance between framing points with Cb by Eq. F1-1 from that run's moments; beam axial strength "
                      "with the same length about the weak axis. Tension with bending by Sect. H1.2, yielding only.")
 
+    braces, brace_res = B["braces"], {}
+    phi_t = (lambda y, u: min(0.9 * y, 0.75 * u)) if method_ == "LRFD" else (lambda y, u: min(y / 1.67, u / 2.0))
+    for mark, b in braces.items():
+        v = b["values"]
+        b["Pt"] = b["Pc"] = None
+        try:
+            Fy = float(v.get("Fy") or 0)
+            if Fy <= 0:
+                raise ValueError("no Fy on its screen")
+            if b["pr"] is None:                              # threaded rod: body yielding and 0.75 Fu Ab at the threads
+                Fu = float(v.get("Fu") or 0)
+                b["Pt"] = phi_t(Fy * b["A"], 0.75 * Fu * b["A"]) if Fu > 0 else Fy * b["A"] * (0.9 if method_ == "LRFD" else 1 / 1.67)
+            else:
+                b["Pt"] = Fy * b["A"] * (0.9 if method_ == "LRFD" else 1 / 1.67)
+            if not b["tension_only"]:
+                if b["kind"] == "angle_strut":
+                    sh, _, _ = build("angle_strut", dict(v, length=str(b["L"] / 12.0), loads=[dict(case=next(iter(cbs[0].factors)), P="0.001", label="")]), project)
+                    b["Pc"] = next(r_.capacity for r_ in sh.rows if r_.capacity)
+                elif b["pr"] is not None:
+                    b["Pc"] = _sc.check(b["pr"], Fy, b["L"], b["L"], method=method_).P_avail
+        except Exception as e:
+            notes.append(f"{mark}: not checked from the frame forces ({str(e) or type(e).__name__}).")
+    if braces:
+        notes.append("Braces are pinned at both ends and carry axial force only; their own weight is left out. Tension-only braces are taken out of any run that would put them in "
+                     "compression, and the run is repeated. Brace tension is checked against yielding of the gross section (rods: also 0.75 Fu Ab); net section rupture and the "
+                     "end connections are on the brace's own screen.")
+    by_name = {mm.name: mm for mm in fr.members}
+    any_tension_only = any(b["tension_only"] for b in braces.values())
+    if any_tension_only:
+        notes.append("With tension-only braces each run also carries 0.0001 of the gravity load across its direction, so that one brace of each cross line is working.")
+
+    def solve_run(nl, grav_members):
+        """First- and second-order solutions. A tension-only brace works only while it is being stretched: the set of working braces is found by
+        repeating the first-order solution (a slack brace keeps a millionth of its area, so the sign of its strain can still be read), then
+        confirmed on the second-order solution."""
+        SL = 1e-6
+        slack = set()
+        tens = [mark for mark, b in braces.items() if b["tension_only"]]
+
+        def setA():
+            for mark, b in braces.items():
+                by_name[b["name"]].A = b["A"] * (SL if mark in slack else 1.0)
+        try:
+            r1 = r2 = None
+            for stage in ("first", "second"):
+                for _ in range(12):
+                    setA()
+                    r1 = fr.solve(nl, grav_members, second_order=False, stiffness_factor=0.8)
+                    rr = r1
+                    if stage == "second":
+                        r2 = rr = fr.solve(nl, grav_members, second_order=True, n_sub=4, stiffness_factor=0.8)
+                    want = {mark for mark in tens if rr.stations[braces[mark]["name"]][0][0][0] > 0}       # shortening: slack
+                    if want == slack:
+                        break
+                    slack = want
+            return r1, r2, slack
+        finally:
+            for mark, b in braces.items():
+                by_name[b["name"]].A = b["A"]
+
     def h1(P, Pc, Pt, Mx, Mcx, My=0.0, Mcy=None):
         r_ = (P / Pc) if P >= 0 else (-P / Pt)
         mm_ = abs(Mx) / Mcx + ((abs(My) / Mcy) if Mcy else 0.0)
         return (r_ + 8.0 / 9.0 * mm_, "H1-1a") if r_ >= 0.2 else (r_ / 2 + mm_, "H1-1b")
 
-    drift, col_res, beam_res, worst_ratio, runs = {}, {}, {}, 0.0, 0
+    drift, col_res, beam_res, worst_ratio, runs, unchecked = {}, {}, {}, 0.0, 0, set()
     for cb in cbs:
         fW = cb.factors.get("W", 0.0) if need_w else 0.0
         grav_nodes, grav_members, Y = {}, [], {nm: 0.0 for nm in order}
@@ -3255,14 +3360,16 @@ def model_frame_sway(project, members):
                 lat = 0.003 * max(Y[lv], 0.0) + (abs(fW) * alpha * wind_F[lv][axis] if (fW and lv in wind_F) else 0.0)
                 for nd, share in spread(lv, axis, lat * sign).items():
                     nl.setdefault(nd, [0, 0, 0, 0, 0, 0])[axis] += share
+                if any_tension_only:                          # a nudge across the run so one brace of each cross line engages
+                    for nd, share in spread(lv, 1 - axis, 0.0001 * max(Y[lv], 0.0)).items():
+                        nl.setdefault(nd, [0, 0, 0, 0, 0, 0])[1 - axis] += share
             nl = {nd: tuple(v_) for nd, v_ in nl.items()}
             label = f"{cb.name}, " + ("wind" if fW else "notional load") + f" in {'+' if sign > 0 else '-'}{'XY'[axis]}"
             try:
-                r1 = fr.solve(nl, grav_members, second_order=False, stiffness_factor=0.8)
-                r2 = fr.solve(nl, grav_members, second_order=True, n_sub=4, stiffness_factor=0.8)
+                r1, r2, slack = solve_run(nl, grav_members)
             except Frame3DError as e:
                 msg = str(e).replace("frame: ", "")
-                return dict(levels=[], columns=[], beams=[], notes=notes, problems=problems + [f"{label}: {msg}. A frame free to sway needs moment connections, fixed column bases, or both, in each direction."])
+                return dict(levels=[], columns=[], beams=[], braces=[], notes=notes, problems=problems + [f"{label}: {msg}. A frame free to sway needs braces, moment connections, fixed column bases, or a mix, in each direction."])
             runs += 1
             for lv in order:
                 d1 = sum(r1.disp[nd][axis] for nd, _ in level_tops[lv]) / len(level_tops[lv]) / alpha
@@ -3291,6 +3398,21 @@ def model_frame_sway(project, members):
                     cur.update(Ms=Ms / alpha, Ms_combo=label)
                 if Mw / alpha > cur["Mw"]:
                     cur.update(Mw=Mw / alpha, Mw_combo=label)
+            for mark, b in braces.items():
+                N = -r2.stations[b["name"]][0][0][0] / alpha                  # tension positive
+                cur = brace_res.setdefault(mark, dict(mark=mark, T=0.0, T_combo="", C=0.0, C_combo="", tension_only=b["tension_only"], ratio=None, ratio_combo="", Pt=b["Pt"], Pc=b["Pc"], L=b["L"] / 12.0))
+                if mark in slack:
+                    continue
+                if N > cur["T"]:
+                    cur.update(T=N, T_combo=label)
+                if -N > cur["C"]:
+                    cur.update(C=-N, C_combo=label)
+                if N < -1e-6 and not b["Pc"] and mark not in unchecked:
+                    unchecked.add(mark)
+                    problems.append(f"{mark} goes into compression in the frame and has no compression strength here (see the notes); make it tension only, or use a section that can be checked")
+                val = (N / b["Pt"] if (N >= 0 and b["Pt"]) else (-N / b["Pc"] if (N < 0 and b["Pc"]) else None))
+                if val is not None and (cur["ratio"] is None or val > cur["ratio"]):
+                    cur.update(ratio=val, ratio_combo=label)
             for mark, els in B["beam_elems"].items():
                 M = max(max(abs(a_[4]), abs(b_[4])) for e_ in els for a_, b_ in r2.stations[e_])
                 V = max(max(abs(a_[2]), abs(b_[2])) for e_ in els for a_, b_ in r2.stations[e_])
@@ -3319,7 +3441,7 @@ def model_frame_sway(project, members):
                     "notional load 0.003 of the gravity load at each level with tau_b = 1.0" + (", loads x 1.6 and results / 1.6 (ASD)" if alpha != 1 else "") + ".")
     if worst_ratio > 1.5:
         problems.append(f"Second-order drift is {worst_ratio:.2f} times first-order drift (at the reduced stiffness). The frame is flexible; stiffen it.")
-    return dict(levels=[drift[k_] for k_ in sorted(drift, key=lambda t: (elev[t[0]], t[1]))], columns=list(col_res.values()), beams=list(beam_res.values()),
+    return dict(levels=[drift[k_] for k_ in sorted(drift, key=lambda t: (elev[t[0]], t[1]))], columns=list(col_res.values()), beams=list(beam_res.values()), braces=list(brace_res.values()),
                 notes=notes, problems=problems, ratio=worst_ratio, runs=runs, method=method_,
                 units="drift in.; column P kips (compression at the base), moments kip-in. about the column's strong and weak axes; beam M kip-in., V and axial kips")
 
@@ -3336,7 +3458,7 @@ def model_plan(project, members):
             continue
         if not pl:
             continue
-        item = dict(mark=(m.get("values") or {}).get("mark") or "", kind=m.get("kind"), p1=pl["p1"], p2=pl["p2"], wall=m.get("kind") in MODEL_WALLS)
+        item = dict(mark=(m.get("values") or {}).get("mark") or "", kind=m.get("kind"), p1=pl["p1"], p2=pl["p2"], wall=m.get("kind") in MODEL_WALLS, brace=m.get("kind") in FRAME_BRACES)
         if m.get("kind") in TAKEDOWN_FOOTINGS:
             out.setdefault(pl["base"] if pl["base"] in out else (levels[0] if levels else ""), []).append(item)
         else:
