@@ -267,3 +267,26 @@ def test_intersecting_drifts_at_a_reentrant_corner(tmp_path):
     assert low.corner["b"]["pd"] == 0.0 and low.corner["at"](0, 0) == pytest.approx(ga.pd)
     calcsheet.simple_pdf(low, str(tmp_path / "c2.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
     assert calc.results("snow_corner", dict(v, b_lu_upper=""), {})["state"] == "incomplete"
+
+
+def test_drift_rows_from_the_fill_bar_calculate_on_a_joist():
+    """The Add Drift bar writes area loads tapered between two positions (one end may be zero).  A 2x12 joist at 16 in., 12 ft, wall at the left end, drift
+    54.7 psf tapering to zero at 11.4 ft, plus 30 psf balanced: left reaction by hand = 30 x 1.333 x 6 + (54.7 x 1.333 x 11.4 / 2)(12 - 11.4 / 3) / 12."""
+    from strukit.gui import calc
+    f = dict(mark="J1", species="DOUGLAS FIR-LARCH", grade="No. 2", size="2x12", plies="1", span="12", spacing="16", bracing="supported throughout", bearing="1.5", Fc_perp_support="",
+             service="dry service", incised="no", repetitive="yes", unit_weight="",
+             loads=[dict(case="S", kind="area", mag="30", mag2="", x1="", x2="", label="balanced"),
+                    dict(case="S", kind="area", mag="54.7", mag2="0", x1="0", x2="11.4", label="sheet SD4: leeward drift surcharge, wall at the left end")],
+             defl=[])
+    proj = dict(name="T", number="1", address="", method="ASD", date="2026-11-23", combos=[dict(expr="D + S", source="test combination")])
+    out = calc.results("wood_beam", f, proj)
+    assert out["state"] != "incomplete", out
+    mirrored = dict(f, loads=[f["loads"][0], dict(case="S", kind="area", mag="0", mag2="54.7", x1="0.6", x2="12", label="right")])
+    assert calc.results("wood_beam", mirrored, proj)["state"] != "incomplete"
+    s1, _, _ = calc.build("wood_beam", f, proj)
+    s2, _, _ = calc.build("wood_beam", mirrored, proj)
+    b1, b2 = (next(x for x in s_.rows if x.check == "bending") for s_ in (s1, s2))
+    v1, v2 = (next(x for x in s_.rows if x.check == "shear") for s_ in (s1, s2))
+    assert b1.demand == pytest.approx(b2.demand, rel=1e-3) and v1.demand == pytest.approx(v2.demand, rel=1e-3)
+    base, _, _ = calc.build("wood_beam", dict(f, loads=f["loads"][:1]), proj)
+    assert b1.demand > 1.5 * next(x for x in base.rows if x.check == "bending").demand

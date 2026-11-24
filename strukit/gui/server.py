@@ -186,6 +186,18 @@ def api(path, body):
         except Exception as e:
             return dict(error=f"The topographic factor sheet stopped: {e}")
         return dict(applies=sheet.kzt["applies"], rows=[dict(z=z, Kzt=round(r["Kzt"], 3)) for z, r in sheet.kzt["rows"]])
+    if path == "/api/snow_drift":
+        try:
+            sheet, _, _ = calc.build("snow_drift", body.get("values") or {}, body.get("project") or {})
+        except calc.Missing as e:
+            return dict(error="The snow drift sheet is not complete: " + "; ".join(e.items))
+        except Exception as e:
+            return dict(error=f"The snow drift sheet stopped: {e}")
+        r = sheet.drift
+        g = r.governing
+        if not r.required or g is None or g.pd <= 0:
+            return dict(error="The snow drift sheet has no drift surcharge" + (f": {r.why}" if r.why else "") + ".")
+        return dict(kind=g.kind, pd=g.pd, width=g.width, extent=g.extent, far=g.at_far_end, sliding=bool(r.sliding_total))
     if path == "/api/enclosure":
         try:
             sheet, _, _ = calc.build("wind_enclosure", body.get("values") or {}, body.get("project") or {})
