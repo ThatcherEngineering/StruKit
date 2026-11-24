@@ -2552,7 +2552,7 @@ def snow_corner_sheet(mark, pg, pg_source, W2, W2_source, ps_lower, ps_source, w
 
 
 def wind_free_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, L, obstructed, flow_basis, Kzt, Kzt_source, elevation_ft=None, elevation_source="",
-                         roof="monoslope"):
+                         roof="monoslope", width=None):
     """Net wind pressures on a monoslope free roof of an open building, main wind force
     resisting system, ASCE/SEI 7-22 Sect. 27.3.2 (see wind.free_roof_monoslope)."""
     for nm, v in (("the source of the basic wind speed", V_source), ("the basis of the exposure category", exposure_basis), ("the source of Kzt", Kzt_source),
@@ -2607,5 +2607,20 @@ def wind_free_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, 
                                              + ("" if mono else " The same values apply with the wind from the other side.")]))
     sheet.blocks.append(dict(title=("Wind Parallel to the " + ("Eaves" if mono else "Ridge") + ", 90 and 270 Degrees (Figure 27.3-7)") if t1 else "All Wind Directions (Figure 27.3-4 note 4, Figure 27.3-7)", lines=t2,
                              after=["Zones are measured horizontally from the windward edge of the roof, in the wind direction."]))
-    sheet.free_roof = r
+    tot = None
+    if width is not None and r["across"]:
+        try:
+            tot = wind.free_roof_totals(r, theta, L, width, roof)
+        except wind.WindError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        t3 = [f"{'wind':<28}{'case':>5}{'along the wind':>18}{'vertical':>14}"]
+        for x in tot["rows"]:
+            nm = ("against the high edge, 0" if x["gamma"] == 0 else "against the low edge, 180") if mono else "across the ridge, 0 or 180"
+            t3.append(f"{nm:<28}{x['case']:>5}{x['H']:>15,.0f} lb{x['V']:>11,.0f} lb")
+        t3.append(f"minimum, Sect. 27.1.5: 16 psf x Af = 16 x {tot['Af']:,.0f} ft2 = {tot['F_min']:,.0f} lb along the wind")
+        sheet.blocks.append(dict(title="Total Force on the Roof", lines=t3,
+                                 after=[f"Roof {L:g} ft by {width:g} ft in plan. Along the wind: plus is with the wind. Vertical: plus is downward, minus is uplift. "
+                                        "Af is the roof projected on a vertical plane normal to the wind; framing and fascia are not in it."]))
+        sheet.not_checked = [t for t in sheet.not_checked if "27.1.5" not in t] + ["wind on the framing below the roof in the Sect. 27.1.5 area Af"]
+    sheet.free_roof = dict(r, totals=tot)
     return sheet

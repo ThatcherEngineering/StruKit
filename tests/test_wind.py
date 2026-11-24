@@ -648,3 +648,29 @@ def test_pitched_free_roof(tmp_path):
     assert "Pitched" in s.title and len(s.free_roof["across"]) == 2
     calcsheet.simple_pdf(s, str(tmp_path / "p.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
     assert calc.results("wind_free_roof", dict(v, roof=""), {})["state"] == "incomplete"
+
+
+def test_free_roof_total_forces_by_hand(tmp_path):
+    """Monoslope, 10 degrees, L = 20 ft, B = 30 ft: each half 300 ft2 in plan.  For net pressures pW, pL (psf): vertical (pW + pL)(300) lb;
+    horizontal (pW + pL)(300) tan 10, against the wind for gamma = 0 (the top surface faces downwind), with it for gamma = 180.  Minimum
+    16 psf x Af, Af = 30 x 20 tan 10 = 105.8 ft2 (Sect. 27.1.5 as printed).  Pitched, L = 30, B = 40: horizontal (pW - pL)(600) tan theta."""
+    import math
+    from strukit import calcsheet
+    from strukit.gui import calc
+    r = wind.free_roof(115, "C", 12.0, 10.0, 20.0)
+    t = wind.free_roof_totals(r, 10.0, 20.0, 30.0)
+    a = r["across"][0]                                           # gamma 0, case A
+    assert t["rows"][0]["V"] == pytest.approx((a["pW"] + a["pL"]) * 300) and t["rows"][0]["H"] == pytest.approx(-(a["pW"] + a["pL"]) * 300 * math.tan(math.radians(10)))
+    assert t["rows"][0]["V"] < 0 < t["rows"][0]["H"] and t["rows"][2]["H"] > 0 and t["rows"][2]["V"] > 0
+    assert t["Af"] == pytest.approx(105.8, abs=0.05) and t["F_min"] == pytest.approx(16 * 105.8, abs=1)
+    rp = wind.free_roof(115, "C", 14.0, 18.75, 30.0, roof="pitched")
+    tp = wind.free_roof_totals(rp, 18.75, 30.0, 40.0, "pitched")
+    b = rp["across"][0]
+    assert tp["rows"][0]["H"] == pytest.approx((b["pW"] - b["pL"]) * 600 * math.tan(math.radians(18.75))) and tp["Af"] == pytest.approx(40 * 15 * math.tan(math.radians(18.75)))
+    v = dict(mark="WO1", V="115", V_source="Hazard Tool", exposure="C", exposure_basis="open terrain", h="12", roof="monoslope", theta="10", L="20", width="30", flow="clear",
+             flow_basis="open below", Kzt="1.0", Kzt_source="flat site", elevation="", elevation_source="")
+    s, _, _ = calc.build("wind_free_roof", v, {})
+    assert s.free_roof["totals"]["F_min"] == pytest.approx(t["F_min"]) and not any("minimum design wind force" in x for x in s.not_checked)
+    calcsheet.simple_pdf(s, str(tmp_path / "t.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    n, _, _ = calc.build("wind_free_roof", dict(v, width=""), {})
+    assert n.free_roof["totals"] is None and any("27.1.5" in x for x in n.not_checked)

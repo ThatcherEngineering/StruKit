@@ -826,3 +826,30 @@ def free_roof(V, exposure, h, theta, L, roof="monoslope", obstructed=False, Kzt=
         cn = free_pitched_cn(theta, obstructed)
         r["across"] = [dict(gamma=0, case=c, CNW=cn[c][0], CNL=cn[c][1], pW=r["factor"] * cn[c][0], pL=r["factor"] * cn[c][1]) for c in ("A", "B")]
     return r
+
+
+MIN_OPEN = 16.0                                          # psf on the area Af, Sect. 27.1.5 (pdf p. 342), open buildings
+
+
+def free_roof_totals(r, theta, L, B, roof="monoslope"):
+    """Total force on the roof for each case of wind across the slope or ridge: H along the
+    wind direction (plus = with the wind) and V vertical (plus = downward), lb, from the net
+    pressures on the two halves (each 0.5 L by B in plan; pressures normal to the surface),
+    and the Sect. 27.1.5 minimum 16 psf x Af with Af the roof projected on a vertical plane
+    normal to the wind. B: roof dimension perpendicular to L."""
+    if B is None or B <= 0:
+        raise WindError("wind: the roof width must be positive")
+    if not r.get("across"):
+        return None
+    t = math.tan(math.radians(theta))
+    half = 0.5 * L * B                                    # plan area of one half
+    out = []
+    for x in r["across"]:
+        V = (x["pW"] + x["pL"]) * half
+        if roof == "pitched":
+            H = (x["pW"] - x["pL"]) * half * t
+        else:                                             # the top surface faces the low edge: downwind for gamma = 0, upwind for gamma = 180
+            H = (-1.0 if x["gamma"] == 0 else 1.0) * (x["pW"] + x["pL"]) * half * t
+        out.append(dict(gamma=x["gamma"], case=x["case"], H=H, V=V))
+    Af = B * (L * t if roof == "monoslope" else 0.5 * L * t)
+    return dict(rows=out, Af=Af, F_min=MIN_OPEN * Af)
