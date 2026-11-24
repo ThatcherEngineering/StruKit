@@ -140,3 +140,21 @@ def test_sloped_carport_from_the_quick_start():
     assert a["Rz"] == pytest.approx(0.9 * dead + row["V"] / 1000, abs=0.2)             # vertical: dead load less the sheet's uplift
     cols = {c["mark"]: c for c in run["columns"]}
     assert cols["C4A"]["ratio"] == pytest.approx(0.28, abs=0.05) and all(c["ratio"] < 1 for c in cols.values())
+
+
+def test_wind_drift_limit_on_the_frame():
+    d = json.load(open(os.path.join(HERE, "data", "job_2026_030_west.strukit")))
+    proj, ms = d["project"], d["members"]
+    base = calc.model_frame_sway(proj, ms)
+    assert base["drift_checks"] == []
+    proj2 = dict(proj, model=dict(proj["model"], drift_ratio="240", drift_factor="0.6", drift_source="Thatcher Engineering standard"))
+    out = calc.model_frame_sway(proj2, ms)
+    e = next(e for e in out["elastic"] if e["load"] == "wind" and e["dir"] == "Y")
+    c = next(c for c in out["drift_checks"] if c["dir"] == "Y")
+    assert c["drift"] == pytest.approx(0.6 * e["story"]) and c["limit"] == pytest.approx(11.77 * 12 / 240) and c["drift"] < c["limit"]
+    fs = calc.frame_sheet(proj2, ms)
+    r = next(r for r in fs.rows if r.check.startswith("wind drift") and "Y direction" in r.check)
+    assert r.status == "OK" and r.source == "Thatcher Engineering standard" and "story height / 240" in r.note
+    # the limit without its source is not used, and says so
+    no = calc.model_frame_sway(dict(proj, model=dict(proj["model"], drift_ratio="240", drift_factor="0.6")), ms)
+    assert no["drift_checks"] == [] and "needs its source" in " ".join(no["problems"])

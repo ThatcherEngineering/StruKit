@@ -3776,6 +3776,23 @@ def model_frame_sway(project, members):
     if elastic:
         notes.append("Drift table: each lateral load alone at its strength level (1.0 W; the seismic story forces), first-order, full stiffness. Wind drift limits are the "
                      "designer's; seismic displacements go to the seismic sheet's drift check (Cd, Ie and the Table 12.12-1 limit).")
+    # wind drift against the limit typed on the Building Model card (ratio, wind factor and source are the engineer's)
+    drift_checks = []
+    mdl_ = (project or {}).get("model") or {}
+    try:
+        d_ratio = float(str(mdl_.get("drift_ratio") or "").strip() or 0)
+        d_fac = float(str(mdl_.get("drift_factor") or "").strip() or 0)
+    except ValueError:
+        d_ratio = d_fac = 0.0
+        problems.append("The wind drift limit on the Building Model card cannot be read (type numbers)")
+    if d_ratio > 0 and d_fac > 0:
+        if not str(mdl_.get("drift_source") or "").strip():
+            problems.append("The wind drift limit needs its source on the Building Model card; drift is not checked")
+        else:
+            for e_ in elastic:
+                if e_["load"] == "wind":
+                    drift_checks.append(dict(level=e_["level"], dir=e_["dir"], drift=d_fac * e_["story"], limit=e_["h"] / d_ratio, ratio=d_ratio, factor=d_fac,
+                                             source=str(mdl_["drift_source"]).strip(), case=e_.get("case", "")))
     out_members = None
     if eq_F and any(e_["load"] == "seismic" for e_ in elastic):
         import copy
@@ -3793,7 +3810,7 @@ def model_frame_sway(project, members):
     if worst_ratio > 1.5:
         problems.append(f"Second-order drift is {worst_ratio:.2f} times first-order drift (at the reduced stiffness). The frame is flexible; stiffen it.")
     return dict(levels=[drift[k_] for k_ in sorted(drift, key=lambda t: (elev[t[0]], t[1]))], columns=list(col_res.values()), beams=list(beam_res.values()), braces=list(brace_res.values()),
-                notes=notes, problems=problems, ratio=worst_ratio, runs=runs, method=method_, elastic=elastic, members=out_members, audit=audit,
+                notes=notes, problems=problems, ratio=worst_ratio, runs=runs, method=method_, elastic=elastic, members=out_members, audit=audit, drift_checks=drift_checks,
                 units="drift in.; column P kips (compression at the base), moments kip-in. about the column's strong and weak axes; beam M kip-in., V and axial kips")
 
 
@@ -4144,6 +4161,9 @@ def frame_sheet(project, members):
         if b.get("ratio") is not None:
             rows.append(Row(f"brace {b['mark']}, axial", b["ratio_combo"], b["ratio"], 1.0, "", "AISC 360-22 Ch. D, E",
                             f"tension {b['T']:.2f} kip, compression {b['C']:.2f} kip" + ("; tension only" if b["tension_only"] else "")))
+    for dc_ in out.get("drift_checks") or []:
+        rows.append(Row(f"wind drift, {dc_['level']}, {dc_['dir']} direction", f"{dc_['factor']:g} W", dc_["drift"], dc_["limit"], "in", dc_["source"],
+                        f"story height / {dc_['ratio']:g}; first-order, full stiffness" + (f"; {dc_['case']}" if dc_["case"] else "")))
     blocks = [dict(title="Sway of Each Level (reduced stiffness, with notional loads)", lines=[f"{'Level':<10}{'Dir.':<6}{'First-order':>13}{'Second-order':>14}{'Ratio':>8}   Governing run"] + [
         f"{l['level']:<10}{l['dir']:<6}{abs(l['first']):>10.3f} in{abs(l['second']):>11.3f} in{l['ratio']:>8.2f}   {l['combo']}" for l in out["levels"]])]
     if out.get("elastic"):
