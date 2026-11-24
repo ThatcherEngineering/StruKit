@@ -2792,6 +2792,247 @@ def lateral_governing(project, members):
     return dict(members=out, lines=lines, problems=w["problems"] + [p_ for p_ in e["problems"] if p_ not in w["problems"]])
 
 
+FRAME_BEAMS, FRAME_COLS = ("steel_beam",), ("steel_column", "hss_column")
+
+
+def _frame_section(kind, v):
+    name = v.get("shape") or ""
+    sec = None
+    for get in ((shapes.hss, shapes.get, shapes.channel) if kind == "hss_column" else (shapes.get, shapes.channel, shapes.hss)):
+        try:
+            sec = get(name)
+            break
+        except Exception:
+            continue
+    if sec is None:
+        raise ValueError(f"'{name}' is not in the shapes table")
+    return dict(A=sec["A"], Ix=sec["Ix"], Iy=sec["Iy"], J=max(sec.get("J") or 0.0, 1e-3), W=sec.get("W") or 0.0)
+
+
+def model_frame(project, members):
+    """Gravity analysis of the placed steel framing as one space frame (frame3d.py): columns continuous and pinned at the base, beams
+    pinned at their ends and continuous over what carries them, every level held against sidesway. Each load case is run alone. Returns the
+    base reaction of every column by case beside the load the takedown put on that column, so the two methods check each other.
+    dict(columns=[dict(mark, cases={case: (frame lb, takedown lb)})], supports=[...], notes=[...], problems=[...])."""
+    import math
+    from ..frame3d import Frame3D, Frame3DError
+    mdl = (project or {}).get("model") or {}
+    elev = {}
+    for l in mdl.get("levels") or []:
+        try:
+            elev[str(l.get("name") or "").strip()] = float(str(l.get("elev")).replace(",", ""))
+        except (TypeError, ValueError):
+            pass
+    problems, notes = [], []
+    placed = []
+    for m in members or []:
+        if m.get("kind") not in FRAME_BEAMS + FRAME_COLS:
+            continue
+        try:
+            pl = model_place(project, m)
+        except ValueError as e:
+            problems.append(str(e)); continue
+        if not pl:
+            continue
+        if pl["level"] not in elev or (m["kind"] in FRAME_COLS and pl["base"] not in elev):
+            problems.append(f"{(m.get('values') or {}).get('mark')}: its level needs an elevation on the Project page"); continue
+        placed.append((m, pl))
+    left_out = sorted({(m.get("values") or {}).get("mark") or "(no mark)" for m in members or []
+                       if m.get("kind") in TAKEDOWN_BEAMS + TAKEDOWN_POSTS and m.get("kind") not in FRAME_BEAMS + FRAME_COLS and (m.get("values") or {}).get("at_x1")})
+    if left_out:
+        notes.append("Wood members are not in the frame yet: " + ", ".join(left_out) + ". Loads they put on steel members stay as the takedown loads.")
+    if not any(m["kind"] in FRAME_COLS for m, _ in placed) or not any(m["kind"] in FRAME_BEAMS for m, _ in placed):
+        return dict(columns=[], supports=[], notes=notes, problems=problems + ["The frame needs at least one placed steel beam and one placed steel or HSS column"])
+    in_frame = {(m.get("values") or {}).get("mark") for m, _ in placed}
+    E_, G_, FT = 29000.0, 11200.0, 12.0
+    fr = Frame3D()
+    node_at = {}
+
+    def node(x, y, z):
+        key = (round(x / 0.05), round(y / 0.05), round(z / 0.05))
+        if key not in node_at:
+            node_at[key] = f"n{len(node_at) + 1}"
+            fr.node(node_at[key], x * FT, y * FT, z * FT)
+        return node_at[key]
+
+    dist = lambda a, b: math.hypot(a[0] - b[0], a[1] - b[1])
+    # points where something meets a beam at each level: beam support points and column tops and bases
+    pts = {}
+    beam_info = []
+    for m, pl in placed:
+        v = m["values"]
+        if m["kind"] in FRAME_COLS:
+            pts.setdefault(pl["level"], []).append(pl["p1"]); pts.setdefault(pl["base"], []).append(pl["p1"])
+            continue
+        num = lambda key: float(str(v.get(key) or 0).replace(",", "") or 0)
+        spans = [num("span")] + [float(t) for t in str(v.get("more_spans") or "").replace(";", ",").split(",") if t.strip()]
+        sup_x = [num("oh_left")]
+        for sp in spans:
+            sup_x.append(sup_x[-1] + sp)
+        Lt = sup_x[-1] + num("oh_right")
+        (ax, ay), (bx, by) = pl["p1"], pl["p2"]
+        Lm = math.hypot(bx - ax, by - ay)
+        if abs(Lm - Lt) > max(0.1, 0.005 * Lt):
+            problems.append(f"{v.get('mark')}: placed {Lm:.2f} ft long in the model, but its spans add up to {Lt:.2f} ft"); continue
+        at = lambda t: (ax + (bx - ax) * t / Lm, ay + (by - ay) * t / Lm)
+        beam_info.append((m, pl, sup_x, Lm, at))
+        for x in sup_x:
+            pts.setdefault(pl["level"], []).append(at(x))
+    if problems:
+        return dict(columns=[], supports=[], notes=notes, problems=problems)
+    cases = []
+    bearing, held = set(), set()
+    # columns
+    col_nodes = {}
+    for m, pl in placed:
+        if m["kind"] not in FRAME_COLS:
+            continue
+        v = m["values"]
+        try:
+            sec = _frame_section(m["kind"], v)
+        except ValueError as e:
+            problems.append(f"{v.get('mark')}: {e}"); continue
+        nb, nt = node(*pl["p1"], elev[pl["base"]]), node(*pl["p1"], elev[pl["level"]])
+        fr.member("col:" + v["mark"], nb, nt, E_, G_, sec["A"], sec["Ix"], sec["Iy"], sec["J"])
+        col_nodes[v["mark"]] = (nb, nt, sec, elev[pl["level"]] - elev[pl["base"]])
+        held.add(nt)
+    # beams, cut at every point where something meets them
+    beam_loads = []                                          # (element name, case, w kip/in.) and joint loads
+    joint_loads = {}
+    for m, pl, sup_x, Lm, at in beam_info:
+        v = m["values"]
+        try:
+            sec = _frame_section(m["kind"], v)
+        except ValueError as e:
+            problems.append(f"{v.get('mark')}: {e}"); continue
+        z = elev[pl["level"]]
+        cuts = {0.0, Lm}
+        cuts.update(sup_x)
+        (ax, ay), (bx, by) = pl["p1"], pl["p2"]
+        for q in pts.get(pl["level"], []):
+            t = ((q[0] - ax) * (bx - ax) + (q[1] - ay) * (by - ay)) / Lm
+            off = abs((q[0] - ax) * (by - ay) - (q[1] - ay) * (bx - ax)) / Lm
+            if off <= MODEL_TOL and -MODEL_TOL <= t <= Lm + MODEL_TOL:
+                cuts.add(min(max(t, 0.0), Lm))
+        rows = []
+        for r in v.get("loads") or []:
+            lk = r.get("link") if isinstance(r, dict) else None
+            if isinstance(lk, dict) and lk.get("src") in in_frame:
+                continue                                     # the member above is in the frame; it brings this load itself
+            try:
+                mag = float(str(r.get("mag", "")).replace(",", ""))
+            except ValueError:
+                continue
+            c = str(r.get("case") or "").strip()
+            if not c:
+                continue
+            f_ = lambda key, dflt: (float(str(r.get(key)).replace(",", "")) if str(r.get(key) or "").strip() else dflt)
+            if r.get("kind") == "point":
+                x = f_("x1", None)
+                if x is None:
+                    continue
+                cuts.add(min(max(x, 0.0), Lm)); rows.append((c, "point", mag, x, x))
+            else:
+                x1, x2 = f_("x1", 0.0), f_("x2", Lm)
+                cuts.update((min(max(x1, 0.0), Lm), min(max(x2, 0.0), Lm))); rows.append((c, "uniform", mag, x1, x2))
+        if str(v.get("self_weight", "")).lower() == "yes":
+            rows.append(("D", "uniform", sec["W"] / 1000.0, 0.0, Lm))
+        cl = sorted(cuts)
+        cl = [c_ for i, c_ in enumerate(cl) if i == 0 or c_ - cl[i - 1] > 0.02]
+        names = [node(*at(t), z) for t in cl]
+        for t, nd in zip(cl, names):
+            held.add(nd)
+        for i in range(len(cl) - 1):
+            nm = f"bm:{v['mark']}:{i}"
+            fr.member(nm, names[i], names[i + 1], E_, G_, sec["A"], sec["Ix"], sec["Iy"], sec["J"],
+                      release_i=("my", "mz") if i == 0 else (), release_j=("my", "mz") if i == len(cl) - 2 else ())
+            for c, kind_, mag, x1, x2 in rows:
+                if kind_ == "uniform" and x1 <= cl[i] + 1e-6 and x2 >= cl[i + 1] - 1e-6:
+                    beam_loads.append((nm, c, mag / FT))
+        for c, kind_, mag, x1, x2 in rows:
+            if c not in cases:
+                cases.append(c)
+            if kind_ == "point":
+                nd = names[min(range(len(cl)), key=lambda i: abs(cl[i] - x1))]
+                joint_loads.setdefault((nd, c), 0.0)
+                joint_loads[(nd, c)] += mag
+        for x in sup_x:                                      # a beam support with no column and no beam under it: taken as a bearing
+            nd = names[min(range(len(cl)), key=lambda i: abs(cl[i] - x))]
+            bearing.add((nd, v["mark"], x))
+    # typed (unlinked) loads on columns go on at the top
+    for mark, (nb, nt, sec, h) in col_nodes.items():
+        v = next(m["values"] for m, _ in placed if m["values"].get("mark") == mark)
+        for r in v.get("loads") or []:
+            lk = r.get("link") if isinstance(r, dict) else None
+            if isinstance(lk, dict) and lk.get("src") in in_frame:
+                continue
+            try:
+                P = float(str(r.get("P", "")).replace(",", ""))
+            except ValueError:
+                continue
+            c = str(r.get("case") or "").strip()
+            if c:
+                joint_loads[(nt, c)] = joint_loads.get((nt, c), 0.0) + P
+                if c not in cases:
+                    cases.append(c)
+        if str(v.get("self_weight", "")).lower() == "yes":
+            joint_loads[(nt, "D")] = joint_loads.get((nt, "D"), 0.0) + sec["W"] * h / 1000.0
+            if "D" not in cases:
+                cases.append("D")
+    if problems:
+        return dict(columns=[], supports=[], notes=notes, problems=problems)
+    # supports: column bases pinned (twist held); levels held against sidesway; beam supports with nothing under them bear on a support
+    members_at = {}
+    for mm in fr.members:
+        members_at.setdefault(mm.i, []).append(mm.name); members_at.setdefault(mm.j, []).append(mm.name)
+    base_nodes = {nb for nb, nt, _, _ in col_nodes.values() if nb not in {t for _, t, _, _ in col_nodes.values()}}
+    extra = []
+    for nd, mark, x in sorted(bearing):
+        carried = any(n.startswith("col:") for n in members_at.get(nd, [])) or len({n.split(":")[1] for n in members_at.get(nd, []) if n.startswith("bm:")}) > 1
+        if not carried:
+            extra.append((nd, mark, x))
+    for nd in held:
+        fr.support(nd, (1, 1, 0, 0, 0, 0))
+    for nd in base_nodes:
+        fr.support(nd, (1, 1, 1, 0, 0, 1))
+    for nd, mark, x in extra:
+        fr.support(nd, "fixed")
+    if extra:
+        notes.append("Taken as bearing on a support (nothing in the frame is under them): " + "; ".join(f"{mark} at {x:g} ft" for nd, mark, x in extra) + ".")
+    out_cols = {mark: {} for mark in col_nodes}
+    sup_out = {}
+    for c in cases:
+        nl = {}
+        for (nd, cc), P in joint_loads.items():
+            if cc == c:
+                nl[nd] = (0, 0, -P, 0, 0, 0)
+        ml = [(nm, "global", (0, 0, -w)) for nm, cc, w in beam_loads if cc == c]
+        try:
+            res = fr.solve(nl, ml)
+        except Frame3DError as e:
+            return dict(columns=[], supports=[], notes=notes, problems=[str(e).replace("frame: ", "").capitalize()])
+        for mark, (nb, nt, sec, h) in col_nodes.items():
+            qi, qj = res.ends["col:" + mark]
+            out_cols[mark][c] = qi[0] * 1000.0               # axial force at the base, compression positive, lb
+        for nd, mark, x in extra:
+            sup_out.setdefault((mark, x), {})[c] = res.reactions[nd][2] * 1000.0
+    cols = []
+    for mark, by_case in out_cols.items():
+        v = next(m["values"] for m, _ in placed if m["values"].get("mark") == mark)
+        kip = True
+        td = {}
+        for r in v.get("loads") or []:
+            try:
+                td[str(r.get("case")).strip()] = td.get(str(r.get("case")).strip(), 0.0) + float(str(r.get("P", "")).replace(",", "")) * 1000.0
+            except ValueError:
+                pass
+        if str(v.get("self_weight", "")).lower() == "yes":
+            td["D"] = td.get("D", 0.0) + col_nodes[mark][2]["W"] * col_nodes[mark][3]
+        cols.append(dict(mark=mark, cases={c: (by_case.get(c, 0.0), td.get(c, 0.0)) for c in cases}))
+    return dict(columns=cols, supports=[dict(mark=k[0], x=k[1], cases=vv) for k, vv in sup_out.items()], notes=notes, problems=problems, cases=cases,
+                size=dict(joints=len(fr.nodes), members=len(fr.members)))
+
+
 def model_plan(project, members):
     """What the plan view draws: per level, the placed members as lines (beams, joists) and points (posts, columns, footings)."""
     mdl = (project or {}).get("model") or {}

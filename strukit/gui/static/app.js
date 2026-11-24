@@ -739,17 +739,29 @@ function modelCard(changed) {
     toast(out.lines.length ? "The walls now carry " + (which === "governing" ? "the governing load of wind and seismic" : "the " + which + " shear") + ", by tributary width, stacked from the top down." : "The load was not distributed. See the notes under the plan.", 12000);
   } }, text);
   const lat = el("span", {}, latBtn("wind", "Send the wind to the wall lines"), latBtn("seismic", "Send the seismic forces"), latBtn("governing", "Use whichever governs each wall"));
+  const frameBtn = el("button", { class: "btn", onclick: async () => {
+    let out;
+    try { out = await post("/api/model_frame", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
+    FRAME_CHECK = out; MODEL_NOTES = out.problems.concat(out.notes || []);
+    select("project");
+    toast(out.columns.length ? "The placed steel framing was analysed as one 3D frame (" + out.size.joints + " joints, " + out.size.members + " members). Column loads are listed beside the takedown's." : "The 3D frame was not run. See the notes under the plan.", 12000);
+  } }, "Check the load path with a 3D frame analysis");
   drawPlan();
   return el("div", { class: "card" }, el("h2", {}, "Building Model"),
     el("div", { class: "help" }, "Optional. List the levels and grids, place members on their own screens, then link them by position. Every member can still be checked alone."),
     table(lv, mdl.levels, changed), table(gx, mdl.grids_x, changed), table(gy, mdl.grids_y, changed),
     el("div", { class: "fillbar" }, link, lat, levels.length ? el("span", { class: "small" }, " Plan of level ") : null, levels.length ? pickLevel : null),
     holder,
+    el("div", { class: "fillbar" }, frameBtn),
+    (FRAME_CHECK && FRAME_CHECK.columns && FRAME_CHECK.columns.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Column", "Case", "3D frame", "Takedown", "Difference"].map(t => el("th", {}, t)))),
+      el("tbody", {}, FRAME_CHECK.columns.flatMap(c => Object.entries(c.cases).map(([k, v]) => { const d = v[1] ? (v[0] - v[1]) / v[1] * 100 : (Math.abs(v[0]) < 1 ? 0 : null);
+        return el("tr", {}, el("td", {}, c.mark), el("td", {}, k), el("td", {}, Math.round(v[0]).toLocaleString() + " lb"), el("td", {}, Math.round(v[1]).toLocaleString() + " lb"),
+          el("td", { class: d != null && Math.abs(d) > 5 ? "st FLAG" : "" }, d == null ? "no takedown load" : (d >= 0 ? "+" : "") + d.toFixed(1) + "%")); })))) : null,
     (WIND_LINES && WIND_LINES.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Level", "Dir.", "Wall", "Load", "Tributary", "Shear", "From above", "Chord"].map(t => el("th", {}, t)))),
       el("tbody", {}, WIND_LINES.map(l => el("tr", { style: l.governs === false ? "opacity:.55" : "" }, el("td", {}, l.level), el("td", {}, l.wind), el("td", {}, l.wall), el("td", {}, (l.load || "wind") + (l.governs ? " (governs)" : "")), el("td", {}, l.trib.toFixed(1) + " ft"),
         el("td", {}, Math.round(l.V).toLocaleString() + " lb"), el("td", {}, l.from_above ? Math.round(l.from_above).toLocaleString() + " lb" : ""), el("td", {}, l.T == null ? "" : Math.round(l.T).toLocaleString() + " lb"))))) : null, (MODEL_NOTES && MODEL_NOTES.length) ? el("ul", { class: "msg small" }, MODEL_NOTES.map(t => el("li", {}, t))) : null);
 }
-let MODEL_NOTES = [], WIND_LINES = [];
+let MODEL_NOTES = [], WIND_LINES = [], FRAME_CHECK = null;
 
 function drawMain() {
   const main = $("#main"); main.textContent = "";

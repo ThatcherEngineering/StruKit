@@ -136,3 +136,36 @@ def test_seismic_to_wall_lines_and_governing():
     assert sum(1 for l in gov["lines"] if l["governs"]) == 8 and len(gov["lines"]) == 16
     bad = dict(proj, model=dict(proj["model"], levels=[dict(name="Foundation", elev="0"), dict(name="Second", elev="10"), dict(name="Roof", elev="20")]))
     assert any("names must match" in p for p in calc.lateral_wind(bad, ms, load="seismic")["problems"])
+
+
+def _bay():
+    """One 20 x 16 ft bay: four HSS columns, girders on grids A and B, three infill beams between them at 4 ft, on footings."""
+    ms = [_beam("G1", "W16X31", 16, 0.05, 0.0, at_level="Floor", at_x1="A", at_y1="1", at_x2="A", at_y2="2"),
+          _beam("G2", "W16X31", 16, 0.05, 0.0, at_level="Floor", at_x1="B", at_y1="1", at_x2="B", at_y2="2")]
+    for i, y in enumerate((4, 8, 12), 1):
+        ms.append(_beam(f"B{i}", "W12X26", 20, 0.3, 0.5, at_level="Floor", at_x1="A", at_y1=str(y), at_x2="B", at_y2=str(y)))
+    for name, (x, y) in dict(C1=("A", "1"), C2=("A", "2"), C3=("B", "1"), C4=("B", "2")).items():
+        ms.append(_col(name, at_level="Floor", at_base="Foundation", at_x1=x, at_y1=y))
+    return ms
+
+
+def test_space_frame_agrees_with_the_takedown():
+    linked = calc.model_links(PROJ, _bay())
+    assert len(linked["problems"]) == 4 and all("base: nothing in the model is under it" in p for p in linked["problems"])   # no footings in this test
+    assert linked["made"] == 6 + 4                                                         # six infill beam ends on the girders, four girder ends on columns
+    fr = calc.model_frame(PROJ, linked["members"])
+    assert fr["problems"] == [] and fr["notes"] == [] and fr["cases"] == ["D", "L"] and len(fr["columns"]) == 4
+    for col in fr["columns"]:
+        for c, (frame, takedown) in col["cases"].items():
+            assert frame == pytest.approx(takedown, rel=2e-3), (col["mark"], c)             # statically determinate framing: the two methods agree
+        assert col["cases"]["L"][1] == pytest.approx(0.5 * 20 * 3 / 4 * 1000) and col["cases"]["D"][1] == pytest.approx((0.3 * 20 * 3 / 4 + 0.05 * 8) * 1000)
+
+
+def test_space_frame_notes_and_problems():
+    ms = _building()                                                                       # one column only: the other girder ends bear on supports
+    linked = calc.model_links(PROJ, ms)
+    fr = calc.model_frame(PROJ, linked["members"])
+    assert fr["problems"] == [] and any("bearing on a support" in n for n in fr["notes"]) and len(fr["supports"]) == 3
+    c1 = fr["columns"][0]["cases"]
+    assert c1["L"][0] == pytest.approx(c1["L"][1], rel=2e-3) and c1["D"][0] == pytest.approx(c1["D"][1], rel=2e-3)
+    assert "needs at least one" in calc.model_frame(PROJ, [m for m in ms if m["kind"] != "hss_column"])["problems"][0]
