@@ -2345,6 +2345,114 @@ def case_reactions(kind, values, project):
     return _governing(dict(supports=sup, notes=notes), project)
 
 
+TAKEDOWN_KIP = ("steel_beam", "steel_column", "hss_column", "single_plate", "end_plate", "seat", "base_plate")
+TAKEDOWN_FOOTINGS = ("footing_iso", "footing_cont")
+
+
+def _links(member):
+    """The takedown links stored on a member: on its load rows (key "link") or, for a footing, on the member itself."""
+    v = member.get("values") or {}
+    out = []
+    if member.get("kind") in TAKEDOWN_FOOTINGS:
+        if isinstance(v.get("link"), dict) and v["link"].get("src"):
+            out.append(v["link"])
+        return out
+    for row in v.get("loads") or []:
+        lk = row.get("link") if isinstance(row, dict) else None
+        if isinstance(lk, dict) and lk.get("src") and lk not in out:
+            out.append(lk)
+    return out
+
+
+def link_tag(lk):
+    n = float(lk.get("count") or 1)
+    if lk.get("mode") == "line":
+        return f"reaction of {lk['src']}, {lk['support']}, as a line at {float(lk.get('spacing_in') or 0):g} in. o.c."
+    return f"reaction of {lk['src']}, {lk['support']}" + (f" x {n:g}" if n != 1 else "")
+
+
+def takedown(project, members):
+    """Recalculates every stored takedown link, from the top of the load path down: each linked member's reaction rows (or a footing's
+    service and factored loads) are rewritten from the member above as it stands now. Returns dict(members=the updated list, links=[one
+    line per link], problems=[...]). Members without links are returned unchanged."""
+    import copy
+    ms = copy.deepcopy(members or [])
+    by_mark = {}
+    for m in ms:
+        by_mark.setdefault((m.get("values") or {}).get("mark") or "", m)
+    deps = {id(m): [by_mark.get(lk["src"]) for lk in _links(m)] for m in ms}
+    order, state, problems = [], {}, []
+
+    def visit(m, trail):
+        if state.get(id(m)) == 2:
+            return
+        if state.get(id(m)) == 1:
+            problems.append("The load path goes in a circle: " + " -> ".join(trail + [(m.get("values") or {}).get("mark") or "(no mark)"]))
+            return
+        state[id(m)] = 1
+        for dsrc in deps[id(m)]:
+            if dsrc is not None:
+                visit(dsrc, trail + [(m.get("values") or {}).get("mark") or "(no mark)"])
+        state[id(m)] = 2
+        order.append(m)
+
+    for m in ms:
+        visit(m, [])
+    if problems:
+        return dict(members=members, links=[], problems=problems)
+    report = []
+    for m in order:
+        v, kind = m.get("values") or {}, m.get("kind")
+        mark = v.get("mark") or "(no mark)"
+        for lk in _links(m):
+            src = by_mark.get(lk["src"])
+            line = dict(target=mark, source=lk["src"], support=lk.get("support"), count=float(lk.get("count") or 1), x=lk.get("x", ""))
+            if src is None:
+                problems.append(f"{mark}: the member above, {lk['src']}, is no longer in the project (its loads are left as they were)")
+                continue
+            got = case_reactions(src.get("kind"), src.get("values") or {}, project)
+            if "error" in got:
+                problems.append(f"{mark}: {lk['src']}: {got['error']} (its loads are left as they were)")
+                continue
+            sup = next((s_ for s_ in got["supports"] if s_["name"] == lk.get("support")), None)
+            if sup is None:
+                problems.append(f"{mark}: {lk['src']} no longer has a '{lk.get('support')}' (its loads are left as they were)")
+                continue
+            n = line["count"]
+            if kind in TAKEDOWN_FOOTINGS:
+                if not sup.get("service") or not sup.get("strength"):
+                    problems.append(f"{mark}: both ASD and LRFD load combinations are needed on the Project page to fill a footing")
+                    continue
+                v.update(P_service=str(round(sup["service"]["P"] * n)), service_combo=sup["service"]["name"], Pu=str(round(sup["strength"]["P"] * n)),
+                         strength_combo=sup["strength"]["name"], loads_from=link_tag(lk))
+                line.update(total=sup["service"]["P"] * n, unit="lb service")
+            else:
+                kip = kind in TAKEDOWN_KIP
+                f = (0.001 if kip else 1.0) * n
+                beam = kind in TAKEDOWN_BEAMS
+                rows = [r for r in (v.get("loads") or []) if not (isinstance(r, dict) and r.get("link") == lk)]
+                for c, val in sup["cases"].items():
+                    if abs(val) < 0.5:
+                        continue
+                    amt = str(round(val * f, 3)) if kip else str(round(val * f))
+                    if beam and lk.get("mode") == "line":
+                        sp = float(lk.get("spacing_in") or 0)
+                        if sp <= 0:
+                            problems.append(f"{mark}: the joist spacing of {lk['src']} is missing")
+                            break
+                        w = val * 12.0 / sp * (0.001 if kip else 1.0)
+                        rows.append(dict(case=c, kind="uniform", mag=(str(round(w, 4)) if kip else str(round(w, 1))), mag2="", x1=str(lk.get("x", "")), x2=str(lk.get("x2", "")),
+                                         label=link_tag(lk), link=dict(lk)))
+                    elif beam:
+                        rows.append(dict(case=c, kind="point", mag=amt, mag2="", x1=str(lk.get("x", "")), x2="", label=link_tag(lk), link=dict(lk)))
+                    else:
+                        rows.append(dict(case=c, P=amt, label=link_tag(lk), link=dict(lk)))
+                v["loads"] = rows
+                line.update(total=sum(sup["cases"].values()) * n, unit="lb, all cases")
+            report.append(line)
+    return dict(members=ms, links=report, problems=problems)
+
+
 def _governing(out, project):
     """Adds to each support the largest downward reaction under the project's ASD combinations (service) and LRFD combinations (strength),
     each with the combination's name, for a footing."""
