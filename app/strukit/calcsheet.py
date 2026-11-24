@@ -1514,6 +1514,8 @@ def _block_picture(c, top, pic):
         return _end_plate_picture(c, top - 6, d)
     if name == "seat":
         return _seat_picture(c, top - 6, d)
+    if name == "cap_plate":
+        return _cap_plate_picture(c, top - 6, d)
     if name == "topo":
         return _topo_picture(c, top - 6, d)
     if name == "nailed":
@@ -2173,6 +2175,49 @@ def _seat_picture(c, top, d):
     c.drawString(xs + osl * sc + 8, ys - t * sc - 11, d["attach"])
     _small(c, (LM + RM) / 2, ys - vl * sc - 34, "side view, to scale; top angle not shown")
     return ys - vl * sc - 42
+
+
+def _cap_plate_picture(c, top, d):
+    """Elevation along the beam and plan of the cap plate, to scale: HSS column, cap plate, bottom of the beam, the four bolts; bolt spacing,
+    column width, plate thickness, gage and plate width dimensioned."""
+    B, s_, g, bp, tp, db, tf = d["B"], d["s"], d["g"], d["bp"], d["tp"], d["d"], d["tf"]
+    Lp = s_ + 3.0                                  # plate length drawn: 1-1/2 in. past each bolt line
+    sc = min(9.0, 150.0 / Lp)
+    # elevation, left
+    xc = LM + 150
+    yp = top - 70                                  # underside of the cap plate
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xc - B / 2 * sc, yp - 60, B * sc, 60, fill=1, stroke=1)                     # column
+    c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xc - Lp / 2 * sc, yp, Lp * sc, tp * sc, fill=1, stroke=1)                   # cap plate
+    c.setFillColorRGB(0.90, 0.92, 0.95); c.rect(xc - Lp / 2 * sc - 30, yp + tp * sc, Lp * sc + 60, tf * sc, fill=1, stroke=1)  # beam bottom flange
+    c.rect(xc - Lp / 2 * sc - 30, yp + (tp + tf) * sc, Lp * sc + 60, 26, fill=1, stroke=0)
+    c.line(xc - Lp / 2 * sc - 30, yp + (tp + tf) * sc + 26, xc + Lp / 2 * sc + 30, yp + (tp + tf) * sc + 26)
+    c.setLineWidth(1.4)
+    for sx in (-1, 1):
+        xb = xc + sx * s_ / 2 * sc
+        c.line(xb, yp - 5, xb, yp + (tp + tf) * sc + 5)
+        c.rect(xb - db * 0.8 * sc, yp - 5 - 3, db * 1.6 * sc, 3, fill=1, stroke=1); c.rect(xb - db * 0.8 * sc, yp + (tp + tf) * sc + 5, db * 1.6 * sc, 3, fill=1, stroke=1)
+    c.setLineWidth(0.8)
+    memberart._dim_h(c, xc - s_ / 2 * sc, xc + s_ / 2 * sc, yp + (tp + tf) * sc + 44, f"s = {s_:g} in", FR, ext_from=yp + (tp + tf) * sc + 10)
+    memberart._dim_h(c, xc - B / 2 * sc, xc + B / 2 * sc, yp - 74, f"B = {B:g} in", FR, ext_from=yp - 60)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawString(xc + Lp / 2 * sc + 6, yp + tp * sc / 2 - 2, f"cap plate {tp:g} in")
+    c.drawString(xc + B / 2 * sc + 5, yp - 34, d["column"])
+    c.drawString(xc + Lp / 2 * sc + 36, yp + (tp + tf) * sc + 10, d["beam"])
+    _small(c, xc, yp - 90, "elevation along the beam, to scale")
+    # plan, right
+    xq, yq = RM - 135, top - 70 - 12
+    c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xq - Lp / 2 * sc, yq - bp / 2 * sc, Lp * sc, bp * sc, fill=1, stroke=1)
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.setDash(3, 2); c.rect(xq - B / 2 * sc, yq - B / 2 * sc, B * sc, B * sc, fill=0, stroke=1); c.setDash()
+    c.setFillColorRGB(*INK)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            c.circle(xq + sx * s_ / 2 * sc, yq + sy * g / 2 * sc, max(db / 2 * sc, 1.6), fill=1, stroke=0)
+    memberart._dim_v(c, yq - g / 2 * sc, yq + g / 2 * sc, xq + Lp / 2 * sc + 14, f"g = {g:g} in", FR, ext_from=xq + s_ / 2 * sc)
+    memberart._dim_v(c, yq - bp / 2 * sc, yq + bp / 2 * sc, xq - Lp / 2 * sc - 14, f"{bp:g} in", FR, ext_from=xq - Lp / 2 * sc)
+    memberart._dim_h(c, xq - s_ / 2 * sc, xq + s_ / 2 * sc, yq + max(bp, B) / 2 * sc + 16, f"s = {s_:g} in", FR, ext_from=yq + g / 2 * sc)
+    _small(c, xq, yq - max(bp, B) / 2 * sc - 16, "plan of the cap plate, to scale; the column is dashed")
+    return min(yp - 98, yq - max(bp, B) / 2 * sc - 24)
 
 
 def _guard_picture(c, top, d):
