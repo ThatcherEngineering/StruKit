@@ -2568,7 +2568,8 @@ def wind_free_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, 
         raise WorksheetError(f"{mark}: {e}")
     Ln = footing_line
     mono = roof == "monoslope"
-    fig = "Figure 27.3-4" if (mono or theta < 7.5) else "Figure 27.3-5"
+    fig = "Figure 27.3-4" if (mono or theta < 7.5) else "Figure 27.3-5" if roof == "pitched" else "Figure 27.3-6"
+    word = {"monoslope": "Monoslope", "pitched": "Pitched", "troughed": "Troughed"}[roof] if roof in ("monoslope", "pitched", "troughed") else roof
     flow = "obstructed" if obstructed else "clear"
     steps = [Ln("V", V, "mi/h", "ASCE/SEI 7-22 Sect. 26.5", V_source.strip()),
              Ln("Kzt", Kzt, "", "Sect. 26.8", Kzt_source.strip()),
@@ -2582,7 +2583,7 @@ def wind_free_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, 
     if r["across"]:
         t1 = [f"{'wind':<28}{'case':>5}{'CNW':>8}{'CNL':>8}{'windward half':>16}{'leeward half':>15}"]
         for x in r["across"]:
-            nm = ("against the high edge, 0" if x["gamma"] == 0 else "against the low edge, 180") if mono else "across the ridge, 0 or 180"
+            nm = ("against the high edge, 0" if x["gamma"] == 0 else "against the low edge, 180") if mono else f"across the {'ridge' if roof == 'pitched' else 'valley'}, 0 or 180"
             t1.append(f"{nm:<28}{x['case']:>5}{x['CNW']:>8.2f}{x['CNL']:>8.2f}{x['pW']:>12.1f} psf{x['pL']:>11.1f} psf")
     t2 = [f"{'from the windward edge':<28}{'case':>5}{'CN':>8}{'pressure':>14}"]
     for z in r["parallel"]:
@@ -2591,21 +2592,22 @@ def wind_free_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, 
     info = [("Wind Speed", f"V = {V:g} mi/h ({V_source.strip()})"),
             ("Exposure", f"{exposure} ({exposure_basis.strip()}); Kzt = {Kzt:g} ({Kzt_source.strip()})"),
             ("Roof", (f"monoslope free roof at {theta:g} degrees; mean roof height {h:g} ft; {L:g} ft in the direction of the slope" if mono else
-                      f"pitched (gable) free roof at {theta:g} degrees; mean roof height {h:g} ft; {L:g} ft eave to eave")),
+                      f"{'pitched (gable)' if roof == 'pitched' else 'troughed'} free roof at {theta:g} degrees; mean roof height {h:g} ft; {L:g} ft edge to edge")),
             ("Wind Flow", f"{flow} ({flow_basis.strip()})")]
-    sheet = SimpleSheet(mark, "Wind Pressures, Open Building with a " + ("Monoslope" if mono else "Pitched") + " Free Roof", "Open Building", "Chapter 27", info, [], [], "Velocity Pressure", steps, [],
+    sheet = SimpleSheet(mark, "Wind Pressures, Open Building with a " + word + " Free Roof", "Open Building", "Chapter 27", info, [], [], "Velocity Pressure", steps, [],
                         ["Open building: main wind force resisting system by the directional procedure, Sect. 27.3.2. Net pressures include the top and bottom surfaces; "
                          "plus acts toward the top surface, minus away from it (Figure 27.3-4 note 5).",
                          "Cases A and B are separate load cases for each wind direction; all are to be investigated (Figure 27.3-4 note 6).",
                          "Rigid structure, G = 0.85 (Sect. 26.11.1)."],
                         ["the minimum design wind force of Sect. 27.1.5", "wind on fascia panels, columns and other framing", "components and cladding (Sect. 30.7, Figure 30.7-1)",
-                         "troughed free roofs (Figure 27.3-6)", "roofs steeper than 45 degrees"])
+                         "roofs steeper than 45 degrees"])
     if t1:
-        sheet.blocks.append(dict(title=f"Wind Across the {'Slope' if mono else 'Ridge'} ({fig})", head=f"Wind Across the {'Slope' if mono else 'Ridge'}",
+        sheet.blocks.append(dict(title=f"Wind Across the {'Slope' if mono else 'Ridge' if roof == 'pitched' else 'Valley'} ({fig})",
+                                      head=f"Wind Across the {'Slope' if mono else 'Ridge' if roof == 'pitched' else 'Valley'}",
                                       picture=("free_roof", dict(theta=theta, h=h, L=L, roof=roof)), lines=t1,
                                       after=["Each half of the roof is 0.5 L wide, measured horizontally. Pressures act normal to the roof surface."
                                              + ("" if mono else " The same values apply with the wind from the other side.")]))
-    sheet.blocks.append(dict(title=("Wind Parallel to the " + ("Eaves" if mono else "Ridge") + ", 90 and 270 Degrees (Figure 27.3-7)") if t1 else "All Wind Directions (Figure 27.3-4 note 4, Figure 27.3-7)", lines=t2,
+    sheet.blocks.append(dict(title=("Wind Parallel to the " + ("Eaves" if mono else "Ridge" if roof == "pitched" else "Valley") + ", 90 and 270 Degrees (Figure 27.3-7)") if t1 else "All Wind Directions (Figure 27.3-4 note 4, Figure 27.3-7)", lines=t2,
                              after=["Zones are measured horizontally from the windward edge of the roof, in the wind direction."]))
     tot = None
     if width is not None and r["across"]:
@@ -2615,7 +2617,7 @@ def wind_free_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, 
             raise WorksheetError(f"{mark}: {e}")
         t3 = [f"{'wind':<28}{'case':>5}{'along the wind':>18}{'vertical':>14}"]
         for x in tot["rows"]:
-            nm = ("against the high edge, 0" if x["gamma"] == 0 else "against the low edge, 180") if mono else "across the ridge, 0 or 180"
+            nm = ("against the high edge, 0" if x["gamma"] == 0 else "against the low edge, 180") if mono else f"across the {'ridge' if roof == 'pitched' else 'valley'}, 0 or 180"
             t3.append(f"{nm:<28}{x['case']:>5}{x['H']:>15,.0f} lb{x['V']:>11,.0f} lb")
         t3.append(f"minimum, Sect. 27.1.5: 16 psf x Af = 16 x {tot['Af']:,.0f} ft2 = {tot['F_min']:,.0f} lb along the wind")
         sheet.blocks.append(dict(title="Total Force on the Roof", lines=t3,

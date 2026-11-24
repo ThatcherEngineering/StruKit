@@ -674,3 +674,24 @@ def test_free_roof_total_forces_by_hand(tmp_path):
     calcsheet.simple_pdf(s, str(tmp_path / "t.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
     n, _, _ = calc.build("wind_free_roof", dict(v, width=""), {})
     assert n.free_roof["totals"] is None and any("27.1.5" in x for x in n.not_checked)
+
+
+def test_troughed_free_roof(tmp_path):
+    """ASCE/SEI 7-22 Figure 27.3-6 as read from the page image (pdf p. 350).  By hand at 11.25 degrees, clear flow: Case A CNW -1.1, CNL 0.35;
+    Case B CNW -0.05, CNL 1.15.  Total force along the wind (pL - pW)(L/2) B tan theta."""
+    import math
+    from strukit import calcsheet
+    from strukit.gui import calc
+    assert wind.FREE_TROUGHED[7.5] == {"A": ((-1.1, 0.3), (-1.6, -0.5)), "B": ((-0.2, 1.2), (-0.9, -0.8))}
+    assert wind.FREE_TROUGHED[45.0] == {"A": ((-1.1, -0.9), (-1.2, -0.3)), "B": ((0.3, 0.5), (-0.3, -0.4))}
+    cn = wind.free_pitched_cn(11.25, table=wind.FREE_TROUGHED)
+    assert cn["A"] == pytest.approx((-1.1, 0.35)) and cn["B"] == pytest.approx((-0.05, 1.15))
+    r = wind.free_roof(115, "C", 14.0, 11.25, 30.0, roof="troughed")
+    t = wind.free_roof_totals(r, 11.25, 30.0, 40.0, "troughed")
+    a = r["across"][0]
+    assert t["rows"][0]["H"] == pytest.approx((a["pL"] - a["pW"]) * 600 * math.tan(math.radians(11.25))) and t["rows"][0]["H"] > 0
+    v = dict(mark="WO3", V="115", V_source="Hazard Tool", exposure="C", exposure_basis="open terrain", h="14", roof="troughed", theta="11.25", L="30", width="40", flow="obstructed",
+             flow_basis="stored material below", Kzt="1.0", Kzt_source="flat site", elevation="", elevation_source="")
+    s, _, _ = calc.build("wind_free_roof", v, {})
+    assert "Troughed" in s.title and s.free_roof["across"][0]["CNW"] == pytest.approx(-1.4)
+    calcsheet.simple_pdf(s, str(tmp_path / "t.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")

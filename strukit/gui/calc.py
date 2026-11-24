@@ -539,15 +539,15 @@ FORMS = {
                 F("heights", "Heights above ground for Kzt", "text", "ft", help="separated by commas, for example 0, 15, 30; Kzt is largest at the ground")],
         tables=[]),
     "wind_free_roof": dict(
-        title="Wind Pressures, Open Building (monoslope or pitched free roof)", code="ASCE/SEI 7-22", mark="WO",
+        title="Wind Pressures, Open Building (free roof)", code="ASCE/SEI 7-22", mark="WO",
         fields=[F("V", "Basic wind speed, V", unit="mi/h", help="for the project's Risk Category, from the ASCE 7 Hazard Tool or the jurisdiction"),
                 F("V_source", "Where V comes from", "text"),
                 F("exposure", "Exposure category", "select", options=["B", "C", "D"], help="ASCE 7-22 Sect. 26.7"),
                 F("exposure_basis", "Basis of the exposure category", "text"),
                 F("h", "Mean roof height, h", unit="ft"),
-                F("roof", "Roof", "select", options=["monoslope", "pitched (gable)"]),
+                F("roof", "Roof", "select", options=["monoslope", "pitched (gable)", "troughed"]),
                 F("theta", "Roof angle", unit="deg", help="0 to 45 degrees"),
-                F("L", "Roof dimension L", unit="ft", help="horizontal: in the direction of the slope for a monoslope roof, eave to eave for a pitched roof"),
+                F("L", "Roof dimension L", unit="ft", help="horizontal: in the direction of the slope for a monoslope roof, edge to edge for a pitched or troughed roof"),
                 F("width", "Roof dimension perpendicular to L", unit="ft", required=False, help="optional: gives the total horizontal and vertical force on the roof and the minimum of Sect. 27.1.5"),
                 F("flow", "Wind flow under the roof", "select", options=["clear", "obstructed"], help="obstructed: more than 50 percent blockage below the roof (Figure 27.3-4 note 2)"),
                 F("flow_basis", "Basis of clear or obstructed flow", "text", help="for example: open below, picnic tables only"),
@@ -1563,7 +1563,7 @@ def build(kind, values, project):
     if kind == "wind_free_roof":
         args = (r.num("V"), r.text("V_source"), r.text("exposure"), r.text("exposure_basis"), r.num("h"), r.num("theta"), r.num("L"))
         fl, fb, kzt, ks_ = r.text("flow"), r.text("flow_basis"), r.num("Kzt"), r.text("Kzt_source")
-        rf = "pitched" if (r.text("roof") or "").startswith("pitched") else "monoslope"
+        rf = {"pitched (gable)": "pitched", "troughed": "troughed"}.get(r.text("roof") or "", "monoslope")
         r.done()
         return ws_more.wind_free_roof_sheet(mark, *args, fl == "obstructed", fb, kzt, ks_, r.num("elevation", False), r.text("elevation_source", False) or "", roof=rf, width=r.num("width", False)), "simple", {}
     if kind == "wind_pressure":
