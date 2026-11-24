@@ -178,7 +178,7 @@ def _portal(fix="moment", base="", wind=True, P_extra=0.0):
     bm = dict(kind="steel_beam", values=dict(mark="BM", shape="W18X40", Fy="50", span="30", more_spans="", oh_left="", oh_right="", bracing="continuous", brace_pts="", self_weight="no",
               loads=[dict(case="D", kind="uniform", mag="0.4", x1="", x2="", label=""), dict(case="L", kind="uniform", mag="1.2", x1="", x2="", label="")], defl=DEFL,
               at_level="Roof", at_x1="0", at_y1="0", at_x2="30", at_y2="0", at_fix_i=fix, at_fix_j=fix))
-    col = lambda mark, x: dict(kind="steel_column", values=dict(mark=mark, shape="W12X65", at_level="Roof", at_base="Base", at_x1=str(x), at_y1="0", at_base_fix=base, self_weight="no",
+    col = lambda mark, x: dict(kind="steel_column", values=dict(mark=mark, shape="W12X65", Fy="50", at_level="Roof", at_base="Base", at_x1=str(x), at_y1="0", at_base_fix=base, self_weight="no",
                                loads=([dict(case="L", P=str(P_extra), label="")] if P_extra else [])))
     return proj, [bm, col("CL", 0), col("CR", 30)]
 
@@ -218,3 +218,25 @@ def test_sway_frame_asd_and_pinned_beam_mechanism():
     assert asd["columns"][0]["P"] < lr["columns"][0]["P"]
     proj, ms = _portal(fix="pinned", base="")                                              # pinned beam, pinned bases: nothing resists sway
     assert "needs moment connections" in calc.model_frame_sway(proj, ms)["problems"][-1]
+
+
+def test_sway_frame_member_checks():
+    from strukit import shapes, steel_column, steel_beam, steel_beamcol
+    proj, ms = _portal(base="fixed")
+    out = calc.model_frame_sway(proj, ms)
+    c = next(c for c in out["columns"] if c["mark"] == "CL")
+    p = shapes.get("W12X65")
+    Pc = steel_column.check(p, 50, 240, 240, method="LRFD").P_avail
+    Mcx = steel_beam.check(p, 50, 240, 1.0, "LRFD").M_avail
+    Mcy = steel_beamcol.weak_axis_flexure(p, 50, "LRFD").available
+    assert c["cap"]["Pc"] == pytest.approx(Pc) and c["cap"]["Mcx"] == pytest.approx(Mcx)
+    r = c["at"]["P"] / Pc
+    hand = r + 8 / 9 * (c["at"]["Mx"] / Mcx + c["at"]["My"] / Mcy) if r >= 0.2 else r / 2 + c["at"]["Mx"] / Mcx + c["at"]["My"] / Mcy
+    assert c["ratio"] == pytest.approx(hand) and 0.1 < c["ratio"] < 1.0
+    b = out["beams"][0]
+    pb = shapes.get("W18X40")
+    lo, hi = steel_beam.check(pb, 50, 360, 1.0, "LRFD").M_avail, steel_beam.check(pb, 50, 0.01, 1.0, "LRFD").M_avail
+    assert lo <= b["cap"]["Mcx"] <= hi * 1.0001
+    assert b["ratio"] > 0.3 and b["v_ratio"] == pytest.approx(b["V"] / steel_beam.check(pb, 50, 0.01, 1.0, "LRFD").V_avail)
+    # the bottom flange in compression at the moment connections uses the unbraced beam length: a longer beam in hogging is weaker
+    assert steel_beam.check(pb, 50, 360, 1.0, "LRFD").M_avail < steel_beam.check(pb, 50, 0.01, 1.0, "LRFD").M_avail
