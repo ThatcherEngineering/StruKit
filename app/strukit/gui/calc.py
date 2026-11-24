@@ -8,6 +8,7 @@ naming the box, and all such messages come back together.
 import re
 
 from .. import calcsheet, glulam, ijoist, scl, shapes, shearwall, snow, wood, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column, ws_wood
+from .. import holddowns
 from ..footing import FootingInputError
 from ..steel_beam import SteelInputError
 from ..ws_steel_beam import Combo, DeflCheck, WorksheetError
@@ -523,6 +524,11 @@ FORMS = {
                 F("dead", "Uplift: dead load on the wall", unit="plf", required=False, help="blank = dead load not counted against uplift"),
                 F("dead_factor", "Uplift: dead load factor", required=False, help="0.6 for ASD (0.6D + 0.6W); 0.9 for LRFD"),
                 F("dead_source", "Uplift: source of the dead load and factor", "text", required=False),
+                F("hd_model", "Hold-down", "select", options=holddowns.MODELS, required=False, help="Simpson Strong-Tie catalog C-C-2026; blank = hold-down not checked"),
+                F("hd_stem", "Strap tie: stem wall width", "select", options=["6", "8"], unit="in", required=False, help="LSTHD and STHD only; slab on grade and brick ledge: 8"),
+                F("hd_position", "Strap tie: position on the wall", "select", options=holddowns.POSITIONS, required=False),
+                F("hd_cracked", "Strap tie: concrete", "select", options=["cracked", "uncracked"], required=False),
+                F("hd_sdc", "Strap tie, seismic: Seismic Design Category", "select", options=["A or B", "C to F"], required=False),
                 F("above_T", "Stacked walls: chord force from the wall above", unit="lb", required=False,
                   help="the hold-down tension (and post compression) the wall above brings down to this wall's end posts; blank = no wall above"),
                 F("above_source", "Stacked walls: where that force comes from", "text", required=False, help="for example: shear wall SW3, main level"),
@@ -1673,7 +1679,10 @@ def build(kind, values, project):
                                         r.num("slip", False), sides=sides, blocked=blocked, stud_spacing=int(ss_) if ss_ else None,
                                         field_nails=int(fn_) if fn_ else None, dead_plf=dead or 0.0,
                                         dead_factor=r.num("dead_factor", False), dead_source=r.text("dead_source", False) or "", other=oth,
-                                        above_T=r.num("above_T", False) or 0.0, above_source=r.text("above_source", False) or ""), "simple", {}
+                                        above_T=r.num("above_T", False) or 0.0, above_source=r.text("above_source", False) or "",
+                                        holddown=(dict(model=r.text("hd_model", False), stem=r.text("hd_stem", False), position=r.text("hd_position", False),
+                                                       cracked={"cracked": True, "uncracked": False}.get(r.text("hd_cracked", False)),
+                                                       sdc_high={"A or B": False, "C to F": True}.get(r.text("hd_sdc", False))) if r.text("hd_model", False) else None)), "simple", {}
     if kind == "wind_kzt":
         shape, ex, eb, H, Lh, gs, x = r.text("shape"), r.text("exposure"), r.text("exposure_basis"), r.num("H"), r.num("Lh"), r.text("geometry_source"), r.num("x")
         side, loc = r.text("side"), yes(r.text("located"))

@@ -486,7 +486,7 @@ def snow_sheet(mark, pg, pg_source, risk, roughness, exposure, thermal, roof_typ
 
 def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, V, load, method, v_source, holddown_inside=None,
                      arm_offset_in=0.0, chord_E=None, chord_A=None, anchor_slip_in=None, sides=1, blocked=True, stud_spacing=None,
-                     field_nails=None, dead_plf=0.0, dead_factor=None, dead_source="", other=None, above_T=0.0, above_source=""):
+                     field_nails=None, dead_plf=0.0, dead_factor=None, dead_source="", other=None, above_T=0.0, above_source="", holddown=None):
     """Wood structural panel shear wall line, SDPWS-2021 Sect. 4.3 (see shearwall.py).
     above_T: chord force (lb) brought down by the wall above, added to the chord tension and
     compression at every segment end of this wall.
@@ -530,6 +530,19 @@ def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, 
             s.T, s.C = s.T + above_T, s.C + above_T
             w.lines.append(shearwall.Line(f"segment {i}: chord tension with the wall above", s.T, "lb", "statics",
                                           f"{t0:,.0f} lb this story + {above_T:,.0f} lb from above; compression {c0:,.0f} + {above_T:,.0f} = {s.C:,.0f} lb"))
+    hd = None
+    if holddown:
+        from . import holddowns
+        Tmax = max(s.T for s in w.segments)
+        try:
+            hd = holddowns.check(holddown["model"], Tmax, G, load, method, stem=holddown.get("stem"), position=holddown.get("position"),
+                                 cracked=holddown.get("cracked"), sdc_high=holddown.get("sdc_high"))
+        except holddowns.HoldDownError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        rows.append(Row("hold-down tension", f"{load}, {method}", Tmax, hd["capacity"], "lb", hd["source"], hd["text"]))
+        info.append(("Hold-Down", f"Simpson Strong-Tie {hd['model']} at each segment end; deflection at the allowable load {hd['deflection']:g} in"))
+        w.lines.append(shearwall.Line("hold-down capacity", hd["capacity"], "lb", hd["source"], hd["text"]))
+    w.holddown = hd
     text = [f"Segment {i}: {s.b:>5g} ft   shear {s.V:>7,.0f} lb ({s.v:>4.0f} plf)   chord tension {s.T:>7,.0f} lb, compression {s.C:>7,.0f} lb"
             + (f"   deflection {s.defl:.2f} in" if s.defl is not None else "") for i, s in enumerate(w.segments, 1)]
     sheet = SimpleSheet(
@@ -540,7 +553,7 @@ def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, 
           "compression is from overturning alone; gravity load is not added." if dead_plf else
           "Chord forces are from overturning of each segment alone; dead load is not counted against uplift."),
          *(["The chord force of the wall above is added to the chord tension and compression at every segment end of this wall."] if above_T else [])],
-        ["hold-down and its connection", "gravity load in the compression chord" if dead_plf else "dead load resisting uplift", "anchor bolts and plate washers (SDPWS 4.3.6.4.3)",
+        [("hold-down anchor rod and its anchorage in the concrete; the post at the hold-down" if holddown else "hold-down and its connection"), "gravity load in the compression chord" if dead_plf else "dead load resisting uplift", "anchor bolts and plate washers (SDPWS 4.3.6.4.3)",
          "end posts in tension and compression; bearing on the plate", "collectors and the connection to the diaphragm",
          "construction requirements of SDPWS 4.3.6 and 4.3.7.1, including 3 in. framing at close nailing"]
         + ([] if w.segments[0].defl is not None else ["deflection (SDPWS 4.3.4)"]))
