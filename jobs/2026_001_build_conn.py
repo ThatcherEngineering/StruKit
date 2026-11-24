@@ -20,6 +20,13 @@ def tab(mark, beam, n, d, s, lev, tp, weld, col=None, girder=None, a=3.0, leh=1.
         v.update(support_name=f"through plate in {col}", support_t={"HSS5X5X3/8": "0.349", "HSS6X6X1/2": "0.465"}[col], support_Fu="58")
     else:
         v.update(support_name=f"{girder} web, full-depth stiffener plate", support_t=str(TW[girder]), support_Fu="65")
+        # cope at the top flange: not dimensioned on the details. Taken as: depth = girder k rounded up to 1/4 in.; length = half the girder flange
+        # + 1/2 in. rounded up to 1/4 in.; beam end 1/2 in. from the girder web; first bolt = girder flange thickness + plate edge distance below top of steel
+        from strukit import shapes; import math
+        g = shapes.get(girder); up = lambda x: math.ceil(x * 4 - 1e-9) / 4
+        dc, c = up(g["kdes"]), up(g["bf"] / 2 + 0.5)
+        dc = min(dc, math.floor((g["tf"] + lev - 1.0) * 8 + 1e-9) / 8)      # detail 23: a 1 in. cope would leave under 1 in. to the first bolt
+        v.update(cope_dc=str(dc), cope_c=str(c), cope_setback="0.5", cope_lev=f"{g['tf'] + lev - dc:.3f}", cope_leh="2.25", beam_Fy="50")
     return ("single_plate", v)
 M = [
  tab("Det 2, 3, 16, 17: W10x17 to HSS5x5x3/8", "W10X17", 3, 0.75, 2.5, 1.5, 0.375, 0.25, col="HSS5X5X3/8", leh=2),
@@ -44,5 +51,5 @@ if __name__ == "__main__":
         for m_ in r.get("messages", [])[:4]: print("   !", m_[:260])
         rows = r.get("rows", [])
         for row in rows:
-            if row.get("status") != "OK" or row is max(rows, key=lambda x: x.get("dc") or 0):
+            if row.get("status") != "OK" or "Coped" in row["check"]:
                 print(f"   {row['check'][:50]:<50} {row['demand']:>8.2f} {row['capacity']:>8.2f} {row['unit']} dc {row.get('dc'):.2f} {row['status']}")

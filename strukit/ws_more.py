@@ -2853,7 +2853,7 @@ def wind_free_hip_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, t
 
 
 def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, beam_source, tp, plate_Fy, plate_Fu, plate_source,
-                       d, group, threads, n, spacing, lev, leh, a, holes, weld, FEXX, loads, combos, method, support=None):
+                       d, group, threads, n, spacing, lev, leh, a, holes, weld, FEXX, loads, combos, method, support=None, cope=None):
     """Single-plate (shear tab) connection of a wide-flange beam to an HSS column: conventional configuration of AISC Manual Part 10 as worked
     in AISC Design Guide 24 (2nd Ed.) Example 5.1.  One vertical row of 2 to 5 bolts (the rows of Manual Table 10-9 confirmed in the documents
     on hand).  holes: "STD" or "SSLT" (horizontal short slots) in the plate; standard holes in the beam web.  loads: dict(case, P) kips.
@@ -2976,7 +2976,42 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
                  Row(f"Column wall slenderness {lam_txt}", "", lam, lam_r, "", lam_src, "")]
     else:
         rows.append(Row("Support thickness at the weld", "", t_min, t, "in", "AISC Manual Eq. 9-2", support["name"].strip()))
-    Tdim = bm.get("T")
+    cp = None
+    if cope:
+        from . import cope as _cope
+        miss = [nm for nm, key in (("cope depth", "dc"), ("cope length", "c"), ("beam setback from the support", "setback"), ("cut edge to the first bolt", "lev"),
+                                   ("bolt line to the beam end", "leh"), ("beam Fy", "Fy")) if cope.get(key) is None]
+        if miss:
+            raise WorksheetError(f"{mark}: a coped beam needs " + ", ".join(miss))
+        hole = dh + 1 / 16
+        try:
+            cp = _cope.top_cope(bm["d"], tw, bm["bf"], bm["tf"], cope["Fy"], beam_Fu, cope["dc"], cope["c"], cope["c"] + cope["setback"], holes=n, hole=hole)
+        except _cope.CopeError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        if cope["leh"] < 2 * d:
+            raise WorksheetError(f"{mark}: the bolt line is {cope['leh']:g} in. from the beam end, less than 2 bolt diameters (AISC Manual Part 10)")
+        if cope["lev"] < le_min:
+            raise WorksheetError(f"{mark}: the first bolt is {cope['lev']:g} in. below the cut edge, less than {le_min:g} in. (AISC 360-22 Table J3.4)")
+        if cope["lev"] + (n - 1) * spacing + le_min > cp["hc"] - bm["tf"]:
+            raise WorksheetError(f"{mark}: the bolt row does not fit in the coped web ({cp['hc'] - bm['tf']:.2f} in. clear of the bottom flange)")
+        bs = _cope.web_block_shear(tw, cope["Fy"], beam_Fu, n, spacing, cope["lev"], cope["leh"], hole)
+        c_fl, c_vy, c_vr, c_bs = av(cp["R_flex"], 0.90, 1.67), av(cp["R_vy"], 1.00, 1.50), av(cp["R_vr"], 0.75, 2.00), av(bs["Rn"], 0.75, 2.00)
+        steps += [Ln("Coped web: hc = d - dc", cp["hc"], "in", "AISC Manual Figure 9-2", f"cope {cope['dc']:g} in. deep x {cope['c']:g} in. long at the top flange; e = c + setback = {cp['e']:g} in."),
+                  Ln("f", f"{cp['f']:.3f}", "", "AISC Manual Eq. 9-20", f"c / d = {cope['c'] / bm['d']:.3f}"),
+                  Ln("k", f"{cp['k']:.2f}", "", "AISC Manual Eq. 9-19", f"c / hc = {cope['c'] / cp['hc']:.3f}; k1 = f k, not less than 1.61 = {cp['k1']:.2f}"),
+                  Ln("Sc, Zc of the coped section", f"{cp['Sc']:.2f}, {cp['Zc']:.2f}", "in3", "section properties", "bottom flange and web, fillets not counted"),
+                  Ln("lambda = hc / tw", f"{cp['lam']:.1f}", "", "AISC Manual Eq. 9-17", f"lambda_p = 0.475 (k1 E / Fy)^0.5 = {cp['lam_p']:.1f} (Eq. 9-18)"),
+                  Ln("Mn of the coped web", cp["Mn"], "kip-in", cp["eq"].split("(")[-1].rstrip(")"), f"Mp = {cp['Mp']:.0f}, My = {cp['My']:.0f} kip-in; {cp['eq'].split(' (')[0]}"),
+                  Ln("Coped web flexure, Mn / e", c_fl, "kip", "AISC Manual Eq. 9-9", fac(0.90, 1.67)),
+                  Ln("Coped web shear yielding", c_vy, "kip", "Eq. J4-3", f"Agv = hc tw = {cp['Agv']:.2f} in2; " + fac(1.00, 1.50)),
+                  Ln("Coped web shear rupture", c_vr, "kip", "Eq. J4-4", f"Anv = {cp['Anv']:.2f} in2; " + fac(0.75, 2.00)),
+                  Ln("Coped web block shear", c_bs, "kip", "Eq. J4-5, Ubs = 1.0", f"Agv = {bs['Agv']:.2f}, Anv = {bs['Anv']:.2f}, Ant = {bs['Ant']:.3f} in2; Rn = {bs['Rn']:.0f} kip")]
+        rows += [Row("Coped beam web flexure and local buckling", worst, R, c_fl, "kip", "AISC Manual Part 9, Eq. 9-9 to 9-20", f"cope {cope['dc']:g} x {cope['c']:g} in., e = {cp['e']:g} in."),
+                 Row("Coped beam web shear yielding", worst, R, c_vy, "kip", "AISC 360-22 Eq. J4-3", ""),
+                 Row("Coped beam web shear rupture", worst, R, c_vr, "kip", "AISC 360-22 Eq. J4-4", ""),
+                 Row("Coped beam web block shear", worst, R, c_bs, "kip", "AISC 360-22 Eq. J4-5", f"first bolt {cope['lev']:g} in. below the cut, bolt line {cope['leh']:g} in. from the beam end")]
+        cp = dict(cp, c_fl=c_fl, c_vy=c_vy, c_vr=c_vr, c_bs=c_bs)
+    Tdim = None if cope else bm.get("T")
     if Tdim:
         steps.append(Ln("Beam T dimension", Tdim, "in", shapes.SOURCE, f"{shapes.normalize(beam)}; plate length between T / 2 = {Tdim / 2:.2f} in. and T"))
         rows += [Row("Plate length, not less than T / 2", "", Tdim / 2, L, "in", "AISC Manual Part 10", f"l = {L:g} in."),
@@ -2994,14 +3029,15 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
                         f"Calculation ({worst})", steps, rows,
                         ["Conventional configuration (AISC Manual Part 10): one vertical row of bolts, a not over 3-1/2 in., horizontal edge distances at least 2 bolt diameters in the plate "
                          "and in the beam web, bolts snug-tight or pretensioned bearing-type.",
-                         "The beam end reaction is vertical shear only; the beam is not coped at the connection.",
+                         ("The beam end reaction is vertical shear only. The beam is coped at the top flange; the reaction is taken at the face of the support and the beam is braced "
+                          "at the end of the cope." if cope else "The beam end reaction is vertical shear only; the beam is not coped at the connection."),
                          ("The plate is welded to the flat of the column wall" + (" (round column: plate fitted to the wall)" if rnd else "") + ", centred on the column.") if hss_col else
                          "The support is stiff enough to take the connection as a conventional single plate (a column flange, or a girder web with framing on both sides or checked separately)."],
-                        ([] if Tdim else ["plate length against the beam T dimension (half of T to T, AISC Manual Part 10)"]) + ["axial force or torsion in the beam", "coped beams",
+                        ([] if (Tdim or cope) else ["plate length against the beam T dimension (half of T to T, AISC Manual Part 10)"]) + ["axial force or torsion in the beam", "a cope at the bottom flange" if cope else "coped beams",
                          "the column as a member" if hss_col else "the support member, and its web or flange for the beam reaction", "erection and fit-up"])
     sheet.blocks.append(dict(title="Connection Elevation", head="Connection Elevation",
                              picture=("single_plate", dict(n=n, s=spacing, lev=lev, leh=leh, a=a, L=L, tp=tp, weld=weld, column=shapes.normalize(column) if hss_col else support["name"].strip(), beam=shapes.normalize(beam), d=d))))
-    sheet.single_plate = dict(R=R, C=C, rn=rn, e=e, brg_p=brg_p, brg_w=brg_w, Vy=Vy, Vr=Vr, Rbs=Rbs, punch=punch, t_min=t_min, L=L, lam=lam, lam_r=lam_r)
+    sheet.single_plate = dict(cope=cp, R=R, C=C, rn=rn, e=e, brg_p=brg_p, brg_w=brg_w, Vy=Vy, Vr=Vr, Rbs=Rbs, punch=punch, t_min=t_min, L=L, lam=lam, lam_r=lam_r)
     return sheet
 
 

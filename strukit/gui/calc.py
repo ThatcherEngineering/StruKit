@@ -204,7 +204,13 @@ FORMS = {
                 F("leh", "Horizontal edge distance", unit="in", help="bolt centre to the free end of the plate"),
                 F("a", "Weld line to bolt line, a", unit="in", help="3-1/2 in. or less"),
                 F("holes", "Holes in the plate", "select", options=["STD", "SSLT"], help="SSLT = horizontal short slots"),
-                F("weld", "Fillet weld size, each side", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
+                F("weld", "Fillet weld size, each side", unit="in"), F("FEXX", "Electrode strength", unit="ksi"),
+                F("cope_dc", "Coped beam: cope depth at the top flange", unit="in", required=False, help="blank = the beam is not coped; then the next five boxes are not used"),
+                F("cope_c", "Coped beam: cope length", unit="in", required=False),
+                F("cope_setback", "Coped beam: setback of the beam end from the support", unit="in", required=False, help="usually 1/2 in."),
+                F("cope_lev", "Coped beam: cut edge to the first bolt", unit="in", required=False),
+                F("cope_leh", "Coped beam: bolt line to the beam end", unit="in", required=False),
+                F("beam_Fy", "Coped beam: beam Fy", unit="ksi", required=False)],
         tables=[T("loads", "Beam end reaction", [CASE, F("P", "Reaction", unit="kip"), F("label", "Note", "text", required=False)])]),
     "wood_beam": dict(
         title="Wood Beam", code="2018 NDS", mark="WB",
@@ -1432,8 +1438,13 @@ def build(kind, values, project):
         args = (r.text("column", False) or "", r.num("col_Fy", hc), r.num("col_Fu", hc), r.text("col_source", hc) or "", r.text("beam"), r.num("beam_Fu"), r.text("beam_source"), r.num("tp"), r.num("plate_Fy"),
                 r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("n"), r.num("spacing"), r.num("lev"), r.num("leh"), r.num("a"),
                 r.text("holes"), r.num("weld"), r.num("FEXX"))
+        cope = None
+        if r.num("cope_dc", False):
+            cope = dict(dc=r.num("cope_dc", False), c=r.num("cope_c", True, label="Coped beam: cope length"), setback=r.num("cope_setback", True, label="Coped beam: setback"),
+                        lev=r.num("cope_lev", True, label="Coped beam: cut edge to the first bolt"), leh=r.num("cope_leh", True, label="Coped beam: bolt line to the beam end"),
+                        Fy=r.num("beam_Fy", True, label="Coped beam: beam Fy"))
         r.done()
-        return ws_more.single_plate_sheet(mark, *args, loads, cb, m, support=sup), "simple", {}
+        return ws_more.single_plate_sheet(mark, *args, loads, cb, m, support=sup, cope=cope), "simple", {}
     if kind in ("weld", "bolts"):
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]

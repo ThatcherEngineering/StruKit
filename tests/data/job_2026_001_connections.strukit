@@ -394,7 +394,13 @@
     ],
     "support_name": "W18X40 web, full-depth stiffener plate",
     "support_t": "0.315",
-    "support_Fu": "65"
+    "support_Fu": "65",
+    "cope_dc": "1.0",
+    "cope_c": "3.75",
+    "cope_setback": "0.5",
+    "cope_lev": "1.275",
+    "cope_leh": "2.25",
+    "beam_Fy": "50"
    }
   },
   {
@@ -433,7 +439,13 @@
     ],
     "support_name": "W21X50 web, full-depth stiffener plate",
     "support_t": "0.38",
-    "support_Fu": "65"
+    "support_Fu": "65",
+    "cope_dc": "1.25",
+    "cope_c": "4.0",
+    "cope_setback": "0.5",
+    "cope_lev": "1.035",
+    "cope_leh": "2.25",
+    "beam_Fy": "50"
    }
   },
   {
@@ -472,7 +484,13 @@
     ],
     "support_name": "W14X30 web, full-depth stiffener plate",
     "support_t": "0.27",
-    "support_Fu": "65"
+    "support_Fu": "65",
+    "cope_dc": "1.0",
+    "cope_c": "4.0",
+    "cope_setback": "0.5",
+    "cope_lev": "1.322",
+    "cope_leh": "2.25",
+    "beam_Fy": "50"
    }
   },
   {
@@ -511,7 +529,13 @@
     ],
     "support_name": "W12X30 web, full-depth stiffener plate",
     "support_t": "0.26",
-    "support_Fu": "65"
+    "support_Fu": "65",
+    "cope_dc": "0.75",
+    "cope_c": "4.0",
+    "cope_setback": "0.5",
+    "cope_lev": "1.440",
+    "cope_leh": "2.25",
+    "beam_Fy": "50"
    }
   },
   {
@@ -550,7 +574,13 @@
     ],
     "support_name": "W16X31 web, full-depth stiffener plate",
     "support_t": "0.275",
-    "support_Fu": "65"
+    "support_Fu": "65",
+    "cope_dc": "0.875",
+    "cope_c": "3.5",
+    "cope_setback": "0.5",
+    "cope_lev": "1.065",
+    "cope_leh": "2.25",
+    "beam_Fy": "50"
    }
   },
   {
@@ -589,7 +619,13 @@
     ],
     "support_name": "W16X31 web, full-depth stiffener plate",
     "support_t": "0.275",
-    "support_Fu": "65"
+    "support_Fu": "65",
+    "cope_dc": "1.0",
+    "cope_c": "3.5",
+    "cope_setback": "0.5",
+    "cope_lev": "2.440",
+    "cope_leh": "2.25",
+    "beam_Fy": "50"
    }
   },
   {
@@ -628,7 +664,13 @@
     ],
     "support_name": "W18X40 web, full-depth stiffener plate",
     "support_t": "0.315",
-    "support_Fu": "65"
+    "support_Fu": "65",
+    "cope_dc": "1.0",
+    "cope_c": "3.75",
+    "cope_setback": "0.5",
+    "cope_lev": "2.025",
+    "cope_leh": "2.25",
+    "beam_Fy": "50"
    }
   }
  ]

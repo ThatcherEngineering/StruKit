@@ -17,3 +17,14 @@ def test_shear_tabs():
     # strength rows over: the three-bolt W14x30 tabs under FloorBeamD.3's 34.6 kips, and the 1/2 in. bolts of detail 5
     assert over == {"Det 7, 19, 20": ("Bolt shear with eccentricity", 29.6), "Det 14, 37, 38": ("Bolt shear with eccentricity", 29.6),
                     "Det 5": ("Bolt shear with eccentricity", 9.3)}
+
+
+def test_coped_beams_pass():
+    n = 0
+    for m in D["members"]:
+        if m["values"].get("cope_dc"):
+            r = calc.results(m["kind"], m["values"], D["project"])
+            cop = [x for x in r["rows"] if x["check"].startswith("Coped")]
+            assert len(cop) == 4 and all(x["status"] == "OK" for x in cop), m["values"]["mark"]
+            n += 1
+    assert n == 7
