@@ -238,7 +238,9 @@ FORMS = {
                 F("w_cap_flange", "Cap plate to column flange fillet (one side)", unit="in"), F("w_cap_web", "Cap plate to column web fillets (both sides)", unit="in"),
                 F("FEXX", "Electrode strength", unit="ksi")],
         tables=[T("loads", "Loads at the connection", [CASE, F("M", "Moment", unit="kip-ft"), F("T", "Beam axial tension", unit="kip", required=False), F("V", "Shear", unit="kip", required=False),
-                                                       F("label", "Note", "text", required=False)])]),
+                                                       F("label", "Note", "text", required=False)]),
+                T("runs", "Or: combined loads (for example from the 3D frame), used in place of the table above", [F("name", "Combination or run", "text"), F("M", "Moment", unit="kip-ft"),
+                                                                                                                     F("T", "Beam axial tension", unit="kip", required=False), F("V", "Shear", unit="kip", required=False)])]),
     "cap_plate": dict(
         title="Beam over HSS Column, Cap Plate Moment Connection", code="AISC 360-22", mark="CP",
         fields=[F("beam", "Beam (continuous over the column)", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
@@ -1570,15 +1572,16 @@ def build(kind, values, project):
         return ws_more.base_plate_biaxial_sheet(mark, *args, cases, m), "simple", {}
     if kind == "flush_end_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
-        loads = [dict(case=x["case"], M=x["M"], T=x["T"] or 0.0, V=x["V"] or 0.0, **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
-        if not loads:
+        runs = [dict(name=x["name"], M=x["M"], T=x["T"] or 0.0, V=x["V"] or 0.0) for x in r.rows("runs")]
+        loads = [] if runs else [dict(case=x["case"], M=x["M"], T=x["T"] or 0.0, V=x["V"] or 0.0, **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads and not runs:
             r.miss.append("No load is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
         args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), r.text("column"), r.num("col_Fy"), r.num("col_Fu"), r.text("steel_source"), r.num("bp"), r.num("tp"), r.num("plate_Fy"),
                 r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("g"), r.num("pfi"), r.num("w_flange"), r.num("w_web"), r.num("below"),
                 r.num("tcap"), r.num("bcp"), r.num("w_cap_flange"), r.num("w_cap_web"), r.num("FEXX"))
         r.done()
-        return ws_more.flush_end_plate_sheet(mark, *args, loads, cb, m), "simple", {}
+        return ws_more.flush_end_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
     if kind == "cap_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], P=x["P"], M=x["M"]) for x in r.rows("runs")]
@@ -3747,6 +3750,10 @@ def model_frame_sway(project, members):
                 V = max(max(abs(a_[2]), abs(b_[2])) for e_ in els for a_, b_ in r2.stations[e_])
                 Nax = max(max(abs(a_[0]), abs(b_[0])) for e_ in els for a_, b_ in r2.stations[e_])
                 cur = beam_res.setdefault(mark, dict(mark=mark, M=0.0, M_combo="", V=0.0, N=0.0, ratio=None, eq="", ratio_combo="", v_ratio=None))
+                a0, b1 = r2.stations[els[0]][0][0], r2.stations[els[-1]][-1][1]
+                cur.setdefault("ends", {"left": [], "right": []})
+                cur["ends"]["left"].append(dict(run=label, M=abs(float(a0[4])) / alpha, V=abs(float(a0[2])) / alpha, T=-float(a0[0]) / alpha))
+                cur["ends"]["right"].append(dict(run=label, M=abs(float(b1[4])) / alpha, V=abs(float(b1[2])) / alpha, T=float(b1[0]) / alpha))
                 S_ = strength.get(mark)
                 if S_:
                     cur["v_ratio"] = max(cur["v_ratio"] or 0.0, V / alpha / S_["V"])
@@ -3924,6 +3931,27 @@ def frame_knee(project, members, mark):
                 picks.append(b)
         axes[nm] = [dict(name=b["run"], P=b["P"], M=b[mk_] / 12.0) for b in picks]
     return dict(axes=axes, messages=run.get("problems") or [], method=run["method"])
+
+
+def frame_beam_end(project, members, mark):
+    """Forces at each end of one beam of the placed 3D frame, from the sway run at the project's method: for the left and the right end, the runs
+    with the largest moment, the largest shear and the largest axial tension, each with its concurrent moment (kip-ft), tension (kips, zero when
+    the beam is in compression) and shear (kips). dict(ends={"left": [...], "right": [...]}, messages, method)."""
+    run = model_frame_sway(project, members)
+    if not run.get("levels"):
+        return dict(ends={}, messages=run.get("problems") or ["the frame did not run"])
+    bm = next((b for b in run["beams"] if b["mark"] == mark), None)
+    if bm is None or not bm.get("ends"):
+        return dict(ends={}, messages=[f"{mark} is not a beam of the placed frame"])
+    out = {}
+    for end, recs in bm["ends"].items():
+        picks = []
+        for chooser in (lambda b: b["M"], lambda b: b["V"], lambda b: b["T"]):
+            b = max(recs, key=chooser)
+            if b not in picks:
+                picks.append(b)
+        out[end] = [dict(name=b["run"], M=b["M"] / 12.0, T=max(b["T"], 0.0), V=b["V"]) for b in picks]
+    return dict(ends=out, messages=run.get("problems") or [], method=run["method"])
 
 
 def frame_base_biaxial(project, members, mark):
