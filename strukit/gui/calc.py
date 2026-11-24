@@ -2853,6 +2853,43 @@ def lateral_governing(project, members):
     return dict(members=out, lines=lines, problems=w["problems"] + [p_ for p_ in e["problems"] if p_ not in w["problems"]])
 
 
+def _slopes(placed):
+    """Sloped members of the model. A beam may carry "Left end above the level" / "Right end above the level" (at_dz1, at_dz2, ft); a member
+    without them that sits on such a beam follows it. placed: [(member, place)]. Returns (off, ends): off(level, point, not_mark) = height
+    above the level of the sloped beam through that plan point (0.0 when there is none); ends(member, place) = the two end offsets of a beam."""
+    import math
+    typed = []
+    for m, pl in placed:
+        v = m.get("values") or {}
+        t1, t2 = str(v.get("at_dz1") or "").strip(), str(v.get("at_dz2") or "").strip()
+        if pl.get("p2") and (t1 or t2) and m.get("kind") in TAKEDOWN_BEAMS:
+            try:
+                typed.append((v.get("mark"), pl["level"], pl["p1"], pl["p2"], float(t1 or 0), float(t2 or 0)))
+            except ValueError:
+                pass
+
+    def off(level, q, not_mark=None):
+        for mk, lv, a, b, d1, d2 in typed:
+            if lv != level or mk == not_mark:
+                continue
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            if L < 1e-9:
+                continue
+            t = ((q[0] - a[0]) * (b[0] - a[0]) + (q[1] - a[1]) * (b[1] - a[1])) / L
+            o = abs((q[0] - a[0]) * (b[1] - a[1]) - (q[1] - a[1]) * (b[0] - a[0])) / L
+            if o <= MODEL_TOL and -MODEL_TOL <= t <= L + MODEL_TOL:
+                return d1 + (d2 - d1) * min(max(t, 0.0), L) / L
+        return 0.0
+
+    def ends(m, pl):
+        v = m.get("values") or {}
+        mine = next((x for x in typed if x[0] == v.get("mark")), None)
+        if mine:
+            return mine[4], mine[5]
+        return off(pl["level"], pl["p1"], v.get("mark")), off(pl["level"], pl["p2"], v.get("mark"))
+    return off, ends
+
+
 def model_view(project, members):
     """What the 3D view draws: every placed member as a line or a point in space (ft), with its mark and kind.
     dict(items=[dict(mark, kind, a=(x, y, z), b=(x, y, z) or None, type)], levels=[(name, elev)], problems=[...])."""
@@ -2868,15 +2905,18 @@ def model_view(project, members):
     el = dict(levels)
     order = [n for n, _ in levels]
     items = []
+    placed_all = []
     for m in members or []:
-        kind = m.get("kind")
-        if kind not in TAKEDOWN_BEAMS + TAKEDOWN_POSTS + TAKEDOWN_FOOTINGS + MODEL_WALLS + FRAME_BRACES:
-            continue
         try:
-            pl = model_place(project, m)
+            pl_ = model_place(project, m)
         except ValueError:
             continue
-        if not pl:
+        if pl_:
+            placed_all.append((m, pl_))
+    zoff, zends = _slopes(placed_all)
+    for m, pl in placed_all:
+        kind = m.get("kind")
+        if kind not in TAKEDOWN_BEAMS + TAKEDOWN_POSTS + TAKEDOWN_FOOTINGS + MODEL_WALLS + FRAME_BRACES:
             continue
         mark = (m.get("values") or {}).get("mark") or ""
         if kind in TAKEDOWN_FOOTINGS:
@@ -2887,10 +2927,10 @@ def model_view(project, members):
             continue
         z = el[pl["level"]]
         if kind in FRAME_BRACES:
-            items.append(dict(mark=mark, kind=kind, type="brace", a=(*pl["p1"], el.get(pl["base"], levels[0][1])), b=(*pl["p2"], z)))
+            items.append(dict(mark=mark, kind=kind, type="brace", a=(*pl["p1"], el.get(pl["base"], levels[0][1])), b=(*pl["p2"], z + zoff(pl["level"], pl["p2"]))))
         elif kind in TAKEDOWN_POSTS:
             zb = el.get(pl["base"], levels[0][1])
-            items.append(dict(mark=mark, kind=kind, type="column", a=(*pl["p1"], zb), b=(*pl["p1"], z)))
+            items.append(dict(mark=mark, kind=kind, type="column", a=(*pl["p1"], zb), b=(*pl["p1"], z + zoff(pl["level"], pl["p1"]))))
         elif kind in MODEL_WALLS:
             i = order.index(pl["level"])
             zb = levels[i - 1][1] if i > 0 else z - 9.0
@@ -2901,7 +2941,8 @@ def model_view(project, members):
                 sp = float(str((m.get("values") or {}).get("spacing") or 0))
             except ValueError:
                 pass
-            items.append(dict(mark=mark, kind=kind, type="joist" if (kind == "ijoist" or sp > 0) else "beam", a=(*pl["p1"], z), b=(*pl["p2"], z)))
+            d1_, d2_ = zends(m, pl)
+            items.append(dict(mark=mark, kind=kind, type="joist" if (kind == "ijoist" or sp > 0) else "beam", a=(*pl["p1"], z + d1_), b=(*pl["p2"], z + d2_)))
     return dict(items=items, levels=levels, problems=problems)
 
 
@@ -2994,6 +3035,8 @@ def _model_frame_build(project, members, sway=False):
         beam_info.append((m, pl, sup_x, Lm, at))
         for x in sup_x:
             pts.setdefault(pl["level"], []).append(at(x))
+    zoff, zends = _slopes(placed)
+    sloped = False
     if problems:
         return dict(problems=problems, notes=notes)
     cases = []
@@ -3008,10 +3051,13 @@ def _model_frame_build(project, members, sway=False):
             sec = _frame_section(m["kind"], v)
         except ValueError as e:
             problems.append(f"{v.get('mark')}: {e}"); continue
-        nb, nt = node(*pl["p1"], elev[pl["base"]]), node(*pl["p1"], elev[pl["level"]])
+        ztop = elev[pl["level"]] + zoff(pl["level"], pl["p1"])
+        if ztop - elev[pl["base"]] < 0.5:
+            problems.append(f"{v.get('mark')}: its top is not above its base"); continue
+        nb, nt = node(*pl["p1"], elev[pl["base"]]), node(*pl["p1"], ztop)
         web_y = str(v.get("at_web") or "").strip().upper().startswith("Y")
         fr.member("col:" + v["mark"], nb, nt, E_, G_, sec["A"], sec["Ix"], sec["Iy"], sec["J"], up=(0.0, 1.0, 0.0) if web_y else None)
-        col_nodes[v["mark"]] = (nb, nt, sec, elev[pl["level"]] - elev[pl["base"]])
+        col_nodes[v["mark"]] = (nb, nt, sec, ztop - elev[pl["base"]])
         col_fixed[v["mark"]] = str(v.get("at_base_fix") or "").strip().lower().startswith("fix")
         held.add(nt)
         level_tops.setdefault(pl["level"], []).append((nt, pl["p1"]))
@@ -3058,7 +3104,9 @@ def _model_frame_build(project, members, sway=False):
             rows.append(("D", "uniform", sec["W"] / 1000.0, 0.0, Lm))
         cl = sorted(cuts)
         cl = [c_ for i, c_ in enumerate(cl) if i == 0 or c_ - cl[i - 1] > 0.02]
-        names = [node(*at(t), z) for t in cl]
+        dz1, dz2 = zends(m, pl)
+        sloped = sloped or abs(dz1) > 1e-9 or abs(dz2) > 1e-9
+        names = [node(*at(t), z + dz1 + (dz2 - dz1) * t / Lm) for t in cl]
         for t, nd in zip(cl, names):
             held.add(nd)
             level_of_node[nd] = pl["level"]
@@ -3124,6 +3172,8 @@ def _model_frame_build(project, members, sway=False):
         fr.support(nd, "fixed")
     if extra:
         notes.append("Taken as bearing on a support (nothing in the frame is under them): " + "; ".join(f"{mark} at {x:g} ft" for nd, mark, x in extra) + ".")
+    if sloped:
+        notes.append("Sloped beams are modelled at their slope; a column or beam that sits on one follows it. Loads typed per foot act per foot of member length.")
     # diagonal braces (sway runs only): pinned at both ends, axial force only
     braces = {}
     low = min(elev.values())
@@ -3151,7 +3201,7 @@ def _model_frame_build(project, members, sway=False):
                 I1 = I2 = math.pi * d ** 4 / 64; J = 2 * I1
         except (ValueError, TypeError) as e:
             problems.append(f"{mark}: {e}"); continue
-        za, zb = elev[pl["base"]], elev[pl["level"]]
+        za, zb = elev[pl["base"]], elev[pl["level"]] + zoff(pl["level"], pl["p2"])
         ka = (round(pl["p1"][0] / 0.05), round(pl["p1"][1] / 0.05), round(za / 0.05)); kb = (round(pl["p2"][0] / 0.05), round(pl["p2"][1] / 0.05), round(zb / 0.05))
         if kb not in node_at or (ka not in node_at and abs(za - low) > 1e-6):
             problems.append(f"{mark}: an end of this brace is not on a placed column or beam of the frame"); continue
@@ -3317,7 +3367,11 @@ def model_frame_sway(project, members):
                         fw_ = on_small if travel > 0 else 1 - on_small
                         pw = fw_ * row["pW"] + (1 - fw_) * row["pL"]
                         w = pw * trib[round(q, 3)] / 1000.0 / FT              # kip/in., plus = toward the roof surface
-                        if high is not None:
+                        rise = (fr.nodes[mm.j][2] - fr.nodes[mm.i][2]) * (1 if b_ > a_ else -1)      # rise of this element toward the larger coordinate
+                        if abs(rise) > 1e-6:                                  # modelled at its slope: the pressure acts normal to it
+                            ang = math.atan2(rise, (hi_ - lo_) * FT)
+                            hz, w = w * math.sin(ang), w * math.cos(ang)
+                        elif high is not None:
                             hz = w * tan_t * high
                         else:                                                # pitched: each slope is pushed toward the ridge side it faces away from
                             hz = (fw_ * row["pW"] * travel - (1 - fw_) * row["pL"] * travel) * tan_t * trib[round(q, 3)] / 1000.0 / FT
@@ -3965,8 +4019,8 @@ def bent_building(project, members, spec):
     """Fills the building model with a row of two-column bents (carport, pavilion, shed frame): levels, grids, a column pair and a rafter at every
     bent, with the roof loads on each rafter by its tributary width. spec (text values, feet unless noted): n (bents), spacing (one number, or a
     list separated by commas, one fewer than n), end_start, end_end (roof past the first and last bent), col_spacing, cant_low, cant_high, height
-    (roof level), col_shape, col_Fy, raf_shape, raf_Fy, base ("pinned" / "fixed"), D, S, Lr (psf, blank = none), prefix. The roof is level at
-    `height`. Returns dict(project, members, added, problems); nothing is changed when there is a problem."""
+    (top of the line A columns), slope (roof rise in 12 toward line B, blank = level), col_shape, col_Fy, raf_shape, raf_Fy, base ("pinned" /
+    "fixed"), D, S, Lr (psf, blank = none), prefix. Returns dict(project, members, added, problems); nothing is changed when there is a problem."""
     import copy
     sp, problems = spec or {}, []
 
@@ -3988,6 +4042,7 @@ def bent_building(project, members, spec):
     cl, ch = num("cant_low", "Cantilever past the first column line", False, 0) or 0.0, num("cant_high", "Cantilever past the second column line", False, 0) or 0.0
     e0, e1 = num("end_start", "Roof past the first bent", False, 0) or 0.0, num("end_end", "Roof past the last bent", False, 0) or 0.0
     cFy, rFy = num("col_Fy", "Column Fy", low=1), num("raf_Fy", "Rafter Fy", low=1)
+    rise = (num("slope", "Roof rise in 12", False, 0) or 0.0) / 12.0
     col, raf = str(sp.get("col_shape") or "").strip(), str(sp.get("raf_shape") or "").strip()
     for nm, lab in ((col, "Column section"), (raf, "Rafter section")):
         if not nm:
@@ -4040,7 +4095,8 @@ def bent_building(project, members, spec):
         rows = [dict(case=c, kind="uniform", mag=f"{q * trib / 1000:.5f}", x1="", x2="", label=f"roof {dict(D='dead', S='snow', Lr='live')[c]} load {q:g} psf x {trib:g} ft")
                 for c, q in loads if q]
         new.append(dict(kind="steel_beam", values=dict(mark=f"{pre}R{i}", shape=raf, Fy=g(rFy), support_type="", span=g(cs), more_spans="", oh_left=g(cl) if cl else "", oh_right=g(ch) if ch else "",
-                   bracing="continuous", brace_pts="", self_weight="yes", loads=rows, defl=[], at_level="Roof", at_x1=g(x), at_y1=g(-cl), at_x2=g(x), at_y2=g(cs + ch))))
+                   bracing="continuous", brace_pts="", self_weight="yes", loads=rows, defl=[], at_level="Roof", at_x1=g(x), at_y1=g(-cl), at_x2=g(x), at_y2=g(cs + ch),
+                   **(dict(at_dz1=g(round(-cl * rise, 4)), at_dz2=g(round((cs + ch) * rise, 4))) if rise else {}))))
     clash = sorted(m["values"]["mark"] for m in new if m["values"]["mark"] in marks)
     if clash:
         return dict(project=project, members=members, added=0, problems=["These marks are already in the project: " + ", ".join(clash[:8]) + (" ..." if len(clash) > 8 else "") + ". Give a prefix."])
@@ -4057,7 +4113,8 @@ def bent_building(project, members, spec):
     if not mdl.get("grids_y"):
         mdl["grids_y"] = [dict(name="A", at="0"), dict(name="B", at=g(cs))]
     return dict(project=proj, members=list(members or []) + new, added=len(new), problems=[],
-                notes=[f"{len(xs)} bents: {2 * len(xs)} columns and {len(xs)} rafters, roof {g(xs[-1] + e0 + e1)} ft long by {g(cs + cl + ch)} ft wide, level at {g(H)} ft."])
+                notes=[f"{len(xs)} bents: {2 * len(xs)} columns and {len(xs)} rafters, roof {g(xs[-1] + e0 + e1)} ft long by {g(cs + cl + ch)} ft wide, "
+                       + (f"rising {g(rise * 12)} in 12 from {g(H)} ft at column line A to {g(round(H + cs * rise, 3))} ft at line B." if rise else f"level at {g(H)} ft.")])
 
 
 def frame_sheet(project, members):

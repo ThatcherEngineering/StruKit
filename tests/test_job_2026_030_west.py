@@ -1,7 +1,7 @@
 """A project like job 2026-030, Wayfarer Vans West Carport (test material only; built by jobs/2026_030_build_west.py): eight two-column bents
 with rigid knees and fixed bases run as one 3D frame free to sway. Reference numbers are the sealed report's (his metal-building workbook):
 portal column H1-1 0.29, portal rafter H1-1 0.30 to 0.35."""
-import json, os
+import json, math, os
 import pytest
 from strukit.gui import calc
 
@@ -112,3 +112,31 @@ def test_frame_column_base_forces_reach_the_base_plate_and_footing_screens():
     assert max(r["M"] for r in sv) < max(r["M"] for r in st) and all(r["wt_factor"] for r in st) and all(r["wt_factor"] is None for r in sv)
     # a column that is not placed still goes the old way
     assert "error" in calc.reactions("hss_column", dict(col["values"], at_x1=""), proj, ms) or calc.reactions("hss_column", dict(col["values"], at_x1=""), proj, ms).get("bases") is not None
+
+
+def test_sloped_carport_from_the_quick_start():
+    """The West carport at its real slope (1 in 12, 11.0 ft at the low column line): column heights follow the rafter, the 3D view shows the
+    slope, and the frame still balances with the wind sheet."""
+    from strukit import shapes
+    d = json.load(open(os.path.join(HERE, "data", "job_2026_030_west.strukit")))
+    proj = dict(d["project"], model={})
+    spec = dict(n="8", spacing="10, 20, 20, 20, 20, 20, 20", end_start="0.5", end_end="0.5", col_spacing="18.5", cant_low="1", cant_high="2.25", height="11", slope="1",
+                col_shape="HSS8X8X1/2", col_Fy="46", raf_shape="HSS10X6X3/8", raf_Fy="46", base="fixed", D="6.1", S="36.12", Lr="")
+    out = calc.bent_building(proj, [d["members"][0]], spec)
+    assert out["problems"] == [] and "rising 1 in 12 from 11 ft at column line A to 12.542 ft at line B" in out["notes"][0]
+    ms = out["members"]
+    r4 = next(m for m in ms if m["values"]["mark"] == "R4")["values"]
+    assert float(r4["at_dz1"]) == pytest.approx(-1 / 12, abs=1e-4) and float(r4["at_dz2"]) == pytest.approx(20.75 / 12, abs=1e-4)
+    view = {i["mark"]: i for i in calc.model_view(out["project"], ms)["items"]}
+    assert view["C4A"]["b"][2] == pytest.approx(11.0, abs=1e-3) and view["C4B"]["b"][2] == pytest.approx(11 + 18.5 / 12, abs=1e-3)
+    assert view["R4"]["a"][2] == pytest.approx(11 - 1 / 12, abs=1e-3) and view["R4"]["b"][2] == pytest.approx(11 + 20.75 / 12, abs=1e-3)
+    run = calc.model_frame_sway(out["project"], ms)
+    assert run["problems"] == [] and any("modelled at their slope" in n for n in run["notes"])
+    ws = calc.build("wind_free_roof", ms[0]["values"], proj)[0].free_roof
+    Lr = 21.75 / math.cos(math.atan(1 / 12))
+    dead = (6.1 * Lr * 131 + 8 * shapes.hss("HSS10X6X3/8")["W"] * Lr + 8 * shapes.hss("HSS8X8X1/2")["W"] * (11 + 11 + 18.5 / 12)) / 1000
+    row = next(r for r in ws["totals"]["rows"] if r["gamma"] == 180 and r["case"] == "B")
+    a = next(a for a in run["audit"] if a["run"] == "0.9D + 1.0W, wind across the roof from the low side, Case B")
+    assert a["Rz"] == pytest.approx(0.9 * dead + row["V"] / 1000, abs=0.2)             # vertical: dead load less the sheet's uplift
+    cols = {c["mark"]: c for c in run["columns"]}
+    assert cols["C4A"]["ratio"] == pytest.approx(0.28, abs=0.05) and all(c["ratio"] < 1 for c in cols.values())
