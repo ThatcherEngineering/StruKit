@@ -194,3 +194,18 @@ def test_steel_beam_fixed_at_one_support():
         calc.build("steel_beam", dict(v, bracing="continuous"), proj)
     with pytest.raises(calc.Missing):
         calc.build("steel_beam", dict(v, support_type=""), proj)
+
+
+def test_printed_sheets_have_no_text_on_text_and_stay_inside_the_margin(tmp_path):
+    """Zach, 2026-11-24 02:24: overlapping text on a sheet "can't have that". Every stored job package is printed and audited: no two text
+    runs may overlap and none may pass the right margin (tools/overlap_audit.py)."""
+    import glob, importlib.util, json, os
+    from strukit.gui import calc
+    root = os.path.dirname(os.path.dirname(__file__))
+    spec = importlib.util.spec_from_file_location("overlap_audit", os.path.join(root, "tools", "overlap_audit.py"))
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    for f in sorted(glob.glob(os.path.join(root, "tests", "data", "*.strukit"))):
+        d = json.load(open(f))
+        out = str(tmp_path / (os.path.basename(f) + ".pdf"))
+        calc.package_pdf(d["project"], d["members"], out)
+        assert mod.audit(out) == [], f

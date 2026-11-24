@@ -141,6 +141,8 @@ class _Page:
     def kv(self, rows, x=LM, kw=92, y=None):
         c = self.c
         yy = self.y if y is None else y
+        rows = list(rows)
+        kw = max([kw] + [c.stringWidth(str(k), FR, 8.5) + 6 for k, _ in rows])      # the value column starts clear of the longest label
         for k, v in rows:
             c.setFont(FR, 8.5); c.setFillColorRGB(*GREY); c.drawString(x, yy, k)
             c.setFillColorRGB(*INK); c.drawString(x + kw, yy, v)
@@ -150,9 +152,16 @@ class _Page:
         return yy
 
     def text(self, s, font=FR, size=8.5, color=INK, x=LM, dy=11.5):
-        self.c.setFont(font, size); self.c.setFillColorRGB(*color)
-        self.c.drawString(x, self.y, s)
-        self.y -= dy
+        """One line of text; a line too wide for the sheet continues on the next line(s) inside the right margin."""
+        s = str(s)
+        if self.c.stringWidth(s, font, size) > RM - x + 0.5:
+            parts = _table_line(s, RM - x, font, size) if font == FM else _wrapw(s, font, size, RM - x)
+        else:
+            parts = [s]
+        for t in parts:
+            self.c.setFont(font, size); self.c.setFillColorRGB(*color)
+            self.c.drawString(x, self.y, t)
+            self.y -= dy
 
     def wrap(self, s, width=96, **kw):
         words, line = s.split(), ""
@@ -225,9 +234,56 @@ def _split(s, width):
     return out + ([line] if line else [])
 
 
+def _wrapw(text, font, size, width):
+    """Break text into lines no wider than width (points) in the given font, at spaces; a single word wider than the column is cut."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    out, line = [], ""
+    for word in str(text or "").split(" "):
+        while stringWidth(word, font, size) > width:
+            n = len(word)
+            while n > 1 and stringWidth(word[:n], font, size) > width:
+                n -= 1
+            if line:
+                out.append(line); line = ""
+            out.append(word[:n]); word = word[n:]
+        trial = (line + " " + word) if line else word
+        if stringWidth(trial, font, size) <= width:
+            line = trial
+        else:
+            out.append(line); line = word
+    return out + ([line] if line else []) or [""]
+
+
+def _table_line(t, width, font=None, size=7.5):
+    """A row of a monospace table that is wider than the sheet is continued on the next line(s), indented to where its last column
+    starts, so nothing runs past the margin and nothing is cut off."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    font = font or FM
+    n = int(width / stringWidth("0", font, size))
+    if len(t) <= n:
+        return [t]
+    k = t.rfind("  ", 0, n - 12)
+    ind = k + 2 if k > 0 else 4
+    while ind < len(t) and t[ind] == " ":
+        ind += 1
+    ind = min(ind, n - 24)
+    out, rest, first = [], t, True
+    while rest:
+        room = n if first else n - ind
+        if len(rest) <= room:
+            cut = len(rest)
+        else:
+            cut = rest.rfind(" ", 0, room + 1)
+            cut = cut if cut > (ind if first else 0) else room
+        out.append(rest[:cut].rstrip() if first else " " * ind + rest[:cut].strip())
+        rest, first = rest[cut:].strip(), False
+    return out
+
+
 def _summary(p, rows):
     """Check summary table: demand, capacity, D/C and result for every check, the code
-    reference under each, and a boxed FLAG line for every check that fails."""
+    reference under each, and a boxed FLAG line for every check that fails. The check name and the combination wrap inside their own
+    columns, so a long combination name never runs under the numbers."""
     c = p.c
     p.room(70)
     p.head("Check Summary")
@@ -238,35 +294,49 @@ def _summary(p, rows):
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.8); c.line(LM, p.y - 3, RM, p.y - 3)
     p.y -= 14
     flags = []
+    from reportlab.pdfbase.pdfmetrics import stringWidth
     for r in rows:
         flag = r.status == "FLAG"
         sub = _split(r.source, 132) + (_split(r.note, 132) if r.note else [])
-        hgt = 14 + 8.5 * len(sub)
+        dem = _fmt(r.demand, r.unit)
+        names = _wrapw(r.check[0].upper() + r.check[1:], FR, 8.5, 142)
+        combos = _wrapw(r.combo, FM, 8, 318 - stringWidth(dem, FM, 8) - 8 - 150) if r.combo else []
+        top = 9.5 * (max(len(names), len(combos), 1) - 1)
+        hgt = 16 + top + 8.5 * len(sub)
         p.room(hgt - 8)
         if flag:
             c.setFillColorRGB(0.99, 0.95, 0.91); c.rect(LM, p.y - hgt + 11, RM - LM, hgt, fill=1, stroke=0)
             flags.append(r)
         c.setFillColorRGB(*INK); c.setFont(FR, 8.5)
-        c.drawString(LM, p.y, r.check[0].upper() + r.check[1:])
-        c.setFont(FM, 8); c.drawString(LM + 150, p.y, r.combo)
-        c.drawRightString(LM + 318, p.y, _fmt(r.demand, r.unit))
+        for i, t in enumerate(names):
+            c.drawString(LM, p.y - 9.5 * i, t)
+        c.setFont(FM, 8)
+        for i, t in enumerate(combos):
+            c.drawString(LM + 150, p.y - 9.5 * i, t)
+        c.drawRightString(LM + 318, p.y, dem)
         c.drawRightString(LM + 392, p.y, _fmt(r.capacity, r.unit))
         c.drawRightString(LM + 430, p.y, f"{r.dc:.2f}")
         c.setFont(FB, 8.5); c.setFillColorRGB(*(FLAGC if flag else OKC))
         c.drawString(LM + 446, p.y, r.status)
         c.setFont(FR, 7.5); c.setFillColorRGB(*GREY)
         for i, t in enumerate(sub):
-            c.drawString(LM + 8, p.y - 9.5 - 8.5 * i, t)
+            c.drawString(LM + 8, p.y - top - 9.5 - 8.5 * i, t)
         c.setStrokeColorRGB(*RULE); c.setLineWidth(0.4)
         c.line(LM, p.y - hgt + 11, RM, p.y - hgt + 11)
         p.y -= hgt
+    if flags:
+        p.y -= 5
     for r in flags:
-        p.room(8)
-        c.setStrokeColorRGB(*FLAGC); c.setLineWidth(1); c.rect(LM, p.y - 6, RM - LM, 18, fill=0, stroke=1)
+        text = (f"FLAG - {r.check[0].upper() + r.check[1:]}: {_fmt(r.demand, r.unit)} exceeds {_fmt(r.capacity, r.unit)}"
+                + (f" ({r.combo})" if r.combo else ""))
+        lines = _wrapw(text, FB, 8.5, RM - LM - 12)
+        bh = 8 + 10.5 * len(lines)
+        p.room(bh - 6)
+        c.setStrokeColorRGB(*FLAGC); c.setLineWidth(1); c.rect(LM, p.y - bh + 12, RM - LM, bh, fill=0, stroke=1)
         c.setFillColorRGB(*FLAGC); c.setFont(FB, 8.5)
-        c.drawString(LM + 6, p.y, f"FLAG - {r.check[0].upper() + r.check[1:]}: {_fmt(r.demand, r.unit)} "
-                                  f"exceeds {_fmt(r.capacity, r.unit)} ({r.combo})")
-        p.y -= 21
+        for i, t in enumerate(lines):
+            c.drawString(LM + 6, p.y - 10.5 * i, t)
+        p.y -= bh + 3
     c.setStrokeColorRGB(*INK)
 
 
@@ -1193,7 +1263,7 @@ def _picture(c, top, pic):
                 memberart._dim_h(c, xa, xb, y - 15, f"{vb - va:g} ft" if xb - xa > 22 else f"{vb - va:g}", FR, ext_from=y - 6)
         _sketch_title(c, 520, top, "SECTION")
         D = max(min(d["d"] * 2.6, 58), 26); fw, fd, wt = D * 0.22 + 4, max(D * 0.11, 3.5), 1.6
-        cx, cy = 540, top - 46
+        cx, cy = 530, top - 46
         c.setLineWidth(0.6); c.setStrokeColorRGB(*memberart.LVL_LINE)
         c.setFillColorRGB(0.93, 0.87, 0.74); c.rect(cx - wt / 2, cy - D / 2 + fd * 0.6, wt, D - fd * 1.2, fill=1, stroke=1)
         c.setFillColorRGB(*memberart.LVL_FILL)
@@ -1221,11 +1291,11 @@ def _picture(c, top, pic):
             if vb - va > 1e-6:
                 memberart._dim_h(c, xa, xb, y - 15, f"{vb - va:g} ft" if xb - xa > 22 else f"{vb - va:g}", FR, ext_from=y - 6)
         _sketch_title(c, 520, top, "SECTION")
-        s_ = memberart.wood_section(c, 540, top - 46, 44, 60, d["b"], d["d"], d["plies"], kind=d.get("kind", "sawn"))
-        memberart._dim_h(c, 540 - d["b"] * s_ / 2, 540 + d["b"] * s_ / 2, top - 46 - d["d"] * s_ / 2 - 8, f"{d['b']:g}", FR,
+        s_ = memberart.wood_section(c, 527, top - 46, 44, 60, d["b"], d["d"], d["plies"], kind=d.get("kind", "sawn"))
+        memberart._dim_h(c, 527 - d["b"] * s_ / 2, 527 + d["b"] * s_ / 2, top - 46 - d["d"] * s_ / 2 - 8, f"{d['b']:g}", FR,
                          ext_from=top - 46 - d["d"] * s_ / 2)
-        memberart._dim_v(c, top - 46 - d["d"] * s_ / 2, top - 46 + d["d"] * s_ / 2, 540 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,
-                         ext_from=540 + d["b"] * s_ / 2)
+        memberart._dim_v(c, top - 46 - d["d"] * s_ / 2, top - 46 + d["d"] * s_ / 2, 527 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,
+                         ext_from=527 + d["b"] * s_ / 2)
         _small(c, 476, min(top - 98, y - 34), d.get("caption") or ("section to scale, dimensions in inches" + ("; loads in plf and lb" if lh else "")))
         return min(top - 102, y - 38)
     if name == "base_plate":
@@ -1386,7 +1456,8 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
             p.room(min(14 + 10 * (len(b["lines"]) + sum(len(_split(t, 116)) for t in b.get("after", ())) + 1), 260))
             p.head(b["title"])
             for t in b["lines"]:
-                p.room(11); p.text(t, font=FM, size=7.5, dy=10)
+                for u in _table_line(t, RM - LM):
+                    p.room(11); p.text(u, font=FM, size=7.5, dy=10)
             for t in b.get("after", ()):
                 for u in _split(t, 116):
                     p.room(11); p.text(u, size=7.5, color=GREY, dy=10)
@@ -2139,11 +2210,30 @@ def _frame3d_picture(c, top, d):
                 a, b = pr(i["a"]), pr(i["b"])
                 c.line(X(a), Y(a), X(b), Y(b))
     c.setFillColorRGB(*GREY); c.setFont(FR, 5.5 if many else 6.5)
+    placed = []
     for i in items:
         a, b = pr(i["a"]), pr(i["b"])
         if many and i.get("type") == "brace":
             continue
-        c.drawString((X(a) + X(b)) / 2 + 2, (Y(a) + Y(b)) / 2 + 2, str(i.get("mark") or ""))
+        # the mark sits beside the member, clear of its line: offset square to the member, toward the upper side
+        dx, dy = X(b) - X(a), Y(b) - Y(a)
+        ln = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / ln, dx / ln
+        if ny < -1e-9 or (abs(ny) <= 1e-9 and nx < 0):
+            nx, ny = -nx, -ny
+        mark = str(i.get("mark") or "")
+        fs = 5.5 if many else 6.5
+        tw = c.stringWidth(mark, FR, fs)
+        off = 3.5 + 0.5 * tw * abs(nx) + 0.5 * fs * abs(ny)
+        # try the middle of the member first, then other points along it and the other side, until the mark is clear of the marks already placed
+        for frac, side in ((0.5, 1), (0.5, -1), (0.3, 1), (0.7, 1), (0.3, -1), (0.7, -1), (0.15, 1), (0.85, 1), (0.5, 1)):
+            mx = X(a) + dx * frac + side * nx * off
+            my = Y(a) + dy * frac + side * ny * off
+            box = (mx - tw / 2 - 1, my - fs / 2 - 1, mx + tw / 2 + 1, my + fs / 2 + 1)
+            if not any(box[0] < q[2] and q[0] < box[2] and box[1] < q[3] and q[1] < box[3] for q in placed):
+                break
+        placed.append(box)
+        c.drawCentredString(mx, my - 0.35 * fs, mark)
     c.setFillColorRGB(*INK); c.setStrokeColorRGB(*INK)
     yb = oy + sc * y0 - 12
     c.setFillColorRGB(*GREY); c.setFont(FR, 7); c.drawCentredString((LM + RM) / 2, yb, "View of the frame as analysed (not to scale)."); c.setFillColorRGB(*INK)
@@ -2168,9 +2258,13 @@ def _seat_picture(c, top, d):
     c.rect(xb, ys, osl * sc + 40, 4 * sc, fill=1, stroke=1)                     # beam end (part)
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
     _arrow_down(c, xb + N * sc / 2, ys + 4 * sc + 20, ys + 4 * sc + 2, head=3)
-    c.setFont(FR, 6.5); c.drawCentredString(xb + N * sc / 2, ys + 4 * sc + 23, d["R"])
-    memberart._dim_h(c, xs, xb, ys + 4 * sc + 34, f"{sb:g} in", FR, ext_from=ys + 4 * sc)
-    memberart._dim_h(c, xb, xb + N * sc, ys + 4 * sc + 34, f"bearing {N:.2f} in", FR, ext_from=ys + 4 * sc)
+    c.setFont(FR, 6.5); c.drawString(xb + N * sc + 6, ys + 4 * sc + 9, d["R"])     # beside the arrow, clear of the dimension lines
+    # two short dimensions side by side: each text sits outside its own end, so the texts and the load label stay clear of each other
+    memberart._dim_h(c, xs, xb, ys + 4 * sc + 34, "", FR, ext_from=ys + 4 * sc)
+    memberart._dim_h(c, xb, xb + N * sc, ys + 4 * sc + 34, "", FR, ext_from=ys + 4 * sc)
+    c.setFont(FR, 6)
+    c.drawRightString(xs - 5, ys + 4 * sc + 32, f"setback {sb:g} in")
+    c.drawString(xb + N * sc + 5, ys + 4 * sc + 32, f"bearing {N:.2f} in")
     memberart._dim_h(c, xs, xs + osl * sc, ys - vl * sc - 16, f"leg {osl:g} in", FR, ext_from=ys - t * sc)
     memberart._dim_v(c, ys - vl * sc, ys, xs - 26, f"leg {vl:g} in", FR, ext_from=xs)
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
