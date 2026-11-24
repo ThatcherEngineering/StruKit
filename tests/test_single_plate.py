@@ -119,3 +119,14 @@ def test_through_plate_DG24_example_5_3():
         t = single_plate_sheet("SP", *a, LOADS, cb, method, through=4.0).single_plate["through"]
         assert t["Vf"] == pytest.approx(Vf, rel=0.01) and t["vy"] == pytest.approx(vy, rel=0.01) and t["vr"] == pytest.approx(vr, rel=0.01)
         assert t["weld"] == pytest.approx((1.392 if method == "LRFD" else 0.928) * 3 * 14.5 * 2, rel=0.005)      # Manual Eq. 8-2 form used in the example
+
+
+def test_coped_both_flanges_on_the_sheet():
+    cb = [Combo("D + L", {"D": 1.0, "L": 1.0}, "test")]
+    a = list(ARGS); a[0] = ""; a[14] = 3
+    sup = dict(name="W21x62 girder web", t=0.4, Fu=65)
+    one = single_plate_sheet("SP", *a, LOADS[:1], cb, "ASD", support=sup, cope=dict(dc=2.0, c=5.0, setback=0.5, lev=1.5, leh=1.75, Fy=50))
+    two = single_plate_sheet("SP", *a, LOADS[:1], cb, "ASD", support=sup, cope=dict(dc=2.0, dcb=2.0, c=5.0, setback=0.5, lev=1.5, leh=1.75, Fy=50))
+    f = lambda sh: [r for r in sh.rows if r.check.startswith("Coped beam web flexure")][0]
+    assert "F11" in f(two).source and "F11" not in f(one).source and f(two).capacity < f(one).capacity
+    assert two.single_plate["cope"]["hc"] == pytest.approx(20.7 - 4.0)

@@ -25,3 +25,12 @@ def test_branches_and_limits():
         cope.top_cope(*a, 11.0, 9.0, 9.5)
     bs = cope.web_block_shear(0.4, 50, 65, 3, 3, 1.5, 1.75, 0.875)
     assert bs["Agv"] == pytest.approx(3.0) and bs["Anv"] == pytest.approx(3.0 - 2.5 * 0.875 * 0.4) and bs["Ant"] == pytest.approx((1.75 - 0.4375) * 0.4)
+
+
+def test_example_IIA7_double_cope():
+    """W16x40, 3-1/2 in. top and 2 in. bottom copes 9-1/2 in. long, e = 10 in.: Cb 1.94, Lb d / t^2 1,070, Mn 421 kip-in., 37.9 / 25.2 kips."""
+    b = shapes.get("W16X40")
+    r = cope.double_cope(b["d"], b["tw"], 50, 65, 3.5, 2.0, 9.5, 10.0)
+    assert r["hc"] == pytest.approx(10.5) and r["Cb"] == pytest.approx(1.94, abs=0.01) and r["lam"] == pytest.approx(1070, rel=0.01)
+    assert r["Sc"] == pytest.approx(5.60, rel=0.01) and r["Zc"] == pytest.approx(8.41, rel=0.01) and r["Mn"] == pytest.approx(421, rel=0.01)
+    assert 0.9 * r["R_flex"] == pytest.approx(37.9, rel=0.01) and r["R_flex"] / 1.67 == pytest.approx(25.2, rel=0.01)
