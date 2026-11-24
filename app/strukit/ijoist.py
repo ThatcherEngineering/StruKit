@@ -62,9 +62,10 @@ def end_reaction(j, bearing_in, stiffeners):
         raise IJoistError(f"I-joist: the end bearing must be at least {j['short']:g} in.")
     if bearing_in >= 3.5:
         return hi, "3.5 in. bearing"
-    if j["product"] == "TJI":
-        return lo + (hi - lo) * (bearing_in - j["short"]) / (3.5 - j["short"]), f"interpolated between {j['short']:g} and 3.5 in. bearing"
-    return lo, f"{j['short']:g} in. bearing"
+    # interpolation between bearing lengths: ESR-1153 Table 3 notes (TJI); ESR-1336 Sect. 4.2, "Linear interpolation between tabulated values in Table 3 is permitted" (BCI)
+    if bearing_in == j["short"]:
+        return lo, f"{j['short']:g} in. bearing"
+    return lo + (hi - lo) * (bearing_in - j["short"]) / (3.5 - j["short"]), f"interpolated between {j['short']:g} and 3.5 in. bearing"
 
 
 def intermediate_reaction(j, bearing_in, stiffeners):
@@ -79,6 +80,6 @@ def intermediate_reaction(j, bearing_in, stiffeners):
         raise IJoistError("I-joist: the intermediate bearing must be at least 3.5 in.")
     if bearing_in >= 5.25:
         return hi, "5.25 in. bearing"
-    if j["product"] == "TJI":
-        return lo + (hi - lo) * (bearing_in - 3.5) / 1.75, "interpolated between 3.5 and 5.25 in. bearing"
-    return lo, "3.5 in. bearing"
+    if bearing_in == 3.5:
+        return lo, "3.5 in. bearing"
+    return lo + (hi - lo) * (bearing_in - 3.5) / 1.75, "interpolated between 3.5 and 5.25 in. bearing"

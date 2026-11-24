@@ -82,6 +82,14 @@ def solve(length, supports, EI, point_loads=(), dist_loads=(), fixed=(), n=400,
     """
     if length <= 0 or EI <= 0:
         raise ValueError("beam: length and EI must be positive")
+    # a load or support entered a hair past the end (span lengths typed to four places, 3 x 9.0833 ft against 27.25 ft) is taken at the end
+    import dataclasses as _dc
+    tol = 0.05                                                          # in.
+    snap = lambda x: float(length) if 0 < x - length <= tol else x
+    supports = [snap(x) for x in supports]
+    fixed = [snap(x) for x in fixed]
+    point_loads = [_dc.replace(p_, x=snap(p_.x)) if _dc.is_dataclass(p_) else p_ for p_ in point_loads]
+    dist_loads = [_dc.replace(d_, x2=snap(d_.x2)) if _dc.is_dataclass(d_) else d_ for d_ in dist_loads]
     pts = {0.0, float(length)}
     for s in list(supports) + list(fixed):
         if not 0 <= s <= length:

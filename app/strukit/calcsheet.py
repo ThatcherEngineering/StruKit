@@ -979,7 +979,7 @@ def _cover_pdf(cover, path, job, code, date, page=1, pages=1):
     p.y -= 2; p.room(50); p.head("Contents")
     def header():
         c.setFont(FB, 7.5); c.setFillColorRGB(*GREY)
-        for x, t in ((LM, "Mark"), (LM + 70, "Member"), (LM + 290, "Code"), (LM + 400, "Sheet"), (LM + 446, "Result")):
+        for x, t in ((LM, "Mark"), (LM + 110, "Member"), (LM + 268, "Code"), (LM + 430, "Sheet"), (LM + 466, "Result")):
             c.drawString(x, p.y, t)
         c.setStrokeColorRGB(*INK); c.setLineWidth(0.8); c.line(LM, p.y - 3, RM, p.y - 3)
         p.y -= 13
@@ -989,10 +989,11 @@ def _cover_pdf(cover, path, job, code, date, page=1, pages=1):
             p.room(1000); p.head("Contents, Continued"); header()
         ok = it["flags"] == 0
         c.setFont(FR, 8.5); c.setFillColorRGB(*INK)
-        c.drawString(LM, p.y, it["mark"]); c.drawString(LM + 70, p.y, it["title"]); c.drawString(LM + 290, p.y, it["code"])
-        c.setFont(FM, 8); c.drawString(LM + 400, p.y, str(it["sheet"]))
+        fit = lambda t_, w_: t_ if c.stringWidth(t_, FR, 8.5) <= w_ else next(t_[:k] + "..." for k in range(len(t_), 0, -1) if c.stringWidth(t_[:k] + "...", FR, 8.5) <= w_)
+        c.drawString(LM, p.y, fit(it["mark"], 104)); c.drawString(LM + 110, p.y, fit(it["title"], 152)); c.drawString(LM + 268, p.y, fit(it["code"], 156))
+        c.setFont(FM, 8); c.drawString(LM + 430, p.y, str(it["sheet"]))
         c.setFont(FB, 8.5); c.setFillColorRGB(*(OKC if ok else FLAGC))
-        c.drawString(LM + 446, p.y, "OK" if ok else f"{it['flags']} FLAG" + ("S" if it["flags"] > 1 else ""))
+        c.drawString(LM + 466, p.y, "OK" if ok else f"{it['flags']} FLAG" + ("S" if it["flags"] > 1 else ""))
         p.y -= 11.5
     if cover["flag_lines"]:
         p.y -= 4; p.room(40); p.head("Flagged Checks")
