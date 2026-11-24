@@ -805,8 +805,25 @@ function modelCard(changed) {
   } }, "Run the 3D frame free to sway (direct analysis method)");
   const ratioCell = (c) => el("td", { class: c.ratio > 1 ? "st FLAG" : "", title: c.ratio_combo || "" }, c.ratio == null ? "not checked" : c.ratio.toFixed(2) + (c.ratio > 1 ? " FLAG" : " OK") + " (Eq. " + c.eq + ")");
   const n1 = (v, d = 1) => (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toLocaleString();
+  const bentFields = [["n", "Number of bents"], ["spacing", "Bent spacing, ft (one number, or a list)"], ["end_start", "Roof past the first bent, ft"], ["end_end", "Roof past the last bent, ft"],
+    ["col_spacing", "Column spacing across the bent, ft"], ["cant_low", "Rafter cantilever past line A, ft"], ["cant_high", "Rafter cantilever past line B, ft"], ["height", "Height to the roof level, ft"],
+    ["col_shape", "Column section"], ["col_Fy", "Column Fy, ksi"], ["raf_shape", "Rafter section"], ["raf_Fy", "Rafter Fy, ksi"], ["D", "Roof dead load, psf"], ["S", "Roof snow load, psf"], ["Lr", "Roof live load, psf"],
+    ["prefix", "Mark prefix (optional)"]];
+  const bentBtn = el("button", { class: "btn", onclick: async () => {
+    let out;
+    try { out = await post("/api/bent_building", { project: S.project, members: S.members, spec: BENT }); } catch (e) { toast(e.message, 12000); return; }
+    if (out.problems.length) { MODEL_NOTES = out.problems; select("project"); toast("Nothing was added. See the notes under the plan.", 10000); return; }
+    S.project = out.project; S.members = out.members; MODEL_NOTES = out.notes || [];
+    setDirty(); await recalcAll(); select("project");
+    toast(out.added + " members were added and placed. Run the 3D frame to check them.", 12000);
+  } }, "Add the bents to the model");
+  const bentCard = el("details", {}, el("summary", {}, "Start a building of bents (carport, pavilion, shed frame)"),
+    el("div", { class: "help" }, "Two columns and a rafter at every bent, rigid at the column tops. The roof loads go on each rafter by its tributary width. Everything added can be edited on its own screen afterward."),
+    el("div", { class: "grid" }, bentFields.map(([k, label]) => field({ key: k, label, type: "text", required: false }, BENT, () => {})),
+      field({ key: "base", label: "Column bases", type: "select", options: ["pinned", "fixed"], required: false }, BENT, () => {})),
+    el("div", { class: "fillbar" }, bentBtn));
   drawPlan();
-  return el("div", { class: "card" }, el("h2", {}, "Building Model"),
+  return el("div", { class: "card" }, el("h2", {}, "Building Model"), bentCard,
     el("div", { class: "help" }, "Optional. List the levels and grids, place members on their own screens, then link them by position. Every member can still be checked alone."),
     table(lv, mdl.levels, changed), table(gx, mdl.grids_x, changed), table(gy, mdl.grids_y, changed),
     el("div", { class: "fillbar" }, link, lat, levels.length ? el("span", { class: "small" }, " View ") : null, levels.length ? pickLevel : null),
@@ -836,7 +853,7 @@ function modelCard(changed) {
       el("tbody", {}, WIND_LINES.map(l => el("tr", { style: l.governs === false ? "opacity:.55" : "" }, el("td", {}, l.level), el("td", {}, l.wind), el("td", {}, l.wall), el("td", {}, (l.load || "wind") + (l.governs ? " (governs)" : "")), el("td", {}, l.trib.toFixed(1) + " ft"),
         el("td", {}, Math.round(l.V).toLocaleString() + " lb"), el("td", {}, l.from_above ? Math.round(l.from_above).toLocaleString() + " lb" : ""), el("td", {}, l.T == null ? "" : Math.round(l.T).toLocaleString() + " lb"))))) : null, (MODEL_NOTES && MODEL_NOTES.length) ? el("ul", { class: "msg small" }, MODEL_NOTES.map(t => el("li", {}, t))) : null);
 }
-let MODEL_NOTES = [], WIND_LINES = [], FRAME_CHECK = null, SWAY = null;
+let MODEL_NOTES = [], WIND_LINES = [], FRAME_CHECK = null, SWAY = null, BENT = {};
 
 function drawMain() {
   const main = $("#main"); main.textContent = "";

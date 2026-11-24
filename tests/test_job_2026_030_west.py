@@ -53,3 +53,26 @@ def test_west_carport_package_has_the_summary_and_the_frame_sheet(tmp_path):
     assert n >= 12
     # a project with no building model prints no frame sheet, and still gets the summary
     assert calc.frame_sheet(dict(proj, model={}), ms) is None
+
+
+def test_bent_building_fills_the_model_like_the_west_carport():
+    proj = dict(name="t", number="t", date="2026-11-23", method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6S", source="t")], combos_asd=[dict(expr="D + S", source="t")])
+    spec = dict(n="8", spacing="10, 20, 20, 20, 20, 20, 20", end_start="0.5", end_end="0.5", col_spacing="18.5", cant_low="1", cant_high="2.25", height="11.77",
+                col_shape="HSS8X8X1/2", col_Fy="46", raf_shape="HSS10X6X3/8", raf_Fy="46", base="fixed", D="6.1", S="36.12", Lr="")
+    out = calc.bent_building(proj, [], spec)
+    assert out["problems"] == [] and out["added"] == 24
+    by = {m["values"]["mark"]: m for m in out["members"]}
+    assert by["R1"]["values"]["loads"][0]["mag"] == "0.03355" and by["R4"]["values"]["loads"][1]["mag"] == "0.72240"       # 6.1 psf x 5.5 ft; 36.12 psf x 20 ft
+    assert by["C8B"]["values"]["at_x1"] == "130" and by["C8B"]["values"]["at_y1"] == "18.5" and by["R8"]["values"]["at_y2"] == "20.75"
+    assert [l["name"] for l in out["project"]["model"]["levels"]] == ["Base", "Roof"] and len(out["project"]["model"]["grids_x"]) == 8
+    run = calc.model_frame_sway(out["project"], out["members"])
+    assert run["problems"] == [] and len(run["columns"]) == 16 and all(c["ratio"] < 1 for c in run["columns"])
+    # the same marks again are refused, a prefix lets a second building in; bad input is listed and nothing is added
+    again = calc.bent_building(out["project"], out["members"], spec)
+    assert again["added"] == 0 and "already in the project" in again["problems"][0]
+    assert calc.bent_building(out["project"], out["members"], dict(spec, prefix="N"))["added"] == 24
+    bad = calc.bent_building(proj, [], dict(spec, n="1", col_shape="HSS99X1", spacing="x"))
+    assert bad["added"] == 0 and len(bad["problems"]) >= 2
+    # W-shape columns are steel columns
+    w = calc.bent_building(proj, [], dict(spec, col_shape="W8X31", col_Fy="50", raf_shape="W12X26", raf_Fy="50", spacing="20", n="3"))
+    assert w["added"] == 9 and w["members"][0]["kind"] == "steel_column" and calc.model_frame_sway(w["project"], w["members"])["levels"]
