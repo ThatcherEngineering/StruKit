@@ -1005,6 +1005,15 @@ FORMS = {
                 F("sup_N", "Support length (parallel to plate length)", unit="in", required=False),
                 F("sup_B", "Support width", unit="in", required=False)],
         tables=[T("loads", "Axial compression", [CASE, F("P", "P", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "base_plate_uplift": dict(
+        title="Base Plate in Uplift", code="AISC 360-22, AISC Design Guide 1", mark="BPU",
+        fields=[F("shape", "Column", "shape", help="W, M, S or HP shape"), F("col_Fy", "Column Fy", unit="ksi"),
+                F("N", "Plate length (along the column depth)", unit="in"), F("B", "Plate width", unit="in"), F("t", "Plate thickness", unit="in"), F("Fy", "Plate Fy", unit="ksi"),
+                F("rod_d", "Anchor rod diameter", unit="in"), F("rod_Fu", "Anchor rod Fu", unit="ksi"), F("rod_source", "Anchor rod material", "text", help="for example: ASTM F1554 Grade 36"),
+                F("gauge", "Rod spacing across the web", unit="in", help="four rods inside the column profile, two each side of the web"),
+                F("pitch", "Rod spacing along the web", unit="in"),
+                F("weld", "Web fillet weld size, each side", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
+        tables=[T("cases", "Net uplift by load combination", [F("name", "Combination", "text"), F("T", "Net uplift", unit="kip")])]),
     "base_plate_moment": dict(
         title="Base Plate with Moment", code="AISC 360-22, AISC Design Guide 1, ACI 318-19", mark="BPM",
         fields=[F("shape", "Column", "shape_col", help="W, M, S or HP shape, or square or rectangular HSS"), F("N", "Plate length (direction of the moment)", unit="in"),
@@ -1374,6 +1383,15 @@ def build(kind, values, project):
         rg, ro, ob = r.num("roof_gross"), r.num("roof_open", False), r.text("openings_basis")
         r.done()
         return ws_more.wind_enclosure_sheet(mark, walls, rg, ro or 0.0, ob), "simple", {}
+    if kind == "base_plate_uplift":
+        m = method(project, r.miss)
+        args = (r.text("shape"), r.num("col_Fy"), r.num("N"), r.num("B"), r.num("t"), r.num("Fy"), r.num("rod_d"), r.num("rod_Fu"), r.text("rod_source"), r.num("gauge"), r.num("pitch"),
+                r.num("weld"), r.num("FEXX"))
+        cases = r.rows("cases")
+        if not cases:
+            r.miss.append("No load case is entered")
+        r.done()
+        return ws_more.base_plate_uplift_sheet(mark, *args, cases, m), "simple", {}
     if kind == "single_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]

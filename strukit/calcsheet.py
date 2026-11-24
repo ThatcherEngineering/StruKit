@@ -1503,6 +1503,8 @@ def _block_picture(c, top, pic):
         return _tread_picture(c, top - 6, d)
     if name == "tension":
         return _tension_picture(c, top - 6, d)
+    if name == "base_plate_uplift":
+        return _base_plate_uplift_picture(c, top - 6, d)
     if name == "single_plate":
         return _single_plate_picture(c, top - 6, d)
     if name == "topo":
@@ -1983,6 +1985,32 @@ def _tension_picture(c, top, d):
     memberart._dim_h(c, x0, x1, y - 16, f"{d['L']:g} ft", FR, ext_from=y - 5)
     _small(c, (LM + RM) / 2, y - 36, "member in tension; not to scale")
     return y - 44
+
+
+def _base_plate_uplift_picture(c, top, d):
+    """Plan of the plate, to scale: the column section, the four rods inside its profile, the rod spacings and the plate size dimensioned."""
+    N, B, dd, bf, tf, tw, g, s_ = d["N"], d["B"], d["d"], d["bf"], d["tf"], d["tw"], d["g"], d["s"]
+    sc = min(110.0 / N, 110.0 / B)
+    cx, cy = (LM + RM) / 2, top - 22 - N * sc / 2
+    c.setFillColorRGB(0.90, 0.92, 0.95); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+    c.rect(cx - B * sc / 2, cy - N * sc / 2, B * sc, N * sc, fill=1, stroke=1)
+    c.setFillColorRGB(0.55, 0.62, 0.72); c.setLineWidth(0.5)
+    for sy in (1, -1):
+        c.rect(cx - bf * sc / 2, cy + sy * (dd / 2 - tf / 2) * sc - tf * sc / 2, bf * sc, max(tf * sc, 1.2), fill=1, stroke=1)
+    c.rect(cx - max(tw * sc, 1.0) / 2, cy - (dd / 2 - tf) * sc, max(tw * sc, 1.0), (dd - 2 * tf) * sc, fill=1, stroke=1)
+    c.setFillColorRGB(1, 1, 1); c.setLineWidth(0.8)
+    for sx in (1, -1):
+        for sy in (1, -1):
+            c.circle(cx + sx * g / 2 * sc, cy + sy * s_ / 2 * sc, max(d["rod_d"] * sc / 2, 1.8), fill=1, stroke=1)
+    yb = cy - N * sc / 2
+    xr = cx + B * sc / 2
+    memberart._dim_h(c, cx - g / 2 * sc, cx + g / 2 * sc, yb - 10, f"g {g:g} in", FR, ext_from=cy - s_ / 2 * sc)
+    memberart._dim_h(c, cx - B * sc / 2, cx + B * sc / 2, yb - 26, f"B {B:g} in", FR, ext_from=yb)
+    memberart._dim_v(c, cy - s_ / 2 * sc, cy + s_ / 2 * sc, xr + 10, f"{s_:g} in", FR, ext_from=cx + g / 2 * sc)
+    memberart._dim_v(c, yb, yb + N * sc, xr + 48, f"N {N:g} in", FR, ext_from=xr)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5); c.drawRightString(cx - B * sc / 2 - 8, cy, d["shape"])
+    _small(c, cx, yb - 46, "plan, to scale; rods inside the column profile")
+    return yb - 54
 
 
 def _single_plate_picture(c, top, d):
