@@ -47,7 +47,11 @@ for (lev, ln), seg in SEG.items():
     V = R[("Roof", ln)] + (R[("Main floor", ln)] if lev == "Main floor" else 0)
     story = "main level" if lev == "Roof" else "lower level"
     src = (f"roof diaphragm {R[('Roof', ln)]:.0f} lb" + (f" + main floor diaphragm {R[('Main floor', ln)]:.0f} lb" if lev == "Main floor" else "")) + ", half the diaphragm load to each line"
-    M.append(("shear_wall", dict(SW, mark=f"Line {ln}, {story}", lengths=seg, V=f"{V:.0f}", v_source=src)))
+    v = dict(SW, mark=f"Line {ln}, {story}", lengths=seg, V=f"{V:.0f}", v_source=src)
+    if lev == "Main floor":
+        up, _, _ = calc.build("shear_wall", next(x for k, x in M if x["mark"] == f"Line {ln}, main level"), proj)
+        v.update(above_T=f"{max(g.T for g in up.wall.segments):.0f}", above_source=f"largest chord force of shear wall Line {ln}, main level, wind, ASD")
+    M.append(("shear_wall", v))
 json.dump(dict(format="strukit-project", version=1, project=proj, members=[dict(kind=k, values=v) for k, v in M]), open("/home/claude/jobs/2026-011/2026-011-Lateral.strukit", "w"), indent=1)
 print({k: round(v) for k, v in R.items()})
 for k, v in M:

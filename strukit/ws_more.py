@@ -486,8 +486,10 @@ def snow_sheet(mark, pg, pg_source, risk, roughness, exposure, thermal, roof_typ
 
 def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, V, load, method, v_source, holddown_inside=None,
                      arm_offset_in=0.0, chord_E=None, chord_A=None, anchor_slip_in=None, sides=1, blocked=True, stud_spacing=None,
-                     field_nails=None, dead_plf=0.0, dead_factor=None, dead_source="", other=None):
+                     field_nails=None, dead_plf=0.0, dead_factor=None, dead_source="", other=None, above_T=0.0, above_source=""):
     """Wood structural panel shear wall line, SDPWS-2021 Sect. 4.3 (see shearwall.py).
+    above_T: chord force (lb) brought down by the wall above, added to the chord tension and
+    compression at every segment end of this wall.
     V is the design shear on the line at the level of `method`; v_source says where it
     comes from. G_source says where the framing specific gravity comes from."""
     for nm, v in (("the source of the framing specific gravity", G_source), ("the source of the design shear", v_source)):
@@ -495,6 +497,10 @@ def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, 
             raise WorksheetError(f"{mark}: {nm} is blank")
     if dead_plf and not (dead_source or "").strip():
         raise WorksheetError(f"{mark}: the source of the dead load and its factor is blank")
+    if above_T and above_T < 0:
+        raise WorksheetError(f"{mark}: the chord force from the wall above must be a positive number")
+    if above_T and not (above_source or "").strip():
+        raise WorksheetError(f"{mark}: where the chord force from the wall above comes from is blank")
     if V is None or V <= 0:
         raise WorksheetError(f"{mark}: the design shear must be a positive number")
     try:
@@ -515,6 +521,15 @@ def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, 
              + (f"; dead load {dead_plf:g} plf x {dead_factor:g} ({dead_source.strip()})" if dead_plf else ""))]
     if chord_E and chord_A and anchor_slip_in is not None:
         info.append(("Deflection", f"end posts A = {chord_A:g} in2, E = {chord_E:,.0f} psi; anchorage slip {anchor_slip_in:g} in"))
+    w.above_T = above_T or 0.0
+    w.own = [(s.T, s.C) for s in w.segments]              # this story alone
+    if above_T:
+        info.append(("Wall Above", f"chord force {above_T:,.0f} lb at each segment end ({above_source.strip()})"))
+        for i, s in enumerate(w.segments, 1):
+            t0, c0 = s.T, s.C
+            s.T, s.C = s.T + above_T, s.C + above_T
+            w.lines.append(shearwall.Line(f"segment {i}: chord tension with the wall above", s.T, "lb", "statics",
+                                          f"{t0:,.0f} lb this story + {above_T:,.0f} lb from above; compression {c0:,.0f} + {above_T:,.0f} = {s.C:,.0f} lb"))
     text = [f"Segment {i}: {s.b:>5g} ft   shear {s.V:>7,.0f} lb ({s.v:>4.0f} plf)   chord tension {s.T:>7,.0f} lb, compression {s.C:>7,.0f} lb"
             + (f"   deflection {s.defl:.2f} in" if s.defl is not None else "") for i, s in enumerate(w.segments, 1)]
     sheet = SimpleSheet(
@@ -523,7 +538,8 @@ def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, 
          "(SDPWS 4.3.5.5.1, exception 1).",
          ("Chord tension is the overturning force less the factored dead load on the segment, taken at mid-length. Chord "
           "compression is from overturning alone; gravity load is not added." if dead_plf else
-          "Chord forces are from overturning of each segment alone; dead load is not counted against uplift.")],
+          "Chord forces are from overturning of each segment alone; dead load is not counted against uplift."),
+         *(["The chord force of the wall above is added to the chord tension and compression at every segment end of this wall."] if above_T else [])],
         ["hold-down and its connection", "gravity load in the compression chord" if dead_plf else "dead load resisting uplift", "anchor bolts and plate washers (SDPWS 4.3.6.4.3)",
          "end posts in tension and compression; bearing on the plate", "collectors and the connection to the diaphragm",
          "construction requirements of SDPWS 4.3.6 and 4.3.7.1, including 3 in. framing at close nailing"]

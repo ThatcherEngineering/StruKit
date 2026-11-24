@@ -168,6 +168,17 @@ def api(path, body):
         except Exception as e:
             return dict(error=f"The diaphragm sheet stopped: {e}")
         return dict(reaction=sheet.diaphragm["reaction"], load=(body.get("values") or {}).get("load"), W=(body.get("values") or {}).get("W"))
+    if path == "/api/wall_above":
+        kind = body.get("kind") or "shear_wall"
+        try:
+            sheet, _, _ = calc.build(kind, body.get("values") or {}, body.get("project") or {})
+        except calc.Missing as e:
+            return dict(error="The wall above is not complete: " + "; ".join(e.items))
+        except Exception as e:
+            return dict(error=f"The wall above stopped: {e}")
+        w = sheet.wall
+        T = max(s.T for s in w.segments) if kind == "shear_wall" else w.T
+        return dict(T=T, load=(body.get("values") or {}).get("load"))
     if path == "/api/snow_loads":
         try:
             sheet, _, _ = calc.build("snow", body.get("values") or {}, body.get("project") or {})

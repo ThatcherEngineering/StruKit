@@ -230,7 +230,9 @@
     "mark": "Line 1, lower level",
     "lengths": "16.75",
     "V": "3982",
-    "v_source": "roof diaphragm 1523 lb + main floor diaphragm 2459 lb, half the diaphragm load to each line"
+    "v_source": "roof diaphragm 1523 lb + main floor diaphragm 2459 lb, half the diaphragm load to each line",
+    "above_T": "5134",
+    "above_source": "largest chord force of shear wall Line 1, main level, wind, ASD"
    }
   },
   {
@@ -249,7 +251,9 @@
     "mark": "Line A, lower level",
     "lengths": "22.58, 4.67",
     "V": "3650",
-    "v_source": "roof diaphragm 1417 lb + main floor diaphragm 2232 lb, half the diaphragm load to each line"
+    "v_source": "roof diaphragm 1417 lb + main floor diaphragm 2232 lb, half the diaphragm load to each line",
+    "above_T": "725",
+    "above_source": "largest chord force of shear wall Line A, main level, wind, ASD"
    }
   },
   {
@@ -268,7 +272,9 @@
     "mark": "Line B, lower level",
     "lengths": "5.33, 14.75",
     "V": "3650",
-    "v_source": "roof diaphragm 1417 lb + main floor diaphragm 2232 lb, half the diaphragm load to each line"
+    "v_source": "roof diaphragm 1417 lb + main floor diaphragm 2232 lb, half the diaphragm load to each line",
+    "above_T": "784",
+    "above_source": "largest chord force of shear wall Line B, main level, wind, ASD"
    }
   }
  ]

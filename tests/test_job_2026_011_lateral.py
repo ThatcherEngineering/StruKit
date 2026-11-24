@@ -17,10 +17,27 @@ def test_lateral_lines():
 
 
 def test_holddown_forces():
-    T = {}
+    """Lower-level chord tension includes the wall above (stacked walls)."""
+    T, own = {}, {}
     for m in D["members"]:
         if m["kind"] == "shear_wall":
             s, _, _ = calc.build("shear_wall", m["values"], D["project"])
-            w = getattr(s, "shearwall", None) or s.wall
-            T[m["values"]["mark"]] = max((g["T"] if isinstance(g, dict) else g.T) for g in w.segments)
-    assert abs(T["Line 1, lower level"] - 2140) < 5 and abs(T["Line B, lower level"] - 1636) < 5 and abs(T["Line A, main level"] - 725) < 5
+            T[m["values"]["mark"]] = max(g.T for g in s.wall.segments)
+            own[m["values"]["mark"]] = max(t for t, _ in s.wall.own)
+    assert abs(T["Line A, main level"] - 725) < 5 and abs(own["Line B, lower level"] - 1636) < 5
+    assert abs(T["Line A, lower level"] - (1205.5 + 725)) < 5          # 3,650 x 9 / 27.25 + the wall above
+    assert abs(T["Line B, lower level"] - (1636 + 784)) < 5
+    assert abs(T["Line 1, lower level"] - (2139.6 + 5134)) < 5
+
+
+def test_stack_needs_source():
+    import pytest
+    from strukit import ws_more
+    kw = dict(mark="SW", panel="Sheathing, 7/16 in, 8d common", spacing=6, panel_type="OSB", G=0.5, G_source="x", h=9, lengths=[8.0], V=1000, load="wind",
+              method="ASD", v_source="x")
+    a = ws_more.shear_wall_sheet(**kw)
+    b = ws_more.shear_wall_sheet(**kw, above_T=500, above_source="SW above")
+    assert abs(a.wall.segments[0].T - 1125) < 1e-6 and abs(b.wall.segments[0].T - 1625) < 1e-6 and abs(b.wall.segments[0].C - 1625) < 1e-6
+    assert b.wall.capacity == a.wall.capacity
+    with pytest.raises(Exception):
+        ws_more.shear_wall_sheet(**kw, above_T=500)
