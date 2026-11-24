@@ -2599,7 +2599,7 @@ def wind_free_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, 
                          "plus acts toward the top surface, minus away from it (Figure 27.3-4 note 5).",
                          "Cases A and B are separate load cases for each wind direction; all are to be investigated (Figure 27.3-4 note 6).",
                          "Rigid structure, G = 0.85 (Sect. 26.11.1)."],
-                        ["the minimum design wind force of Sect. 27.1.5", "wind on fascia panels, columns and other framing", "components and cladding (Sect. 30.7, Figure 30.7-1)",
+                        ["the minimum design wind force of Sect. 27.1.5", "wind on fascia panels, columns and other framing", "components and cladding of the roof (Figures 30.5-1 to 30.5-3)",
                          "roofs steeper than 45 degrees"])
     if t1:
         sheet.blocks.append(dict(title=f"Wind Across the {'Slope' if mono else 'Ridge' if roof == 'pitched' else 'Valley'} ({fig})",
@@ -2625,4 +2625,74 @@ def wind_free_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, 
                                         "Af is the roof projected on a vertical plane normal to the wind; framing and fascia are not in it."]))
         sheet.not_checked = [t for t in sheet.not_checked if "27.1.5" not in t] + ["wind on the framing below the roof in the Sect. 27.1.5 area Af"]
     sheet.free_roof = dict(r, totals=tot)
+    return sheet
+
+
+def wind_free_hip_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, theta_hip, L, length, obstructed, flow_basis, Kzt, Kzt_source,
+                        elevation_ft=None, elevation_source=""):
+    """Net wind pressures on the hip roof of an open building (see wind.free_roof_hip)."""
+    for nm, v in (("the source of the basic wind speed", V_source), ("the basis of the exposure category", exposure_basis), ("the source of Kzt", Kzt_source),
+                  ("the basis of clear or obstructed wind flow", flow_basis)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if elevation_ft is not None and not (elevation_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the ground elevation is blank")
+    Ke = wind.ke(elevation_ft) if elevation_ft is not None else 1.0
+    try:
+        r = wind.free_roof_hip(V, exposure, h, theta, theta_hip, L, length, obstructed, Kzt, Ke)
+    except wind.WindError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    Ln = footing_line
+    flow = "obstructed" if obstructed else "clear"
+    steps = [Ln("V", V, "mi/h", "ASCE/SEI 7-22 Sect. 26.5", V_source.strip()),
+             Ln("Kzt", Kzt, "", "Sect. 26.8", Kzt_source.strip()),
+             Ln("Ke", Ke, "", "Sect. 26.9", f"ze = {elevation_ft:,.0f} ft" if elevation_ft is not None else "taken as 1.0"),
+             Ln("Kh", r["Kh"], "", "Table 26.10-1", f"Exposure {exposure}, h = {h:g} ft"),
+             Ln("qh = 0.00256 Kh Kzt Ke V^2", r["qh"], "psf", "Eq. 26.10-1", ""),
+             Ln("Kd, G", f"{wind.KD_MWFRS:g}, {wind.G_RIGID:g}", "", "Table 26.6-1, Sect. 26.11.1", ""),
+             Ln("p = qh Kd G CN", f"{r['factor']:.2f} CN psf", "", "Eq. 27.3-2", f"{flow} wind flow")]
+    for d in r["dirs"]:
+        steps.append(Ln(f"h / L, wind {d['name']}", f"{d['h_over_L']:.2f}", "", "Figure 27.3-5" if d["across"] else "Figure 27.3-7",
+                        f"L = {d['L']:g} ft, roof planes at {d['theta']:g} degrees"))
+    info = [("Wind Speed", f"V = {V:g} mi/h ({V_source.strip()})"),
+            ("Exposure", f"{exposure} ({exposure_basis.strip()}); Kzt = {Kzt:g} ({Kzt_source.strip()})"),
+            ("Roof", f"hip free roof, {L:g} ft by {length:g} ft in plan; main slopes {theta:g} degrees, hip ends {theta_hip:g} degrees; mean roof height {h:g} ft"),
+            ("Wind Flow", f"{flow} ({flow_basis.strip()})")]
+    sheet = SimpleSheet(mark, "Wind Pressures, Open Building with a Hip Free Roof", "Open Building", "Chapter 27", info, [], [], "Velocity Pressure", steps, [],
+                        ["Open building: main wind force resisting system by the directional procedure, Sect. 27.3.2. Net pressures include the top and bottom surfaces; "
+                         "plus acts toward the top surface, minus away from it.",
+                         "Hip roof (Thatcher Engineering standard): for each wind direction the roof is taken as a pitched free roof, Figure 27.3-5, with the slope of the "
+                         "planes facing that direction and the plan dimension along the wind as L; each half of the plan takes its half's pressure on every plane within it.",
+                         "Where h / L in a direction is outside the range of Figure 27.3-5, the zones of Figure 27.3-7 are used for that direction.",
+                         "Cases A and B are separate load cases for each wind direction; all are to be investigated. Rigid structure, G = 0.85 (Sect. 26.11.1)."],
+                        ["wind on fascia panels, columns and other framing", "components and cladding of the roof (Figures 30.5-1 to 30.5-3)", "roofs steeper than 45 degrees"])
+    out = []
+    for n_, d in enumerate(r["dirs"]):
+        t_ = math.tan(math.radians(d["theta"]))
+        half = 0.5 * d["L"] * d["B"]
+        if d["across"]:
+            t = [f"{'case':>5}{'CNW':>8}{'CNL':>8}{'windward half':>16}{'leeward half':>15}{'along the wind':>17}{'vertical':>13}"]
+            rows = []
+            for x in d["across"]:
+                H, Vv = (x["pW"] - x["pL"]) * half * t_, (x["pW"] + x["pL"]) * half
+                rows.append(dict(case=x["case"], H=H, V=Vv))
+                t.append(f"{x['case']:>5}{x['CNW']:>8.2f}{x['CNL']:>8.2f}{x['pW']:>12.1f} psf{x['pL']:>11.1f} psf{H:>14,.0f} lb{Vv:>10,.0f} lb")
+            Af = d["B"] * 0.5 * d["L"] * t_
+            t.append(f"minimum, Sect. 27.1.5: 16 psf x Af = 16 x {Af:,.0f} ft2 = {wind.MIN_OPEN * Af:,.0f} lb along the wind")
+            blk = dict(title=f"Wind {d['name'].capitalize()} (Figure 27.3-5)", lines=t,
+                       after=[f"Each half of the plan is {0.5 * d['L']:g} ft by {d['B']:g} ft. Totals take the whole half at the slope of the planes facing the wind; plus is with the wind "
+                              "and downward, minus is uplift. Af is the roof projected on a vertical plane normal to the wind, taken as for a pitched roof."])
+            if n_ == 0:
+                blk.update(head="Wind Across the Long Side", picture=("free_roof", dict(theta=d["theta"], h=h, L=d["L"], roof="pitched")))
+            sheet.blocks.append(blk)
+            out.append(dict(d, totals=rows, Af=Af, F_min=wind.MIN_OPEN * Af))
+        else:
+            t = [f"{'from the windward edge':<28}{'case':>5}{'CN':>8}{'pressure':>14}"]
+            for z in d["parallel"]:
+                ext = f"{z['x0']:g} to {z['x1']:g} ft" if z["x1"] is not None else f"over {z['x0']:g} ft"
+                t += [f"{ext + ' (' + z['zone'] + ')':<28}{'A':>5}{z['A']:>8.2f}{z['pA']:>10.1f} psf", f"{'':<28}{'B':>5}{z['B']:>8.2f}{z['pB']:>10.1f} psf"]
+            sheet.blocks.append(dict(title=f"Wind {d['name'].capitalize()} (Figure 27.3-7)", lines=t,
+                                     after=["Zones are measured horizontally from the windward edge of the roof, in the wind direction."]))
+            out.append(dict(d, totals=None))
+    sheet.free_roof = dict(r, dirs=out)
     return sheet
