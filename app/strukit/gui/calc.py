@@ -92,7 +92,10 @@ FORMS = {
                 F("steel_source", "Where Fy and Fu come from", "text", help="for example: ASTM A992"), F("length", "Length", unit="ft"),
                 F("n_holes", "Bolt holes across the critical section", required=False, help="blank or 0 for a welded end"),
                 F("bolt_d", "Bolt diameter", unit="in", required=False), F("hole_t", "Thickness of the part the holes are in", unit="in", required=False),
-                F("U", "Shear lag factor, U", help="AISC 360-22 Table D3.1"), F("U_source", "Which case of Table D3.1", "text", help="for example: Case 2, 1 - x/l, x = 0.831 in., l = 9 in.")],
+                F("U", "Shear lag factor, U", required=False, help="AISC 360-22 Table D3.1; leave blank for a single angle and fill the three angle boxes"),
+                F("U_source", "Which case of Table D3.1", "text", required=False, help="for example: Case 2, 1 - x/l, x = 0.831 in., l = 9 in."),
+                F("angle_n", "Single angle: bolts in the line", required=False), F("angle_l", "Single angle: length of the connection", unit="in", required=False, help="first to last bolt"),
+                F("angle_leg", "Single angle: connected leg", "select", options=["long", "short"], required=False)],
         tables=[T("loads", "Axial tension", [CASE, F("P", "Tension", unit="kip"), F("label", "Note", "text", required=False)])]),
     "hss_column": dict(
         title="HSS or Pipe Column", code="AISC 360-22", mark="HC",
@@ -1372,10 +1375,15 @@ def build(kind, values, project):
         if not loads:
             r.miss.append("No tension is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
+        Uv = r.num("U", False)
+        ac = None
+        if Uv is None:
+            ac = dict(n=r.num("angle_n", True, label="Shear lag factor U, or for a single angle the bolts in the line"), l=r.num("angle_l", True, label="Single angle: length of the connection"),
+                      leg=r.text("angle_leg", False) or "long")
         args = (r.text("shape"), r.num("Fy"), r.num("Fu"), r.text("steel_source"), r.num("length"), r.num("n_holes", False), r.num("bolt_d", False), r.num("hole_t", False),
-                r.num("U"), r.text("U_source"))
+                Uv, (r.text("U_source", Uv is not None) or "") if Uv is not None else "")
         r.done()
-        return ws_more.tension_member_sheet(mark, *args, loads, cb, m), "simple", {}
+        return ws_more.tension_member_sheet(mark, *args, loads, cb, m, angle_conn=ac), "simple", {}
     if kind == "wind_enclosure":
         walls = [dict(name=x["name"], gross=x["gross"], open=x["open"]) for x in r.rows("walls")]
         if not walls:
