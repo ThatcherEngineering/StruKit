@@ -62,6 +62,19 @@ FORMS = {
                 T("leaning", "Loads leaning on this column (cantilever only)", [CASE, F("P", "P", unit="kip")]),
                 T("drift", "Drift limits at the top (cantilever only)",
                   [F("label", "Name", "text"), F("expr", "Loads", "text"), F("ratio", "Height /"), F("source", "Source", "text")])]),
+    "stair_stringer": dict(
+        title="Steel Stair Stringer", code="AISC 360-22", mark="ST",
+        fields=[F("shape", "Stringer section", "shape_any", help="C or MC channel, W shape, HSS or pipe"), F("Fy", "Fy", unit="ksi"),
+                F("run", "Horizontal run between supports", unit="ft"),
+                F("riser", "Riser height", unit="in"), F("tread", "Tread length", unit="in"),
+                F("trib", "Tread width carried by this stringer", unit="ft", help="half the stair width for a stair on two stringers"),
+                F("dead", "Dead load of treads, risers and finishes", unit="psf", help="on the horizontal projection"),
+                F("dead_note", "What that dead load is", "text", help="for example: 12 ga pans with 2 in. concrete fill"),
+                F("extra", "Other dead load on the stringer", unit="lb/ft", required=False, help="per foot of run, for example a guard"),
+                F("extra_note", "What the other dead load is", "text", required=False),
+                F("occupancy", "Live load", "select", options=["stairs and exit ways", "one- and two-family dwellings"], help="100 psf or 40 psf, ASCE 7-22 Table 4.3-1"),
+                F("braced", "Treads and risers brace the stringer", "select", options=["yes", "no"])],
+        tables=[T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text"), F("ratio", "Run /"), F("source", "Source", "text")])]),
     "hss_column": dict(
         title="HSS or Pipe Column", code="AISC 360-22", mark="HC",
         fields=[F("shape", "Section", "hss_shape", help="square, rectangular or round HSS, or pipe, by its Manual label: HSS6x6x1/4, HSS8x4x3/16, HSS5.563x0.258, Pipe 4 STD"),
@@ -1762,6 +1775,15 @@ def build(kind, values, project):
         r.done()
         return ws_more.bolted_connection_sheet(mark, D, rn, nr, sp, rs, end, edge, sh, st, sw, Gs, Es, ss, mt, mw, Gm, Em, ms, sense, wt, sv, loads, cb,
                                                local=loc, grain=gr, perp=pp, lag=lagd, steel=stl), "simple", {}
+    if kind == "stair_stringer":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        args = (r.text("shape"), r.num("Fy"), r.num("run"), r.num("riser"), r.num("tread"), r.num("trib"), r.num("dead"), r.text("dead_note"),
+                r.num("extra", False), r.text("extra_note", False) or "", r.text("occupancy"))
+        br = yes(r.text("braced"))
+        dc = checks(r.rows("defl"), r.miss, "Deflection limits")
+        cases_used(["D", "L"], cb, r.miss)
+        r.done()
+        return ws_more.stair_stringer_sheet(mark, *args, bool(br), cb, dc, m), "steel_beam", dict(combos=cb)
     if kind == "hss_column":
         m = method(project, r.miss)
         cb = combos(project, r.miss, m)
