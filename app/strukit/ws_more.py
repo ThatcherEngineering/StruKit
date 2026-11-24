@@ -3332,7 +3332,7 @@ def seat_sheet(mark, beam, beam_Fy, beam_source, t, length, osl, vleg, angle_Fy,
 
 
 def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, col_source, tp, bp, plate_Fy, plate_Fu, plate_source, d, group, s, g, weld, FEXX, loads,
-                    combos, method):
+                    combos, method, runs=None, runs_from=""):
     """Wide-flange beam continuous over an HSS column, moment connection through a cap plate with four bolts: AISC Design Guide 24 (2nd Ed.)
     Sect. 6.2 as worked in Example 6.1. loads: dict(case, P kips of column compression, M kip-ft across the joint). s: bolt spacing along the
     beam (the bolts sit outside the HSS walls), g: gage across the beam flange, bp: cap plate width across the beam."""
@@ -3341,7 +3341,7 @@ def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
     for nm, v in (("the source of the beam Fy and Fu", beam_source), ("the source of the column Fy", col_source), ("the source of the plate Fy and Fu", plate_source)):
         if not (v or "").strip():
             raise WorksheetError(f"{mark}: {nm} is blank")
-    if not combos or not loads:
+    if not runs and (not combos or not loads):
         raise WorksheetError(f"{mark}: loads and load combinations are needed")
     try:
         bm = shapes.get(beam)
@@ -3366,11 +3366,11 @@ def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
     av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
     fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
     cases = []
-    for cb in combos:
-        P = sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)
-        M = abs(sum(cb.factors.get(ld["case"], 0.0) * ld["M"] for ld in loads)) * 12.0
+    src = [(r_["name"], r_["P"], abs(r_["M"]) * 12.0) for r_ in runs] if runs else \
+        [(cb.name, sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads), abs(sum(cb.factors.get(ld["case"], 0.0) * ld["M"] for ld in loads)) * 12.0) for cb in combos]
+    for name_, P, M in src:
         T2 = max(0.0, (M - P * B / 2) / (B / 2 + s / 2))
-        cases.append(dict(name=cb.name, P=P, M=M, T=T2 / 2, C=T2 + P))
+        cases.append(dict(name=name_, P=P, M=M, T=T2 / 2, C=T2 + max(P, 0.0)))
     wt = max(cases, key=lambda c: c["T"])                      # largest bolt tension
     wc = max(cases, key=lambda c: c["C"])                      # largest compression at the column wall
     T, C = wt["T"], wc["C"]
@@ -3429,8 +3429,13 @@ def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
             ("Cap Plate", f"{tp:g} in. thick, {bp:g} in. wide across the beam, Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()})"),
             ("Bolts", f"(4) {d:g} in. {group}, {s:g} in. apart along the beam, gage {g:g} in."),
             ("Weld", f"{weld:g} in. fillet, cap plate to the HSS, E{FEXX:g}XX")]
-    load_lines = [f"{x_['case']:<3} P = {x_['P']:>7.2f} kip   M = {x_['M']:>7.2f} kip-ft" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
-    sheet = SimpleSheet(mark, "Beam over HSS Column, Cap Plate Moment Connection", "Connection", method, info, load_lines, [(cb.name, cb.source) for cb in combos],
+    if runs:
+        load_lines = [f"P = {r_['P']:>7.2f} kip   M = {abs(r_['M']):>7.2f} kip-ft   {r_['name']}" for r_ in runs]
+        combo_lines = [(f"Combined loads at the {method} level" + (f": {runs_from.strip()}" if (runs_from or "").strip() else ""), "")]
+    else:
+        load_lines = [f"{x_['case']:<3} P = {x_['P']:>7.2f} kip   M = {x_['M']:>7.2f} kip-ft" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
+        combo_lines = [(cb.name, cb.source) for cb in combos]
+    sheet = SimpleSheet(mark, "Beam over HSS Column, Cap Plate Moment Connection", "Connection", method, info, load_lines, combo_lines,
                         "Calculation", steps, rows,
                         ["The compression of the couple acts at the face of the column; the two bolts beyond the other face carry the tension.",
                          "The beam flange and the cap plate are each thick enough that there is no prying; where either is thinner than tnp the check is flagged (prying is not evaluated).",
