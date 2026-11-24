@@ -730,22 +730,23 @@ function modelCard(changed) {
     setDirty(); await recalcAll(); select("project");
     toast(out.placed + " member" + (out.placed === 1 ? "" : "s") + " placed; " + out.made + " link" + (out.made === 1 ? "" : "s") + " made by position; the load path is recalculated." + (out.problems.length ? " See the notes under the plan." : ""), 12000);
   } }, "Link members by position");
-  const lat = el("button", { class: "btn", onclick: async () => {
+  const latBtn = (which, text) => el("button", { class: "btn", onclick: async () => {
     let out;
-    try { out = await post("/api/lateral_wind", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
+    try { out = await post("/api/lateral_wind", { project: S.project, members: S.members, load: which }); } catch (e) { toast(e.message, 12000); return; }
     if (out.lines.length) out.members.forEach((nm, i) => { S.members[i].values = nm.values; });
     WIND_LINES = out.lines; MODEL_NOTES = out.problems;
     setDirty(); await recalcAll(); select("project");
-    toast(out.lines.length ? out.lines.length + " wall" + (out.lines.length === 1 ? "" : "s") + " given the wind shear by tributary width, stacked from the top down." : "The wind was not distributed. See the notes under the plan.", 12000);
-  } }, "Send the wind to the wall lines");
+    toast(out.lines.length ? "The walls now carry " + (which === "governing" ? "the governing load of wind and seismic" : "the " + which + " shear") + ", by tributary width, stacked from the top down." : "The load was not distributed. See the notes under the plan.", 12000);
+  } }, text);
+  const lat = el("span", {}, latBtn("wind", "Send the wind to the wall lines"), latBtn("seismic", "Send the seismic forces"), latBtn("governing", "Use whichever governs each wall"));
   drawPlan();
   return el("div", { class: "card" }, el("h2", {}, "Building Model"),
     el("div", { class: "help" }, "Optional. List the levels and grids, place members on their own screens, then link them by position. Every member can still be checked alone."),
     table(lv, mdl.levels, changed), table(gx, mdl.grids_x, changed), table(gy, mdl.grids_y, changed),
     el("div", { class: "fillbar" }, link, lat, levels.length ? el("span", { class: "small" }, " Plan of level ") : null, levels.length ? pickLevel : null),
     holder,
-    (WIND_LINES && WIND_LINES.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Level", "Wind", "Wall", "Tributary", "Shear", "From above", "Chord"].map(t => el("th", {}, t)))),
-      el("tbody", {}, WIND_LINES.map(l => el("tr", {}, el("td", {}, l.level), el("td", {}, l.wind), el("td", {}, l.wall), el("td", {}, l.trib.toFixed(1) + " ft"),
+    (WIND_LINES && WIND_LINES.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Level", "Dir.", "Wall", "Load", "Tributary", "Shear", "From above", "Chord"].map(t => el("th", {}, t)))),
+      el("tbody", {}, WIND_LINES.map(l => el("tr", { style: l.governs === false ? "opacity:.55" : "" }, el("td", {}, l.level), el("td", {}, l.wind), el("td", {}, l.wall), el("td", {}, (l.load || "wind") + (l.governs ? " (governs)" : "")), el("td", {}, l.trib.toFixed(1) + " ft"),
         el("td", {}, Math.round(l.V).toLocaleString() + " lb"), el("td", {}, l.from_above ? Math.round(l.from_above).toLocaleString() + " lb" : ""), el("td", {}, l.T == null ? "" : Math.round(l.T).toLocaleString() + " lb"))))) : null, (MODEL_NOTES && MODEL_NOTES.length) ? el("ul", { class: "msg small" }, MODEL_NOTES.map(t => el("li", {}, t))) : null);
 }
 let MODEL_NOTES = [], WIND_LINES = [];

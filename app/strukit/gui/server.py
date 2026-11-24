@@ -169,7 +169,10 @@ def api(path, body):
             return dict(error=f"The diaphragm sheet stopped: {e}")
         return dict(reaction=sheet.diaphragm["reaction"], load=(body.get("values") or {}).get("load"), W=(body.get("values") or {}).get("W"))
     if path == "/api/lateral_wind":
-        return calc.lateral_wind(body.get("project") or {}, body.get("members") or [])
+        which = body.get("load") or "wind"
+        if which == "governing":
+            return calc.lateral_governing(body.get("project") or {}, body.get("members") or [])
+        return calc.lateral_wind(body.get("project") or {}, body.get("members") or [], load=which)
     if path == "/api/model_links":
         return calc.model_links(body.get("project") or {}, body.get("members") or [])
     if path == "/api/model_plan":
