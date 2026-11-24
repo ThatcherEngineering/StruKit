@@ -186,6 +186,14 @@ def api(path, body):
         except Exception as e:
             return dict(error=f"The topographic factor sheet stopped: {e}")
         return dict(applies=sheet.kzt["applies"], rows=[dict(z=z, Kzt=round(r["Kzt"], 3)) for z, r in sheet.kzt["rows"]])
+    if path == "/api/enclosure":
+        try:
+            sheet, _, _ = calc.build("wind_enclosure", body.get("values") or {}, body.get("project") or {})
+        except calc.Missing as e:
+            return dict(error="The enclosure classification sheet is not complete: " + "; ".join(e.items))
+        except Exception as e:
+            return dict(error=f"The enclosure classification sheet stopped: {e}")
+        return dict(classification=sheet.enclosure["classification"], GCpi=sheet.enclosure["GCpi"])
     if path == "/api/rain_load":
         try:
             sheet, _, _ = calc.build("rain_load", body.get("values") or {}, body.get("project") or {})

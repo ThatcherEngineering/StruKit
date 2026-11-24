@@ -261,6 +261,24 @@ function fillKztBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take Kzt from"), pick, row, go);
 }
 
+function fillEnclosureBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "wind_enclosure");
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose an enclosure classification sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 enclosure classification")));
+  const go = el("button", { class: "btn", onclick: async () => {
+    if (pick.value === "") return toast("Choose the enclosure classification sheet first.");
+    let got;
+    try { got = await post("/api/enclosure", { values: S.members[+pick.value].values, project: S.project }); } catch (e) { return toast(e.message, 12000); }
+    const mark = S.members[+pick.value].values.mark || "enclosure classification sheet";
+    if (got.classification === "open") return toast("Sheet " + mark + " classifies the building as open. Open buildings go on the Open Building wind screen; nothing was filled.", 12000);
+    m.values.enclosure = got.classification;
+    m.values.enclosure_basis = "sheet " + mark + ": " + got.classification + " (ASCE/SEI 7-22 Sect. 26.2)";
+    changed(); drawMain();
+    toast("Enclosure filled: " + got.classification + ".", 8000);
+  } }, "Fill Enclosure");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the enclosure from"), pick, go);
+}
+
 function fillLiveBar(m, changed) {
   const src = S.members.filter(x => x.kind === "live_load");
   if (!src.length) return null;
@@ -420,7 +438,11 @@ function fillBar(m, changed) {
   if (m.kind === "diaphragm") return fillDiaphragmBar(m, changed);
   if (m.kind === "collector") return fillCollectorBar(m, changed);
   if (m.kind === "seismic_elf") return fillDriftBar(m, changed);
-  if (m.kind.startsWith("wind_") && m.kind !== "wind_kzt") return fillKztBar(m, changed);
+  if (["wind_mwfrs", "wind_cc_walls", "wind_cc_roof"].includes(m.kind)) {
+    const a = fillKztBar(m, changed), b = fillEnclosureBar(m, changed);
+    return a && b ? el("div", {}, a, b) : (a || b);
+  }
+  if (m.kind.startsWith("wind_") && m.kind !== "wind_kzt" && m.kind !== "wind_enclosure") return fillKztBar(m, changed);
   if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) return fillLoadsBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");
