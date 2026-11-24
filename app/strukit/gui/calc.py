@@ -196,6 +196,17 @@ FORMS = {
                                                F("has_edge", "Edge in load direction", "select", options=["yes", "no"]),
                                                F("count", "How many", required=False, help="2 for a pair of angles")]),
                 T("loads", "Force along the bolt line", [CASE, F("P", "Force", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "seat": dict(
+        title="Unstiffened Seated Connection (seat angle)", code="AISC 360-22", mark="SE",
+        fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_source", "Source of the beam Fy", "text"),
+                F("t", "Seat angle thickness", unit="in"), F("length", "Seat angle length", unit="in"), F("osl", "Outstanding (horizontal) leg", unit="in"),
+                F("vleg", "Vertical leg", unit="in"), F("angle_Fy", "Angle Fy", unit="ksi"), F("angle_source", "Source of the angle Fy", "text"),
+                F("attach", "Seat to the support", "select", options=["welded", "bolted"]),
+                F("weld", "Welded: fillet size at each end of the angle", unit="in", required=False), F("FEXX", "Welded: electrode strength", unit="ksi", required=False),
+                F("n_bolts", "Bolted: number of bolts", required=False), F("d", "Bolted: bolt diameter", unit="in", required=False),
+                F("group", "Bolted: bolt type", "select", options=["A325", "A490", "F3148"], required=False),
+                F("threads", "Bolted: threads", "select", options=["N", "X"], required=False)],
+        tables=[T("loads", "Beam end reaction", [CASE, F("P", "Reaction", unit="kip"), F("label", "Note", "text", required=False)])]),
     "end_plate": dict(
         title="Shear End-Plate Connection", code="AISC 360-22", mark="EP",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
@@ -1479,6 +1490,16 @@ def build(kind, values, project):
             r.miss.append("No load case is entered")
         r.done()
         return ws_more.base_plate_uplift_sheet(mark, *args, cases, m), "simple", {}
+    if kind == "seat":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No reaction is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        args = (r.text("beam"), r.num("beam_Fy"), r.text("beam_source"), r.num("t"), r.num("length"), r.num("osl"), r.num("vleg"), r.num("angle_Fy"), r.text("angle_source"), r.text("attach"))
+        kw = dict(weld=r.num("weld", False), FEXX=r.num("FEXX", False), n_bolts=r.num("n_bolts", False), d=r.num("d", False), group=r.text("group", False), threads=r.text("threads", False))
+        r.done()
+        return ws_more.seat_sheet(mark, *args, loads, cb, m, **kw), "simple", {}
     if kind == "end_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
