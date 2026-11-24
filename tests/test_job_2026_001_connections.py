@@ -13,10 +13,9 @@ def test_shear_tabs():
         for x in r["rows"]:
             if x["unit"] == "kip" and x["status"] != "OK":
                 over[m["values"]["mark"].split(":")[0]] = (x["check"], round(x["capacity"], 1))
-    assert len(D["members"]) == 19
-    # strength rows over: the three-bolt W14x30 tabs under FloorBeamD.3's 34.6 kips, and the 1/2 in. bolts of detail 5
-    assert over == {"Det 7, 19, 20": ("Bolt shear with eccentricity", 29.6), "Det 14, 37, 38": ("Bolt shear with eccentricity", 29.6),
-                    "Det 5": ("Bolt shear with eccentricity", 9.3)}
+    assert len(D["members"]) == 20
+    # with reactions taken off the framing plan, the only strength row over is the three-bolt W14x30 tab under FloorBeamD.3's 34.6 kips
+    assert over == {"W14x30 three-bolt tab under the FloorBeamD.3 reaction": ("Bolt shear with eccentricity", 29.6)}
 
 
 def test_coped_beams_pass():

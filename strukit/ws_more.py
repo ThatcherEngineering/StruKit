@@ -2855,8 +2855,8 @@ def wind_free_hip_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, t
 def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, beam_source, tp, plate_Fy, plate_Fu, plate_source,
                        d, group, threads, n, spacing, lev, leh, a, holes, weld, FEXX, loads, combos, method, support=None, cope=None):
     """Single-plate (shear tab) connection of a wide-flange beam to an HSS column: conventional configuration of AISC Manual Part 10 as worked
-    in AISC Design Guide 24 (2nd Ed.) Example 5.1.  One vertical row of 2 to 5 bolts (the rows of Manual Table 10-9 confirmed in the documents
-    on hand).  holes: "STD" or "SSLT" (horizontal short slots) in the plate; standard holes in the beam web.  loads: dict(case, P) kips.
+    in AISC Design Guide 24 (2nd Ed.) Example 5.1.  One vertical row of 2 to 12 bolts (Manual Table 10-9, read from the 15th Edition page image:
+    2 to 5 bolts e = a/2; 6 to 12 bolts e = a/2 with SSLT holes and e = a with STD holes).  holes: "STD" or "SSLT" (horizontal short slots) in the plate; standard holes in the beam web.  loads: dict(case, P) kips.
     column blank with support = dict(name, t, Fu): the plate is welded to a column flange or girder web instead (AISC Design Examples v16
     Example II.A-17A); the HSS wall checks are replaced by the support thickness that matches the weld."""
     from . import bolts
@@ -2875,8 +2875,8 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     if not loads:
         raise WorksheetError(f"{mark}: no loads given")
     n = int(n)
-    if not 2 <= n <= 5:
-        raise WorksheetError(f"{mark}: this sheet covers one vertical row of 2 to 5 bolts (conventional configuration, AISC Manual Table 10-9); {n} entered")
+    if not 2 <= n <= 12:
+        raise WorksheetError(f"{mark}: the conventional configuration is one vertical row of 2 to 12 bolts (AISC Manual Table 10-9); {n} entered")
     if holes not in ("STD", "SSLT"):
         raise WorksheetError(f"{mark}: plate holes are STD (standard) or SSLT (horizontal short slots)")
     col = None
@@ -2913,7 +2913,7 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     t = col["tdes"] if hss_col else support["t"]
     rnd = hss_col and col["type"] != "HSS-RECT"
     Ln = footing_line
-    e = a / 2
+    e = a if (n >= 6 and holes == "STD") else a / 2          # AISC Manual (15th Ed.) Table 10-9
     C = bolts.group_coefficient(n, spacing, e)
     hole_ = lambda tt, Fu, lc: bolts.hole(d, tt, Fu, lc, True, method).R_avail
     b_int_p, b_edge_p = hole_(tp, plate_Fu, spacing - dh), hole_(tp, plate_Fu, lev - dh / 2)
@@ -2944,7 +2944,7 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
         lam, lam_r, lam_txt, lam_src = max(col["b_t"], col["h_t"]), 1.40 * math.sqrt(29000 / col_Fy), "b / t", "AISC Manual Part 10; AISC 360-22 Table B4.1a Case 6"
     steps = [Ln("Required strength R", R, "kip", worst, ""),
              Ln("Strength of one bolt", rn, "kip", "AISC 360-22 Sect. J3.7, Table J3.2", f"{d:g} in. {group}, threads {threads}, single shear; " + fac(0.75, 2.00)),
-             Ln("e = a / 2", e, "in", "AISC Manual Table 10-9", f"a = {a:g} in., {n} bolts, {holes} holes in the plate"),
+             Ln("e = a" if (n >= 6 and holes == "STD") else "e = a / 2", e, "in", "AISC Manual Table 10-9", f"a = {a:g} in., {n} bolts, {holes} holes in the plate"),
              Ln("C", f"{C:.2f}", "", "AISC Manual Table 7-6, angle 0", f"{n} bolts at {spacing:g} in., ex = {e:g} in.; instantaneous centre of rotation method"),
              Ln("Bolt group C rn", C * rn, "kip", "AISC 360-22 Sect. J3.7", ""),
              Ln("Bearing and tearout, plate", brg_p, "kip", "Sect. J3.11a, Eq. J3-6a, J3-6c", f"interior {b_int_p:.1f} kip per bolt, edge bolt {b_edge_p:.1f} kip (lev = {lev:g} in.); reaction taken concentric"),
@@ -3016,8 +3016,9 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
         steps.append(Ln("Beam T dimension", Tdim, "in", shapes.SOURCE, f"{shapes.normalize(beam)}; plate length between T / 2 = {Tdim / 2:.2f} in. and T"))
         rows += [Row("Plate length, not less than T / 2", "", Tdim / 2, L, "in", "AISC Manual Part 10", f"l = {L:g} in."),
                  Row("Plate length, not over T", "", L, Tdim, "in", "AISC Manual Part 10", "fits between the web fillets")]
-    if holes == "STD":
-        rows.append(Row("Plate or beam web thickness, rotational ductility", "", min(tp, tw), d / 2 + 1 / 16, "in", "AISC Manual Table 10-9", "the thinner of the two; d / 2 + 1/16 in."))
+    if holes == "STD" or n >= 6:
+        lim, lim_t = (d / 2 - 1 / 16, "d / 2 - 1/16 in.") if (n >= 6 and holes == "STD") else (d / 2 + 1 / 16, "d / 2 + 1/16 in.")
+        rows.append(Row("Plate or beam web thickness, rotational ductility", "", min(tp, tw), lim, "in", "AISC Manual Table 10-9", f"the thinner of the two; {lim_t}"))
     info = [("Column", f"{shapes.normalize(column)}, Fy = {col_Fy:g} ksi, Fu = {col_Fu:g} ksi ({col_source.strip()})") if hss_col else
             ("Support", f"{support['name'].strip()}, t = {t:g} in., Fu = {support['Fu']:g} ksi"),
             ("Beam", f"{shapes.normalize(beam)}, tw = {tw:g} in., Fu = {beam_Fu:g} ksi ({beam_source.strip()})"),

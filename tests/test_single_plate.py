@@ -47,8 +47,8 @@ def test_design_guide_24_example_5_1(method, R, bolt, bp, bw, vy, vr, bs, punch,
 
 
 def test_limits_and_flags():
-    with pytest.raises(WorksheetError, match="2 to 5"):
-        _run("ASD", n=6)
+    with pytest.raises(WorksheetError, match="2 to 12"):
+        _run("ASD", n=13)
     with pytest.raises(WorksheetError, match="3-1/2"):
         _run("ASD", a=4.0)
     with pytest.raises(WorksheetError, match="2 bolt diameters"):
@@ -98,3 +98,13 @@ def test_screen_needs_one_support():
     assert calc.results("single_plate", v, proj)["state"] == "incomplete"
     s, _, _ = calc.build("single_plate", dict(v, support_name="W14x90 flange", support_t="0.71", support_Fu="65"), proj)
     assert s.title == "Single-Plate Shear Connection" and s.ok
+
+
+def test_six_or_more_bolts():
+    """AISC Manual Table 10-9 (15th Ed.): 6 to 12 bolts, e = a with standard holes and a / 2 with short slots; thickness limit d/2 - 1/16 and d/2 + 1/16."""
+    std = _run("ASD", n=6, holes="STD", tp=0.25)
+    sl = _run("ASD", n=6, holes="SSLT", tp=0.25)
+    assert std.single_plate["e"] == 2.0 and sl.single_plate["e"] == 1.0
+    assert std.single_plate["C"] == pytest.approx(bolts.group_coefficient(6, 3.0, 2.0)) and std.single_plate["C"] == pytest.approx(5.45, abs=0.03)   # Manual Table 7-6
+    lim = lambda sh: [r for r in sh.rows if r.check.startswith("Plate or beam web thickness")][0].capacity
+    assert lim(std) == pytest.approx(0.75 / 2 - 1 / 16) and lim(sl) == pytest.approx(0.75 / 2 + 1 / 16)

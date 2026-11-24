@@ -10,8 +10,16 @@ TW = {"W18X40": 0.315, "W21X50": 0.380, "W12X30": 0.260, "W16X31": 0.275, "W14X3
 R = {"W8X15": (0.50, 9.02, "FloorBeamB.3"), "W10X17": (3.48, 8.62, "FloorBeamD.2"), "W12X30": (0.87, 13.35, "FloorBeamY.2"),
      "W14X30": (3.14, 31.47, "FloorBeamD.3"), "W18X40": (1.84, 23.50, "FloorBeamY.4"), "W16X31": (1.34, 16.93, "FloorBeamG.2 (W16x40 in the file)"),
      "W21X50": (1.84, 38.80, "FloorBeamY.3 (W18x40 in the file)")}
-def tab(mark, beam, n, d, s, lev, tp, weld, col=None, girder=None, a=3.0, leh=1.5, through=False):
-    D, L, src = R[beam]
+# Plan takedown, sheet S1.0 with the S0 loads (dead 15 + 52 + 5 = 72 psf, live 125 psf):
+#  W14x30 infill at 4'-11 1/2" o.c., longest span 24'-8" (K to M): wD = 0.072 x 4.96 + 0.030 = 0.387, wL = 0.125 x 4.96 = 0.620 kip/ft -> 4.77 D, 7.65 L
+#  W21x50 girder on line K, 19'-10" span, three pairs of W14x30 (24'-0" and 24'-8" spans): 1.5 x (4.64 + 4.77) + 0.5 = 14.6 D, 1.5 x (7.44 + 7.65) = 22.6 L
+#  W8x15 header at detail 5, 3'-0" span beside the floor opening: bound 0.55 D, 0.95 L
+PLAN = "plan takedown, sheet S1.0, 72 psf dead and 125 psf live"
+R.update({"W14X30": (4.77, 7.65, PLAN + ": 24 ft 8 in. span at 4 ft 11-1/2 in. o.c."), "W14X30-D3": (3.14, 31.47, "FloorBeamD.3 of the StruCalc file; not located on the plan"),
+          "W21X50": (14.6, 22.6, PLAN + ": line K girder, 19 ft 10 in. span, three pairs of W14x30"), "W8X15-5": (0.55, 0.95, PLAN + ": 3 ft header beside the floor opening (upper bound)"),
+          "W16X31": (1.34, 16.93, "upper bound; plan takedown gives about 17.3 kips on line M")})
+def tab(mark, beam, n, d, s, lev, tp, weld, col=None, girder=None, a=3.0, leh=1.5, through=False, rkey=None):
+    D, L, src = R[rkey or beam]
     v = dict(MAT, mark=mark, beam=beam, tp=str(tp), d=str(d), n=str(n), spacing=str(s), lev=str(lev), leh=str(leh), a=str(a), weld=str(weld),
              loads=[dict(case="D", P=str(D), label=src), dict(case="L", P=str(L), label=src)])
     if col and not through:
@@ -36,11 +44,12 @@ M = [
  tab("Det 16: W16x31 to HSS6x6x1/2", "W16X31", 4, 0.75, 3, 2, 0.4375, 0.25, col="HSS6X6X1/2", leh=2, through=True),
  tab("Det 7, 19, 20: W21x50 to HSS6x6x1/2", "W21X50", 5, 0.75, 3, 2.5, 0.4375, 0.25, col="HSS6X6X1/2", leh=2, through=True),
  tab("Det 4, 8, 10: W8x15 to W18x40", "W8X15", 3, 0.625, 2, 1.75, 0.375, 0.1875, girder="W18X40"),
- tab("Det 5: W8x15 to W21x50", "W8X15", 3, 0.5, 1.5, 1.75, 0.375, 0.1875, girder="W21X50"),
+ tab("Det 5: W8x15 to W21x50", "W8X15", 3, 0.5, 1.5, 1.75, 0.375, 0.1875, girder="W21X50", rkey="W8X15-5"),
  tab("Det 24: W8x15 to W14x30", "W8X15", 2, 0.75, 3.5, 1.9375, 0.375, 0.1875, girder="W14X30"),
  tab("Det 6, 9: W10x17 to W18x40 or W12x30", "W10X17", 3, 0.75, 2.75, 1.75, 0.375, 0.1875, girder="W12X30"),
  tab("Det 23: W10x17 to W16x31", "W10X17", 3, 0.75, 3, 1.5, 0.375, 0.1875, girder="W16X31"),
  tab("Det 14, 37, 38: W14x30 to W16x31 or W21x50", "W14X30", 3, 0.75, 3, 3, 0.375, 0.1875, girder="W16X31"),
+ tab("W14x30 three-bolt tab under the FloorBeamD.3 reaction", "W14X30", 3, 0.75, 3, 2.5, 0.375, 0.25, col="HSS6X6X1/2", leh=2, rkey="W14X30-D3"),
  tab("Det 31, 32: W18x40 to W18x40", "W18X40", 4, 0.75, 3.8125, 2.5, 0.375, 0.1875, girder="W18X40"),
 ]
 def ep(mark, beam, n, width, length, gage, lev, s):

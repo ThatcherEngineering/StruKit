@@ -265,13 +265,13 @@
     "loads": [
      {
       "case": "D",
-      "P": "3.14",
-      "label": "FloorBeamD.3"
+      "P": "4.77",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: 24 ft 8 in. span at 4 ft 11-1/2 in. o.c."
      },
      {
       "case": "L",
-      "P": "31.47",
-      "label": "FloorBeamD.3"
+      "P": "7.65",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: 24 ft 8 in. span at 4 ft 11-1/2 in. o.c."
      }
     ],
     "col_Fy": "46",
@@ -306,12 +306,12 @@
      {
       "case": "D",
       "P": "1.34",
-      "label": "FloorBeamG.2 (W16x40 in the file)"
+      "label": "upper bound; plan takedown gives about 17.3 kips on line M"
      },
      {
       "case": "L",
       "P": "16.93",
-      "label": "FloorBeamG.2 (W16x40 in the file)"
+      "label": "upper bound; plan takedown gives about 17.3 kips on line M"
      }
     ],
     "support_name": "through plate in HSS6X6X1/2",
@@ -344,13 +344,13 @@
     "loads": [
      {
       "case": "D",
-      "P": "1.84",
-      "label": "FloorBeamY.3 (W18x40 in the file)"
+      "P": "14.6",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: line K girder, 19 ft 10 in. span, three pairs of W14x30"
      },
      {
       "case": "L",
-      "P": "38.8",
-      "label": "FloorBeamY.3 (W18x40 in the file)"
+      "P": "22.6",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: line K girder, 19 ft 10 in. span, three pairs of W14x30"
      }
     ],
     "support_name": "through plate in HSS6X6X1/2",
@@ -428,13 +428,13 @@
     "loads": [
      {
       "case": "D",
-      "P": "0.5",
-      "label": "FloorBeamB.3"
+      "P": "0.55",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: 3 ft header beside the floor opening (upper bound)"
      },
      {
       "case": "L",
-      "P": "9.02",
-      "label": "FloorBeamB.3"
+      "P": "0.95",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: 3 ft header beside the floor opening (upper bound)"
      }
     ],
     "support_name": "W21X50 web, full-depth stiffener plate",
@@ -608,13 +608,13 @@
     "loads": [
      {
       "case": "D",
-      "P": "3.14",
-      "label": "FloorBeamD.3"
+      "P": "4.77",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: 24 ft 8 in. span at 4 ft 11-1/2 in. o.c."
      },
      {
       "case": "L",
-      "P": "31.47",
-      "label": "FloorBeamD.3"
+      "P": "7.65",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: 24 ft 8 in. span at 4 ft 11-1/2 in. o.c."
      }
     ],
     "support_name": "W16X31 web, full-depth stiffener plate",
@@ -626,6 +626,46 @@
     "cope_lev": "2.440",
     "cope_leh": "2.25",
     "beam_Fy": "50"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "W14x30 three-bolt tab under the FloorBeamD.3 reaction",
+    "beam": "W14X30",
+    "tp": "0.375",
+    "d": "0.75",
+    "n": "3",
+    "spacing": "3",
+    "lev": "2.5",
+    "leh": "2",
+    "a": "3.0",
+    "weld": "0.25",
+    "loads": [
+     {
+      "case": "D",
+      "P": "3.14",
+      "label": "FloorBeamD.3 of the StruCalc file; not located on the plan"
+     },
+     {
+      "case": "L",
+      "P": "31.47",
+      "label": "FloorBeamD.3 of the StruCalc file; not located on the plan"
+     }
+    ],
+    "col_Fy": "46",
+    "col_Fu": "58",
+    "col_source": "ASTM A500 Grade B, sheet S0 Steel Notes",
+    "column": "HSS6X6X1/2"
    }
   },
   {
@@ -810,13 +850,13 @@
     "loads": [
      {
       "case": "D",
-      "P": "3.14",
-      "label": "FloorBeamD.3"
+      "P": "4.77",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: 24 ft 8 in. span at 4 ft 11-1/2 in. o.c."
      },
      {
       "case": "L",
-      "P": "31.47",
-      "label": "FloorBeamD.3"
+      "P": "7.65",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: 24 ft 8 in. span at 4 ft 11-1/2 in. o.c."
      }
     ]
    }
@@ -848,12 +888,12 @@
      {
       "case": "D",
       "P": "1.34",
-      "label": "FloorBeamG.2 (W16x40 in the file)"
+      "label": "upper bound; plan takedown gives about 17.3 kips on line M"
      },
      {
       "case": "L",
       "P": "16.93",
-      "label": "FloorBeamG.2 (W16x40 in the file)"
+      "label": "upper bound; plan takedown gives about 17.3 kips on line M"
      }
     ]
    }
