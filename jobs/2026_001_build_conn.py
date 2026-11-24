@@ -43,6 +43,19 @@ M = [
  tab("Det 14, 37, 38: W14x30 to W16x31 or W21x50", "W14X30", 3, 0.75, 3, 3, 0.375, 0.1875, girder="W16X31"),
  tab("Det 31, 32: W18x40 to W18x40", "W18X40", 4, 0.75, 3.8125, 2.5, 0.375, 0.1875, girder="W18X40"),
 ]
+def ep(mark, beam, n, width, length, gage, lev, s):
+    D, L, src = R[beam]
+    return ("end_plate", dict(mark=mark, beam=beam, beam_Fy="50", beam_Fu="65", beam_source="ASTM A992, sheet S0 Steel Notes", tp="0.5", width=str(width), length=str(length),
+            plate_Fy="36", plate_Fu="58", plate_source="ASTM A36, sheet S0 Steel Notes", d="0.75", group="A325", threads="N", n=str(n), spacing=str(s), lev=str(lev), gage=str(gage),
+            weld="0.1875", FEXX="70", loads=[dict(case="D", P=str(D), label=src), dict(case="L", P=str(L), label=src)]))
+M += [
+ ep("Det 29, 39: W8x15 end plate to PEMB column", "W8X15", 2, 6.5, 10, 3, 3.25, 3.5),
+ ep("Det 13, 25: W10x17 end plate to PEMB column", "W10X17", 3, 6, 12, 3.5, 3, 3),
+ ep("Det 25: W12x30 end plate to PEMB column", "W12X30", 3, 8, 14, 4, 3.5, 3.5),
+ ep("Det 15, 35, 36: W14x30 end plate to PEMB column", "W14X30", 4, 8.5, 16, 5, 3.25, 3),
+ ep("Det 12: W16x31 end plate to PEMB column", "W16X31", 4, 8.5, 18, 5, 3.75, 3.5),
+ ep("Det 13, 29, 30, 33, 34: W18x40 end plate to PEMB column", "W18X40", 5, 8, 20, 5.5, 4, 3),
+]
 json.dump(dict(format="strukit-project", version=1, project=proj, members=[dict(kind=k, values=v) for k, v in M]), open("/home/claude/jobs/2026-001/2026-001-Connections.strukit", "w"), indent=1)
 if __name__ == "__main__":
     for k, v in M:
@@ -51,5 +64,5 @@ if __name__ == "__main__":
         for m_ in r.get("messages", [])[:4]: print("   !", m_[:260])
         rows = r.get("rows", [])
         for row in rows:
-            if row.get("status") != "OK" or "Coped" in row["check"]:
+            if row.get("status") != "OK" or (k == "end_plate" and row is max(rows, key=lambda x: x.get("dc") or 0)):
                 print(f"   {row['check'][:50]:<50} {row['demand']:>8.2f} {row['capacity']:>8.2f} {row['unit']} dc {row.get('dc'):.2f} {row['status']}")

@@ -189,6 +189,19 @@ FORMS = {
                                                F("has_edge", "Edge in load direction", "select", options=["yes", "no"]),
                                                F("count", "How many", required=False, help="2 for a pair of angles")]),
                 T("loads", "Force along the bolt line", [CASE, F("P", "Force", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "end_plate": dict(
+        title="Shear End-Plate Connection", code="AISC 360-22", mark="EP",
+        fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
+                F("tp", "Plate thickness", unit="in"), F("width", "Plate width", unit="in"), F("length", "Plate length", unit="in"),
+                F("plate_Fy", "Plate Fy", unit="ksi"), F("plate_Fu", "Plate Fu", unit="ksi"), F("plate_source", "Source of the plate Fy and Fu", "text"),
+                F("d", "Bolt diameter", unit="in"), F("group", "Bolt type", "select", options=["A325", "A490", "F3148"]),
+                F("threads", "Threads", "select", options=["N", "X"], help="N = in the shear plane, X = excluded"),
+                F("n", "Bolts in each vertical row", help="two vertical rows; 2 to 12 per row"), F("spacing", "Bolt spacing", unit="in"),
+                F("lev", "Top of the plate to the first bolts", unit="in"), F("gage", "Gage between the two rows", unit="in"),
+                F("weld", "Fillet weld size, each side of the web", unit="in"), F("FEXX", "Electrode strength", unit="ksi"),
+                F("support_name", "Support: what the plate bolts to", "text", required=False, help="blank = the support is by others and bearing on it is not checked"),
+                F("support_t", "Support: thickness at the bolts", unit="in", required=False), F("support_Fu", "Support: Fu", unit="ksi", required=False)],
+        tables=[T("loads", "Beam end reaction", [CASE, F("P", "Reaction", unit="kip"), F("label", "Note", "text", required=False)])]),
     "single_plate": dict(
         title="Single-Plate Shear Connection (shear tab)", code="AISC 360-22", mark="SP",
         fields=[F("column", "HSS column", "hss_shape", required=False, help="leave blank for a column flange or girder web and fill the three support boxes"),
@@ -1427,6 +1440,18 @@ def build(kind, values, project):
             r.miss.append("No load case is entered")
         r.done()
         return ws_more.base_plate_uplift_sheet(mark, *args, cases, m), "simple", {}
+    if kind == "end_plate":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No reaction is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        sn = r.text("support_name", False)
+        sup = dict(name=sn, t=r.num("support_t", True, label="Support: thickness at the bolts"), Fu=r.num("support_Fu", True, label="Support: Fu")) if sn else None
+        args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), r.text("beam_source"), r.num("tp"), r.num("width"), r.num("length"), r.num("plate_Fy"), r.num("plate_Fu"),
+                r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("n"), r.num("spacing"), r.num("lev"), r.num("gage"), r.num("weld"), r.num("FEXX"))
+        r.done()
+        return ws_more.end_plate_sheet(mark, *args, loads, cb, m, support=sup), "simple", {}
     if kind == "single_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]

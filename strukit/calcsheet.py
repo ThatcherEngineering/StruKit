@@ -1508,6 +1508,8 @@ def _block_picture(c, top, pic):
         return _base_plate_uplift_picture(c, top - 6, d)
     if name == "single_plate":
         return _single_plate_picture(c, top - 6, d)
+    if name == "end_plate":
+        return _end_plate_picture(c, top - 6, d)
     if name == "topo":
         return _topo_picture(c, top - 6, d)
     if name == "nailed":
@@ -2052,6 +2054,45 @@ def _single_plate_picture(c, top, d):
     c.drawString(xb + (a + leh) * sc + 4, y1 + 17, d["beam"])
     _small(c, (LM + RM) / 2, y0 - 62, "elevation, to scale; beam web shown behind the plate")
     return y0 - 70
+
+
+def _end_plate_picture(c, top, d):
+    """Face view of the end plate, to scale: the plate, the beam section behind it, two vertical rows of bolts; gage, edge distances,
+    bolt spacing, plate width and length dimensioned; weld and plate called out."""
+    n, s_, lev, leh, g, L, W = d["n"], d["s"], d["lev"], d["leh"], d["gage"], d["L"], d["W"]
+    sc = min(130.0 / L, 110.0 / W, 15.0)
+    xc = (LM + RM) / 2 - 20
+    yc = top - 26 - L * sc / 2
+    x0, x1, y0, y1 = xc - W * sc / 2, xc + W * sc / 2, yc - L * sc / 2, yc + L * sc / 2
+    c.setFillColorRGB(0.86, 0.89, 0.93); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+    c.rect(x0, y0, W * sc, L * sc, fill=1, stroke=1)
+    bd, bf, tf, tw = d["bd"], d["bf"], d["tf"], d["tw"]             # the beam section, centred on the plate
+    c.setFillColorRGB(0.62, 0.68, 0.76); c.setLineWidth(0.5)
+    yb0, yb1 = yc - bd * sc / 2, yc + bd * sc / 2
+    c.rect(xc - bf * sc / 2, yb1 - tf * sc, bf * sc, tf * sc, fill=1, stroke=1)
+    c.rect(xc - bf * sc / 2, yb0, bf * sc, tf * sc, fill=1, stroke=1)
+    c.rect(xc - max(tw * sc, 1.2) / 2, yb0 + tf * sc, max(tw * sc, 1.2), (bd - 2 * tf) * sc, fill=1, stroke=1)
+    c.setFillColorRGB(1, 1, 1); c.setLineWidth(0.9)
+    ys = [y1 - (lev + k * s_) * sc for k in range(n)]
+    for y in ys:
+        for x in (xc - g * sc / 2, xc + g * sc / 2):
+            c.circle(x, y, max(1.8, d["d"] * sc / 2), fill=1, stroke=1)
+    memberart._dim_h(c, x0, xc - g * sc / 2, y0 - 14, f"{leh:g} in", FR, ext_from=y0)
+    memberart._dim_h(c, xc - g * sc / 2, xc + g * sc / 2, y0 - 14, f"gage {g:g} in", FR, ext_from=y0)
+    memberart._dim_h(c, xc + g * sc / 2, x1, y0 - 14, f"{leh:g} in", FR, ext_from=y0)
+    memberart._dim_h(c, x0, x1, y0 - 32, f"{W:g} in", FR)
+    xr = x1 + 14
+    memberart._dim_v(c, ys[0], y1, xr, f"{lev:g} in", FR, ext_from=x1)
+    if n > 1:
+        memberart._dim_v(c, ys[1], ys[0], xr, f"{s_:g} in" + (" typ." if n > 2 else ""), FR, ext_from=x1)
+    memberart._dim_v(c, y0, ys[-1], xr, f"{(L - lev - (n - 1) * s_):g} in", FR, ext_from=x1)
+    memberart._dim_v(c, y0, y1, xr + 44, f"l {L:g} in", FR)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawRightString(x0 - 8, yc + 8, d["beam"])
+    c.drawRightString(x0 - 8, yc - 1, f"PL {d['tp']:g} in.")
+    c.drawRightString(x0 - 8, yc - 10, f"{d['weld']:g} in. fillet, both sides of the web")
+    _small(c, (LM + RM) / 2, y0 - 46, "face of the end plate, to scale; beam section shown behind the plate")
+    return y0 - 54
 
 
 def _guard_picture(c, top, d):

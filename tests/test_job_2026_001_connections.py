@@ -13,7 +13,7 @@ def test_shear_tabs():
         for x in r["rows"]:
             if x["unit"] == "kip" and x["status"] != "OK":
                 over[m["values"]["mark"].split(":")[0]] = (x["check"], round(x["capacity"], 1))
-    assert len(D["members"]) == 13
+    assert len(D["members"]) == 19
     # strength rows over: the three-bolt W14x30 tabs under FloorBeamD.3's 34.6 kips, and the 1/2 in. bolts of detail 5
     assert over == {"Det 7, 19, 20": ("Bolt shear with eccentricity", 29.6), "Det 14, 37, 38": ("Bolt shear with eccentricity", 29.6),
                     "Det 5": ("Bolt shear with eccentricity", 9.3)}
@@ -28,3 +28,11 @@ def test_coped_beams_pass():
             assert len(cop) == 4 and all(x["status"] == "OK" for x in cop), m["values"]["mark"]
             n += 1
     assert n == 7
+
+
+def test_end_plates_pass():
+    eps = [m for m in D["members"] if m["kind"] == "end_plate"]
+    assert len(eps) == 6
+    for m in eps:
+        r = calc.results(m["kind"], m["values"], D["project"])
+        assert r["state"] == "done" and r["status"] == "OK", m["values"]["mark"]
