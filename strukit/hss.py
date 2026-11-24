@@ -294,3 +294,19 @@ def weak_shear(props, Fy, method="ASD", E=E_STEEL):
     r = Strength(v["Vn"], av, "shear (" + src[-2:] + ")", L)
     r.source, r.note = src, note
     return r
+
+
+def pns(props, Fy, E=E_STEEL):
+    """Cross-section compressive strength Pns for the stiffness reduction of AISC 360-22
+    Sect. C2.3: Fy Ag, or Fy Ae (Sect. E7 with Fn = Fy) for a rectangular HSS with slender
+    walls. Returns (Pns, text)."""
+    if props.get("type") != "HSS-RECT":
+        return Fy * props["A"], "Pns = Fy Ag"
+    H, B, t, h, b = _rect(props)
+    lr = 1.40 * math.sqrt(E / Fy)
+    Ae = props["A"]
+    for w, lam in ((h, props["h_t"]), (b, props["b_t"])):
+        if lam > lr:
+            r_ = math.sqrt((C2_HSS * lr / lam) ** 2)      # (Fel / Fy)^0.5
+            Ae -= 2 * (w - w * (1 - C1_HSS * r_) * r_) * t
+    return Fy * Ae, ("Pns = Fy Ae" if Ae < props["A"] - 1e-9 else "Pns = Fy Ag")

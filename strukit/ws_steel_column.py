@@ -309,7 +309,10 @@ def _sway(sheet, chk, lateral, combos, sway, leaning, drift_checks):
                                  f"unbraced length for that axis must be the full height")
     sheet.lateral, sheet.sway, sheet.leaning = lateral, tuple(sway), leaning
     alpha = 1.0 if method == "LRFD" else 1.6
-    Pns = Fy * pr["A"]
+    Pns, pns_txt = Fy * pr["A"], "Pns = Fy Ag"
+    if pr.get("type") in ("HSS-RECT", "HSS-ROUND", "PIPE"):
+        from . import hss
+        Pns, pns_txt = hss.pns(pr, Fy)
     I = {"x": pr["Ix"], "y": pr["Iy"]}
     brace = {"x": sheet.Lx_ft, "y": sheet.Ly_ft}
     wy = steel_beamcol.weak_axis_flexure(pr, Fy, method)
@@ -465,7 +468,7 @@ def _sway(sheet, chk, lateral, combos, sway, leaning, drift_checks):
     if o["Pl"]:
         L.append(Line("load leaning on this column", o["Pl"], "kip", "combination " + name,
                       "carried by other columns; this column keeps them from moving sideways"))
-    L.append(Line("alpha Pr / Pns", alpha * o["P"] / Pns, "", "Sect. C2.3(b)", f"Pns = Fy Ag = {Pns:.0f} kip"))
+    L.append(Line("alpha Pr / Pns", alpha * o["P"] / Pns, "", "Sect. C2.3(b)", f"{pns_txt} = {Pns:.0f} kip"))
     L.append(Line("tau_b", o["tau"], "", "Eq. C2-2a" if o["tau"] == 1.0 else "Eq. C2-2b",
                   "analysis stiffness = 0.8 tau_b E I (Sect. C2.3)"))
     for ax in ("x", "y"):

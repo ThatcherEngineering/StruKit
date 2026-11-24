@@ -236,3 +236,30 @@ def test_steel_column_screen_takes_hss_and_pipe(tmp_path):
     calcsheet.steel_column_pdf(pp, str(tmp_path / "p.pdf"), "Job", "AISC 360-22", "Nov 23, 2026", **kw)
     w, _, _ = calc.build("steel_column", dict(v, shape="W8X31"), lrfd)                  # I-shapes unchanged
     assert {x.check: x for x in w.rows}["shear, weak direction"].source == "AISC 360-22 Sect. G6"
+
+
+FRAME = dict(mark="F1", bays="24, 30", stories="14, 12", base="fixed", roof="gable", rise="6", col_shape="W10X49", beam_shape="W16X40", rafter_shape="W14X30", Fy="50",
+             lb_col="12", lb_beam="6", lb_rafter="5", self_weight="yes", shape_of=[],
+             loads=[dict(case="D", where="level:1", kind="gravity per ft of member", mag="0.9", label=""), dict(case="L", where="level:1", kind="gravity per ft of member", mag="1.2", label=""),
+                    dict(case="D", where="rafters", kind="gravity per ft of member", mag="0.35", label=""), dict(case="S", where="rafters", kind="gravity per ft horizontal", mag="0.75", label=""),
+                    dict(case="W", where="level:1", kind="lateral at level", mag="5", label=""), dict(case="W", where="level:2", kind="lateral at level", mag="3.5", label="")],
+             leaning=[], drift=[dict(label="wind", expr="0.6W", ratio="400", source="limit typed in")])
+
+
+def test_moment_frame_takes_hss_columns(tmp_path):
+    """A frame with HSS columns runs the same analysis; each column's available strengths equal the HSS functions' (validated against the AISC
+    Design Examples above), and the all-I-shape frame is unchanged."""
+    from strukit import calcsheet, loadcombos
+    from strukit.gui import calc
+    proj = dict(method="LRFD", combos_lrfd=[dict(expr=c["expr"], source=c["source"]) for c in loadcombos.SETS["ASCE/SEI 7-22"]["LRFD"]])
+    w, kind, kw = calc.build("frame", FRAME, proj)
+    h, _, kw = calc.build("frame", dict(FRAME, col_shape="HSS10x10x1/2"), proj)
+    cols = [m for m in h.member_rows if m["role"] == "column"]
+    p = shapes.hss("HSS10x10x1/2")
+    assert cols and all(m["shape"] == "HSS10X10X1/2" for m in cols)
+    assert all(m["Mc"] == pytest.approx(0.9 * 50 * p["Zx"] / 12) for m in cols)          # square, compact: Fy Z
+    assert all(m["Vc"] == pytest.approx(0.9 * hss.rect_shear(p, 50.0)["Vn"]) for m in cols)
+    assert [m["shape"] for m in w.member_rows if m["role"] == "column"][0] == "W10X49"
+    calcsheet.frame_pdf(h, str(tmp_path / "f.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
+    assert calc.results("frame", dict(FRAME, col_shape="C15X33.9"), proj)["state"] == "stopped"
+    assert hss.pns(p, 50.0) == (pytest.approx(50 * p["A"]), "Pns = Fy Ag") and hss.pns(shapes.hss("HSS12x8x3/16"), 50.0)[1] == "Pns = Fy Ae"
