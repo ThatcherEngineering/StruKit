@@ -12,7 +12,7 @@ def test_west_carport_as_a_3d_frame():
     d = json.load(open(os.path.join(HERE, "data", "job_2026_030_west.strukit")))
     proj, ms = d["project"], d["members"]
     out = calc.model_frame_sway(proj, ms)
-    assert len(out["columns"]) == 16 and len(out["beams"]) == 8 and out["runs"] == 4 + 3 * 8
+    assert len(out["columns"]) == 16 and len(out["beams"]) == 8 and out["runs"] == 4 + 3 * 10
     assert out["problems"] == []
     col = {c["mark"]: c for c in out["columns"]}
     bm = {b["mark"]: b for b in out["beams"]}
@@ -82,3 +82,14 @@ def test_bent_building_fills_the_model_like_the_west_carport():
     # W-shape columns are steel columns
     w = calc.bent_building(proj, [], dict(spec, col_shape="W8X31", col_Fy="50", raf_shape="W12X26", raf_Fy="50", spacing="20", n="3"))
     assert w["added"] == 9 and w["members"][0]["kind"] == "steel_column" and calc.model_frame_sway(w["project"], w["members"])["levels"]
+
+
+def test_west_carport_minimum_wind_case():
+    d = json.load(open(os.path.join(HERE, "data", "job_2026_030_west.strukit")))
+    proj, ms = d["project"], d["members"]
+    ws = calc.build("wind_free_roof", ms[0]["values"], proj)[0].free_roof
+    out = calc.model_frame_sway(proj, ms)
+    from strukit import shapes
+    dead = (6.1 * 21.75 * 131 + 8 * shapes.hss("HSS10X6X3/8")["W"] * 21.75 + 16 * shapes.hss("HSS8X8X1/2")["W"] * 11.77) / 1000
+    a = next(a for a in out["audit"] if a["run"] == "0.9D + 1.0W, minimum wind across the roof in +Y (Sect. 27.1.5)")
+    assert -a["Ry"] == pytest.approx(ws["totals"]["F_min"] / 1000 + 0.003 * 0.9 * dead, abs=0.02) and a["Rz"] == pytest.approx(0.9 * dead, abs=0.05)

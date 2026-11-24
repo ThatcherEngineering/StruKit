@@ -3330,6 +3330,16 @@ def model_frame_sway(project, members):
             FLAT_CF = _wind.FLAT_MEMBER_CF
             for row in fd["across"]:
                 fr_sets.append(across_set(row))
+            tot = fd.get("totals") or {}
+            if tot.get("F_min"):                              # Sect. 27.1.5: not less than 16 psf x Af, as a case of its own in each direction across the roof
+                wsum = sum(trib.values())
+                for travel in (1, -1):
+                    loads = []
+                    for mk, q, els, r0, r1 in raf:
+                        for e_ in els:
+                            g = [0.0, 0.0, 0.0]; g[ax] = tot["F_min"] / 1000.0 * trib[round(q, 3)] / wsum / ((r1 - r0) * FT) * travel
+                            loads.append((e_, tuple(g)))
+                    fr_sets.append(dict(axis=ax, sign=travel, loads=loads, label=f"minimum wind across the roof in {'+' if travel > 0 else '-'}{'XY'[ax]} (Sect. 27.1.5)"))
             for travel in ((1, -1) if fd.get("parallel") else ()):
                 for case in ("A", "B"):
                     loads = []
@@ -3348,7 +3358,8 @@ def model_frame_sway(project, members):
                          "Wind on the columns: F = qh Kd G Cf Af (Eq. 29.4-1) with Cf from Figure 29.4-1 by each column's height / width ("
                          + ", ".join(sorted({f"{c_:.2f}" for _, _, c_ in col_drag})) + "), along the wind"
                          + (f"; on the fascia, {fascia:g} ft deep on both roof edges that face the wind, Cf = 2.0 (Figure 29.4-2, flat-sided member), the far edge not taken as shielded" if fascia > 0 else "; no fascia depth is entered, so none on the roof edges")
-                         + ". qh is used for both. Not included: wind on purlins and other framing below the roof, and the Sect. 27.1.5 minimum.")
+                         + ". qh is used for both. The Sect. 27.1.5 minimum (16 psf x Af of the sheet) is run as a case of its own in each direction across the roof. "
+                         "Not included: wind on purlins and other framing below the roof.")
         except Exception as e:
             problems.append(f"The open-building wind sheet could not be put on the frame: {e}")
             fr_sets = []
