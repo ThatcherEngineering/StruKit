@@ -1369,7 +1369,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
     for b in sheet.blocks:
         if b.get("picture"):
             p.room(316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
-                   230 if b["picture"][0] in ("anchorage", "perforated_wall") else 215 if b["picture"][0] == "lag" else 175)
+                   230 if b["picture"][0] in ("anchorage", "perforated_wall", "base_biaxial", "frame3d") else 215 if b["picture"][0] == "lag" else 175)
             if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "collector", "nailed", "toe_nail", "lag", "bolted", "bolted_perp"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
@@ -1516,6 +1516,8 @@ def _block_picture(c, top, pic):
         return _seat_picture(c, top - 6, d)
     if name == "cap_plate":
         return _cap_plate_picture(c, top - 6, d)
+    if name == "base_biaxial":
+        return _base_biaxial_picture(c, top - 6, d)
     if name == "topo":
         return _topo_picture(c, top - 6, d)
     if name == "nailed":
@@ -2175,6 +2177,33 @@ def _seat_picture(c, top, d):
     c.drawString(xs + osl * sc + 8, ys - t * sc - 11, d["attach"])
     _small(c, (LM + RM) / 2, ys - vl * sc - 34, "side view, to scale; top angle not shown")
     return ys - vl * sc - 42
+
+
+def _base_biaxial_picture(c, top, d):
+    """Plan of the base plate, to scale: plate, column outline, the four rods; plate size and rod edge distances dimensioned; the two moment axes named."""
+    N, B, dc, bc, eN, eB, rd = d["N"], d["B"], d["d"], d["b"], d["edge_N"], d["edge_B"], d["rod_d"]
+    sc = min(150.0 / max(N, B), 11.0)
+    xc, yc = (LM + RM) / 2, top - 30 - B * sc / 2
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xc - N / 2 * sc, yc - B / 2 * sc, N * sc, B * sc, fill=1, stroke=1)
+    c.setFillColorRGB(0.62, 0.68, 0.76)
+    if d["kind"] == "I":
+        tf, tw = d["tf"], d["tw"]
+        c.rect(xc - dc / 2 * sc, yc - bc / 2 * sc, tf * sc, bc * sc, fill=1, stroke=1); c.rect(xc + (dc / 2 - tf) * sc, yc - bc / 2 * sc, tf * sc, bc * sc, fill=1, stroke=1)
+        c.rect(xc - (dc / 2 - tf) * sc, yc - tw / 2 * sc, (dc - 2 * tf) * sc, tw * sc, fill=1, stroke=1)
+    else:
+        c.rect(xc - dc / 2 * sc, yc - bc / 2 * sc, dc * sc, bc * sc, fill=1, stroke=1)
+        c.setFillColorRGB(0.82, 0.85, 0.89); t_ = d["tf"]; c.rect(xc - (dc / 2 - t_) * sc, yc - (bc / 2 - t_) * sc, (dc - 2 * t_) * sc, (bc - 2 * t_) * sc, fill=1, stroke=1)
+    c.setFillColorRGB(*INK)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            c.circle(xc + sx * (N / 2 - eN) * sc, yc + sy * (B / 2 - eB) * sc, max(rd / 2 * sc, 1.8), fill=1, stroke=0)
+    memberart._dim_h(c, xc - N / 2 * sc, xc + N / 2 * sc, yc + B / 2 * sc + 16, f"N = {N:g} in", FR, ext_from=yc + B / 2 * sc)
+    memberart._dim_v(c, yc - B / 2 * sc, yc + B / 2 * sc, xc - N / 2 * sc - 16, f"B = {B:g} in", FR, ext_from=xc - N / 2 * sc)
+    memberart._dim_h(c, xc + (N / 2 - eN) * sc, xc + N / 2 * sc, yc - B / 2 * sc - 14, f"{eN:g} in", FR, ext_from=yc - B / 2 * sc)
+    memberart._dim_v(c, yc + (B / 2 - eB) * sc, yc + B / 2 * sc, xc + N / 2 * sc + 16, f"{eB:g} in", FR, ext_from=xc + N / 2 * sc)
+    _small(c, xc, yc - B / 2 * sc - 30, "plan, to scale. Mx bends the column about its strong axis (tension on a rod pair at one end of N); My about its weak axis.")
+    return yc - B / 2 * sc - 38
 
 
 def _cap_plate_picture(c, top, d):

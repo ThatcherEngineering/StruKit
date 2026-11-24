@@ -593,6 +593,23 @@ function fillBar(m, changed) {
   if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) { const a = fillLoadsBar(m, changed), b = fillTakedownBar(m, changed); return (a || b) ? el("div", {}, a, b) : null; }
   if (TD_BEAMS.includes(m.kind) || TD_TARGET_P.includes(m.kind)) { const b = fillTakedownBar(m, changed); if (b) return b; }
   if (m.kind === "footing_cont") return fillFootingTakedownBar(m, changed);
+  if (m.kind === "base_plate_biaxial") {
+    const cols = S.members.filter(x => (x.kind === "steel_column" || x.kind === "hss_column") && x.values.at_x1 && x.values.at_level);
+    if (!cols.length) return el("div", { class: "fill small" }, "The loads can be filled from a column of the 3D frame once the project has columns placed in the building model.");
+    const pick = el("select", {}, el("option", { value: "" }, "choose a frame column"), cols.map(x => el("option", { value: x.values.mark }, x.values.mark || "(no mark)")));
+    const go = el("button", { class: "btn", onclick: async () => {
+      if (!pick.value) return toast("Choose the column first.");
+      let got;
+      try { got = await post("/api/frame_base_biaxial", { project: S.project, members: S.members, mark: pick.value }); } catch (e) { return toast(e.message, 12000); }
+      if (!got.rows || !got.rows.length) return toast((got.messages || []).join("  ") || "The frame did not run.", 12000);
+      m.values.cases = got.rows.map(r => ({ name: r.name, P: r.P.toFixed(2), Mx: r.Mx.toFixed(2), My: r.My.toFixed(2) }));
+      m.values.loads_from = "base forces of column " + pick.value + " in the 3D frame analysis, second-order analysis";
+      if (!m.values.shape) { const c = cols.find(x => x.values.mark === pick.value); if (c) m.values.shape = c.values.shape; }
+      changed(); drawMain();
+      toast("Filled " + got.rows.length + " runs from the frame. A run with uplift on the column is outside this screen: use the Base Plate with Moment or uplift screen for it.", 12000);
+    } }, "Fill Loads");
+    return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the loads from the 3D frame"), pick, go);
+  }
   if (m.kind === "cap_plate") {
     const cols = S.members.filter(x => (x.kind === "steel_column" || x.kind === "hss_column") && x.values.at_x1 && x.values.at_level);
     if (!cols.length) return el("div", { class: "fill small" }, "The combined loads can be filled from a column of the 3D frame once the project has columns placed in the building model.");
