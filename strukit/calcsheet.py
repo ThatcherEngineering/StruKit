@@ -1487,6 +1487,8 @@ def _block_picture(c, top, pic):
         return _collector_picture(c, top - 6, d)
     if name == "rain":
         return _rain_picture(c, top - 6, d)
+    if name == "snow_corner":
+        return _snow_corner_picture(c, top - 6, d)
     if name == "hss_column":
         return _hss_column_picture(c, top - 6, d)
     if name == "guard":
@@ -2053,6 +2055,48 @@ def _stair_sketch(c, x0, top, w, sheet, st):
     c.setFillColorRGB(*GREY); c.setFont(FR, 6)
     c.drawCentredString((xa + xb) / 2, ya - 36, f"to scale; risers {st['riser_in']:g} in, treads {st['tread_in']:g} in")
     return ya - 6
+
+
+def _snow_corner_picture(c, top, d):
+    """Plan of a reentrant corner, to scale: the two walls of the upper roof drawn heavy, the
+    drift strip beside each with its width dimensioned and its surcharge at the wall, and the
+    line across the overlap on which the two drift heights are equal."""
+    a, b = d["a"], d["b"]
+    wa, wb = max(a["w"], 1e-6), max(b["w"], 1e-6)
+    ext_x, ext_y = 1.45 * max(wa, 0.4 * wb), 1.45 * max(wb, 0.4 * wa)
+    s_ = min(200.0 / ext_x, 96.0 / ext_y)
+    x0 = (LM + RM) / 2 - ext_x * s_ / 2
+    y1 = top - 26                                        # wall B runs along the top; wall A down the left side
+    X, Y = ext_x * s_, ext_y * s_
+    c.setFillColorRGB(0.97, 0.98, 0.99); c.setStrokeColorRGB(*GREY); c.setLineWidth(0.3); c.rect(x0, y1 - Y, X, Y, fill=1, stroke=0)
+    c.setFillColorRGB(0.86, 0.92, 0.98)
+    if a["w"]:
+        c.rect(x0, y1 - Y, wa * s_, Y, fill=1, stroke=0)
+    if b["w"]:
+        c.rect(x0, y1 - wb * s_, X, wb * s_, fill=1, stroke=0)
+    if a["w"] and b["w"]:                                # overlap: the line of equal drift height
+        c.setFillColorRGB(0.76, 0.85, 0.95); c.rect(x0, y1 - wb * s_, wa * s_, wb * s_, fill=1, stroke=0)
+        Ha, Hb = a["h"], b["h"]
+        if Ha <= Hb:                                     # at the wall A face (x = 0) the drifts are equal at y = wb (1 - Ha / Hb)
+            px, py = 0.0, wb * (1 - Ha / Hb)
+        else:
+            px, py = wa * (1 - Hb / Ha), 0.0
+        c.setStrokeColorRGB(*LOADC); c.setLineWidth(0.8); c.setDash(4, 2)
+        c.line(x0 + px * s_, y1 - py * s_, x0 + wa * s_, y1 - wb * s_); c.setDash()
+    c.setStrokeColorRGB(*INK); c.setLineWidth(2.6)
+    c.line(x0, y1, x0, y1 - Y); c.line(x0, y1, x0 + X, y1)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawString(x0 + 3, y1 + 5, f"{b['name']}: surcharge {b['pd']:.1f} psf at the wall" if b["w"] else f"{b['name']}: no drift")
+    c.saveState(); c.translate(x0 - 5, y1 - Y / 2); c.rotate(90)
+    c.drawCentredString(0, 0, f"{a['name']}: {a['pd']:.1f} psf at the wall" if a["w"] else f"{a['name']}: no drift"); c.restoreState()
+    if a["w"]:
+        memberart._dim_h(c, x0, x0 + wa * s_, y1 - Y - 8, f"{a['w']:.1f} ft", FR, ext_from=y1 - Y)
+    if b["w"]:
+        memberart._dim_v(c, y1 - wb * s_, y1, x0 + X + 8, f"{b['w']:.1f} ft", FR, ext_from=x0 + X)
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+    c.drawString(x0 + max(wa * s_, 0) + 8, y1 - Y + 6, "lower roof")
+    _small(c, (LM + RM) / 2, y1 - Y - 26, "plan to scale; upper roof beyond the heavy lines; dashed line: the two drift heights are equal")
+    return y1 - Y - 32
 
 
 def _rain_picture(c, top, d):

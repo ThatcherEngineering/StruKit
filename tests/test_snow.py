@@ -245,3 +245,25 @@ def test_snow_loads_api_for_member_screens():
     assert got["uniform_design"] == pytest.approx(r.uniform_design) and got["ps"] == pytest.approx(r.ps) and got["unbalanced"] == bool(r.unbalanced)
     assert got["governs"].startswith("minimum" if r.pm > r.balanced else "balanced")
     assert "not complete" in server.api("/api/snow_loads", dict(values=dict(v, pg=""), project={}))["error"]
+
+
+def test_intersecting_drifts_at_a_reentrant_corner(tmp_path):
+    """ASCE/SEI 7-22 Sect. 7.7.3 as printed (pdf p. 126): each drift by Sect. 7.7.1 with the roof lengths perpendicular to its wall; where the
+    two overlap the larger drift depth governs and the two are not added.  Each drift equals the Snow Drift sheet's result for the same wall;
+    by hand at a point 25 percent of the way across drift A and at wall B: the larger of 0.75 hA gamma and hB gamma."""
+    from strukit import calcsheet, snow as sn
+    from strukit.gui import calc
+    v = dict(mark="SC1", pg="40", pg_source="jurisdiction", W2="0.45", W2_source="Hazard Tool", ps="30", ps_source="sheet SN1",
+             a_name="Wall A", a_step="8", a_lu_upper="60", a_lu_lower="30", b_name="Wall B", b_step="8", b_lu_upper="30", b_lu_lower="40")
+    s, kind, _ = calc.build("snow_corner", v, {})
+    ga, gb = sn.lower_roof(40, 0.45, 30, 60, 30, 8).governing, sn.lower_roof(40, 0.45, 30, 30, 40, 8).governing
+    a, b, at = s.corner["a"], s.corner["b"], s.corner["at"]
+    assert kind == "simple" and (a["pd"], a["w"], b["pd"], b["w"]) == pytest.approx((ga.pd, ga.width, gb.pd, gb.width))
+    assert at(0, 0) == pytest.approx(max(ga.pd, gb.pd)) and at(0.25 * ga.width, 0) == pytest.approx(max(0.75 * ga.pd, gb.pd))
+    assert at(0.5 * ga.width, 0.5 * gb.width) == pytest.approx(max(0.5 * ga.pd, 0.5 * gb.pd)) and at(ga.width, gb.width) == pytest.approx(0.0)
+    assert at(ga.width + 1, 0.25 * gb.width) == pytest.approx(0.75 * gb.pd) and at(0, gb.width + 5) == pytest.approx(ga.pd)
+    calcsheet.simple_pdf(s, str(tmp_path / "c.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    low, _, _ = calc.build("snow_corner", dict(v, b_step="1.7"), {})                     # hc/hb under 0.2 at wall B: no drift there
+    assert low.corner["b"]["pd"] == 0.0 and low.corner["at"](0, 0) == pytest.approx(ga.pd)
+    calcsheet.simple_pdf(low, str(tmp_path / "c2.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    assert calc.results("snow_corner", dict(v, b_lu_upper=""), {})["state"] == "incomplete"
