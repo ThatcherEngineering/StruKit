@@ -74,3 +74,22 @@ def test_single_angle_example_d2_with_the_shear_lag_helper():
     sh, _, _ = calc.build("tension_member", v, proj)
     assert sh.tension["U"] == pytest.approx(0.869, abs=0.001) and sh.ok
     assert calc.results("tension_member", dict(v, angle_n="", angle_l=""), proj)["state"] == "incomplete"
+
+
+def test_threaded_rod_hanger():
+    """3/4 in. A36 rod (36 / 58 ksi), D = 2 kips, L = 5 kips.  By hand: Ab = 0.4418 in2; yielding 36 x 0.4418 = 15.90 kips -> 9.52 ASD, 14.31 LRFD;
+    threads 0.75 x 58 x 0.4418 = 19.22 kips -> 9.61 ASD, 14.41 LRFD.  A 7/8 in. Gr. 36 rod gives 19.6 / 13.1 kips at the threads, the value on the base plate sheets."""
+    from strukit.ws_more import tension_rod_sheet
+    loads = [dict(case="D", P=2.0), dict(case="L", P=5.0)]
+    a = tension_rod_sheet("R1", 0.75, 36, 58, "ASTM A36", 8.0, loads, [Combo("D + L", {"D": 1, "L": 1}, "t")], "ASD")
+    assert a.tension["T"] == 7.0 and a.tension["Pyc"] == pytest.approx(9.52, abs=0.01) and a.tension["Rc"] == pytest.approx(9.61, abs=0.01) and a.ok and len(a.rows) == 2
+    l = tension_rod_sheet("R1", 0.75, 36, 58, "ASTM A36", 8.0, loads, [Combo("1.2D + 1.6L", {"D": 1.2, "L": 1.6}, "t")], "LRFD")
+    assert l.tension["T"] == pytest.approx(10.4) and l.tension["Pyc"] == pytest.approx(14.31, abs=0.01) and l.tension["Rc"] == pytest.approx(14.41, abs=0.01)
+    assert tension_rod_sheet("R1", 0.875, 36, 58, "F1554 Gr. 36", 8.0, loads, [Combo("D + L", {"D": 1, "L": 1}, "t")], "ASD").tension["Rc"] == pytest.approx(13.1, abs=0.05)
+    v = dict(mark="R1", shape="", rod_d="0.75", Fy="36", Fu="58", steel_source="A36", length="8", n_holes="", bolt_d="", hole_t="", U="", U_source="", angle_n="", angle_l="", angle_leg="",
+             loads=[dict(case="D", P="2", label=""), dict(case="L", P="5", label="")])
+    proj = dict(name="T", number="1", address="", method="ASD", date="2026-11-23", combos=[dict(expr="D + L", source="typed")])
+    s, kind, _ = calc.build("tension_member", v, proj)
+    assert kind == "simple" and s.title == "Steel Tension Rod" and s.ok
+    assert calc.results("tension_member", dict(v, shape="W8X21"), proj)["state"] == "incomplete"
+    assert calc.results("tension_member", dict(v, rod_d=""), proj)["state"] == "incomplete"

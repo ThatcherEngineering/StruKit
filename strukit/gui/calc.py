@@ -88,7 +88,8 @@ FORMS = {
         tables=[]),
     "tension_member": dict(
         title="Steel Tension Member", code="AISC 360-22", mark="TM",
-        fields=[F("shape", "Section", "shape_tension", help="W, M, S, HP, C, MC, HSS, pipe or single angle (for example L3x3x3/16)"), F("Fy", "Fy", unit="ksi"), F("Fu", "Fu", unit="ksi"),
+        fields=[F("shape", "Section", "shape_tension", required=False, help="W, M, S, HP, C, MC, HSS, pipe or single angle (for example L3x3x3/16); blank for a threaded rod"),
+                F("rod_d", "Threaded rod diameter, in place of a section", unit="in", required=False), F("Fy", "Fy", unit="ksi"), F("Fu", "Fu", unit="ksi"),
                 F("steel_source", "Where Fy and Fu come from", "text", help="for example: ASTM A992"), F("length", "Length", unit="ft"),
                 F("n_holes", "Bolt holes across the critical section", required=False, help="blank or 0 for a welded end"),
                 F("bolt_d", "Bolt diameter", unit="in", required=False), F("hole_t", "Thickness of the part the holes are in", unit="in", required=False),
@@ -1375,12 +1376,18 @@ def build(kind, values, project):
         if not loads:
             r.miss.append("No tension is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
+        if r.num("rod_d", False) is not None:
+            if r.text("shape", False):
+                r.miss.append("Give a section or a rod diameter, not both")
+            args = (r.num("rod_d", False), r.num("Fy"), r.num("Fu"), r.text("steel_source"), r.num("length"))
+            r.done()
+            return ws_more.tension_rod_sheet(mark, *args, loads, cb, m), "simple", {}
         Uv = r.num("U", False)
         ac = None
         if Uv is None:
             ac = dict(n=r.num("angle_n", True, label="Shear lag factor U, or for a single angle the bolts in the line"), l=r.num("angle_l", True, label="Single angle: length of the connection"),
                       leg=r.text("angle_leg", False) or "long")
-        args = (r.text("shape"), r.num("Fy"), r.num("Fu"), r.text("steel_source"), r.num("length"), r.num("n_holes", False), r.num("bolt_d", False), r.num("hole_t", False),
+        args = (r.text("shape", True), r.num("Fy"), r.num("Fu"), r.text("steel_source"), r.num("length"), r.num("n_holes", False), r.num("bolt_d", False), r.num("hole_t", False),
                 Uv, (r.text("U_source", Uv is not None) or "") if Uv is not None else "")
         r.done()
         return ws_more.tension_member_sheet(mark, *args, loads, cb, m, angle_conn=ac), "simple", {}
