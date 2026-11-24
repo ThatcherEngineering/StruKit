@@ -3221,6 +3221,104 @@ def end_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, tp, width, length
     return sheet
 
 
+def seat_sheet(mark, beam, beam_Fy, beam_source, t, length, osl, vleg, angle_Fy, angle_source, attach, loads, combos, method, weld=None, FEXX=None,
+               n_bolts=None, d=None, group=None, threads=None):
+    """Unstiffened seated connection: a seat angle under the beam end, AISC Manual Part 10 (15th Ed.) as worked in AISC Design Examples v16.0
+    Examples II.A-12A and II.A-13. Beam web local yielding and crippling give the required bearing length (not less than k); the outstanding
+    leg is checked in flexure at t + 3/8 in. from the support for the reaction at mid-bearing with a 3/4 in. setback, and in shear. attach:
+    "welded" (a vertical fillet at each end of the angle) or "bolted" (n bolts through the vertical leg)."""
+    from . import bolts
+    from .steel_beam import SteelInputError
+    for nm, v in (("the source of the beam Fy", beam_source), ("the source of the angle Fy", angle_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if not combos or not loads:
+        raise WorksheetError(f"{mark}: loads and load combinations are needed")
+    try:
+        bm = shapes.get(beam)
+    except Exception:
+        raise WorksheetError(f"{mark}: '{beam}' is not a W, M, S or HP shape in the shapes table")
+    if attach not in ("welded", "bolted"):
+        raise WorksheetError(f"{mark}: the seat is welded or bolted to the support")
+    lrfd = method == "LRFD"
+    av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
+    fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
+    totals = {cb.name: abs(sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)) for cb in combos}
+    worst = max(totals, key=lambda k_: totals[k_])
+    R = totals[worst]
+    E, tw, tf, dd, k = 29000.0, bm["tw"], bm["tf"], bm["d"], bm["kdes"]
+    sb = 0.75
+    N_av = osl - sb
+    if N_av < k:
+        raise WorksheetError(f"{mark}: the outstanding leg leaves {N_av:g} in. of bearing, less than k = {k:g} in. of the beam (AISC 360-22 Sect. J10.2)")
+    Rreq_y = R / 1.00 if lrfd else R * 1.50                     # nominal strength needed
+    N_y = Rreq_y / (beam_Fy * tw) - 2.5 * k
+    Rreq_c = R / 0.75 if lrfd else R * 2.00
+    base = 0.40 * tw ** 2 * math.sqrt(E * beam_Fy * tf / tw)
+    x = (Rreq_c / base - 1) / (tw / tf) ** 1.5                  # = 3 N / d, or 4 N / d - 0.2
+    N_c = x * dd / 3
+    if N_c / dd > 0.2:
+        N_c = (x + 0.2) * dd / 4
+    N = max(k, N_y, N_c)
+    crip = lambda n_: base * (1 + (3 * n_ / dd if n_ / dd <= 0.2 else 4 * n_ / dd - 0.2) * (tw / tf) ** 1.5)
+    Ry, Rc = av(beam_Fy * tw * (2.5 * k + N_av), 1.00, 1.50), av(crip(N_av), 0.75, 2.00)
+    e = sb + N / 2 - (t + 0.375)
+    Mn = angle_Fy * length * t ** 2 / 4
+    Vn = 0.60 * angle_Fy * length * t
+    Rv = av(Vn, 1.00, 1.50)
+    Rf = av(Mn / e, 0.90, 1.67) if e > 1e-9 else None
+    Ln = footing_line
+    steps = [Ln("Required strength R", R, "kip", worst, ""),
+             Ln("Bearing length for web local yielding", max(N_y, 0.0), "in", "AISC 360-22 Eq. J10-3; AISC Manual Eq. 10-1", f"R / (Fy tw) - 2.5 k with {fac(1.00, 1.50)}; k = {k:g} in."),
+             Ln("Bearing length for web local crippling", max(N_c, 0.0), "in", "AISC 360-22 Eq. J10-5; AISC Manual Eq. 10-2", fac(0.75, 2.00)),
+             Ln("Required bearing length, not less than k", N, "in", "AISC 360-22 Sect. J10.2", f"bearing available on the leg = {osl:g} - {sb:g} = {N_av:g} in."),
+             Ln("Web local yielding on the available bearing", Ry, "kip", "Eq. J10-3", f"Fy tw (2.5 k + lb); " + fac(1.00, 1.50)),
+             Ln("Web local crippling on the available bearing", Rc, "kip", "Eq. J10-5a" if N_av / dd <= 0.2 else "Eq. J10-5b", f"lb / d = {N_av / dd:.3f}; " + fac(0.75, 2.00)),
+             Ln("e, reaction to the critical section of the leg", max(e, 0.0), "in", "AISC Manual Part 10", f"{sb:g} + lb / 2 - (t + 3/8); t = {t:g} in."),
+             Ln("Leg flexure, Mn = Fy L t^2 / 4", Mn, "kip-in", "AISC 360-22 Eq. F11-1", f"L = {length:g} in.; Mn / e" + (f" = {Mn / e:.1f} kip; " + fac(0.90, 1.67) if e > 1e-9 else ": the reaction is inside the critical section")),
+             Ln("Leg shear yielding, 0.60 Fy L t", Rv, "kip", "Eq. J4-3", fac(1.00, 1.50))]
+    rows = [Row("Bearing length on the seat", worst, N, N_av, "in", "AISC 360-22 Sect. J10.2, J10.3", "required against available"),
+            Row("Beam web local yielding", worst, R, Ry, "kip", "AISC 360-22 Eq. J10-3", shapes.normalize(beam)),
+            Row("Beam web local crippling", worst, R, Rc, "kip", "AISC 360-22 Eq. J10-5", "")]
+    if Rf is not None:
+        rows.append(Row("Seat angle leg, flexure", worst, R, Rf, "kip", "AISC Manual Part 10; AISC 360-22 Sect. F11", f"e = {e:.3f} in."))
+    rows.append(Row("Seat angle leg, shear yielding", worst, R, Rv, "kip", "AISC 360-22 Eq. J4-3", ""))
+    if attach == "welded":
+        if not weld or not FEXX:
+            raise WorksheetError(f"{mark}: a welded seat needs the weld size and the electrode strength")
+        ew = sb + N_av / 2
+        Rw_n = 2 * 0.60 * FEXX * 0.7071 * weld * vleg ** 2 / math.sqrt(vleg ** 2 + 20.25 * ew ** 2)
+        Rw = av(Rw_n, 0.75, 2.00)
+        steps.append(Ln("Welds, one each end of the angle", Rw, "kip", "AISC Manual Part 10, Table 10-6", f"2 x 0.60 FEXX x 0.707 w L^2 / (L^2 + 20.25 e^2)^0.5; L = {vleg:g} in., e = {ew:g} in.; " + fac(0.75, 2.00)))
+        rows.append(Row("Welds of the seat to the support", worst, R, Rw, "kip", "AISC Manual Part 10", f"{weld:g} in. fillets, {vleg:g} in. long, each end"))
+        att = f"{weld:g} in. fillet each end of the angle, E{FEXX:g}XX"
+    else:
+        if not n_bolts or not d or not group or not threads:
+            raise WorksheetError(f"{mark}: a bolted seat needs the number of bolts, their diameter, type and thread condition")
+        try:
+            rn = bolts.shear(d, group, threads, 1, method).R_avail
+        except SteelInputError as ex:
+            raise WorksheetError(f"{mark}: {ex}")
+        Rb = int(n_bolts) * rn
+        steps.append(Ln("Bolts in shear", Rb, "kip", "AISC 360-22 Sect. J3.7", f"{int(n_bolts)} x {rn:.1f} kip; {d:g} in. {group}-{threads}"))
+        rows.append(Row("Bolts of the seat to the support", worst, R, Rb, "kip", "AISC 360-22 Sect. J3.7", f"({int(n_bolts)}) {d:g} in. {group}-{threads}"))
+        att = f"({int(n_bolts)}) {d:g} in. {group}-{threads} bolts through the vertical leg"
+    info = [("Beam", f"{shapes.normalize(beam)}, tw = {tw:g} in., tf = {tf:g} in., k = {k:g} in., Fy = {beam_Fy:g} ksi ({beam_source.strip()})"),
+            ("Seat Angle", f"{vleg:g} in. vertical leg x {osl:g} in. outstanding leg x {t:g} in., {length:g} in. long, Fy = {angle_Fy:g} ksi ({angle_source.strip()})"),
+            ("Attachment", att)]
+    load_lines = [f"{x_['case']:<3} {x_['P']:>8.2f} kip" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
+    sheet = SimpleSheet(mark, "Unstiffened Seated Connection", "Connection", method, info, load_lines, [(cb.name, cb.source) for cb in combos], f"Calculation ({worst})", steps, rows,
+                        ["The seat carries the whole beam reaction; a top or side angle holds the beam in place and is not counted for strength.",
+                         "Beam setback 1/2 in. nominal, taken as 3/4 in. in the calculation for underrun in beam length (AISC Manual Part 10).",
+                         "Any stiffener under the seat is not counted."],
+                        ["the top angle and its fasteners", "bolts between the beam flange and the seat", ("bearing and tearout at the bolts; " if attach == "bolted" else "") + "the support member",
+                         "horizontal force at the seat"])
+    sheet.blocks.append(dict(title="Seat", head="Seat", picture=("seat", dict(osl=osl, vleg=vleg, t=t, setback=sb, N=N, length=length, beam=shapes.normalize(beam), attach=att,
+                                                                               R=f"{R:.1f} kip"))))
+    sheet.seat = dict(R=R, N=N, N_y=N_y, N_c=N_c, e=e, Rf=Rf, Rv=Rv, Ry=Ry, Rc=Rc, weld=(Rw if attach == "welded" else None), bolts=(Rb if attach == "bolted" else None))
+    return sheet
+
+
 def bent_plate_tread(b, t, d):
     """Section of a bent plate tread, legs turned down at both edges: width b, thickness t, overall depth d (in.), square corners.
     Bending about the horizontal axis. Returns dict(A, y, Ix, S, S_top, Zx, h_t)."""

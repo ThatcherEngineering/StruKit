@@ -1510,6 +1510,8 @@ def _block_picture(c, top, pic):
         return _single_plate_picture(c, top - 6, d)
     if name == "end_plate":
         return _end_plate_picture(c, top - 6, d)
+    if name == "seat":
+        return _seat_picture(c, top - 6, d)
     if name == "topo":
         return _topo_picture(c, top - 6, d)
     if name == "nailed":
@@ -2097,6 +2099,37 @@ def _end_plate_picture(c, top, d):
     c.drawRightString(x0 - 8, yc - 10, f"{d['weld']:g} in. fillet, both sides of the web")
     _small(c, (LM + RM) / 2, y0 - 46, "face of the end plate, to scale; beam section shown behind the plate")
     return y0 - 54
+
+
+def _seat_picture(c, top, d):
+    """Side view of the seat, to scale: the support face, the seat angle, the beam end on it; outstanding leg, vertical leg, angle
+    thickness, setback and bearing length dimensioned."""
+    osl, vl, t, sb, N = d["osl"], d["vleg"], d["t"], d["setback"], d["N"]
+    sc = min(110.0 / max(vl + 4, 8), 16.0)
+    xs = (LM + RM) / 2 - 40                       # face of the support
+    ys = top - 26 - 4 * sc                        # top of the seat
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+    c.rect(xs - 14, ys - vl * sc - 12, 14, (vl + 4) * sc + 24, fill=1, stroke=0)
+    c.line(xs, ys - vl * sc - 12, xs, ys + 4 * sc + 12)
+    c.setFillColorRGB(0.62, 0.68, 0.76)
+    c.rect(xs, ys - vl * sc, t * sc, vl * sc, fill=1, stroke=1)                 # vertical leg
+    c.rect(xs, ys - t * sc, osl * sc, t * sc, fill=1, stroke=1)                 # outstanding leg
+    c.setFillColorRGB(0.90, 0.92, 0.95); c.setLineWidth(0.6)
+    xb = xs + sb * sc
+    c.rect(xb, ys, osl * sc + 40, 4 * sc, fill=1, stroke=1)                     # beam end (part)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow_down(c, xb + N * sc / 2, ys + 4 * sc + 20, ys + 4 * sc + 2, head=3)
+    c.setFont(FR, 6.5); c.drawCentredString(xb + N * sc / 2, ys + 4 * sc + 23, d["R"])
+    memberart._dim_h(c, xs, xb, ys + 4 * sc + 34, f"{sb:g} in", FR, ext_from=ys + 4 * sc)
+    memberart._dim_h(c, xb, xb + N * sc, ys + 4 * sc + 34, f"bearing {N:.2f} in", FR, ext_from=ys + 4 * sc)
+    memberart._dim_h(c, xs, xs + osl * sc, ys - vl * sc - 16, f"leg {osl:g} in", FR, ext_from=ys - t * sc)
+    memberart._dim_v(c, ys - vl * sc, ys, xs - 26, f"leg {vl:g} in", FR, ext_from=xs)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawString(xs + osl * sc + 8, ys - t * sc - 2, f"seat angle, t = {t:g} in., {d['length']:g} in. long")
+    c.drawString(xb + osl * sc + 46, ys + 2 * sc - 2, d["beam"])
+    c.drawString(xs + osl * sc + 8, ys - t * sc - 11, d["attach"])
+    _small(c, (LM + RM) / 2, ys - vl * sc - 34, "side view, to scale; top angle not shown")
+    return ys - vl * sc - 42
 
 
 def _guard_picture(c, top, d):

@@ -1108,6 +1108,38 @@
      }
     ]
    }
+  },
+  {
+   "kind": "seat",
+   "values": {
+    "mark": "Det 35: W21x50 on the L8x8x3/4 bearing angle",
+    "beam": "W21X50",
+    "beam_Fy": "50",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "t": "0.75",
+    "length": "8",
+    "osl": "8",
+    "vleg": "8",
+    "angle_Fy": "36",
+    "angle_source": "ASTM A36, sheet S0 Steel Notes",
+    "attach": "bolted",
+    "n_bolts": "4",
+    "d": "0.75",
+    "group": "A325",
+    "threads": "N",
+    "loads": [
+     {
+      "case": "D",
+      "P": "14.6",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: line K girder, 19 ft 10 in. span, three pairs of W14x30"
+     },
+     {
+      "case": "L",
+      "P": "22.6",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: line K girder, 19 ft 10 in. span, three pairs of W14x30"
+     }
+    ]
+   }
   }
  ]
 }

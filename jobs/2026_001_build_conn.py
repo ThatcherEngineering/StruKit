@@ -86,6 +86,11 @@ M.append(("guard", dict(mark="Det 47: guard, posts at 4 ft", rail="PIPE1-1/4STD"
 # Vertical load at the brace = 0.197 ksf x (1.83 + 1.5) ft x 5 ft, split 72 / 125; brace at about 45 degrees: x 1.414; length about 2.5 ft.
 M.append(("angle_strut", dict(mark="Det 21, 22: deck brace L3x3x1/4", shape="L3X3X1/4", Fy="36", steel_source="ASTM A36, sheet S0 Steel Notes", length="2.5", attached="",
           loads=[dict(case="D", P="1.70", label="72 psf x 3.33 ft x 5 ft x 1.414"), dict(case="L", P="2.94", label="125 psf x 3.33 ft x 5 ft x 1.414")])))
+# Detail 35: W21x50 on an L8x8x3/4 bearing angle, 8 in. long, four 3/4 in. bolts to the PEMB column; the 5/8 in. stiffener plate under it is not counted.
+D_, L_, src_ = R["W21X50"]
+M.append(("seat", dict(mark="Det 35: W21x50 on the L8x8x3/4 bearing angle", beam="W21X50", beam_Fy="50", beam_source="ASTM A992, sheet S0 Steel Notes", t="0.75", length="8", osl="8",
+          vleg="8", angle_Fy="36", angle_source="ASTM A36, sheet S0 Steel Notes", attach="bolted", n_bolts="4", d="0.75", group="A325", threads="N",
+          loads=[dict(case="D", P=str(D_), label=src_), dict(case="L", P=str(L_), label=src_)])))
 json.dump(dict(format="strukit-project", version=1, project=proj, members=[dict(kind=k, values=v) for k, v in M]), open("/home/claude/jobs/2026-001/2026-001-Connections.strukit", "w"), indent=1)
 if __name__ == "__main__":
     for k, v in M:
