@@ -59,7 +59,7 @@ function field(f, obj, onchange, inTable = false) {
     input.value = val;
   } else {
     input = el("input", { type: "text", class: (f.type === "number" ? "n " : "") + (f.required ? "req" : ""), placeholder: " ", value: val,
-      list: f.type === "shape" ? "shapes" : null, spellcheck: "false", autocomplete: "off" });
+      list: f.type === "shape" ? "shapes" : f.type === "shape_any" ? "shapes_any" : f.type === "hss_shape" ? "shapes_hss" : null, spellcheck: "false", autocomplete: "off" });
   }
   const set = () => { obj[f.key] = input.value; if (f.type === "select") input.classList.toggle("blank", input.value === ""); onchange(); };
   input.addEventListener(f.type === "select" ? "change" : "input", set);
@@ -573,6 +573,8 @@ function example() {
   INFO = await post("/api/info");
   $("#build").textContent = "build " + INFO.version;
   document.body.append(el("datalist", { id: "shapes" }, INFO.shapes.map(s => el("option", { value: s }))));
+  document.body.append(el("datalist", { id: "shapes_hss" }, (INFO.hss_shapes || []).map(s => el("option", { value: s }))));
+  document.body.append(el("datalist", { id: "shapes_any" }, INFO.shapes.concat(INFO.hss_shapes || []).map(s => el("option", { value: s }))));
   for (const [k, f] of Object.entries(INFO.forms))
     $("#addbtns").append(el("button", { onclick: () => { S.members.push({ kind: k, values: { mark: "" } }); setDirty(); select(S.members.length - 1); } }, f.title));
   $("#bOpen").onclick = () => open(); $("#bSave").onclick = () => save(false); $("#bSaveAs").onclick = () => save(true);

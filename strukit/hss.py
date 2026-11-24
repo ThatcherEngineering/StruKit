@@ -180,3 +180,43 @@ def member(props, Fy, Lcx, Lcy, Lb=None, Lv=None, E=E_STEEL):
     c = compression(props, Fy, max(Lcx, Lcy), E)
     f, v = flexure(props, Fy, E), shear(props, Fy, Lv, E)
     return dict(kind="round", comp=c, fx=f, fy=f, vx=v, vy=v)
+
+
+def beam_check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
+    """Flexure about x and shear of an HSS or pipe beam in the form the steel beam sheet uses
+    (steel_beam.SteelBeamResult with its printed lines). Lb in inches."""
+    from .steel_beam import Line, SteelBeamResult
+    L = []
+    if props.get("type") == "HSS-RECT":
+        f = rect_flexure(props, Fy, "x", Lb if Lb else None, Cb, E)
+        v = rect_shear(props, Fy, "x", E)
+        L += [Line("flange b/t", f["lam_f"], "", "Table B4.1b Case 17", f"compact limit {f['lam_pf']:.1f}, noncompact limit {f['lam_rf']:.1f}"),
+              Line("web h/t", f["lam_w"], "", "Table B4.1b Case 19", f"compact limit {f['lam_pw']:.1f}"),
+              Line("Mp = Fy Zx", f["Mp"], "kip-in", "Eq. F7-1")]
+        if "be" in f:
+            L += [Line("be", f["be"], "in", "Eq. F7-4"), Line("Se", f["Se"], "in3", "Sect. F7.2(c)", "ineffective width taken off both flanges")]
+        if "Lp" in f:
+            L += [Line("Lp", f["Lp"], "in", "Eq. F7-10"), Line("Lr", f["Lr"], "in", "Eq. F7-11")]
+        for nm, M, eq in f["states"][1:]:
+            L.append(Line(f"Mn, {nm}", M, "kip-in", f"Eq. {eq}", f"Lb = {Lb:.1f} in, Cb = {Cb:.3f}" if "lateral" in nm else ""))
+        gov = f"{f['governs']} (Eq. {f['eq']})"
+        L.append(Line("phi_b Mn" if method == "LRFD" else "Mn / Omega_b", available(f["Mn"], "flexure", method), "kip-in",
+                      "Sect. F1(a): phi_b = 0.90, Omega_b = 1.67", f"governs: {gov}"))
+        L += [Line("Vn = 0.6 Fy Aw Cv2", v["Vn"], "kip", "Eq. G4-1", f"Aw = 2 h t = {v['Aw']:.2f} in2, Cv2 = {v['Cv2']:.3f} (Eq. {v['eq']})")]
+        vsrc = "AISC 360-22 Sect. G4"
+    else:
+        f = flexure(props, Fy, E)
+        v = shear(props, Fy, None, E)
+        L += [Line("D/t", f["lam"], "", "Table B4.1b Case 20", f"compact limit {f['lam_p']:.1f}, noncompact limit {f['lam_r']:.1f}"),
+              Line("Mp = Fy Z", f["Mp"], "kip-in", "Eq. F8-1")]
+        if f["cls"] != "compact":
+            L.append(Line("Mn, local buckling", f["Mn"], "kip-in", f"Eq. {f['eq']}"))
+        gov = ("yielding" if f["cls"] == "compact" else "local buckling") + f" (Eq. {f['eq']})"
+        L.append(Line("phi_b Mn" if method == "LRFD" else "Mn / Omega_b", available(f["Mn"], "flexure", method), "kip-in",
+                      "Sect. F1(a): phi_b = 0.90, Omega_b = 1.67", f"governs: {gov}"))
+        L += [Line("Vn = Fcr Ag / 2", v["Vn"], "kip", "Eq. G5-1", f"Fcr = {v['Fcr']:.1f} ksi (Eq. G5-2b, not over 0.6 Fy)")]
+        vsrc = "AISC 360-22 Sect. G5"
+    L.append(Line("phi_v Vn" if method == "LRFD" else "Vn / Omega_v", available(v["Vn"], "shear", method), "kip", "Sect. G1", "phi_v = 0.90, Omega_v = 1.67"))
+    r = SteelBeamResult(f["Mn"], available(f["Mn"], "flexure", method), v["Vn"], available(v["Vn"], "shear", method), gov, f["cls"], L)
+    r.v_source = vsrc
+    return r

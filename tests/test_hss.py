@@ -141,3 +141,29 @@ def test_hss_column_screen(tmp_path):
     assert calc.results("hss_column", dict(bc, loads=[dict(case="D", P="-5")], self_weight="no", moments=[]), lrfd)["state"] == "stopped"
     assert calc.results("hss_column", dict(bc, Fy_source=""), lrfd)["state"] == "incomplete"
     assert calc.results("hss_column", dict(bc, moments=[dict(case="W", Mx="3")]), lrfd)["state"] == "incomplete"
+
+
+def test_steel_beam_screen_takes_hss_and_pipe(tmp_path):
+    """AISC Design Example F.7A through the Steel Beam screen: HSS10x6x3/16, 21 ft, wu = 1.2(0.15) + 1.6(0.4) = 0.82 kip/ft, Mu = 45.2 kip-ft,
+    0.90 Mn = 59.7 kip-ft.  F.9A: Pipe 8 x-Strong, 16 ft, 0.90 Mn = 81.4 kip-ft, Mn / 1.67 = 54.1 kip-ft."""
+    from strukit import calcsheet
+    from strukit.gui import calc
+    lrfd = dict(method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="ASCE/SEI 7-22 Sect. 2.3.1, combination 2")])
+    asd = dict(method="ASD", combos_asd=[dict(expr="D + L", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 2")])
+    v = dict(mark="HB1", shape="HSS10x6x3/16", Fy="50", span="21", bracing="continuous", brace_pts="", self_weight="no",
+             loads=[dict(case="D", kind="uniform", mag="0.15", x1="", x2="", label=""), dict(case="L", kind="uniform", mag="0.4", x1="", x2="", label="")],
+             defl=[dict(label="live", expr="L", ratio="240", source="typed in")])
+    s, kind, kw = calc.build("steel_beam", v, lrfd)
+    r = {x.check: x for x in s.rows}
+    assert kind == "steel_beam" and r["flexure"].demand == pytest.approx(45.2, abs=0.05) and r["flexure"].capacity == pytest.approx(59.7, abs=0.15)
+    assert r["shear"].source == "AISC 360-22 Sect. G4"
+    calcsheet.steel_beam_pdf(s, str(tmp_path / "b.pdf"), "Job", "AISC 360-22", "Nov 23, 2026", **kw)
+    p, _, kw = calc.build("steel_beam", dict(v, shape="Pipe 8 XS", Fy="35", span="16"), asd)
+    rp = {x.check: x for x in p.rows}
+    assert rp["flexure"].capacity == pytest.approx(54.1, abs=0.1) and rp["shear"].source == "AISC 360-22 Sect. G5"
+    calcsheet.steel_beam_pdf(p, str(tmp_path / "p.pdf"), "Job", "AISC 360-22", "Nov 23, 2026", **kw)
+    w, _, _ = calc.build("steel_beam", dict(v, shape="W18X50"), lrfd)                    # I-shapes unchanged
+    assert {x.check: x for x in w.rows}["shear"].source == "AISC 360-22 Sect. G2.1"
+    assert calc.results("steel_beam", dict(v, shape="HSS99x9"), lrfd)["state"] == "stopped"
+    assert calc.results("steel_column", dict(mark="C1", shape="HSS6x6x1/4", Fy="50", height="12", ends="held sideways (braced)", Kx="1", Ky="1", k_source="x",
+                                             self_weight="no", loads=[dict(case="D", P="5")], lateral=[], leaning=[], drift=[]), lrfd)["state"] == "stopped"

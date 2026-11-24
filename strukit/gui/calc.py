@@ -31,7 +31,7 @@ CASE = F("case", "Case", "text", help="D, L, Lr, S, W, E, Em (seismic with overs
 FORMS = {
     "steel_beam": dict(
         title="Steel Beam", code="AISC 360-22", mark="B",
-        fields=[F("shape", "Section", "shape"), F("Fy", "Fy", unit="ksi"), F("span", "Span", unit="ft"),
+        fields=[F("shape", "Section", "shape_any", help="W, M, S or HP shape, square, rectangular or round HSS, or pipe"), F("Fy", "Fy", unit="ksi"), F("span", "Span", unit="ft"),
                 F("bracing", "Compression flange braced", "select", options=["continuous", "at points"]),
                 F("brace_pts", "Brace points", "text", "ft", required=False,
                   help="distances from the left end, separated by commas; the ends are always braced"),
@@ -64,7 +64,7 @@ FORMS = {
                   [F("label", "Name", "text"), F("expr", "Loads", "text"), F("ratio", "Height /"), F("source", "Source", "text")])]),
     "hss_column": dict(
         title="HSS or Pipe Column", code="AISC 360-22", mark="HC",
-        fields=[F("shape", "Section", "text", help="square, rectangular or round HSS, or pipe, by its Manual label: HSS6x6x1/4, HSS8x4x3/16, HSS5.563x0.258, Pipe 4 STD"),
+        fields=[F("shape", "Section", "hss_shape", help="square, rectangular or round HSS, or pipe, by its Manual label: HSS6x6x1/4, HSS8x4x3/16, HSS5.563x0.258, Pipe 4 STD"),
                 F("Fy", "Fy", unit="ksi"), F("Fy_source", "Where Fy comes from", "text", help="for example: ASTM A500 Grade C"),
                 F("height", "Height", unit="ft"), F("Kx", "Kx"), F("Ky", "Ky"), F("k_source", "K comes from", "text"),
                 F("self_weight", "Add self-weight", "select", options=["yes", "no"])],

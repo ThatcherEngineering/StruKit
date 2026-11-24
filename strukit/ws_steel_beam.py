@@ -116,7 +116,19 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
         for k in ("case", "kind"):
             if k not in ld:
                 raise WorksheetError(f"{mark}: a load is missing '{k}'")
-    props = shapes.get(shape)
+    try:
+        props, check = shapes.get(shape), steel_beam.check
+    except shapes.ShapeError:
+        from . import hss
+        try:
+            props = shapes.hss(shape)
+        except shapes.ShapeError:
+            raise WorksheetError(f"{mark}: shape '{shape}' is not in the {shapes.SOURCE} I-shape, HSS or pipe tables")
+        def check(pr, Fy_, Lb_, Cb_, method_):
+            try:
+                return hss.beam_check(pr, Fy_, Lb_, Cb_, method_)
+            except hss.HSSError as e:
+                raise WorksheetError(f"{mark}: {e}")
     all_loads = list(loads)
     assumptions = []
     if include_self_weight:
@@ -147,20 +159,20 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
         sheet.reactions[cb.name] = (res.reactions[0.0], res.reactions[float(span_ft)])
         Vmax = res.V_abs_max()[0]
         if segs is None:
-            chk = steel_beam.check(props, Fy, 0.0, 1.0, method)
+            chk = check(props, Fy, 0.0, 1.0, method)
             Mmax = float(np.max(np.abs(res.M)))
             cand = [(Mmax, chk, 0.0, 1.0, (0.0, span_ft))]
         else:
             cand = []
             for a, b in segs:
                 Cb, Mseg = _cb(res, a, b)
-                chk = steel_beam.check(props, Fy, (b - a) * 12, Cb, method)
+                chk = check(props, Fy, (b - a) * 12, Cb, method)
                 cand.append((Mseg, chk, (b - a), Cb, (a, b)))
         Mseg, chk, Lb, Cb, seg = max(cand, key=lambda c: c[0] / c[1].M_avail)
         m_row = Row("flexure", cb.name, Mseg, chk.M_avail / 12, "kip-ft",
                     "AISC 360-22 Ch. F: " + chk.governs,
                     f"Lb = {Lb:g} ft, Cb = {Cb:.2f}, segment {seg[0]:g} to {seg[1]:g} ft")
-        v_row = Row("shear", cb.name, Vmax, chk.V_avail, "kip", "AISC 360-22 Sect. G2.1")
+        v_row = Row("shear", cb.name, Vmax, chk.V_avail, "kip", getattr(chk, "v_source", "AISC 360-22 Sect. G2.1"))
         if worst_m is None or m_row.dc > worst_m[0].dc:
             worst_m = (m_row, chk, res)
         if worst_v is None or v_row.dc > worst_v.dc:
