@@ -2859,11 +2859,10 @@ def _frame_section(kind, v):
     return dict(A=sec["A"], Ix=sec["Ix"], Iy=sec["Iy"], J=max(sec.get("J") or 0.0, 1e-3), W=sec.get("W") or 0.0)
 
 
-def model_frame(project, members):
-    """Gravity analysis of the placed steel framing as one space frame (frame3d.py): columns continuous and pinned at the base, beams
-    pinned at their ends and continuous over what carries them, every level held against sidesway. Each load case is run alone. Returns the
-    base reaction of every column by case beside the load the takedown put on that column, so the two methods check each other.
-    dict(columns=[dict(mark, cases={case: (frame lb, takedown lb)})], supports=[...], notes=[...], problems=[...])."""
+def _model_frame_build(project, members, sway=False):
+    """The placed steel framing as one space frame (frame3d.py): columns continuous, pinned at the base unless the column says fixed; beams
+    pinned at their ends unless the beam end says moment connection, continuous over what carries them. sway=False: every joint at a level
+    is held against sidesway (gravity analysis). Returns a dict with the frame and its loads by case (kips, inches), or dict(problems=...)."""
     import math
     from ..frame3d import Frame3D, Frame3DError
     mdl = (project or {}).get("model") or {}
@@ -2892,7 +2891,7 @@ def model_frame(project, members):
     if left_out:
         notes.append("Wood members are not in the frame yet: " + ", ".join(left_out) + ". Loads they put on steel members stay as the takedown loads.")
     if not any(m["kind"] in FRAME_COLS for m, _ in placed) or not any(m["kind"] in FRAME_BEAMS for m, _ in placed):
-        return dict(columns=[], supports=[], notes=notes, problems=problems + ["The frame needs at least one placed steel beam and one placed steel or HSS column"])
+        return dict(problems=problems + ["The frame needs at least one placed steel beam and one placed steel or HSS column"], notes=notes)
     in_frame = {(m.get("values") or {}).get("mark") for m, _ in placed}
     E_, G_, FT = 29000.0, 11200.0, 12.0
     fr = Frame3D()
@@ -2929,11 +2928,11 @@ def model_frame(project, members):
         for x in sup_x:
             pts.setdefault(pl["level"], []).append(at(x))
     if problems:
-        return dict(columns=[], supports=[], notes=notes, problems=problems)
+        return dict(problems=problems, notes=notes)
     cases = []
     bearing, held = set(), set()
     # columns
-    col_nodes = {}
+    col_nodes, col_fixed, level_tops, beam_elems, level_of_node = {}, {}, {}, {}, {}
     for m, pl in placed:
         if m["kind"] not in FRAME_COLS:
             continue
@@ -2943,9 +2942,12 @@ def model_frame(project, members):
         except ValueError as e:
             problems.append(f"{v.get('mark')}: {e}"); continue
         nb, nt = node(*pl["p1"], elev[pl["base"]]), node(*pl["p1"], elev[pl["level"]])
-        fr.member("col:" + v["mark"], nb, nt, E_, G_, sec["A"], sec["Ix"], sec["Iy"], sec["J"])
+        web_y = str(v.get("at_web") or "").strip().upper().startswith("Y")
+        fr.member("col:" + v["mark"], nb, nt, E_, G_, sec["A"], sec["Ix"], sec["Iy"], sec["J"], up=(0.0, 1.0, 0.0) if web_y else None)
         col_nodes[v["mark"]] = (nb, nt, sec, elev[pl["level"]] - elev[pl["base"]])
+        col_fixed[v["mark"]] = str(v.get("at_base_fix") or "").strip().lower().startswith("fix")
         held.add(nt)
+        level_tops.setdefault(pl["level"], []).append((nt, pl["p1"]))
     # beams, cut at every point where something meets them
     beam_loads = []                                          # (element name, case, w kip/in.) and joint loads
     joint_loads = {}
@@ -2992,10 +2994,14 @@ def model_frame(project, members):
         names = [node(*at(t), z) for t in cl]
         for t, nd in zip(cl, names):
             held.add(nd)
+            level_of_node[nd] = pl["level"]
         for i in range(len(cl) - 1):
             nm = f"bm:{v['mark']}:{i}"
+            mom_i = str(v.get("at_fix_i") or "").strip().lower().startswith("moment")
+            mom_j = str(v.get("at_fix_j") or "").strip().lower().startswith("moment")
             fr.member(nm, names[i], names[i + 1], E_, G_, sec["A"], sec["Ix"], sec["Iy"], sec["J"],
-                      release_i=("my", "mz") if i == 0 else (), release_j=("my", "mz") if i == len(cl) - 2 else ())
+                      release_i=("my", "mz") if (i == 0 and not mom_i) else (), release_j=("my", "mz") if (i == len(cl) - 2 and not mom_j) else ())
+            beam_elems.setdefault(v["mark"], []).append(nm)
             for c, kind_, mag, x1, x2 in rows:
                 if kind_ == "uniform" and x1 <= cl[i] + 1e-6 and x2 >= cl[i + 1] - 1e-6:
                     beam_loads.append((nm, c, mag / FT))
@@ -3030,7 +3036,7 @@ def model_frame(project, members):
             if "D" not in cases:
                 cases.append("D")
     if problems:
-        return dict(columns=[], supports=[], notes=notes, problems=problems)
+        return dict(problems=problems, notes=notes)
     # supports: column bases pinned (twist held); levels held against sidesway; beam supports with nothing under them bear on a support
     members_at = {}
     for mm in fr.members:
@@ -3041,14 +3047,29 @@ def model_frame(project, members):
         carried = any(n.startswith("col:") for n in members_at.get(nd, [])) or len({n.split(":")[1] for n in members_at.get(nd, []) if n.startswith("bm:")}) > 1
         if not carried:
             extra.append((nd, mark, x))
-    for nd in held:
-        fr.support(nd, (1, 1, 0, 0, 0, 0))
-    for nd in base_nodes:
-        fr.support(nd, (1, 1, 1, 0, 0, 1))
+    if not sway:
+        for nd in held:
+            fr.support(nd, (1, 1, 0, 0, 0, 0))
+    for mark, (nb, nt, _, _) in col_nodes.items():
+        if nb in base_nodes:
+            fr.support(nb, "fixed" if col_fixed[mark] else (1, 1, 1, 0, 0, 1))
     for nd, mark, x in extra:
         fr.support(nd, "fixed")
     if extra:
         notes.append("Taken as bearing on a support (nothing in the frame is under them): " + "; ".join(f"{mark} at {x:g} ft" for nd, mark, x in extra) + ".")
+    return dict(fr=fr, cases=cases, joint_loads=joint_loads, beam_loads=beam_loads, col_nodes=col_nodes, extra=extra, notes=notes, problems=problems, placed=placed,
+                level_tops=level_tops, beam_elems=beam_elems, level_of_node=level_of_node, elev=elev, FT=FT)
+
+
+def model_frame(project, members):
+    """Gravity analysis of the placed steel framing as one space frame, every level held against sidesway, each load case run alone. Returns
+    the base reaction of every column by case beside the load the takedown put on that column, so the two methods check each other.
+    dict(columns=[dict(mark, cases={case: (frame lb, takedown lb)})], supports=[...], notes=[...], problems=[...])."""
+    from ..frame3d import Frame3DError
+    B = _model_frame_build(project, members, sway=False)
+    if "fr" not in B:
+        return dict(columns=[], supports=[], notes=B.get("notes") or [], problems=B["problems"])
+    fr, cases, joint_loads, beam_loads, col_nodes, extra, notes, problems, placed = (B[k_] for k_ in ("fr", "cases", "joint_loads", "beam_loads", "col_nodes", "extra", "notes", "problems", "placed"))
     out_cols = {mark: {} for mark in col_nodes}
     sup_out = {}
     for c in cases:
@@ -3081,6 +3102,155 @@ def model_frame(project, members):
         cols.append(dict(mark=mark, cases={c: (by_case.get(c, 0.0), td.get(c, 0.0)) for c in cases}))
     return dict(columns=cols, supports=[dict(mark=k[0], x=k[1], cases=vv) for k, vv in sup_out.items()], notes=notes, problems=problems, cases=cases,
                 size=dict(joints=len(fr.nodes), members=len(fr.members)))
+
+
+def model_frame_sway(project, members):
+    """The placed steel framing as a 3D frame free to sway, by the direct analysis method of AISC 360-22 Chapter C: second-order analysis
+    (frame3d.py) with every stiffness x 0.8 (C2.3(a)), tau_b taken as 1.0 with a notional load of 0.003 of the gravity load at each level
+    (C2.2b, C2.3(c)), added to the wind in the wind's direction and applied alone in each direction for the gravity combinations; ASD
+    combinations are run at 1.6 times the loads and the results divided by 1.6 (C2.1(d)). Wind (load case W) comes from the project's main
+    system wind sheet between mid-story heights, x the building width, shared to the column tops by tributary width. Returns
+    dict(runs, levels=[drift rows], columns=[...], beams=[...], notes, problems)."""
+    import math
+    from .. import wind as _wind
+    from ..frame3d import Frame3DError
+    B = _model_frame_build(project, members, sway=True)
+    if "fr" not in B:
+        return dict(levels=[], columns=[], beams=[], notes=B.get("notes") or [], problems=B["problems"])
+    fr, cases, joint_loads, beam_loads, col_nodes, notes, problems = (B[k_] for k_ in ("fr", "cases", "joint_loads", "beam_loads", "col_nodes", "notes", "problems"))
+    method_ = (project or {}).get("method")
+    cbs = combos(project or {}, [], method_)
+    if not cbs:
+        return dict(levels=[], columns=[], beams=[], notes=notes, problems=["Choose the design method and enter its load combinations on the Project page first"])
+    alpha = 1.6 if method_ == "ASD" else 1.0
+    elev, FT, level_tops, level_of_node = B["elev"], B["FT"], B["level_tops"], B["level_of_node"]
+    order = sorted((nm for nm in level_tops), key=lambda nm: elev[nm])
+    base_el = min(elev.values())
+    mlen = {}
+    for mm in fr.members:
+        a_, b_ = fr.nodes[mm.i], fr.nodes[mm.j]
+        mlen[mm.name] = math.dist(a_, b_)
+        if mm.name.startswith("bm:"):
+            level_of_node.setdefault(mm.i, level_of_node.get(mm.j))
+    for mark, (nb, nt, _, _) in col_nodes.items():
+        pl = next(pl for m, pl in B["placed"] if m["values"].get("mark") == mark)
+        level_of_node.setdefault(nt, pl["level"])
+    # wind force per level and direction, kips, strength level
+    need_w = any(abs(cb.factors.get("W", 0.0)) > 0 for cb in cbs)
+    wind_F = {}
+    if need_w:
+        winds = [m for m in members or [] if m.get("kind") == "wind_mwfrs"]
+        if not winds:
+            problems.append("The combinations use wind (W) but the project has no Wind Pressures, Main System sheet; wind is left out of this run")
+            need_w = False
+        else:
+            try:
+                ws, _, _ = build("wind_mwfrs", winds[0]["values"], project)
+                wcases = ws.wind["cases"]
+                top = max(max(r["top_w"], r["top_l"]) for r in wcases)
+                lv_sorted = sorted(elev.items(), key=lambda t: t[1])
+                for li, (nm, el_) in enumerate(lv_sorted):
+                    if nm not in level_tops:
+                        continue
+                    z_lo = (lv_sorted[li - 1][1] + el_) / 2 - base_el if li > 0 else 0.0
+                    z_hi = min(top, (el_ + lv_sorted[li + 1][1]) / 2 - base_el) if (li + 1 < len(lv_sorted) and lv_sorted[li + 1][0] in level_tops) else top
+                    w = max(_wind.line_load(r, z_lo, max(z_hi, z_lo + 0.01))["w"] for r in wcases) / 1000.0     # kip per ft of width
+                    xs = [p_[0] for _, p_ in level_tops[nm]]; ys = [p_[1] for _, p_ in level_tops[nm]]
+                    wind_F[nm] = (w * (max(ys) - min(ys)), w * (max(xs) - min(xs)))     # force in X (width in Y), force in Y
+                notes.append("Wind width at each level is the extent of the column lines; cladding beyond them is not counted.")
+            except Exception as e:
+                problems.append(f"The wind sheet could not be used: {e}"); need_w = False
+
+    def spread(level, axis, total):
+        """`total` kips in direction `axis` (0 = X, 1 = Y) shared to the column tops of a level by tributary width across the wind."""
+        tops = level_tops[level]
+        other = 1 - axis
+        rows = {}
+        for nd, p_ in tops:
+            rows.setdefault(round(p_[other] / MODEL_TOL), []).append(nd)
+        keys = sorted(rows)
+        pos = [k_ * MODEL_TOL for k_ in keys]
+        out = {}
+        span = (pos[-1] - pos[0]) if len(pos) > 1 else 0.0
+        for i_, k_ in enumerate(keys):
+            if span <= 0:
+                share = 1.0
+            else:
+                lo_ = pos[0] if i_ == 0 else (pos[i_ - 1] + pos[i_]) / 2
+                hi_ = pos[-1] if i_ == len(pos) - 1 else (pos[i_] + pos[i_ + 1]) / 2
+                share = (hi_ - lo_) / span
+            for nd in rows[k_]:
+                out[nd] = out.get(nd, 0.0) + total * share / len(rows[k_])
+        return out
+
+    drift, col_res, beam_res, worst_ratio, runs = {}, {}, {}, 0.0, 0
+    for cb in cbs:
+        fW = cb.factors.get("W", 0.0) if need_w else 0.0
+        grav_nodes, grav_members, Y = {}, [], {nm: 0.0 for nm in order}
+        for (nd, c), P in joint_loads.items():
+            f_ = cb.factors.get(c, 0.0) * alpha
+            if f_:
+                grav_nodes[nd] = grav_nodes.get(nd, 0.0) + f_ * P
+                if level_of_node.get(nd) in Y:
+                    Y[level_of_node[nd]] += f_ * P
+        for nm_, c, w in beam_loads:
+            f_ = cb.factors.get(c, 0.0) * alpha
+            if f_:
+                grav_members.append((nm_, "global", (0, 0, -f_ * w)))
+                lv = level_of_node.get(next(mm for mm in fr.members if mm.name == nm_).i)
+                if lv in Y:
+                    Y[lv] += f_ * w * mlen[nm_]
+        dirs = ((0, 1), (0, -1), (1, 1), (1, -1))
+        for axis, sign in dirs:
+            nl = {nd: [0, 0, -P, 0, 0, 0] for nd, P in grav_nodes.items()}
+            for lv in order:
+                lat = 0.003 * max(Y[lv], 0.0) + (abs(fW) * alpha * wind_F[lv][axis] if (fW and lv in wind_F) else 0.0)
+                for nd, share in spread(lv, axis, lat * sign).items():
+                    nl.setdefault(nd, [0, 0, 0, 0, 0, 0])[axis] += share
+            nl = {nd: tuple(v_) for nd, v_ in nl.items()}
+            label = f"{cb.name}, " + ("wind" if fW else "notional load") + f" in {'+' if sign > 0 else '-'}{'XY'[axis]}"
+            try:
+                r1 = fr.solve(nl, grav_members, second_order=False, stiffness_factor=0.8)
+                r2 = fr.solve(nl, grav_members, second_order=True, n_sub=4, stiffness_factor=0.8)
+            except Frame3DError as e:
+                msg = str(e).replace("frame: ", "")
+                return dict(levels=[], columns=[], beams=[], notes=notes, problems=problems + [f"{label}: {msg}. A frame free to sway needs moment connections, fixed column bases, or both, in each direction."])
+            runs += 1
+            for lv in order:
+                d1 = sum(r1.disp[nd][axis] for nd, _ in level_tops[lv]) / len(level_tops[lv]) / alpha
+                d2 = sum(r2.disp[nd][axis] for nd, _ in level_tops[lv]) / len(level_tops[lv]) / alpha
+                ratio = abs(d2 / d1) if abs(d1) > 1e-9 else 1.0
+                worst_ratio = max(worst_ratio, ratio)
+                cur = drift.get((lv, axis))
+                if cur is None or abs(d2) > abs(cur["second"]):
+                    drift[(lv, axis)] = dict(level=lv, dir="XY"[axis], first=d1, second=d2, ratio=ratio, combo=label)
+            for mark in col_nodes:
+                st_ = r2.stations["col:" + mark]
+                P = st_[0][0][0]                             # compression at the base end
+                Ms = max(max(abs(a_[4]), abs(b_[4])) for a_, b_ in st_)
+                Mw = max(max(abs(a_[5]), abs(b_[5])) for a_, b_ in st_)
+                cur = col_res.setdefault(mark, dict(mark=mark, P=0.0, P_combo="", Ms=0.0, Ms_combo="", Mw=0.0, Mw_combo=""))
+                if P / alpha > cur["P"]:
+                    cur.update(P=P / alpha, P_combo=label)
+                if Ms / alpha > cur["Ms"]:
+                    cur.update(Ms=Ms / alpha, Ms_combo=label)
+                if Mw / alpha > cur["Mw"]:
+                    cur.update(Mw=Mw / alpha, Mw_combo=label)
+            for mark, els in B["beam_elems"].items():
+                M = max(max(abs(a_[4]), abs(b_[4])) for e_ in els for a_, b_ in r2.stations[e_])
+                V = max(max(abs(a_[2]), abs(b_[2])) for e_ in els for a_, b_ in r2.stations[e_])
+                Nax = max(max(abs(a_[0]), abs(b_[0])) for e_ in els for a_, b_ in r2.stations[e_])
+                cur = beam_res.setdefault(mark, dict(mark=mark, M=0.0, M_combo="", V=0.0, N=0.0))
+                if M / alpha > cur["M"]:
+                    cur.update(M=M / alpha, M_combo=label)
+                cur["V"], cur["N"] = max(cur["V"], V / alpha), max(cur["N"], Nax / alpha)
+    notes.insert(0, f"Direct analysis method, AISC 360-22 Chapter C: {runs} second-order runs ({len(cbs)} {method_} combinations x four directions), stiffness x 0.8, "
+                    "notional load 0.003 of the gravity load at each level with tau_b = 1.0" + (", loads x 1.6 and results / 1.6 (ASD)" if alpha != 1 else "") + ".")
+    if worst_ratio > 1.5:
+        problems.append(f"Second-order drift is {worst_ratio:.2f} times first-order drift (at the reduced stiffness). The frame is flexible; stiffen it.")
+    return dict(levels=[drift[k_] for k_ in sorted(drift, key=lambda t: (elev[t[0]], t[1]))], columns=list(col_res.values()), beams=list(beam_res.values()),
+                notes=notes, problems=problems, ratio=worst_ratio, runs=runs, method=method_,
+                units="drift in.; column P kips (compression at the base), moments kip-in. about the column's strong and weak axes; beam M kip-in., V and axial kips")
 
 
 def model_plan(project, members):

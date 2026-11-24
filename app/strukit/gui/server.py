@@ -175,6 +175,8 @@ def api(path, body):
         return calc.lateral_wind(body.get("project") or {}, body.get("members") or [], load=which)
     if path == "/api/model_view":
         return calc.model_view(body.get("project") or {}, body.get("members") or [])
+    if path == "/api/model_frame_sway":
+        return calc.model_frame_sway(body.get("project") or {}, body.get("members") or [])
     if path == "/api/model_frame":
         return calc.model_frame(body.get("project") or {}, body.get("members") or [])
     if path == "/api/model_links":

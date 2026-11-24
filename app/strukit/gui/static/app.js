@@ -664,6 +664,10 @@ function placementCard(m, changed) {
   if (post) fs.push({ key: "at_base", label: "Level at its base", type: "select", options: levels, required: false, help: "blank = " + levels[0] });
   fs.push({ key: "at_x1", label: beam ? "Left end, X" : "Position, X", type: "text", required: false, help: pos }, { key: "at_y1", label: beam ? "Left end, Y" : "Position, Y", type: "text", required: false, help: pos });
   if (beam) fs.push({ key: "at_x2", label: "Right end, X", type: "text", required: false, help: pos }, { key: "at_y2", label: "Right end, Y", type: "text", required: false, help: pos });
+  if (m.kind === "steel_beam") fs.push({ key: "at_fix_i", label: "Left end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false, help: "blank = pinned (shear connection)" },
+    { key: "at_fix_j", label: "Right end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false });
+  if (m.kind === "steel_column" || m.kind === "hss_column") fs.push({ key: "at_base_fix", label: "Base (3D frame)", type: "select", options: ["pinned", "fixed"], required: false, help: "blank = pinned" },
+    { key: "at_web", label: "Web runs along (3D frame)", type: "select", options: ["X", "Y"], required: false, help: "the direction in which the column bends about its strong axis; blank = X" });
   return el("div", {}, el("h2", {}, "Place in the Building Model (optional)"), el("div", { class: "grid" }, fs.map(f => field(f, m.values, changed))),
     el("div", { class: "help" }, wall ? "Placed walls take their wind shear from “Send the wind to the wall lines” on the Project page."
       : "Placed members are linked by position with “Link members by position” on the Project page: what sits under each support takes its reaction."));
@@ -787,6 +791,14 @@ function modelCard(changed) {
     select("project");
     toast(out.columns.length ? "The placed steel framing was analysed as one 3D frame (" + out.size.joints + " joints, " + out.size.members + " members). Column loads are listed beside the takedown's." : "The 3D frame was not run. See the notes under the plan.", 12000);
   } }, "Check the load path with a 3D frame analysis");
+  const swayBtn = el("button", { class: "btn", onclick: async () => {
+    let out;
+    try { out = await post("/api/model_frame_sway", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
+    SWAY = out; MODEL_NOTES = out.problems.concat(out.notes || []);
+    select("project");
+    toast(out.levels.length ? "The frame was run free to sway by the direct analysis method: " + out.runs + " second-order runs." : "The sway frame was not run. See the notes under the plan.", 12000);
+  } }, "Run the 3D frame free to sway (direct analysis method)");
+  const n1 = (v, d = 1) => (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toLocaleString();
   drawPlan();
   return el("div", { class: "card" }, el("h2", {}, "Building Model"),
     el("div", { class: "help" }, "Optional. List the levels and grids, place members on their own screens, then link them by position. Every member can still be checked alone."),
@@ -798,11 +810,21 @@ function modelCard(changed) {
       el("tbody", {}, FRAME_CHECK.columns.flatMap(c => Object.entries(c.cases).map(([k, v]) => { const d = v[1] ? (v[0] - v[1]) / v[1] * 100 : (Math.abs(v[0]) < 1 ? 0 : null);
         return el("tr", {}, el("td", {}, c.mark), el("td", {}, k), el("td", {}, Math.round(v[0]).toLocaleString() + " lb"), el("td", {}, Math.round(v[1]).toLocaleString() + " lb"),
           el("td", { class: d != null && Math.abs(d) > 5 ? "st FLAG" : "" }, d == null ? "no takedown load" : (d >= 0 ? "+" : "") + d.toFixed(1) + "%")); })))) : null,
+    el("div", { class: "fillbar" }, swayBtn),
+    (SWAY && SWAY.levels && SWAY.levels.length) ? el("div", {},
+      el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Level", "Dir.", "Drift, first-order", "Drift, second-order", "Ratio", "Governing run"].map(t => el("th", {}, t)))),
+        el("tbody", {}, SWAY.levels.map(l => el("tr", {}, el("td", {}, l.level), el("td", {}, l.dir), el("td", {}, n1(Math.abs(l.first), 3) + " in"), el("td", {}, n1(Math.abs(l.second), 3) + " in"),
+          el("td", { class: l.ratio > 1.5 ? "st FLAG" : "" }, l.ratio.toFixed(2)), el("td", { class: "small" }, l.combo))))),
+      el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Column", "Axial at base", "Moment, strong axis", "Moment, weak axis"].map(t => el("th", {}, t)))),
+        el("tbody", {}, SWAY.columns.map(c => el("tr", {}, el("td", {}, c.mark), el("td", { title: c.P_combo }, n1(c.P) + " kip"), el("td", { title: c.Ms_combo }, n1(c.Ms / 12) + " kip-ft"), el("td", { title: c.Mw_combo }, n1(c.Mw / 12) + " kip-ft"))))),
+      el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Beam", "Moment", "Shear", "Axial"].map(t => el("th", {}, t)))),
+        el("tbody", {}, SWAY.beams.map(b => el("tr", {}, el("td", {}, b.mark), el("td", { title: b.M_combo }, n1(b.M / 12) + " kip-ft"), el("td", {}, n1(b.V) + " kip"), el("td", {}, n1(b.N) + " kip"))))),
+      el("div", { class: "help" }, "Largest value of each over every run, at the " + SWAY.method + " level. These forces are not yet carried onto the member screens.")) : null,
     (WIND_LINES && WIND_LINES.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Level", "Dir.", "Wall", "Load", "Tributary", "Shear", "From above", "Chord"].map(t => el("th", {}, t)))),
       el("tbody", {}, WIND_LINES.map(l => el("tr", { style: l.governs === false ? "opacity:.55" : "" }, el("td", {}, l.level), el("td", {}, l.wind), el("td", {}, l.wall), el("td", {}, (l.load || "wind") + (l.governs ? " (governs)" : "")), el("td", {}, l.trib.toFixed(1) + " ft"),
         el("td", {}, Math.round(l.V).toLocaleString() + " lb"), el("td", {}, l.from_above ? Math.round(l.from_above).toLocaleString() + " lb" : ""), el("td", {}, l.T == null ? "" : Math.round(l.T).toLocaleString() + " lb"))))) : null, (MODEL_NOTES && MODEL_NOTES.length) ? el("ul", { class: "msg small" }, MODEL_NOTES.map(t => el("li", {}, t))) : null);
 }
-let MODEL_NOTES = [], WIND_LINES = [], FRAME_CHECK = null;
+let MODEL_NOTES = [], WIND_LINES = [], FRAME_CHECK = null, SWAY = null;
 
 function drawMain() {
   const main = $("#main"); main.textContent = "";
