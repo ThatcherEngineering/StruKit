@@ -76,7 +76,9 @@ FORMS = {
                 F("extra", "Other dead load on the stringer", unit="lb/ft", required=False, help="per foot of run, for example a guard"),
                 F("extra_note", "What the other dead load is", "text", required=False),
                 F("occupancy", "Live load", "select", options=["stairs and exit ways", "one- and two-family dwellings", "other (type the load)"], help="100 psf or 40 psf, ASCE 7-22 Table 4.3-1"),
-                F("live_psf", "Other: uniform live load", unit="psf", required=False), F("live_source", "Other: where that load comes from", "text", required=False),
+                F("live_psf", "Other: uniform live load", unit="psf", required=False),
+                F("live_P", "Other: concentrated live load on the stringer", unit="lb", required=False, help="optional; anywhere on the stringer, not with the uniform load"),
+                F("live_source", "Other: where those loads come from", "text", required=False),
                 F("braced", "Treads and risers brace the stringer", "select", options=["yes", "no"])],
         tables=[T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text"), F("ratio", "Run /"), F("source", "Source", "text")])]),
     "stair_tread": dict(
@@ -1946,7 +1948,7 @@ def build(kind, values, project):
         cases_used(["D", "L"], cb, r.miss)
         lo = None
         if (r.text("occupancy", False) or "").startswith("other"):
-            lo = dict(psf=r.num("live_psf", True, label="Other: uniform live load"), source=r.text("live_source", True) or "")
+            lo = dict(psf=r.num("live_psf", True, label="Other: uniform live load"), source=r.text("live_source", True) or "", P=r.num("live_P", False))
         r.done()
         return ws_more.stair_stringer_sheet(mark, *args, bool(br), cb, dc, m, live_other=lo), "steel_beam", dict(combos=cb)
     if kind == "hss_column":

@@ -86,3 +86,17 @@ def test_industrial_stringer_uniform_load_design_guide_34_example_10_2_3():
         assert any("a concentrated live load on the stringer" in a for a in s.assumptions)
     assert calc.results("stair_stringer", dict(v, live_source=""), ASD)["state"] == "incomplete"
     assert not any("concentrated live load on the stringer" in a for a in calc.build("stair_stringer", V, ASD)[0].assumptions)
+
+
+def test_industrial_stringer_point_load_design_guide_34_example_10_2_3(tmp_path):
+    """Same example, point live loading (1 kip anywhere, not with the uniform load): Vu = 2.14 / Va = 1.45 kips; Mu = 7.88 / Ma = 5.34 kip-ft."""
+    v = dict(mark="ST2", shape="HSS12X2X1/4", Fy="50", run="14.7", riser="7", tread="11", trib="1.5", dead="10", dead_note="checkered plate treads", extra="20", extra_note="guard",
+             occupancy="other (type the load)", live_psf="60", live_P="1000", live_source="OSHA industrial stair, owner's criteria", braced="yes", defl=[])
+    for proj, M, Vv in ((LRFD, 7.88, 2.14), (ASD, 5.34, 1.45)):
+        s, _, kw = calc.build("stair_stringer", v, proj)
+        r = {x.check: x for x in s.rows}
+        assert r["flexure, concentrated live load"].demand == pytest.approx(M, abs=0.02) and r["shear, concentrated live load"].demand == pytest.approx(Vv, abs=0.01)
+        assert r["flexure, concentrated live load"].capacity == r["flexure"].capacity and r["shear, concentrated live load"].capacity == r["shear"].capacity
+        assert r["flexure, concentrated live load"].demand > r["flexure"].demand and s.ok
+        assert any("does not act with the uniform live load" in a for a in s.assumptions) and not any("a concentrated live load on the stringer," in a for a in s.assumptions)
+        calcsheet.steel_beam_pdf(s, str(tmp_path / "p.pdf"), "Job", "AISC 360-22", "Nov 23, 2026", **kw)
