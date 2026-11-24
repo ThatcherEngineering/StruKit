@@ -2109,6 +2109,25 @@ def _free_roof_picture(c, top, d):
     """Two sections of the monoslope free roof to scale, one for each wind direction across the
     slope, with the windward and leeward halves marked, h and L dimensioned."""
     L, h, th = d["L"], d["h"], math.radians(d["theta"])
+    if d.get("roof") == "pitched":                        # one section: the two slopes, wind from the left
+        rise = L / 2 * math.tan(th)
+        s_ = min(170.0 / L, 70.0 / (h + rise / 2 + 1e-9))
+        x0 = (LM + RM) / 2 - L * s_ / 2
+        yb = top - 34 - (h + rise / 2) * s_
+        ye, yr = yb + (h - rise / 2) * s_, yb + (h + rise / 2) * s_
+        xm, xb = x0 + L * s_ / 2, x0 + L * s_
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5); c.line(x0 - 14, yb, xb + 14, yb)
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+        for f in (0.08, 0.92):
+            c.line(x0 + L * s_ * f, yb, x0 + L * s_ * f, ye + (yr - ye) * 0.16)
+        c.setLineWidth(2.2); c.line(x0, ye, xm, yr); c.line(xm, yr, xb, ye)
+        c.setFillColorRGB(*LOADC); c.setStrokeColorRGB(*LOADC); c.setFont(FR, 6.5)
+        c.drawRightString(xm - 8, yr + 6, "windward half, CNW"); c.drawString(xm + 8, yr + 6, "leeward half, CNL")
+        c.setLineWidth(0.8); _arrow(c, x0 - 38, ye + 4, x0 - 10, ye + 4, head=3.2)
+        memberart._dim_h(c, x0, xb, yb - 6, f"L {L:g} ft", FR, ext_from=yb)
+        memberart._dim_v(c, yb, (ye + yr) / 2, xb + 16, f"h {h:g} ft", FR)
+        _small(c, (LM + RM) / 2, yb - 24, "section to scale; h is the mean roof height")
+        return yb - 30
     rise = L * math.tan(th)
     s_ = min(150.0 / L, 70.0 / (h + rise / 2 + 1e-9))
     yb = top - 34 - (h + rise / 2) * s_
@@ -2128,6 +2147,7 @@ def _free_roof_picture(c, top, d):
         c.setFillColorRGB(*LOADC); c.setStrokeColorRGB(*LOADC); c.setFont(FR, 6.5)
         left, right = ("windward half, CNW", "leeward half, CNL") if g == 0 else ("leeward half, CNL", "windward half, CNW")
         c.drawCentredString((xa + xm) / 2, max(ya, ym) + 14, left); c.drawCentredString((xm + xb) / 2, ym + 14, right)
+        c.setLineWidth(0.8)
         if g == 0:
             _arrow(c, xa - 34, ya + 2, xa - 8, ya + 2, head=3.2)
         else:

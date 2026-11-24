@@ -614,7 +614,7 @@ def test_monoslope_free_roof_against_the_published_carport_example():
 def test_open_building_screen(tmp_path):
     from strukit import calcsheet
     from strukit.gui import calc
-    v = dict(mark="WO1", V="100", V_source="Hazard Tool", exposure="C", exposure_basis="open terrain", h="17.5", theta="10", L="26", flow="clear", flow_basis="vehicles only",
+    v = dict(mark="WO1", V="100", V_source="Hazard Tool", exposure="C", exposure_basis="open terrain", h="17.5", roof="monoslope", theta="10", L="26", flow="clear", flow_basis="vehicles only",
              Kzt="1.0", Kzt_source="flat site", elevation="", elevation_source="")
     s, kind, _ = calc.build("wind_free_roof", v, {})
     got = {(x["gamma"], x["case"]): (x["pW"], x["pL"]) for x in s.free_roof["across"]}
@@ -627,3 +627,24 @@ def test_open_building_screen(tmp_path):
     calcsheet.simple_pdf(low, str(tmp_path / "l.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
     assert calc.results("wind_free_roof", dict(v, h="10", L="60"), {})["state"] == "stopped"
     assert calc.results("wind_free_roof", dict(v, flow_basis=""), {})["state"] == "incomplete"
+
+
+def test_pitched_free_roof(tmp_path):
+    """ASCE/SEI 7-22 Figure 27.3-5 as read from the page image (pdf p. 349); note 3: straight-line interpolation between 7.5 and 45 degrees, the
+    Figure 27.3-4 values under 7.5 degrees.  By hand at 18.75 degrees, clear flow, Case A: CNW = 1.1, CNL = (-0.4 + 0.1)/2 = -0.15."""
+    from strukit import calcsheet
+    from strukit.gui import calc
+    assert wind.FREE_PITCHED[7.5] == {"A": ((1.1, -0.3), (-1.6, -1.0)), "B": ((0.2, -1.2), (-0.9, -1.7))}
+    assert wind.FREE_PITCHED[45.0] == {"A": ((1.1, 0.9), (-0.5, -0.5)), "B": ((-0.3, -0.5), (-0.3, -0.7))}
+    cn = wind.free_pitched_cn(18.75)
+    assert cn["A"] == pytest.approx((1.1, -0.15)) and cn["B"] == pytest.approx((0.0, -0.95))
+    assert wind.free_pitched_cn(30.0, True) == {"A": (-0.7, -0.7), "B": (-0.2, -1.1)} and wind.free_pitched_cn(4.0) == {"A": (1.2, 0.3), "B": (-1.1, -0.1)}
+    r = wind.free_roof(115, "C", 14.0, 18.75, 30.0, roof="pitched")
+    k = r["qh"] * 0.85 * 0.85
+    assert [(x["case"], x["pW"], x["pL"]) for x in r["across"]] == [("A", pytest.approx(1.1 * k), pytest.approx(-0.15 * k)), ("B", pytest.approx(0.0, abs=1e-9), pytest.approx(-0.95 * k))]
+    v = dict(mark="WO2", V="115", V_source="Hazard Tool", exposure="C", exposure_basis="open terrain", h="14", roof="pitched (gable)", theta="18.75", L="30", flow="clear",
+             flow_basis="open below", Kzt="1.0", Kzt_source="flat site", elevation="", elevation_source="")
+    s, _, _ = calc.build("wind_free_roof", v, {})
+    assert "Pitched" in s.title and len(s.free_roof["across"]) == 2
+    calcsheet.simple_pdf(s, str(tmp_path / "p.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
+    assert calc.results("wind_free_roof", dict(v, roof=""), {})["state"] == "incomplete"
