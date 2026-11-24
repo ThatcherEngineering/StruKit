@@ -732,3 +732,59 @@ def kzt(shape, exposure, H, Lh, x, z, downwind, located=True):
     val = (1.0 + K1 * K2 * K3) ** 2
     return dict(applies=why is None, why=why, slope=slope, slope_used=slope_used, steep=steep, L_used=L_used, k1_ratio=k1_ratio, gamma=gamma, mu=mu,
                 K1=K1, K2=K2, K3=K3, Kzt=val if why is None else 1.0, Kzt_feature=val)
+
+
+# ---- Open buildings with monoslope free roofs, Sect. 27.3.2 (pdf p. 347), Figures 27.3-4 and 27.3-7 (pdf pp. 348, 351) -------
+# Figure 27.3-4, read from the page image: angle -> case -> (CNW, CNL) for [0 clear, 0 obstructed, 180 clear, 180 obstructed].
+# gamma = 0: wind against the high edge; gamma = 180: wind against the low edge. First row: roof angles under 7.5 degrees.
+FREE_MONO = {
+    0.0: {"A": ((1.2, 0.3), (-0.5, -1.2), (1.2, 0.3), (-0.5, -1.2)), "B": ((-1.1, -0.1), (-1.1, -0.6), (-1.1, -0.1), (-1.1, -0.6))},
+    7.5: {"A": ((-0.6, -1.0), (-1.0, -1.5), (0.9, 1.5), (-0.2, -1.2)), "B": ((-1.4, 0.0), (-1.7, -0.8), (1.6, 0.3), (0.8, -0.3))},
+    15.0: {"A": ((-0.9, -1.3), (-1.1, -1.5), (1.3, 1.6), (0.4, -1.1)), "B": ((-1.9, 0.0), (-2.1, -0.6), (1.8, 0.6), (1.2, -0.3))},
+    22.5: {"A": ((-1.5, -1.6), (-1.5, -1.7), (1.7, 1.8), (0.5, -1.0)), "B": ((-2.4, -0.3), (-2.3, -0.9), (2.2, 0.7), (1.3, 0.0))},
+    30.0: {"A": ((-1.8, -1.8), (-1.5, -1.8), (2.1, 2.1), (0.6, -1.0)), "B": ((-2.5, -0.5), (-2.3, -1.1), (2.6, 1.0), (1.6, 0.1))},
+    37.5: {"A": ((-1.8, -1.8), (-1.5, -1.8), (2.1, 2.2), (0.7, -0.9)), "B": ((-2.4, -0.6), (-2.2, -1.1), (2.7, 1.1), (1.9, 0.3))},
+    45.0: {"A": ((-1.6, -1.8), (-1.3, -1.8), (2.2, 2.5), (0.8, -0.9)), "B": ((-2.3, -0.7), (-1.9, -1.2), (2.6, 1.4), (2.1, 0.4))}}
+# Figure 27.3-7 (gamma = 90, 270; all free roof shapes to 45 degrees): zone by horizontal distance from the windward edge -> case -> (clear, obstructed)
+FREE_PARALLEL = (("0 to h", {"A": (-0.8, -1.2), "B": (0.8, 0.5)}), ("h to 2h", {"A": (-0.6, -0.9), "B": (0.5, 0.5)}), ("over 2h", {"A": (-0.3, -0.6), "B": (0.3, 0.3)}))
+
+
+def free_mono_cn(theta, obstructed=False):
+    """(CNW, CNL) for gamma = 0 and gamma = 180, Cases A and B, Figure 27.3-4, with straight-line
+    interpolation between 7.5 and 45 degrees (note 3); under 7.5 degrees the first row."""
+    if theta is None or theta < 0 or theta > 45:
+        raise WindError("wind: a monoslope free roof is between 0 and 45 degrees (Figure 27.3-4)")
+    k = 1 if obstructed else 0
+    if theta < 7.5:
+        row = lambda case, col: FREE_MONO[0.0][case][col]
+    else:
+        angs = sorted(a for a in FREE_MONO if a >= 7.5)
+        lo = max(a for a in angs if a <= theta)
+        hi = min(a for a in angs if a >= theta)
+        f = 0.0 if hi == lo else (theta - lo) / (hi - lo)
+        row = lambda case, col: tuple(x + (y - x) * f for x, y in zip(FREE_MONO[lo][case][col], FREE_MONO[hi][case][col]))
+    return {g: {case: row(case, col) for case in ("A", "B")} for g, col in ((0, k), (180, 2 + k))}
+
+
+def free_roof_monoslope(V, exposure, h, theta, L, obstructed=False, Kzt=1.0, Ke=1.0):
+    """Net design pressures (psf, strength level) on a monoslope free roof of an open building,
+    p = qh Kd G CN (Eq. 27.3-2): the windward and leeward halves for wind across the slope
+    (Figure 27.3-4, 0.25 <= h/L <= 1.0) and the zones of Figure 27.3-7 for wind along it.
+    L: horizontal dimension of the roof in the direction of the slope."""
+    for nm, v in (("the mean roof height", h), ("the roof dimension L", L)):
+        if v is None or v <= 0:
+            raise WindError(f"wind: {nm} must be positive")
+    hl = h / L
+    low = 0.05 <= hl < 0.25 and theta is not None and theta < 5.0          # Figure 27.3-4 note 4
+    if not (0.25 <= hl <= 1.0) and not low:
+        raise WindError(f"wind: h/L = {hl:.2f} is outside Figure 27.3-4 (0.25 to 1.0; 0.05 to 0.25 only under 5 degrees, by Figure 27.3-7)")
+    qh, kh = velocity_pressure(V, exposure, h, Kzt, Ke)
+    k = qh * KD_MWFRS * G_RIGID
+    col = 1 if obstructed else 0
+    par = [dict(zone=z, x0=i * h, x1=(i + 1) * h if i < 2 else None, A=cn["A"][col], B=cn["B"][col], pA=k * cn["A"][col], pB=k * cn["B"][col])
+           for i, (z, cn) in enumerate(FREE_PARALLEL)]
+    across = None
+    if not low:
+        cn = free_mono_cn(theta, obstructed)
+        across = [dict(gamma=g, case=c, CNW=cn[g][c][0], CNL=cn[g][c][1], pW=k * cn[g][c][0], pL=k * cn[g][c][1]) for g in (0, 180) for c in ("A", "B")]
+    return dict(qh=qh, Kh=kh, h_over_L=hl, factor=k, across=across, parallel=par, low=low)

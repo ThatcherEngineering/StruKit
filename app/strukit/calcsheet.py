@@ -1491,6 +1491,8 @@ def _block_picture(c, top, pic):
         return _collector_picture(c, top - 6, d)
     if name == "rain":
         return _rain_picture(c, top - 6, d)
+    if name == "free_roof":
+        return _free_roof_picture(c, top - 6, d)
     if name == "snow_corner":
         return _snow_corner_picture(c, top - 6, d)
     if name == "hss_column":
@@ -2101,6 +2103,41 @@ def _snow_corner_picture(c, top, d):
     c.drawString(x0 + max(wa * s_, 0) + 8, y1 - Y + 6, "lower roof")
     _small(c, (LM + RM) / 2, y1 - Y - 26, "plan to scale; upper roof beyond the heavy lines; dashed line: the two drift heights are equal")
     return y1 - Y - 32
+
+
+def _free_roof_picture(c, top, d):
+    """Two sections of the monoslope free roof to scale, one for each wind direction across the
+    slope, with the windward and leeward halves marked, h and L dimensioned."""
+    L, h, th = d["L"], d["h"], math.radians(d["theta"])
+    rise = L * math.tan(th)
+    s_ = min(150.0 / L, 70.0 / (h + rise / 2 + 1e-9))
+    yb = top - 34 - (h + rise / 2) * s_
+    out = yb
+    for k, (g, word) in enumerate(((0, "wind against the high edge (0 degrees)"), (180, "wind against the low edge (180 degrees)"))):
+        x0 = LM + 40 + k * 250
+        xa, xb = x0, x0 + L * s_                              # high edge at the left in both sections
+        ya, yb2 = yb + (h + rise / 2) * s_, yb + (h - rise / 2) * s_
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5); c.line(x0 - 14, yb, xb + 14, yb)
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+        for f in (0.12, 0.88):
+            xx = xa + (xb - xa) * f
+            c.line(xx, yb, xx, ya + (yb2 - ya) * f)
+        c.setLineWidth(2.2); c.line(xa, ya, xb, yb2)
+        xm, ym = (xa + xb) / 2, (ya + yb2) / 2
+        c.setLineWidth(0.5); c.line(xm, ym - 4, xm, ym + 10)
+        c.setFillColorRGB(*LOADC); c.setStrokeColorRGB(*LOADC); c.setFont(FR, 6.5)
+        left, right = ("windward half, CNW", "leeward half, CNL") if g == 0 else ("leeward half, CNL", "windward half, CNW")
+        c.drawCentredString((xa + xm) / 2, max(ya, ym) + 14, left); c.drawCentredString((xm + xb) / 2, ym + 14, right)
+        if g == 0:
+            _arrow(c, xa - 34, ya + 2, xa - 8, ya + 2, head=3.2)
+        else:
+            _arrow(c, xb + 34, yb2 + 8, xb + 8, yb2 + 8, head=3.2)
+        c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawCentredString(xm, yb - 22, word)
+        memberart._dim_h(c, xa, xb, yb - 6, f"L {L:g} ft", FR, ext_from=yb)
+        if k == 0:
+            memberart._dim_v(c, yb, ym, xa - 16, f"h {h:g} ft", FR)
+        out = yb - 30
+    return out
 
 
 def _rain_picture(c, top, d):
