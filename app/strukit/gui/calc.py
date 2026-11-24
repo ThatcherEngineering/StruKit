@@ -523,6 +523,9 @@ FORMS = {
                 F("dead", "Uplift: dead load on the wall", unit="plf", required=False, help="blank = dead load not counted against uplift"),
                 F("dead_factor", "Uplift: dead load factor", required=False, help="0.6 for ASD (0.6D + 0.6W); 0.9 for LRFD"),
                 F("dead_source", "Uplift: source of the dead load and factor", "text", required=False),
+                F("above_T", "Stacked walls: chord force from the wall above", unit="lb", required=False,
+                  help="the hold-down tension (and post compression) the wall above brings down to this wall's end posts; blank = no wall above"),
+                F("above_source", "Stacked walls: where that force comes from", "text", required=False, help="for example: shear wall SW3, main level"),
                 F("chord_A", "Deflection: end post area", unit="in2", required=False),
                 F("chord_E", "Deflection: end post E", unit="psi", required=False),
                 F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
@@ -1669,7 +1672,8 @@ def build(kind, values, project):
                                         r.num("arm_offset", False) or 0.0, r.num("chord_E", False), r.num("chord_A", False),
                                         r.num("slip", False), sides=sides, blocked=blocked, stud_spacing=int(ss_) if ss_ else None,
                                         field_nails=int(fn_) if fn_ else None, dead_plf=dead or 0.0,
-                                        dead_factor=r.num("dead_factor", False), dead_source=r.text("dead_source", False) or "", other=oth), "simple", {}
+                                        dead_factor=r.num("dead_factor", False), dead_source=r.text("dead_source", False) or "", other=oth,
+                                        above_T=r.num("above_T", False) or 0.0, above_source=r.text("above_source", False) or ""), "simple", {}
     if kind == "wind_kzt":
         shape, ex, eb, H, Lh, gs, x = r.text("shape"), r.text("exposure"), r.text("exposure_basis"), r.num("H"), r.num("Lh"), r.text("geometry_source"), r.num("x")
         side, loc = r.text("side"), yes(r.text("located"))

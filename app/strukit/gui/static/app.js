@@ -385,6 +385,23 @@ function fillCollectorBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the force from a diaphragm reaction"), pick, go);
 }
 
+function fillAboveBar(m, changed) {
+  if (m.kind !== "shear_wall") return null;
+  const src = S.members.filter(x => x !== m && (x.kind === "shear_wall" || x.kind === "perforated_wall"));
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose the wall above"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
+  const go = el("button", { class: "btn", onclick: async () => {
+    if (pick.value === "") return toast("Choose the wall above first.");
+    const s = S.members[+pick.value];
+    let got;
+    try { got = await post("/api/wall_above", { kind: s.kind, values: s.values, project: S.project }); } catch (e) { return toast(e.message, 12000); }
+    Object.assign(m.values, { above_T: String(Math.round(got.T)), above_source: "largest chord force of shear wall " + (s.values.mark || "") + ", " + (got.load || "") + ", " + S.project.method });
+    changed(); drawMain();
+    toast("Chord force " + Math.round(got.T).toLocaleString() + " lb from " + (s.values.mark || "the wall above") + " added at each segment end. The shear from the wall above is part of this wall's design shear.", 12000);
+  } }, "Fill Chord Force");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Stack on the wall above"), pick, go);
+}
+
 function fillWallBar(m, changed) {
   const src = S.members.filter(x => x.kind === "seismic_elf" && (x.values.lines || []).some(r => (r.name || "").trim()));
   if (!src.length) return el("div", {}, fillFromDiaphragmBar(m, changed) ||
@@ -474,7 +491,7 @@ function fillWindBar(m, changed) {
 }
 
 function fillBar(m, changed) {
-  if (m.kind === "shear_wall" || m.kind === "perforated_wall") return fillWallBar(m, changed);
+  if (m.kind === "shear_wall" || m.kind === "perforated_wall") { const a = fillWallBar(m, changed), b = fillAboveBar(m, changed); return b ? el("div", {}, a, b) : a; }
   if (m.kind === "diaphragm") return fillDiaphragmBar(m, changed);
   if (m.kind === "collector") return fillCollectorBar(m, changed);
   if (m.kind === "seismic_elf") return fillDriftBar(m, changed);
