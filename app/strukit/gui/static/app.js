@@ -363,6 +363,83 @@ function fillDriftBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the snow drift from"), pick, how, dist, go);
 }
 
+const TD_BEAMS = ["steel_beam", "wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"];
+const TD_POSTS = ["wood_post", "builtup_post", "lvl_post", "wey_post", "glulam_post", "steel_column", "hss_column"];
+const TD_KIP = ["steel_beam", "steel_column", "hss_column", "single_plate", "end_plate", "seat", "base_plate"];
+const TD_TARGET_P = ["wood_post", "builtup_post", "lvl_post", "wey_post", "glulam_post", "steel_column", "hss_column", "single_plate", "end_plate", "seat", "base_plate"];
+
+// Gravity takedown: the reaction of another member, by load case, added to this member as loads.
+function fillTakedownBar(m, changed) {
+  const isBeam = TD_BEAMS.includes(m.kind);
+  if (!isBeam && !TD_TARGET_P.includes(m.kind)) return null;
+  const src = S.members.filter(x => x !== m && (TD_BEAMS.includes(x.kind) || TD_POSTS.includes(x.kind)));
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose the member above"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
+  const sup = el("select", { style: "display:none" });
+  const count = el("input", { type: "text", value: "1", style: "width:3.2em", title: "how many of these members land here" });
+  const at = el("input", { type: "text", placeholder: "at ft", style: "width:4.5em" + (isBeam ? "" : ";display:none"), title: "distance from the left end of this member" });
+  let got = null;
+  pick.addEventListener("change", async () => {
+    got = null; sup.style.display = "none"; sup.textContent = "";
+    if (pick.value === "") return;
+    const s = S.members[+pick.value];
+    try {
+      got = await post("/api/case_reactions", { kind: s.kind, values: s.values, project: S.project });
+      got.supports.forEach((r, i) => sup.append(el("option", { value: i }, r.name + ": " + Object.entries(r.cases).map(([c, v]) => c + " " + Math.round(v).toLocaleString()).join(", ") + " lb")));
+      sup.style.display = "";
+    } catch (e) { toast(e.message, 12000); }
+  });
+  const go = el("button", { class: "btn", onclick: () => {
+    if (!got || !got.supports.length) return toast("Choose the member above first.");
+    const s = S.members[+pick.value], r = got.supports[+sup.value], n = parseFloat(count.value) || 1;
+    const x = at.value.trim();
+    if (isBeam && (x === "" || isNaN(parseFloat(x)))) return toast("Type where the reaction lands on this member, in feet from its left end.");
+    const tag = "reaction of " + (s.values.mark || "member") + ", " + r.name;
+    const kip = TD_KIP.includes(m.kind), f = (kip ? 0.001 : 1) * n;
+    const fmt = v => String(kip ? Math.round(v * f * 1000) / 1000 : Math.round(v * f));
+    m.values.loads = (m.values.loads || []).filter(q => !String(q.label || "").startsWith(tag) && (q.case || q.mag || q.P));
+    const note = tag + (n !== 1 ? " x " + n : "");
+    Object.entries(r.cases).forEach(([c, v]) => {
+      if (Math.abs(v) < 0.5) return;
+      if (isBeam) m.values.loads.push({ case: c, kind: "point", mag: fmt(v), mag2: "", x1: x, x2: "", label: note });
+      else m.values.loads.push({ case: c, P: fmt(v), label: note });
+    });
+    changed(); drawMain();
+    toast("Loads added from " + (s.values.mark || "the member above") + " by load case. Press Add again after that member changes." + (got.notes && got.notes.length ? " Note: " + got.notes.join("; ") + "." : ""), 14000);
+  } }, "Add Reaction");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the reaction of the member above"), pick, sup, el("span", { class: "small" }, "x"), count, at, go);
+}
+
+// Gravity takedown into an isolated or continuous footing: the governing service and factored reaction of the member above.
+function fillFootingTakedownBar(m, changed) {
+  const src = S.members.filter(x => TD_BEAMS.includes(x.kind) || TD_POSTS.includes(x.kind));
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose the member above"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
+  const sup = el("select", { style: "display:none" });
+  const count = el("input", { type: "text", value: "1", style: "width:3.2em", title: m.kind === "footing_cont" ? "members per foot of wall (1 / spacing in ft)" : "how many of these members land here" });
+  let got = null;
+  pick.addEventListener("change", async () => {
+    got = null; sup.style.display = "none"; sup.textContent = "";
+    if (pick.value === "") return;
+    const s = S.members[+pick.value];
+    try {
+      got = await post("/api/case_reactions", { kind: s.kind, values: s.values, project: S.project });
+      got.supports.forEach((r, i) => sup.append(el("option", { value: i }, r.name + (r.service ? ": " + Math.round(r.service.P).toLocaleString() + " lb service" : ""))));
+      sup.style.display = "";
+    } catch (e) { toast(e.message, 12000); }
+  });
+  const go = el("button", { class: "btn", onclick: () => {
+    if (!got || !got.supports.length) return toast("Choose the member above first.");
+    const s = S.members[+pick.value], r = got.supports[+sup.value], n = parseFloat(count.value) || 1;
+    if (!r.service || !r.strength) return toast("Both ASD and LRFD load combinations are needed on the Project page: service loads size the footing on the soil, factored loads design the concrete.", 12000);
+    Object.assign(m.values, { P_service: String(Math.round(r.service.P * n)), service_combo: r.service.name, Pu: String(Math.round(r.strength.P * n)), strength_combo: r.strength.name });
+    m.values.loads_from = "reaction of " + (s.values.mark || "member") + ", " + r.name + (n !== 1 ? " x " + n : "");
+    changed(); drawMain();
+    toast("Service " + Math.round(r.service.P * n).toLocaleString() + " lb (" + r.service.name + ") and factored " + Math.round(r.strength.P * n).toLocaleString() + " lb (" + r.strength.name + ") filled from " + (s.values.mark || "the member above") + ".", 12000);
+  } }, "Fill Loads");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the reaction of a beam, joist or post above"), pick, sup, el("span", { class: "small" }, "x"), count, go);
+}
+
 function fillLoadsBar(m, changed) {
   const a = fillSnowBar(m, changed), d = fillDriftBar(m, changed), b = fillLiveBar(m, changed), c = fillRainBar(m, changed);
   return (a || b || c || d) ? el("div", {}, a, d, b, c) : null;
@@ -500,9 +577,13 @@ function fillBar(m, changed) {
     return a && b ? el("div", {}, a, b) : (a || b);
   }
   if (m.kind.startsWith("wind_") && m.kind !== "wind_kzt" && m.kind !== "wind_enclosure") return fillKztBar(m, changed);
-  if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) return fillLoadsBar(m, changed);
+  if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) { const a = fillLoadsBar(m, changed), b = fillTakedownBar(m, changed); return (a || b) ? el("div", {}, a, b) : null; }
+  if (TD_BEAMS.includes(m.kind) || TD_TARGET_P.includes(m.kind)) { const b = fillTakedownBar(m, changed); if (b) return b; }
+  if (m.kind === "footing_cont") return fillFootingTakedownBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame" || (x.kind === "guard" && m.kind === "base_plate_moment"));
+  const td = m.kind === "footing_iso" ? fillFootingTakedownBar(m, changed) : null;
+  if (!src.length && td) return td;
   if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame" + (m.kind === "base_plate_moment" ? ", or a guard post," : "") + " once the project has one.");
   const pick = el("select", {}, el("option", { value: "" }, "choose a column, frame or guard"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
   const base = el("select", { style: "display:none" });
@@ -547,7 +628,8 @@ function fillBar(m, changed) {
     m.values.loads_from = "base reactions of " + (s.values.mark || "member") + (got.bases.length > 1 ? " at " + b : "") + (s.kind === "frame" || (s.values.ends || "").startsWith("free") ? ", second-order analysis" : "");
     changed(); drawMain();
   } }, "Fill Loads");
-  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the loads from"), pick, base, go);
+  const first = el("div", { class: "fill" }, el("span", { class: "small" }, "Take the loads from"), pick, base, go);
+  return td ? el("div", {}, first, td) : first;
 }
 
 // ---------------------------------------------------------------- pages

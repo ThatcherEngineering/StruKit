@@ -2269,6 +2269,97 @@ def build(kind, values, project):
     raise WorksheetError(f"unknown worksheet '{kind}'")
 
 
+TAKEDOWN_BEAMS = ("steel_beam", "wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist")
+TAKEDOWN_POSTS = ("wood_post", "builtup_post", "lvl_post", "wey_post", "glulam_post", "steel_column", "hss_column")
+
+
+def case_reactions(kind, values, project):
+    """Gravity takedown: the reaction at every support of a beam or joist, or at the base of a post or column, by load case (lb, downward
+    positive), so the member below can take them as loads without retyping. Each case is the member run under that case alone (all spans
+    loaded). Returns dict(supports=[dict(name, x_ft, cases={case: lb})], notes=[...]) or dict(error=...)."""
+    v = values or {}
+    if kind in TAKEDOWN_POSTS:
+        kip = kind in ("steel_column", "hss_column")
+        tot = {}
+        for row in v.get("loads") or []:
+            try:
+                P = float(str(row.get("P", "")).replace(",", ""))
+            except ValueError:
+                continue
+            c = str(row.get("case") or "").strip()
+            if c:
+                tot[c] = tot.get(c, 0.0) + P * (1000.0 if kip else 1.0)
+        notes = []
+        if kip and str(v.get("self_weight", "")).lower() == "yes":
+            try:
+                sec = (shapes.hss(v["shape"]) if kind == "hss_column" else shapes.get(v["shape"]))
+                tot["D"] = tot.get("D", 0.0) + sec["W"] * float(v.get("height") or 0)
+                notes.append("the column's own weight is included in D")
+            except Exception:
+                pass
+        elif not kip:
+            notes.append("a post's own weight is carried only if it is typed as a load on the post")
+        if not tot:
+            return dict(error="That member has no loads yet.")
+        return _governing(dict(supports=[dict(name="base", x_ft=0.0, cases=tot)], notes=notes), project)
+    if kind not in TAKEDOWN_BEAMS:
+        return dict(error="Reactions can be taken from a beam, a joist, a post or a column.")
+    cases = []
+    for row in v.get("loads") or []:
+        c = str(row.get("case") or "").strip()
+        if c and c not in cases:
+            cases.append(c)
+    if "D" not in cases:
+        cases.insert(0, "D")                                 # self-weight
+    p2 = dict(project or {}, method="ASD", combos_asd=[dict(expr=c, source="load case alone") for c in cases])
+    try:
+        sheet, _, _ = build(kind, v, p2)
+    except Missing as e:
+        return dict(error="That member is not complete: " + "; ".join(e.items))
+    except Exception as e:
+        return dict(error=f"That member stopped: {e}")
+    num = lambda key: float(str(v.get(key) or 0).replace(",", "") or 0)
+    spans = [num("span")] + [float(t) for t in str(v.get("more_spans") or "").replace(";", ",").split(",") if t.strip()]
+    xs = [num("oh_left")]
+    for sp in spans:
+        xs.append(xs[-1] + sp)
+    sup = [dict(name=("left support" if i == 0 else "right support" if i == len(xs) - 1 else f"support at {x:g} ft"), x_ft=x, cases={}) for i, x in enumerate(xs)]
+    scale = 1000.0 if kind == "steel_beam" else 1.0
+    for c in cases:
+        R = sheet.reactions.get(c)
+        if R is None:
+            continue
+        if isinstance(R, dict):
+            vals = [R[k] for k in sorted(R)]
+        elif isinstance(R, (list, tuple)):
+            vals = list(R)
+        else:
+            vals = [R] * len(sup)                            # simple-span joist: one value, the same at both ends
+        if len(vals) != len(sup):
+            return dict(error="That member's supports could not be matched to its reactions.")
+        for sdict, r in zip(sup, vals):
+            sdict["cases"][c] = r * scale
+    notes = ["each case is run alone with every span loaded"]
+    if kind == "ijoist" or num("spacing"):
+        notes.append("for a joist or rafter this is the reaction of one member; multiply by the number carried, or divide by the spacing for a load per foot")
+    return _governing(dict(supports=sup, notes=notes), project)
+
+
+def _governing(out, project):
+    """Adds to each support the largest downward reaction under the project's ASD combinations (service) and LRFD combinations (strength),
+    each with the combination's name, for a footing."""
+    for which, key in (("ASD", "service"), ("LRFD", "strength")):
+        cbs = combos(project or {}, [], which)
+        for sdict in out["supports"]:
+            best = None
+            for cb in cbs:
+                P = sum(cb.factors.get(c, 0.0) * r for c, r in sdict["cases"].items())
+                if best is None or P > best[1]:
+                    best = (cb.name, P)
+            sdict[key] = dict(name=best[0], P=best[1]) if best else None
+    return out
+
+
 def reactions(kind, values, project):
     """Base reactions of a steel column or a frame for every ASD combination (service) and
     every LRFD combination (factored), so a footing or base plate can take them without
