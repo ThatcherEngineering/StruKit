@@ -234,6 +234,33 @@ function fillSnowBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the uniform snow load from"), pick, go);
 }
 
+function fillKztBar(m, changed) {
+  const src = S.members.filter(x => x.kind === "wind_kzt");
+  if (!src.length) return null;
+  const pick = el("select", {}, el("option", { value: "" }, "choose a topographic factor sheet"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 topographic factor")));
+  const row = el("select", { style: "display:none" });
+  let got = null;
+  pick.addEventListener("change", async () => {
+    got = null; row.style.display = "none"; row.textContent = "";
+    if (pick.value === "") return;
+    try {
+      got = await post("/api/kzt", { values: S.members[+pick.value].values, project: S.project });
+      got.rows.forEach((r, i) => row.append(el("option", { value: i }, "z = " + r.z + " ft: Kzt = " + r.Kzt.toFixed(2))));
+      let best = 0; got.rows.forEach((r, i) => { if (r.Kzt > got.rows[best].Kzt) best = i; });
+      row.value = String(best); row.style.display = "";
+    } catch (e) { toast(e.message, 12000); }
+  });
+  const go = el("button", { class: "btn", onclick: () => {
+    if (!got) return toast("Choose the topographic factor sheet first.");
+    const r = got.rows[+row.value], mark = S.members[+pick.value].values.mark || "topographic factor sheet";
+    m.values.Kzt = String(Math.round(r.Kzt * 100) / 100);
+    m.values.Kzt_source = got.applies ? "sheet " + mark + ": Kzt at z = " + r.z + " ft" : "sheet " + mark + ": Sect. 26.8.1 not met";
+    changed(); drawMain();
+    toast("Kzt = " + m.values.Kzt + " filled. One Kzt is used for every height on this sheet; the value nearest the ground is the largest.", 10000);
+  } }, "Fill Kzt");
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take Kzt from"), pick, row, go);
+}
+
 function fillLiveBar(m, changed) {
   const src = S.members.filter(x => x.kind === "live_load");
   if (!src.length) return null;
@@ -375,6 +402,7 @@ function fillBar(m, changed) {
   if (m.kind === "diaphragm") return fillDiaphragmBar(m, changed);
   if (m.kind === "collector") return fillCollectorBar(m, changed);
   if (m.kind === "seismic_elf") return fillDriftBar(m, changed);
+  if (m.kind.startsWith("wind_") && m.kind !== "wind_kzt") return fillKztBar(m, changed);
   if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) return fillLoadsBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");

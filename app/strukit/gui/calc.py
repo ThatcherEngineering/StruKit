@@ -846,10 +846,10 @@ FORMS = {
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Force pulling the lag screws out, on the group, by load case; the project's ASD combinations are applied.")]),
     "guard": dict(
-        title="Guard (round HSS or pipe)", code="ASCE/SEI 7-22, AISC 360-22", mark="GD",
-        fields=[F("rail", "Top rail", "text", help="round HSS or pipe by its Manual label, for example HSS1.900x0.145 or Pipe 1-1/2 STD"),
+        title="Guard (HSS or pipe)", code="ASCE/SEI 7-22, AISC 360-22", mark="GD",
+        fields=[F("rail", "Top rail", "hss_shape", help="HSS or pipe by its Manual label, for example HSS1.900x0.145, HSS2x2x1/8 or Pipe 1-1/2 STD"),
                 F("rail_Fy", "Top rail yield stress, Fy", unit="ksi"), F("rail_Fy_source", "Where that Fy comes from", "text", help="for example: ASTM A500 Grade C"),
-                F("post", "Post", "text", help="round HSS or pipe by its Manual label"),
+                F("post", "Post", "hss_shape", help="HSS or pipe by its Manual label"),
                 F("post_Fy", "Post yield stress, Fy", unit="ksi"), F("post_Fy_source", "Where that Fy comes from", "text"),
                 F("spacing", "Post spacing", unit="ft"),
                 F("height", "Height from the post base to the top rail", unit="ft"),

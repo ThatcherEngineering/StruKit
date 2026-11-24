@@ -4,6 +4,7 @@ Both hand the calc sheet a SimpleSheet: the facts to print, the checks, and the 
 the picture to draw. Nothing is defaulted; see base_plate.py and footing_moment.py for the
 calculations and their sources.
 """
+import math
 from dataclasses import dataclass, field
 
 from . import anchorage as anch, base_plate, footing, footing_moment, shapes, shearwall, snow, wind
@@ -2185,10 +2186,10 @@ GUARD_P, GUARD_W, GUARD_INFILL = 200.0, 50.0, 50.0        # lb, lb/ft, lb on 1 f
 
 
 def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_source, spacing_ft, height_ft, uniform, uniform_basis, method):
-    """Guard of round HSS or pipe: top rail spanning between posts, posts cantilevered from
+    """Guard of HSS or pipe (round, square or rectangular): top rail spanning between posts, posts cantilevered from
     their base. Loads: ASCE/SEI 7-22 Sect. 4.5.1 (200 lb at any point, any direction) and
     4.5.1.1 (50 lb/ft, not concurrent; uniform False where an exception applies, with its
-    basis). Strength: AISC 360-22 Sect. F8 and G5 (see hss.py). The rail is taken as a simple
+    basis). Strength: AISC 360-22 Sect. F7, F8, G4, G5 (see hss.py). The rail is taken as a simple
     span between posts and carries its own weight with the load applied downward."""
     from . import hss, shapes
     for nm, v in (("where the top rail yield stress comes from", rail_Fy_source), ("where the post yield stress comes from", post_Fy_source)):
@@ -2199,12 +2200,41 @@ def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_sour
     for nm, v in (("the post spacing", spacing_ft), ("the guard height", height_ft)):
         if v is None or v <= 0:
             raise WorksheetError(f"{mark}: {nm} must be positive")
+    Ln = footing_line
+    sym = "Mn / 1.67" if method == "ASD" else "0.90 Mn"
+    symv = "Vn / 1.67" if method == "ASD" else "0.90 Vn"
+
+    def strength(nm, shp, Fy, Lb_in, Lv_in):
+        """Available moment (kip-in) and shear (kips) for a load in any direction, with the
+        lines to print. Rectangular sections: Mc = 1 / (1/Mcx^2 + 1/Mcy^2)^0.5, the load
+        direction that gives the largest sum Mrx/Mcx + Mry/Mcy (Eq. H1-1b form)."""
+        pr_ = shapes.hss(shp)
+        st = hss.member(pr_, Fy, 1.0, 1.0, Lb=Lb_in, Lv=Lv_in)
+        if st["kind"] == "round":
+            f_, v_ = st["fx"], st["vx"]
+            Ma, Va = hss.available(f_["Mn"], "flexure", method), hss.available(v_["Vn"], "shear", method)
+            lines = [Ln(f"{nm} D/t", f"{pr_['D_t']:g}", "", "AISC 360-22 Table B4.1b Case 20", f"{shp}; {f_['cls']} (limits {f_['lam_p']:.1f} and {f_['lam_r']:.1f})"),
+                     Ln(f"{nm} Mn", f_["Mn"] * 1000 / 12, "lb-ft", f"AISC 360-22 Eq. {f_['eq']}", f"Fy = {Fy:g} ksi, Z = {pr_['Zx']:g} in3, S = {pr_['Sx']:g} in3"),
+                     Ln(f"{nm} {sym}", Ma * 1000 / 12, "lb-ft", "AISC 360-22 Sect. F1", ""),
+                     Ln(f"{nm} Vn = Fcr Ag / 2", v_["Vn"] * 1000, "lb", "AISC 360-22 Eq. G5-1", f"Fcr = {v_['Fcr']:.1f} ksi, Ag = {pr_['A']:g} in2"),
+                     Ln(f"{nm} {symv}", Va * 1000, "lb", "AISC 360-22 Sect. G1", "")]
+            return pr_, Ma, Va, lines, "AISC 360-22 Sect. F8", "AISC 360-22 Sect. G5"
+        fx, fy = st["fx"], st["fy"]
+        Mcx, Mcy = hss.available(fx["Mn"], "flexure", method), hss.available(fy["Mn"], "flexure", method)
+        Ma = 1.0 / math.sqrt(1.0 / Mcx ** 2 + 1.0 / Mcy ** 2)
+        Va = min(hss.available(st["vx"]["Vn"], "shear", method), hss.available(st["vy"]["Vn"], "shear", method))
+        lines = [Ln(f"{nm} b/t, h/t", f"{pr_['b_t']:g}, {pr_['h_t']:g}", "", "AISC 360-22 Table B4.1b Cases 17, 19", shp),
+                 Ln(f"{nm} Mnx", fx["Mn"] * 1000 / 12, "lb-ft", f"AISC 360-22 Eq. {fx['eq']}", f"Fy = {Fy:g} ksi; governs: {fx['governs']}"),
+                 Ln(f"{nm} Mny", fy["Mn"] * 1000 / 12, "lb-ft", f"AISC 360-22 Eq. {fy['eq']}", f"governs: {fy['governs']}"),
+                 Ln(f"{nm} Mcx, Mcy ({sym})", f"{Mcx * 1000 / 12:,.0f}, {Mcy * 1000 / 12:,.0f} lb-ft", "", "AISC 360-22 Sect. F1", ""),
+                 Ln(f"{nm} Mc = 1 / (1/Mcx^2 + 1/Mcy^2)^0.5", Ma * 1000 / 12, "lb-ft", "AISC 360-22 Eq. H1-1b",
+                    "load in the direction that makes Mrx/Mcx + Mry/Mcy largest"),
+                 Ln(f"{nm} {symv}", Va * 1000, "lb", "AISC 360-22 Eq. G4-1", "the lesser of the two directions")]
+        return pr_, Ma, Va, lines, "AISC 360-22 Sect. F7, H1", "AISC 360-22 Sect. G4"
+
     try:
-        pr, pp = shapes.hss(rail), shapes.hss(post)
-        fr, fp = hss.flexure(pr, rail_Fy), hss.flexure(pp, post_Fy)
-        vr, vp = hss.shear(pr, rail_Fy, Lv=spacing_ft * 12 / 2), hss.shear(pp, post_Fy, Lv=height_ft * 12)
-        Mr, Mpst = hss.available(fr["Mn"], "flexure", method), hss.available(fp["Mn"], "flexure", method)
-        Vr, Vpst = hss.available(vr["Vn"], "shear", method), hss.available(vp["Vn"], "shear", method)
+        pr, Mr, Vr, rail_lines, rail_fs, rail_vs = strength("rail", rail, rail_Fy, spacing_ft * 12, spacing_ft * 12 / 2)
+        pp, Mpst, Vpst, post_lines, post_fs, post_vs = strength("post", post, post_Fy, height_ft * 12, height_ft * 12)
     except (shapes.ShapeError, hss.HSSError) as e:
         raise WorksheetError(f"{mark}: {e}")
     S, h, wsw = spacing_ft, height_ft, pr["W"]
@@ -2216,9 +2246,6 @@ def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_sour
         cases.append(("50 lb/ft", gD * wsw * S * S / 8 + gL * GUARD_W * S * S / 8, gD * wsw * S / 2 + gL * GUARD_W * S / 2, gL * GUARD_W * S * h, gL * GUARD_W * S))
     g_rm, g_rv = max(cases, key=lambda c: c[1]), max(cases, key=lambda c: c[2])
     g_pm, g_pv = max(cases, key=lambda c: c[3]), max(cases, key=lambda c: c[4])
-    Ln = footing_line
-    sym = "Mn / 1.67" if method == "ASD" else "0.90 Mn"
-    symv = "Vn / 1.67" if method == "ASD" else "0.90 Vn"
     steps = [Ln("P", GUARD_P, "lb", "ASCE/SEI 7-22 Sect. 4.5.1", "at any point on the top rail, in any direction"),
              Ln("w", f"{GUARD_W:g} lb/ft" if uniform else "not applied", "", "ASCE/SEI 7-22 Sect. 4.5.1.1",
                 "along the top rail, in any direction; not concurrent with P" if uniform else uniform_basis.strip()),
@@ -2228,20 +2255,16 @@ def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_sour
                   Ln(f"rail V, {nm}", Vr_, "lb", "statics", "P beside a post" if nm == "200 lb" else "w S / 2"),
                   Ln(f"post M, {nm}", Mp_, "lb-ft", "statics", ("P h" if nm == "200 lb" else "w S h") + ", at the post base"),
                   Ln(f"post V, {nm}", Vp_, "lb", "statics", "")]
-    for nm, shp, pr_, f_, v_, Fy, Ma, Va in (("rail", rail, pr, fr, vr, rail_Fy, Mr, Vr), ("post", post, pp, fp, vp, post_Fy, Mpst, Vpst)):
-        steps += [Ln(f"{nm} D/t", f"{pr_['D_t']:g}", "", "AISC 360-22 Table B4.1b Case 20", f"{shp}; {f_['cls']} (limits {f_['lam_p']:.1f} and {f_['lam_r']:.1f})"),
-                  Ln(f"{nm} Mn", f_["Mn"] * 1000 / 12, "lb-ft", f"AISC 360-22 Eq. {f_['eq']}", f"Fy = {Fy:g} ksi, Z = {pr_['Zx']:g} in3, S = {pr_['Sx']:g} in3"),
-                  Ln(f"{nm} {sym}", Ma * 1000 / 12, "lb-ft", "AISC 360-22 Sect. F1", ""),
-                  Ln(f"{nm} Vn = Fcr Ag / 2", v_["Vn"] * 1000, "lb", "AISC 360-22 Eq. G5-1", f"Fcr = {v_['Fcr']:.1f} ksi, Ag = {pr_['A']:g} in2"),
-                  Ln(f"{nm} {symv}", Va * 1000, "lb", "AISC 360-22 Sect. G1", "")]
-    rows = [Row("Top rail bending", cname, g_rm[1], Mr * 1000 / 12, "lb-ft", "AISC 360-22 Sect. F8", f"{g_rm[0]} load governs"),
-            Row("Top rail shear", cname, g_rv[2], Vr * 1000, "lb", "AISC 360-22 Sect. G5", f"{g_rv[0]} load governs"),
-            Row("Post bending", cname, g_pm[3], Mpst * 1000 / 12, "lb-ft", "AISC 360-22 Sect. F8", f"{g_pm[0]} load governs"),
-            Row("Post shear", cname, g_pv[4], Vpst * 1000, "lb", "AISC 360-22 Sect. G5", f"{g_pv[0]} load governs")]
+    steps += rail_lines + post_lines
+    rows = [Row("Top rail bending", cname, g_rm[1], Mr * 1000 / 12, "lb-ft", rail_fs, f"{g_rm[0]} load governs"),
+            Row("Top rail shear", cname, g_rv[2], Vr * 1000, "lb", rail_vs, f"{g_rv[0]} load governs"),
+            Row("Post bending", cname, g_pm[3], Mpst * 1000 / 12, "lb-ft", post_fs, f"{g_pm[0]} load governs"),
+            Row("Post shear", cname, g_pv[4], Vpst * 1000, "lb", post_vs, f"{g_pv[0]} load governs")]
     info = [("Top rail", f"{rail}, Fy = {rail_Fy:g} ksi ({rail_Fy_source.strip()})"),
             ("Posts", f"{post}, Fy = {post_Fy:g} ksi ({post_Fy_source.strip()}), at {S:g} ft"),
             ("Height", f"{h:g} ft from the post base to the top rail"),
-            ("Loads", "200 lb at any point" + (" or 50 lb/ft" if uniform else f"; uniform load not applied ({uniform_basis.strip()})"))]
+            ("Loads", "200 lb at any point" + (" or 50 lb/ft" if uniform else f"; uniform load not applied ({uniform_basis.strip()})")),
+            ("Post base", f"M = {g_pm[3]:,.0f} lb-ft, V = {g_pv[4]:,.0f} lb ({cname}), for the base connection")]
     sheet = SimpleSheet(mark, "Guard", "Guard", method, info, [], [(cname, csrc)], "Loads and Strength", steps, rows,
                         ["The guard load is a live load.",
                          "The top rail is a simple span between posts; the posts cantilever from their base and each post takes the rail load of one post spacing.",
