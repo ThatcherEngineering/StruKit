@@ -3041,6 +3041,110 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     return sheet
 
 
+def end_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, tp, width, length, plate_Fy, plate_Fu, plate_source, d, group, threads, n, spacing, lev, gage,
+                    weld, FEXX, loads, combos, method, support=None):
+    """Shear end-plate connection of a wide-flange beam: a plate shop-welded to the beam web and field-bolted to the support with two
+    vertical rows of n bolts, AISC Manual Part 10 as worked limit state by limit state in AISC Design Examples v16.0 Example II.A-11A
+    (Part B). lev: top of the plate to the first bolts; the edge distance at the bottom is what is left of the length. loads: dict(case, P)
+    kips. support: dict(name, t, Fu) for bolt bearing on the support, or None (support by others, listed as not checked)."""
+    from . import bolts
+    from .steel_beam import SteelInputError
+    for nm, v in (("the source of the beam Fy and Fu", beam_source), ("the source of the plate Fy and Fu", plate_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if not combos:
+        raise WorksheetError(f"{mark}: no load combinations given")
+    if not loads:
+        raise WorksheetError(f"{mark}: no loads given")
+    n = int(n)
+    if not 2 <= n <= 12:
+        raise WorksheetError(f"{mark}: this sheet covers 2 to 12 rows of bolts; {n} entered")
+    try:
+        bm = shapes.get(beam)
+    except Exception:
+        raise WorksheetError(f"{mark}: '{beam}' is not a W, M, S or HP shape in the shapes table")
+    try:
+        le_min = bolts.min_edge(d)
+        rn = bolts.shear(d, group, threads, 1, method).R_avail
+        dh = bolts.standard_hole(d)
+    except SteelInputError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    leh = (width - gage) / 2
+    lev_b = length - lev - (n - 1) * spacing
+    if leh < le_min or lev < le_min or lev_b < le_min:
+        raise WorksheetError(f"{mark}: an edge distance (top {lev:g}, bottom {lev_b:g}, side {leh:g} in.) is less than {le_min:g} in. (AISC 360-22 Table J3.4)")
+    if spacing < 8 * d / 3:
+        raise WorksheetError(f"{mark}: the bolt spacing {spacing:g} in. is less than 2-2/3 bolt diameters (AISC 360-22 Sect. J3.3)")
+    if gage < bm["tw"] + 2 * weld + 2 * d:
+        raise WorksheetError(f"{mark}: the gage {gage:g} in. leaves no room for the bolts beside the web welds")
+    lrfd = method == "LRFD"
+    av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
+    fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
+    totals = {cb.name: abs(sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)) for cb in combos}
+    worst = max(totals, key=lambda k: totals[k])
+    R = totals[worst]
+    tw, Ln = bm["tw"], footing_line
+    hole_ = lambda tt, Fu, lc: bolts.hole(d, tt, Fu, lc, True, method).R_avail
+    he = dh + 1 / 16
+    b_top, b_int = hole_(tp, plate_Fu, lev - dh / 2), hole_(tp, plate_Fu, spacing - dh)
+    if support:
+        s_int = hole_(support["t"], support["Fu"], spacing - dh)
+        b_top, b_int = min(b_top, s_int), min(b_int, s_int)
+    r_top, r_int = 2 * min(rn, b_top), 2 * min(rn, b_int)
+    Rb = r_top + (n - 1) * r_int
+    Agv, Anv = 2 * length * tp, 2 * (length - n * he) * tp
+    Vy, Vr = av(0.60 * plate_Fy * Agv, 1.00, 1.50), av(0.60 * plate_Fu * Anv, 0.75, 2.00)
+    Agv_b = 2 * (length - lev) * tp
+    Anv_b = Agv_b - 2 * (n - 0.5) * he * tp
+    Ant_b = 2 * (leh - 0.5 * he) * tp
+    Rbs_n = min(0.60 * plate_Fu * Anv_b, 0.60 * plate_Fy * Agv_b) + plate_Fu * Ant_b
+    Rbs = av(Rbs_n, 0.75, 2.00)
+    D16 = weld * 16
+    web_flat = bm["d"] - 2 * bm["kdes"]
+    lw = min(length, web_flat) - 2 * weld
+    t_min = 6.19 * D16 / beam_Fu
+    Rw_n = 2 * 0.60 * FEXX * 0.7071 * weld * lw * min(1.0, tw / t_min)
+    Rw = av(Rw_n, 0.75, 2.00)
+    Vweb = av(0.60 * beam_Fy * bm["d"] * tw, 1.00, 1.50)
+    w_min = 0.125 if min(tp, tw) <= 0.25 else 0.1875 if min(tp, tw) <= 0.5 else 0.25 if min(tp, tw) <= 0.75 else 0.3125
+    steps = [Ln("Required strength R", R, "kip", worst, ""),
+             Ln("Strength of one bolt", rn, "kip", "AISC 360-22 Sect. J3.7, Table J3.2", f"{d:g} in. {group}, threads {threads}, single shear; " + fac(0.75, 2.00)),
+             Ln("Bearing and tearout per bolt, top row", b_top, "kip", "Sect. J3.11a, Eq. J3-6a, J3-6c", f"plate {tp:g} in., lev = {lev:g} in." + (f"; support {support['t']:g} in." if support else "")),
+             Ln("Bearing and tearout per bolt, other rows", b_int, "kip", "Sect. J3.11a", f"s = {spacing:g} in."),
+             Ln("Shear transfer at the bolt holes", Rb, "kip", "Sect. J3.7 User Note", f"2 x {min(rn, b_top):.1f} + {n - 1} x 2 x {min(rn, b_int):.1f} kip; the lesser of bolt shear and bearing at each bolt"),
+             Ln("Plate shear yielding, 0.60 Fy Agv", Vy, "kip", "Eq. J4-3", f"Agv = 2 l tp = {Agv:.2f} in2; " + fac(1.00, 1.50)),
+             Ln("Plate shear rupture, 0.60 Fu Anv", Vr, "kip", "Eq. J4-4", f"Anv = 2 (l - n (dh + 1/16)) tp = {Anv:.2f} in2; " + fac(0.75, 2.00)),
+             Ln("Plate block shear", Rbs, "kip", "Eq. J4-5, Ubs = 1.0", f"Agv = {Agv_b:.2f}, Anv = {Anv_b:.2f}, Ant = {Ant_b:.3f} in2; Rn = {Rbs_n:.0f} kip"),
+             Ln("Weld length each side of the web", lw, "in", "AISC Manual Part 10", f"lesser of the plate length {length:g} in. and the flat of the web d - 2k = {web_flat:.2f} in., less twice the weld size"),
+             Ln("Beam web to match the welds, tmin = 6.19 D / Fu", t_min, "in", "AISC Manual Eq. 9-3", f"D = {D16:g} sixteenths; tw = {tw:g} in." + ("" if tw >= t_min else f"; weld strength x tw / tmin = {tw / t_min:.3f}")),
+             Ln("Weld, two lines", Rw, "kip", "AISC 360-22 Eq. J2-4", f"2 x 0.60 FEXX x 0.707 w l; Rn = {Rw_n:.1f} kip; " + fac(0.75, 2.00)),
+             Ln("Beam web shear yielding", Vweb, "kip", "Eq. J4-3", f"0.60 Fy d tw; " + fac(1.00, 1.50))]
+    rows = [Row("Shear transfer at the bolt holes", worst, R, Rb, "kip", "AISC 360-22 Sect. J3.7, J3.11a", f"({2 * n}) {d:g} in. {group}-{threads} in two rows"),
+            Row("Plate shear yielding", worst, R, Vy, "kip", "AISC 360-22 Eq. J4-3", ""),
+            Row("Plate shear rupture", worst, R, Vr, "kip", "AISC 360-22 Eq. J4-4", ""),
+            Row("Plate block shear", worst, R, Rbs, "kip", "AISC 360-22 Eq. J4-5", ""),
+            Row("Weld of the plate to the beam web", worst, R, Rw, "kip", "AISC 360-22 Eq. J2-4; AISC Manual Eq. 9-3", f"{weld:g} in. fillet each side, {lw:.2f} in. long"),
+            Row("Beam web shear yielding", worst, R, Vweb, "kip", "AISC 360-22 Eq. J4-3", f"{shapes.normalize(beam)}"),
+            Row("Minimum fillet weld size", "", w_min, weld, "in", "AISC 360-22 Table J2.4", "thinner part joined")]
+    info = [("Beam", f"{shapes.normalize(beam)}, tw = {tw:g} in., Fy = {beam_Fy:g} ksi, Fu = {beam_Fu:g} ksi ({beam_source.strip()})"),
+            ("Plate", f"{tp:g} in. x {width:g} in. x {length:g} in., Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()})"),
+            ("Bolts", f"({2 * n}) {d:g} in. {group}, threads {threads}, two vertical rows at {gage:g} in. gage, {n} per row at {spacing:g} in.; standard holes"),
+            ("Weld", f"{weld:g} in. fillet each side of the beam web, E{FEXX:g}XX"),
+            ("Support", f"{support['name'].strip()}, t = {support['t']:g} in., Fu = {support['Fu']:g} ksi" if support else "by others; not part of this sheet")]
+    load_lines = [f"{x['case']:<3} {x['P']:>8.2f} kip" + (f"   {x['label']}" if x.get("label") else "") for x in loads]
+    sheet = SimpleSheet(mark, "Shear End-Plate Connection", "Connection", method, info, load_lines, [(cb.name, cb.source) for cb in combos],
+                        f"Calculation ({worst})", steps, rows,
+                        ["The beam end reaction is vertical shear only, shared equally by the bolts; bolts snug-tight or pretensioned bearing-type in standard holes.",
+                         "The weld strength is counted on the beam web only; welds to the flanges are not counted."],
+                        ["axial force, moment or torsion in the beam; prying on the bolts", "end rotation of the beam where the plate is thicker or longer than a flexible shear end plate",
+                         "coped beams"] + ([] if support else ["bolt bearing on the support"]) + ["the support member", "erection and fit-up"])
+    sheet.blocks.append(dict(title="End Plate", head="End Plate",
+                             picture=("end_plate", dict(n=n, s=spacing, lev=lev, leh=leh, gage=gage, L=length, W=width, tp=tp, weld=weld, d=d, beam=shapes.normalize(beam),
+                                                        bd=bm["d"], bf=bm["bf"], tf=bm["tf"], tw=tw))))
+    sheet.end_plate = dict(R=R, rn=rn, Rb=Rb, r_top=r_top, r_int=r_int, Vy=Vy, Vr=Vr, Rbs=Rbs, Rw=Rw, t_min=t_min, lw=lw)
+    return sheet
+
+
 def bent_plate_tread(b, t, d):
     """Section of a bent plate tread, legs turned down at both edges: width b, thickness t, overall depth d (in.), square corners.
     Bending about the horizontal axis. Returns dict(A, y, Ix, S, S_top, Zx, h_t)."""
