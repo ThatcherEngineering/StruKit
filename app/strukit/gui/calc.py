@@ -212,7 +212,7 @@ FORMS = {
                 F("tp", "Plate thickness", unit="in"), F("plate_Fy", "Plate Fy", unit="ksi"), F("plate_Fu", "Plate Fu", unit="ksi"), F("plate_source", "Source of the plate Fy and Fu", "text"),
                 F("d", "Bolt diameter", unit="in"), F("group", "Bolt type", "select", options=["A325", "A490", "F3148"]),
                 F("threads", "Threads", "select", options=["N", "X"], help="N = in the shear plane, X = excluded"),
-                F("n", "Number of bolts", help="one vertical row, 2 to 5"), F("spacing", "Bolt spacing", unit="in"),
+                F("n", "Number of bolts", help="one vertical row, 2 to 12"), F("spacing", "Bolt spacing", unit="in"),
                 F("lev", "Vertical edge distance", unit="in", help="bolt centre to the top and bottom of the plate"),
                 F("leh", "Horizontal edge distance", unit="in", help="bolt centre to the free end of the plate"),
                 F("a", "Weld line to bolt line, a", unit="in", help="3-1/2 in. or less"),
