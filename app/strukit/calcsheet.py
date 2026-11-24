@@ -1605,6 +1605,8 @@ def _block_picture(c, top, pic):
         return _seat_picture(c, top - 6, d)
     if name == "cap_plate":
         return _cap_plate_picture(c, top - 6, d)
+    if name == "beam_hss_moment":
+        return _beam_hss_moment_picture(c, top - 6, d)
     if name == "flush_end_plate":
         return _flush_end_plate_picture(c, top - 6, d)
     if name == "base_biaxial":
@@ -2415,6 +2417,50 @@ def _cap_plate_picture(c, top, d):
     memberart._dim_h(c, xq - s_ / 2 * sc, xq + s_ / 2 * sc, yq + max(bp, B) / 2 * sc + 16, f"s = {s_:g} in", FR, ext_from=yq + g / 2 * sc)
     _small(c, xq, yq - max(bp, B) / 2 * sc - 16, "plan of the cap plate, to scale; the column is dashed")
     return min(yp - 98, yq - max(bp, B) / 2 * sc - 24)
+
+
+def _beam_hss_moment_picture(c, top, d):
+    """Elevation of the beam framing into the HSS face and a plan of the face with the flange or flange plate on it, to scale: beam depth,
+    column side wall, face width, flange or plate width and the distance from its edge to the HSS wall dimensioned."""
+    B, H, Bb, tb, dd, tf, a_ = d["B"], d["H"], d["Bb"], d["tb"], d["d"], d["tf"], d["a"]
+    sc = min(6.5, 120.0 / (dd + 12), 110.0 / (H + 14))
+    # elevation, left
+    xc, ym = LM + 120, top - 100                    # centre of the column, mid-depth of the beam
+    hc = (dd + 14) * sc
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xc - H / 2 * sc, ym - hc / 2, H * sc, hc, fill=1, stroke=1)          # column
+    xf, Lb = xc + H / 2 * sc, 12 * sc                # face of the column, beam length drawn
+    g_ = 0.5 * sc if d["plate"] else 0.0             # beam held back from the face where flange plates are used
+    c.setFillColorRGB(0.90, 0.92, 0.95)
+    c.rect(xf + g_, ym - dd / 2 * sc, Lb - g_, dd * sc, fill=1, stroke=1)
+    c.line(xf + g_, ym - (dd / 2 - tf) * sc, xf + Lb, ym - (dd / 2 - tf) * sc); c.line(xf + g_, ym + (dd / 2 - tf) * sc, xf + Lb, ym + (dd / 2 - tf) * sc)
+    if d["plate"]:
+        c.setFillColorRGB(0.62, 0.68, 0.76)
+        for sg in (1, -1):
+            y0 = ym + sg * dd / 2 * sc if sg > 0 else ym - dd / 2 * sc - tb * sc
+            c.rect(xf, y0, 8 * sc, tb * sc, fill=1, stroke=1)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawString(xf + Lb + 16, ym + 6, d["beam"])
+    c.drawRightString(xc - H / 2 * sc - 5, ym - hc / 2 + 4, d["column"])
+    memberart._dim_v(c, ym - dd / 2 * sc, ym + dd / 2 * sc, xf + Lb + 8, f"d = {dd:g} in", FR, ext_from=xf + Lb)
+    memberart._dim_h(c, xc - H / 2 * sc, xc + H / 2 * sc, ym - hc / 2 - 12, f"{H:g} in", FR, ext_from=ym - hc / 2)
+    if d["plate"]:
+        c.setFont(FR, 6); c.drawString(xf + 8 * sc + 4, ym + dd / 2 * sc + tb * sc + 3, f"flange plate {Bb:g} x {tb:g} in, top and bottom")
+    _small(c, xc + 20, ym - hc / 2 - 28, "elevation, to scale")
+    # plan of the connecting face, right
+    xq, yq = RM - 150, top - 100
+    s2 = min(7.5, 95.0 / B, 95.0 / H)
+    c.setLineWidth(0.8); c.setStrokeColorRGB(*INK)
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xq - H * s2, yq - B / 2 * s2, H * s2, B * s2, fill=1, stroke=1)
+    c.setFillColorRGB(1, 1, 1); c.rect(xq - H * s2 + d["t"] * s2, yq - B / 2 * s2 + d["t"] * s2, (H - 2 * d["t"]) * s2, (B - 2 * d["t"]) * s2, fill=1, stroke=1)
+    c.setFillColorRGB(0.62, 0.68, 0.76) if d["plate"] else c.setFillColorRGB(0.90, 0.92, 0.95)
+    c.rect(xq, yq - Bb / 2 * s2, 46, Bb * s2, fill=1, stroke=1)
+    memberart._dim_v(c, yq - B / 2 * s2, yq + B / 2 * s2, xq - H * s2 - 10, f"B = {B:g} in", FR, ext_from=xq - H * s2)
+    memberart._dim_v(c, yq - Bb / 2 * s2, yq + Bb / 2 * s2, xq + 46 + 10, f"{Bb:g} in", FR, ext_from=xq + 46)
+    memberart._dim_v(c, yq + Bb / 2 * s2, yq + B / 2 * s2, xq + 22, "", FR, ext_from=xq)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawString(xq + 26, yq + (Bb / 2 + a_ / 2) * s2 - 2 + max(0, 6 - a_ * s2), f"a = {a_:.3g} in")
+    _small(c, xq - H * s2 / 2 + 20, yq - B / 2 * s2 - 14, "plan at a " + ("flange plate" if d["plate"] else "flange") + ", to scale")
+    return min(ym - hc / 2 - 36, yq - B / 2 * s2 - 22)
 
 
 def _guard_picture(c, top, d):

@@ -260,6 +260,18 @@ FORMS = {
                 F("weld", "Fillet weld, cap plate to the HSS", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
         tables=[T("loads", "Loads at the joint", [CASE, F("P", "Column compression", unit="kip"), F("M", "Moment across the joint", unit="kip-ft"), F("label", "Note", "text", required=False)]),
                 T("runs", "Or: combined loads (for example from the 3D frame), used in place of the table above", [F("name", "Combination or run", "text"), F("P", "Column compression", unit="kip"), F("M", "Moment across the joint", unit="kip-ft")])]),
+    "beam_hss_moment": dict(
+        title="Beam to HSS Column Moment Connection (flanges or flange plates welded to the face)", code="AISC 360-22", mark="BHM",
+        fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_source", "Source of the beam Fy", "text"),
+                F("column", "Column (square or rectangular HSS)", "hss_shape"), F("col_Fy", "Column Fy", unit="ksi"), F("col_source", "Source of the column Fy", "text"),
+                F("face", "HSS face the beam frames into", "select", options=["B", "H"], required=False, help="for a rectangular HSS: B is the face named second in the size (HSS10x6: the 6 in. face), H the first; blank = B"),
+                F("flanges", "Flange connection", "select", options=["beam flanges welded directly to the face", "flange plates welded to the face"]),
+                F("bp", "Flange plate width", unit="in", required=False), F("tp", "Flange plate thickness", unit="in", required=False),
+                F("plate_Fy", "Flange plate Fy", unit="ksi", required=False), F("plate_source", "Source of the flange plate Fy", "text", required=False)],
+        tables=[T("loads", "Loads at the joint", [CASE, F("M", "Beam end moment", unit="kip-ft"), F("P", "Column axial load at the joint", unit="kip", required=False),
+                                                  F("Mc", "Column moment at the joint", unit="kip-ft", required=False), F("label", "Note", "text", required=False)]),
+                T("runs", "Or: combined loads (for example from the 3D frame), used in place of the table above",
+                  [F("name", "Combination or run", "text"), F("M", "Beam end moment", unit="kip-ft"), F("P", "Column axial load", unit="kip", required=False), F("Mc", "Column moment", unit="kip-ft", required=False)])]),
     "end_plate": dict(
         title="Shear End-Plate Connection", code="AISC 360-22", mark="EP",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
@@ -1610,6 +1622,22 @@ def build(kind, values, project):
                 r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.num("s"), r.num("g"), r.num("weld"), r.num("FEXX"))
         r.done()
         return ws_more.cap_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
+    if kind == "beam_hss_moment":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        z = lambda v: v if v is not None else 0.0
+        runs = [dict(name=x["name"], M=x["M"], P=z(x.get("P")), Mc=z(x.get("Mc"))) for x in r.rows("runs")]
+        loads = [] if runs else [dict(case=x["case"], M=x["M"], P=z(x.get("P")), Mc=z(x.get("Mc")), **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads and not runs:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        plated = str(values.get("flanges") or "").lower().startswith("flange plate")
+        plate = dict(bp=r.num("bp", True, label="Flange plate width"), tp=r.num("tp", True, label="Flange plate thickness"), Fy=r.num("plate_Fy", True, label="Flange plate Fy"),
+                     source=r.text("plate_source", False)) if plated else None
+        r.text("flanges")
+        args = (r.text("beam"), r.num("beam_Fy"), r.text("beam_source"), r.text("column"), r.num("col_Fy"), r.text("col_source"))
+        r.done()
+        return ws_more.beam_hss_moment_sheet(mark, *args, loads, cb, m, face=str(values.get("face") or "B"), plate=plate, runs=runs or None,
+                                             runs_from=str(values.get("loads_from") or "")), "simple", {}
     if kind == "end_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
