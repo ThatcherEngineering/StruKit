@@ -134,71 +134,124 @@ class Frame3D:
 
     REL = {"mx": 3, "my": 4, "mz": 5}
 
-    def solve(self, node_loads=None, member_loads=()):
+    @staticmethod
+    def _kg_local(N, L):
+        """Geometric stiffness for axial force N (tension positive): bending terms about both axes (axial and torsional terms left out)."""
+        k = np.zeros((12, 12))
+        a, b_, c, d = 6.0 / 5, L / 10, 2 * L ** 2 / 15, -L ** 2 / 30
+        for (p, q, val) in ((1, 1, a), (1, 5, b_), (1, 7, -a), (1, 11, b_), (5, 5, c), (5, 7, -b_), (5, 11, d), (7, 7, a), (7, 11, -b_), (11, 11, c)):
+            k[p, q] = k[q, p] = val
+        for (p, q, val) in ((2, 2, a), (2, 4, -b_), (2, 8, -a), (2, 10, -b_), (4, 4, c), (4, 8, b_), (4, 10, d), (8, 8, a), (8, 10, b_), (10, 10, c)):
+            k[p, q] = k[q, p] = val
+        return k * N / L
+
+    def solve(self, node_loads=None, member_loads=(), second_order=False, n_sub=8, stiffness_factor=1.0, tol=1e-6, max_iter=40):
         """node_loads: {node: (Fx, Fy, Fz, Mx, My, Mz)} global. member_loads: (member, "global" or "local", (wx, wy, wz)) uniform load per
-        unit length over the whole member. Returns Result3D."""
+        unit length over the whole member. second_order: includes the effect of joints moving (P-Delta) and of members bowing between
+        their ends (P-delta): each member is divided into n_sub elements and the geometric stiffness is built from the member axial
+        forces, repeating until they stop changing. stiffness_factor multiplies every stiffness (0.8 for AISC 360-22 C2.3(a)).
+        Returns Result3D; with second_order, Result3D.stations holds the forces along each member."""
+        if not self.supports:
+            raise Frame3DError("frame: no supports")
+        nsub = max(1, int(n_sub)) if second_order else 1
         names = list(self.nodes)
-        idx = {n: 6 * i for i, n in enumerate(names)}
-        n = 6 * len(names)
-        K, F = np.zeros((n, n)), np.zeros(n)
-        for nd, load in (node_loads or {}).items():
+        coords = [np.array(self.nodes[nm]) for nm in names]
+        idx = {nm: 6 * i for i, nm in enumerate(names)}
+        for nd in (node_loads or {}):
             if nd not in idx:
                 raise Frame3DError(f"frame: load at joint {nd}, which is not defined")
-            F[idx[nd]:idx[nd] + 6] += np.array(load, dtype=float)
         by_name = {m.name: m for m in self.members}
-        fef = {m.name: np.zeros(12) for m in self.members}          # fixed-end forces, local
+        wloc = {m.name: np.zeros(3) for m in self.members}
         geo = {}
         for m in self.members:
-            L, R = self._axes(m)
-            T = np.zeros((12, 12))
-            for b in range(4):
-                T[3 * b:3 * b + 3, 3 * b:3 * b + 3] = R
-            geo[m.name] = (L, R, T)
+            geo[m.name] = self._axes(m)
         for name, frame, w in member_loads:
             if name not in by_name:
                 raise Frame3DError(f"frame: load on member {name}, which is not defined")
-            L, R, T = geo[name]
-            wl = np.array(w, dtype=float) if frame == "local" else R @ np.array(w, dtype=float)
-            wx, wy, wz = wl
-            f = np.zeros(12)
-            f[0] = f[6] = -wx * L / 2
-            f[1] = f[7] = -wy * L / 2; f[5] = -wy * L ** 2 / 12; f[11] = wy * L ** 2 / 12
-            f[2] = f[8] = -wz * L / 2; f[4] = wz * L ** 2 / 12; f[10] = -wz * L ** 2 / 12
-            fef[name] += f
-        store = {}
+            R = geo[name][1]
+            wloc[name] += np.array(w, dtype=float) if frame == "local" else R @ np.array(w, dtype=float)
+        # elements: (member name, k index, dof list, length, T, released local dofs)
+        elems, n_nodes = [], len(names)
         for m in self.members:
-            L, R, T = geo[m.name]
-            rel = [self.REL[r] for r in m.release_i] + [6 + self.REL[r] for r in m.release_j]
-            k, f = self._condense(self._k_local(m, L), fef[m.name], rel)
-            store[m.name] = (k, f, T)
-            dofs = list(range(idx[m.i], idx[m.i] + 6)) + list(range(idx[m.j], idx[m.j] + 6))
-            K[np.ix_(dofs, dofs)] += T.T @ k @ T
-            F[dofs] -= T.T @ f
+            L, R = geo[m.name]
+            T = np.zeros((12, 12))
+            for b in range(4):
+                T[3 * b:3 * b + 3, 3 * b:3 * b + 3] = R
+            chain = [idx[m.i]] + [6 * (n_nodes + q) for q in range(nsub - 1)] + [idx[m.j]]
+            n_nodes += nsub - 1
+            for k in range(nsub):
+                rel = ([self.REL[r] for r in m.release_i] if k == 0 else []) + ([6 + self.REL[r] for r in m.release_j] if k == nsub - 1 else [])
+                dofs = list(range(chain[k], chain[k] + 6)) + list(range(chain[k + 1], chain[k + 1] + 6))
+                elems.append((m.name, k, dofs, L / nsub, T, rel))
+        n = 6 * n_nodes
+        F0 = np.zeros(n)
+        for nd, load in (node_loads or {}).items():
+            F0[idx[nd]:idx[nd] + 6] += np.array(load, dtype=float)
         held = [idx[nd] + q for nd, flags in self.supports.items() for q in range(6) if flags[q]]
-        free = [i for i in range(n) if i not in set(held)]
-        if not held:
-            raise Frame3DError("frame: no supports")
-        U = np.zeros(n)
-        if free:
-            Kff = K[np.ix_(free, free)]
-            scale = np.max(np.abs(np.diag(K))) or 1.0
-            if np.min(np.abs(np.diag(Kff))) < 1e-12 * scale:
-                raise Frame3DError("frame: a joint is free to move or turn with nothing holding it (check supports and releases)")
-            try:
-                cond = np.linalg.cond(Kff)
-                if not np.isfinite(cond) or cond > 1e14:
-                    raise np.linalg.LinAlgError
-                U[free] = np.linalg.solve(Kff, F[free])
-            except np.linalg.LinAlgError:
-                raise Frame3DError("frame: the frame is not stable (it can move without resistance); check supports and releases")
-        Rf = K @ U - F
+        hs = set(held)
+        free = [i for i in range(n) if i not in hs]
+
+        def fef(name, Le):
+            wx, wy, wz = wloc[name]
+            f = np.zeros(12)
+            f[0] = f[6] = -wx * Le / 2
+            f[1] = f[7] = -wy * Le / 2; f[5] = -wy * Le ** 2 / 12; f[11] = wy * Le ** 2 / 12
+            f[2] = f[8] = -wz * Le / 2; f[4] = wz * Le ** 2 / 12; f[10] = -wz * Le ** 2 / 12
+            return f
+
+        N = {(e[0], e[1]): 0.0 for e in elems}
+        U, Kfull, Ffull, store = np.zeros(n), None, None, None
+        for it in range(max_iter if second_order else 1):
+            K, F, store = np.zeros((n, n)), F0.copy(), []
+            for name, k, dofs, Le, T, rel in elems:
+                m = by_name[name]
+                ke = self._k_local(m, Le) * stiffness_factor
+                if second_order:
+                    ke = ke + self._kg_local(N[(name, k)], Le)
+                ke, fe = self._condense(ke, fef(name, Le), rel)
+                store.append((ke, fe))
+                K[np.ix_(dofs, dofs)] += T.T @ ke @ T
+                F[dofs] -= T.T @ fe
+            U = np.zeros(n)
+            if free:
+                Kff = K[np.ix_(free, free)]
+                scale = np.max(np.abs(np.diag(K))) or 1.0
+                if np.min(np.abs(np.diag(Kff))) < 1e-12 * scale:
+                    raise Frame3DError("frame: a joint is free to move or turn with nothing holding it (check supports and releases)")
+                try:
+                    if second_order:
+                        np.linalg.cholesky(Kff)              # not positive definite: the loads are at or past the buckling load
+                    else:
+                        cond = np.linalg.cond(Kff)
+                        if not np.isfinite(cond) or cond > 1e14:
+                            raise np.linalg.LinAlgError
+                    U[free] = np.linalg.solve(Kff, F[free])
+                except np.linalg.LinAlgError:
+                    raise Frame3DError("frame: the frame is not stable under these loads (it buckles or sways without limit)" if second_order else
+                                       "frame: the frame is not stable (it can move without resistance); check supports and releases")
+            Kfull, Ffull = K, F
+            newN, change = {}, 0.0
+            for (name, k, dofs, Le, T, rel), (ke, fe) in zip(elems, store):
+                q = ke @ (T @ U[dofs]) + fe
+                newN[(name, k)] = float(q[6])                # tension positive
+                change = max(change, abs(newN[(name, k)] - N[(name, k)]))
+            ref = max([abs(v) for v in newN.values()] + [1e-9])
+            N = newN
+            if not second_order or change <= tol * ref:
+                break
+        else:
+            raise Frame3DError("frame: the second-order analysis did not settle; the frame is close to buckling")
+        Rf = Kfull @ U - Ffull
         disp = {nd: tuple(U[idx[nd]:idx[nd] + 6]) for nd in names}
         reactions = {nd: tuple(Rf[idx[nd] + q] if self.supports[nd][q] else 0.0 for q in range(6)) for nd in self.supports}
-        ends, axes = {}, {}
+        ends, axes, stations = {}, {}, {}
+        for (name, k, dofs, Le, T, rel), (ke, fe) in zip(elems, store):
+            q = ke @ (T @ U[dofs]) + fe
+            stations.setdefault(name, []).append((tuple(q[:6]), tuple(q[6:])))
         for m in self.members:
-            k, f, T = store[m.name]
-            dofs = list(range(idx[m.i], idx[m.i] + 6)) + list(range(idx[m.j], idx[m.j] + 6))
-            q = k @ (T @ U[dofs]) + f
-            ends[m.name] = (tuple(q[:6]), tuple(q[6:]))
+            st_ = stations[m.name]
+            ends[m.name] = (st_[0][0], st_[-1][1])
             axes[m.name] = geo[m.name][1]
-        return Result3D(disp, reactions, ends, axes)
+        res = Result3D(disp, reactions, ends, axes)
+        res.stations = stations
+        return res

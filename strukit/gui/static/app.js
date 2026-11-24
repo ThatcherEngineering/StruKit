@@ -705,6 +705,39 @@ function planSvg(plan, level) {
   return svg;
 }
 
+// 3D view of the placed members: a parallel projection that can be turned and tilted.
+let VIEW = { yaw: 35, tilt: 25 };
+function view3dSvg(view) {
+  const items = view.items;
+  if (!items.length) return el("div", { class: "small" }, "Nothing is placed in the model yet.");
+  const yaw = VIEW.yaw * Math.PI / 180, tilt = VIEW.tilt * Math.PI / 180, cy = Math.cos(yaw), sy = Math.sin(yaw), ct = Math.cos(tilt), st = Math.sin(tilt);
+  const P = p => { const xr = p[0] * cy + p[1] * sy, yr = -p[0] * sy + p[1] * cy; return [xr, -(p[2] * ct + yr * st), yr * ct - p[2] * st]; };   // screen x, screen y, depth
+  const segs = [];
+  items.forEach(i => {
+    if (i.type === "wall") { const a2 = [i.a[0], i.a[1], i.zb], b2 = [i.b[0], i.b[1], i.zb]; segs.push({ poly: [i.a, i.b, b2, a2], item: i }); }
+    else if (i.type === "footing") { const s = 1.5, z = i.a[2]; segs.push({ poly: [[i.a[0] - s, i.a[1] - s, z], [i.a[0] + s, i.a[1] - s, z], [i.a[0] + s, i.a[1] + s, z], [i.a[0] - s, i.a[1] + s, z]], item: i }); }
+    else segs.push({ line: [i.a, i.b], item: i });
+  });
+  const all = segs.flatMap(g => (g.poly || g.line).map(P));
+  const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), w = (Math.max(...xs) - x0) || 10, h = (Math.max(...ys) - y0) || 10, pad = Math.max(w, h) * 0.1, fsz = Math.max(w, h) * 0.03;
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${w + 2 * pad} ${h + 2 * pad}`); svg.setAttribute("class", "frame");
+  const add = (tag, a, text) => { const n = document.createElementNS(ns, tag); for (const k in a) n.setAttribute(k, a[k]); if (text) n.textContent = text; svg.append(n); };
+  const S2 = p => { const q = P(p); return [q[0] - x0 + pad, q[1] - y0 + pad, q[2]]; };
+  segs.forEach(g => { const q = (g.poly || g.line).map(S2); g.q = q; g.depth = q.reduce((t, p) => t + p[2], 0) / q.length; });
+  segs.sort((a, b) => b.depth - a.depth);                    // far things first
+  const col = { beam: "#213651", joist: "#6C7C90", column: "#1B2430" };
+  segs.forEach(g => {
+    const i = g.item, q = g.q;
+    if (g.poly) add("polygon", { points: q.map(p => p[0] + "," + p[1]).join(" "), fill: i.type === "wall" ? "#C9A27A" : "#D5DAE1", "fill-opacity": i.type === "wall" ? 0.55 : 0.8, stroke: i.type === "wall" ? "#8A5A2B" : "#3A4756", "stroke-width": fsz * 0.08 });
+    else add("line", { x1: q[0][0], y1: q[0][1], x2: q[1][0], y2: q[1][1], stroke: col[i.type] || "#213651", "stroke-width": fsz * (i.type === "column" ? 0.42 : i.type === "joist" ? 0.14 : 0.3), "stroke-linecap": "round" });
+    const mx = q.reduce((t, p) => t + p[0], 0) / q.length, my = q.reduce((t, p) => t + p[1], 0) / q.length;
+    add("text", { x: mx + fsz * 0.3, y: my - fsz * 0.3, "font-size": fsz * 0.85, fill: "#1B2430" }, i.mark);
+  });
+  return svg;
+}
+
 let PLAN_LEVEL = null;
 function modelCard(changed) {
   const mdl = modelOf();
@@ -714,12 +747,20 @@ function modelCard(changed) {
     help: "Grids are optional: a member can be placed by feet alone. Where a grid has the same name as a number, the grid is meant." };
   const holder = el("div", {});
   const levels = mdl.levels.map(l => (l.name || "").trim()).filter(Boolean);
-  const pickLevel = el("select", {}, levels.map(l => el("option", { value: l }, l)));
-  if (PLAN_LEVEL && levels.includes(PLAN_LEVEL)) pickLevel.value = PLAN_LEVEL; else if (levels.length) pickLevel.value = levels[levels.length - 1];
+  const pickLevel = el("select", {}, levels.map(l => el("option", { value: l }, l)).concat([el("option", { value: "(3D)" }, "3D view")]));
+  if (PLAN_LEVEL && (levels.includes(PLAN_LEVEL) || PLAN_LEVEL === "(3D)")) pickLevel.value = PLAN_LEVEL; else if (levels.length) pickLevel.value = levels[levels.length - 1];
   const drawPlan = async () => {
     holder.textContent = ""; PLAN_LEVEL = pickLevel.value;
     if (!levels.length) return;
-    try { const plan = await post("/api/model_plan", { project: S.project, members: S.members }); holder.append(planSvg(plan, pickLevel.value)); } catch (e) { toast(e.message, 9000); }
+    try {
+      if (pickLevel.value === "(3D)") {
+        const view = await post("/api/model_view", { project: S.project, members: S.members });
+        const turn = (dy, dt) => () => { VIEW.yaw = (VIEW.yaw + dy + 360) % 360; VIEW.tilt = Math.max(5, Math.min(85, VIEW.tilt + dt)); drawPlan(); };
+        holder.append(el("div", { class: "fillbar" }, el("button", { class: "btn", onclick: turn(-15, 0) }, "Turn left"), el("button", { class: "btn", onclick: turn(15, 0) }, "Turn right"),
+          el("button", { class: "btn", onclick: turn(0, 10) }, "Look from higher"), el("button", { class: "btn", onclick: turn(0, -10) }, "Look from lower")), view3dSvg(view));
+        if (view.problems.length) holder.append(el("ul", { class: "msg small" }, view.problems.map(t => el("li", {}, t))));
+      } else { const plan = await post("/api/model_plan", { project: S.project, members: S.members }); holder.append(planSvg(plan, pickLevel.value)); }
+    } catch (e) { toast(e.message, 9000); }
   };
   pickLevel.addEventListener("change", drawPlan);
   const link = el("button", { class: "btn", onclick: async () => {
@@ -750,7 +791,7 @@ function modelCard(changed) {
   return el("div", { class: "card" }, el("h2", {}, "Building Model"),
     el("div", { class: "help" }, "Optional. List the levels and grids, place members on their own screens, then link them by position. Every member can still be checked alone."),
     table(lv, mdl.levels, changed), table(gx, mdl.grids_x, changed), table(gy, mdl.grids_y, changed),
-    el("div", { class: "fillbar" }, link, lat, levels.length ? el("span", { class: "small" }, " Plan of level ") : null, levels.length ? pickLevel : null),
+    el("div", { class: "fillbar" }, link, lat, levels.length ? el("span", { class: "small" }, " View ") : null, levels.length ? pickLevel : null),
     holder,
     el("div", { class: "fillbar" }, frameBtn),
     (FRAME_CHECK && FRAME_CHECK.columns && FRAME_CHECK.columns.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Column", "Case", "3D frame", "Takedown", "Difference"].map(t => el("th", {}, t)))),

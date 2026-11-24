@@ -123,3 +123,48 @@ def test_unstable_and_bad_input():
         f.solve({"b": (0, 0, -1, 0, 0, 0)})
     with pytest.raises(Frame3DError, match="not defined"):
         f.member("x", "a", "zz", E, G, **SEC)
+
+
+def _col(angle_deg, Iy=484.0):
+    """AISC benchmark column (W14x48, 28 ft) standing up, its bending plane turned `angle_deg` about Z. The benchmark is a plane problem:
+    the out-of-plane inertia is set equal to the in-plane one unless a test wants the real weak axis (51.4 in4)."""
+    c, s = math.cos(math.radians(angle_deg)), math.sin(math.radians(angle_deg))
+    f = Frame3D(); f.node("A", 0, 0, 0); f.node("B", 0, 0, 336)
+    # bending in the plane (c, s): about the axis normal to it; give 'up' = that normal so Iz is the in-plane inertia
+    f.member("c", "A", "B", E, G, A=14.1, Iy=Iy, Iz=484.0, J=1.45, up=(-s, c, 0))
+    return f, c, s
+
+
+@pytest.mark.parametrize("P,M,D", [(0, 336, 0.901), (100, 469, 1.33), (150, 598, 1.75), (200, 848, 2.56)])
+@pytest.mark.parametrize("ang", [0.0, 50.0])
+def test_aisc_benchmark_case_2(P, M, D, ang):
+    """AISC 360-22 Commentary Fig. C-C2.3: cantilever, 1 kip at the top, axial load P; base moment (kip-in.) and tip deflection (in.)."""
+    f, c, s = _col(ang)
+    f.support("A", (1, 1, 1, 1, 1, 1))
+    r = f.solve({"B": (1.0 * c, 1.0 * s, -float(P), 0, 0, 0)}, second_order=True, n_sub=16)
+    u = r.disp["B"]
+    assert u[0] * c + u[1] * s == pytest.approx(D, rel=0.01) and abs(-u[0] * s + u[1] * c) < 1e-6
+    Rb = r.reactions["A"]
+    assert math.hypot(Rb[3], Rb[4]) == pytest.approx(M, rel=0.01)
+
+
+@pytest.mark.parametrize("P,M", [(150, 269), (450, 375)])
+def test_aisc_benchmark_case_1(P, M):
+    """AISC 360-22 Commentary Fig. C-C2.2: pinned-pinned, 0.2 kip/ft sideways, axial load P; mid-height moment (kip-in.)."""
+    f, c, s = _col(0.0)
+    f.support("A", (1, 1, 1, 0, 0, 1)); f.support("B", (1, 1, 0, 0, 0, 0))
+    r = f.solve({"B": (0, 0, -float(P), 0, 0, 0)}, [("c", "global", (0.2 / 12, 0, 0))], second_order=True, n_sub=16)
+    Mmax = max(max(math.hypot(a[4], a[5]), math.hypot(b[4], b[5])) for a, b in r.stations["c"])
+    assert Mmax == pytest.approx(M, rel=0.01)
+
+
+def test_buckling_is_reported_and_first_order_unchanged():
+    f, c, s = _col(0.0, Iy=51.4)
+    f.support("A", (1, 1, 1, 1, 1, 1))
+    Pe_weak = math.pi ** 2 * E * 51.4 / (2 * 336) ** 2                                      # weak-axis cantilever buckling load, about 32.6 kips
+    r = f.solve({"B": (0.1, 0.1, -0.5 * Pe_weak, 0, 0, 0)}, second_order=True)
+    assert abs(r.disp["B"][1]) > 0
+    with pytest.raises(Frame3DError, match="not stable under these loads"):
+        f.solve({"B": (0.1, 0.1, -1.05 * Pe_weak, 0, 0, 0)}, second_order=True)
+    a = f.solve({"B": (1.0, 0, -50.0, 0, 0, 0)})
+    assert a.disp["B"][0] == pytest.approx(336 ** 3 / (3 * E * 484))                        # first-order: no amplification

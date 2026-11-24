@@ -2792,6 +2792,56 @@ def lateral_governing(project, members):
     return dict(members=out, lines=lines, problems=w["problems"] + [p_ for p_ in e["problems"] if p_ not in w["problems"]])
 
 
+def model_view(project, members):
+    """What the 3D view draws: every placed member as a line or a point in space (ft), with its mark and kind.
+    dict(items=[dict(mark, kind, a=(x, y, z), b=(x, y, z) or None, type)], levels=[(name, elev)], problems=[...])."""
+    mdl = (project or {}).get("model") or {}
+    levels, problems = [], []
+    for l in mdl.get("levels") or []:
+        nm = str(l.get("name") or "").strip()
+        try:
+            levels.append((nm, float(str(l.get("elev")).replace(",", ""))))
+        except (TypeError, ValueError):
+            if nm:
+                problems.append(f"Level {nm} needs an elevation for the 3D view")
+    el = dict(levels)
+    order = [n for n, _ in levels]
+    items = []
+    for m in members or []:
+        kind = m.get("kind")
+        if kind not in TAKEDOWN_BEAMS + TAKEDOWN_POSTS + TAKEDOWN_FOOTINGS + MODEL_WALLS:
+            continue
+        try:
+            pl = model_place(project, m)
+        except ValueError:
+            continue
+        if not pl:
+            continue
+        mark = (m.get("values") or {}).get("mark") or ""
+        if kind in TAKEDOWN_FOOTINGS:
+            z = el.get(pl["base"], levels[0][1] if levels else 0.0)
+            items.append(dict(mark=mark, kind=kind, type="footing", a=(*pl["p1"], z), b=None))
+            continue
+        if pl["level"] not in el:
+            continue
+        z = el[pl["level"]]
+        if kind in TAKEDOWN_POSTS:
+            zb = el.get(pl["base"], levels[0][1])
+            items.append(dict(mark=mark, kind=kind, type="column", a=(*pl["p1"], zb), b=(*pl["p1"], z)))
+        elif kind in MODEL_WALLS:
+            i = order.index(pl["level"])
+            zb = levels[i - 1][1] if i > 0 else z - 9.0
+            items.append(dict(mark=mark, kind=kind, type="wall", a=(*pl["p1"], z), b=(*pl["p2"], z), zb=zb))
+        else:
+            sp = 0.0
+            try:
+                sp = float(str((m.get("values") or {}).get("spacing") or 0))
+            except ValueError:
+                pass
+            items.append(dict(mark=mark, kind=kind, type="joist" if (kind == "ijoist" or sp > 0) else "beam", a=(*pl["p1"], z), b=(*pl["p2"], z)))
+    return dict(items=items, levels=levels, problems=problems)
+
+
 FRAME_BEAMS, FRAME_COLS = ("steel_beam",), ("steel_column", "hss_column")
 
 
