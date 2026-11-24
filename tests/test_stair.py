@@ -63,3 +63,10 @@ def test_bent_plate_tread_design_guide_34_example_10_2_2(tmp_path):
     calcsheet.simple_pdf(s, str(tmp_path / "t.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
     assert calc.results("stair_tread", dict(v, live_source=""), dict(method="ASD"))["state"] == "incomplete"
     assert not stair_tread_sheet("TR1", 0.1875, 12.0, 2.0, 4.0, 26.7, "x", 100.0, 1000.0, "y", "ASD").ok
+
+
+def test_stringer_refuses_an_angle_with_a_plain_message():
+    from strukit.gui import calc
+    v = dict(mark="ST9", shape="L4X4X1/2", Fy="36", run="10", riser="7", tread="11", trib="2", dead="20", dead_note="pans", extra="", extra_note="", occupancy="stairs and exit ways", braced="yes", defl=[])
+    out = calc.results("stair_stringer", v, dict(name="T", number="1", address="", method="ASD", date="2026-11-23", combos=[dict(expr="D + L", source="typed")]))
+    assert out["state"] == "stopped" and "I-shape, channel, HSS or pipe tables" in out["messages"][0]
