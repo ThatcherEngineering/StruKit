@@ -263,3 +263,12 @@ def test_moment_frame_takes_hss_columns(tmp_path):
     calcsheet.frame_pdf(h, str(tmp_path / "f.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
     assert calc.results("frame", dict(FRAME, col_shape="C15X33.9"), proj)["state"] == "stopped"
     assert hss.pns(p, 50.0) == (pytest.approx(50 * p["A"]), "Pns = Fy Ag") and hss.pns(shapes.hss("HSS12x8x3/16"), 50.0)[1] == "Pns = Fy Ae"
+
+
+def test_overloaded_cantilevered_column_stops_with_a_plain_message():
+    from strukit.gui import calc
+    proj = dict(method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="x")])
+    v = dict(mark="C6", shape="W8X31", Fy="50", height="10", ends="free both ways (cantilever)", Lx="", Ly="", Kx="1", Ky="1", k_source="direct analysis method",
+             self_weight="yes", loads=[dict(case="D", P="900", label="")], lateral=[], leaning=[], drift=[])
+    r = calc.results("steel_column", v, proj)
+    assert r["state"] == "stopped" and "cross-section strength" in r["messages"][0]

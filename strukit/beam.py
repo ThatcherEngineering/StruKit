@@ -145,7 +145,9 @@ def solve(length, supports, EI, point_loads=(), dist_loads=(), fixed=(), n=400,
     free = [i for i in range(2 * nn) if i not in restrained]
     u = np.zeros(2 * nn)
     if axial or springs:
-        if np.linalg.eigvalsh(K[np.ix_(free, free)])[0] <= 0:
+        try:                                              # stable only while the stiffness matrix is positive definite
+            np.linalg.cholesky(K[np.ix_(free, free)])
+        except np.linalg.LinAlgError:
             raise ValueError("beam: the axial load reaches or exceeds the buckling load (unstable)")
     try:
         u[free] = np.linalg.solve(K[np.ix_(free, free)], F[free])
