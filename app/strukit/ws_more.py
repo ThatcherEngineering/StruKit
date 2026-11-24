@@ -2213,7 +2213,8 @@ def wind_kzt_sheet(mark, shape, exposure, exposure_basis, H, Lh, geometry_source
 GUARD_P, GUARD_W, GUARD_INFILL = 200.0, 50.0, 50.0        # lb, lb/ft, lb on 1 ft2: ASCE/SEI 7-22 Sect. 4.5.1, 4.5.1.1, 4.5.1.2
 
 
-def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_source, spacing_ft, height_ft, uniform, uniform_basis, method):
+def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_source, spacing_ft, height_ft, uniform, uniform_basis, method,
+                stringer=None, stringer_Fy=None, stringer_Fy_source=""):
     """Guard of HSS or pipe (round, square or rectangular): top rail spanning between posts, posts cantilevered from
     their base. Loads: ASCE/SEI 7-22 Sect. 4.5.1 (200 lb at any point, any direction) and
     4.5.1.1 (50 lb/ft, not concurrent; uniform False where an exception applies, with its
@@ -2302,7 +2303,34 @@ def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_sour
                          "axial load in the posts", "a separate handrail and its brackets"],
                         picture=None)
     sheet.blocks.append(dict(title="Guard Elevation", head="Guard Elevation", picture=("guard", dict(S=S, h=h, rail=rail, post=post, uniform=uniform))))
-    sheet.guard = dict(cases=cases, Mr=Mr, Vr=Vr, Mp=Mpst, Vp=Vpst)
+    flange = None
+    if stringer:
+        # Post welded to the top flange of a channel stringer: AISC Design Guide 34 Sect. 7.3.3, Eq. 7-1, and Example 10.1.8.
+        if stringer_Fy is None or stringer_Fy <= 0 or not (stringer_Fy_source or "").strip():
+            raise WorksheetError(f"{mark}: the channel stringer needs its yield stress and where that comes from")
+        try:
+            ch = shapes.channel(stringer)
+        except shapes.ShapeError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        N = pp["OD"] if "OD" in pp else min(pp["B"], pp["Ht"])
+        Beff = N + 2 * 2.5 * (ch["kdes"] - ch["tf"] / 2 + ch["bf"])
+        Zw, Sw = Beff * ch["tw"] ** 2 / 4, Beff * ch["tw"] ** 2 / 6
+        Mn = min(stringer_Fy * Zw, 1.6 * stringer_Fy * Sw)
+        Mc = (Mn / 1.67 if method == "ASD" else 0.90 * Mn) * 1000 / 12
+        sheet.blocks.append(dict(title="Channel Stringer at the Post", steps=[
+            Ln("Beff = N + 2 (2.5) (k - tf / 2 + bf)", Beff, "in", "AISC Design Guide 34 Eq. 7-1",
+               f"{shapes.normalize(stringer)}: k = {ch['kdes']:g}, tf = {ch['tf']:g}, bf = {ch['bf']:g} in.; post N = {N:g} in."),
+            Ln("Z = Beff tw^2 / 4", f"{Zw:.3f} in3", "", "", f"tw = {ch['tw']:g} in."),
+            Ln("S = Beff tw^2 / 6", f"{Sw:.3f} in3", "", "", ""),
+            Ln("Mn = Fy Z, not over 1.6 Fy S", Mn * 1000 / 12, "lb-ft", "AISC 360-22 Eq. F11-1", f"Fy = {stringer_Fy:g} ksi ({stringer_Fy_source.strip()}); web as a rectangular bar"),
+            Ln(sym, Mc, "lb-ft", "AISC 360-22 Sect. F1", "")]))
+        sheet.rows.append(Row("Channel stringer web at the post", cname, g_pm[3], Mc, "lb-ft", "AISC Design Guide 34 Eq. 7-1; AISC 360-22 Sect. F11", f"{g_pm[0]} load governs"))
+        sheet.info.append(("Posts stand on", f"top flange of {shapes.normalize(stringer)}, Fy = {stringer_Fy:g} ksi ({stringer_Fy_source.strip()})"))
+        sheet.assumptions.append("Each post is welded to the top flange of the channel stringer; the post moment about the stringer axis is taken by the channel web over the "
+                                 "effective width, one post alone, with no stiffener.")
+        sheet.not_checked[0] = "the post to stringer weld, and torsion and bending of the stringer from the guard load"
+        flange = dict(Beff=Beff, Z=Zw, S=Sw, Mn=Mn, Mc=Mc)
+    sheet.guard = dict(cases=cases, Mr=Mr, Vr=Vr, Mp=Mpst, Vp=Vpst, flange=flange)
     return sheet
 
 
