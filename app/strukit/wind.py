@@ -801,17 +801,29 @@ FREE_PITCHED = {
     45.0: {"A": ((1.1, 0.9), (-0.5, -0.5)), "B": ((-0.3, -0.5), (-0.3, -0.7))}}
 
 
-def free_pitched_cn(theta, obstructed=False):
-    """(CNW, CNL) for Cases A and B, Figure 27.3-5; under 7.5 degrees the Figure 27.3-4 values."""
+# Figure 27.3-6 (pdf p. 350), troughed free roofs, same layout as FREE_PITCHED.
+FREE_TROUGHED = {
+    7.5: {"A": ((-1.1, 0.3), (-1.6, -0.5)), "B": ((-0.2, 1.2), (-0.9, -0.8))},
+    15.0: {"A": ((-1.1, 0.4), (-1.2, -0.5)), "B": ((0.1, 1.1), (-0.6, -0.8))},
+    22.5: {"A": ((-1.1, -0.1), (-1.2, -0.6)), "B": ((-0.1, 0.8), (-0.8, -0.8))},
+    30.0: {"A": ((-1.3, -0.3), (-1.4, -0.4)), "B": ((0.1, 0.9), (-0.2, -0.5))},
+    37.5: {"A": ((-1.3, -0.6), (-1.4, -0.3)), "B": ((0.2, 0.6), (-0.3, -0.4))},
+    45.0: {"A": ((-1.1, -0.9), (-1.2, -0.3)), "B": ((0.3, 0.5), (-0.3, -0.4))}}
+
+
+def free_pitched_cn(theta, obstructed=False, table=None):
+    """(CNW, CNL) for Cases A and B, Figure 27.3-5 (or 27.3-6 with table=FREE_TROUGHED); under
+    7.5 degrees the Figure 27.3-4 values (note 3 of both figures)."""
+    table = table or FREE_PITCHED
     if theta is None or theta < 0 or theta > 45:
-        raise WindError("wind: a pitched free roof is between 0 and 45 degrees (Figure 27.3-5)")
+        raise WindError("wind: a pitched or troughed free roof is between 0 and 45 degrees (Figures 27.3-5, 27.3-6)")
     k = 1 if obstructed else 0
     if theta < 7.5:
         return {c: FREE_MONO[0.0][c][k] for c in ("A", "B")}
-    angs = sorted(FREE_PITCHED)
+    angs = sorted(table)
     lo, hi = max(a for a in angs if a <= theta), min(a for a in angs if a >= theta)
     f = 0.0 if hi == lo else (theta - lo) / (hi - lo)
-    return {c: tuple(x + (y - x) * f for x, y in zip(FREE_PITCHED[lo][c][k], FREE_PITCHED[hi][c][k])) for c in ("A", "B")}
+    return {c: tuple(x + (y - x) * f for x, y in zip(table[lo][c][k], table[hi][c][k])) for c in ("A", "B")}
 
 
 def free_roof(V, exposure, h, theta, L, roof="monoslope", obstructed=False, Kzt=1.0, Ke=1.0):
@@ -819,11 +831,11 @@ def free_roof(V, exposure, h, theta, L, roof="monoslope", obstructed=False, Kzt=
     horizontal width, eave to eave, and the windward and leeward halves are the two slopes."""
     if roof == "monoslope":
         return free_roof_monoslope(V, exposure, h, theta, L, obstructed, Kzt, Ke)
-    if roof != "pitched":
-        raise WindError("wind: the free roof is monoslope or pitched")
+    if roof not in ("pitched", "troughed"):
+        raise WindError("wind: the free roof is monoslope, pitched or troughed")
     r = free_roof_monoslope(V, exposure, h, min(theta, 45.0) if theta is not None else theta, L, obstructed, Kzt, Ke)      # range checks, qh and Figure 27.3-7
     if r["across"] is not None:
-        cn = free_pitched_cn(theta, obstructed)
+        cn = free_pitched_cn(theta, obstructed, FREE_TROUGHED if roof == "troughed" else None)
         r["across"] = [dict(gamma=0, case=c, CNW=cn[c][0], CNL=cn[c][1], pW=r["factor"] * cn[c][0], pL=r["factor"] * cn[c][1]) for c in ("A", "B")]
     return r
 
@@ -848,6 +860,8 @@ def free_roof_totals(r, theta, L, B, roof="monoslope"):
         V = (x["pW"] + x["pL"]) * half
         if roof == "pitched":
             H = (x["pW"] - x["pL"]) * half * t
+        elif roof == "troughed":                          # the windward half faces downwind, the leeward half upwind
+            H = (x["pL"] - x["pW"]) * half * t
         else:                                             # the top surface faces the low edge: downwind for gamma = 0, upwind for gamma = 180
             H = (-1.0 if x["gamma"] == 0 else 1.0) * (x["pW"] + x["pL"]) * half * t
         out.append(dict(gamma=x["gamma"], case=x["case"], H=H, V=V))
