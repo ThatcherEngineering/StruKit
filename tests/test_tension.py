@@ -49,3 +49,28 @@ def test_single_angle_hanger_design_guide_34_example_10_1_6():
         o = s.tension
         assert o["T"] == pytest.approx(T, abs=0.01) and o["Pyc"] == pytest.approx(py, abs=0.06) and o["Prc"] == pytest.approx(pr, abs=0.06)
         assert o["slen"] == pytest.approx(5.83 * 12 / 0.586) and s.ok
+
+
+def test_single_angle_example_d2_with_the_shear_lag_helper():
+    """AISC Design Examples v16 Example D.2: L4x4x1/2, A572 Gr. 50, one line of four 3/4 in. bolts, l = 9 in., D = 20 kips, L = 60 kips: U = 0.869 (Case 2
+    over Case 8's 0.80), An = 3.31 in2, Ae = 2.88 in2, yielding 169 / 113 kips, rupture 140 / 93.5 kips; L/r limit at 300 rz = 19.4 ft."""
+    from strukit import shapes
+    from strukit.ws_more import angle_shear_lag
+    loads = [dict(case="D", P=20.0), dict(case="L", P=60.0)]
+    for method, cb, py, pr in (("LRFD", Combo("1.2D + 1.6L", {"D": 1.2, "L": 1.6}, "t"), 169, 140), ("ASD", Combo("D + L", {"D": 1, "L": 1}, "t"), 112.5, 93.5)):
+        s = tension_member_sheet("TM2", "L4X4X1/2", 50, 65, "A572 Gr. 50", 19.4, 1, 0.75, 0.5, None, "", loads, [cb], method, angle_conn=dict(n=4, l=9.0, leg="long"))
+        o = s.tension
+        assert o["U"] == pytest.approx(0.869, abs=0.001) and o["An"] == pytest.approx(3.31, abs=0.005) and o["Ae"] == pytest.approx(2.88, abs=0.005)
+        assert o["Pyc"] == pytest.approx(py, abs=0.6) and o["Prc"] == pytest.approx(pr, abs=0.6) and o["slen"] == pytest.approx(300, abs=0.5)
+    a = shapes.angle("L6X4X1/2")
+    assert angle_shear_lag(a, 3, 6.0, "long")[0] == pytest.approx(max(1 - 0.981 / 6, 0.60, 6 * 0.5 / 4.75))
+    assert angle_shear_lag(a, 3, 6.0, "short")[0] == pytest.approx(max(1 - 1.98 / 6, 0.60, 4 * 0.5 / 4.75))
+    assert angle_shear_lag(a, 2, 3.0, "short")[0] == pytest.approx(max(1 - 1.98 / 3, 4 * 0.5 / 4.75))
+    with pytest.raises(WorksheetError):
+        tension_member_sheet("TM2", "W8X21", 50, 65, "A992", 20, 0, None, None, None, "", loads, [Combo("D + L", {"D": 1, "L": 1}, "t")], "ASD", angle_conn=dict(n=4, l=9.0))
+    v = dict(mark="TM2", shape="L4X4X1/2", Fy="50", Fu="65", steel_source="A572", length="15", n_holes="1", bolt_d="0.75", hole_t="0.5", U="", U_source="", angle_n="4", angle_l="9", angle_leg="long",
+             loads=[dict(case="D", P="20", label=""), dict(case="L", P="60", label="")])
+    proj = dict(name="T", number="1", address="", method="ASD", date="2026-11-23", combos=[dict(expr="D + L", source="typed")])
+    sh, _, _ = calc.build("tension_member", v, proj)
+    assert sh.tension["U"] == pytest.approx(0.869, abs=0.001) and sh.ok
+    assert calc.results("tension_member", dict(v, angle_n="", angle_l=""), proj)["state"] == "incomplete"

@@ -294,3 +294,9 @@ def test_guard_post_on_a_channel_stringer_design_guide_34_example_10_1_8():
     assert calc.results("guard", v, dict(method="ASD"))["state"] == "incomplete"
     out = calc.results("guard", dict(v, stringer_Fy="36", stringer_Fy_source="A36"), dict(method="ASD"))
     assert out["state"] != "incomplete"
+
+
+def test_landing_post_design_guide_34_example_10_1_5():
+    """AISC Design Guide 34 Example 10.1.5: HSS3x3x3/16, A500 Gr. C (50 ksi), Lc = 6.5 ft: Manual Table 4-4 gives 60.4 kips LRFD and 40.2 kips ASD."""
+    c = hss.rect_compression(shapes.hss("HSS3x3x3/16"), 50.0, 6.5 * 12)
+    assert 0.90 * c["Pn"] == pytest.approx(60.4, abs=0.3) and c["Pn"] / 1.67 == pytest.approx(40.2, abs=0.2)
