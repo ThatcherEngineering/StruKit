@@ -70,3 +70,19 @@ def test_stringer_refuses_an_angle_with_a_plain_message():
     v = dict(mark="ST9", shape="L4X4X1/2", Fy="36", run="10", riser="7", tread="11", trib="2", dead="20", dead_note="pans", extra="", extra_note="", occupancy="stairs and exit ways", braced="yes", defl=[])
     out = calc.results("stair_stringer", v, dict(name="T", number="1", address="", method="ASD", date="2026-11-23", combos=[dict(expr="D + L", source="typed")]))
     assert out["state"] == "stopped" and "I-shape, channel, HSS or pipe tables" in out["messages"][0]
+
+
+def test_industrial_stringer_uniform_load_design_guide_34_example_10_2_3():
+    """AISC Design Guide 34 Example 10.2.3, uniform live loading: HSS12x2x1/4 (22.42 lb/ft), A500 Gr. C, 14.7 ft run, 7 / 11 stair, treads 10 psf on a
+    3 ft stair (1.5 ft to each stringer), guard 20 lb/ft, live 60 psf: wD = 0.0617 kip/ft, wL = 0.0900 kip/ft; wu = 0.218 / wa = 0.152 kip/ft;
+    Vu = 1.60 / Va = 1.12 kips; Mu = 5.89 / Ma = 4.11 kip-ft.  (The example's 1 kip point load case is not on this screen; the sheet lists it as not checked.)"""
+    v = dict(mark="ST2", shape="HSS12X2X1/4", Fy="50", run="14.7", riser="7", tread="11", trib="1.5", dead="10", dead_note="checkered plate treads", extra="20", extra_note="guard",
+             occupancy="other (type the load)", live_psf="60", live_source="OSHA industrial stair, owner's criteria", braced="yes", defl=[])
+    for proj, M, Vv in ((LRFD, 5.89, 1.60), (ASD, 4.11, 1.12)):
+        s, _, _ = calc.build("stair_stringer", v, proj)
+        r = {x.check: x for x in s.rows}
+        assert sum(l["w"] for l in s.loads if l["case"] == "D") == pytest.approx(0.0617, abs=0.0003) and [l["w"] for l in s.loads if l["case"] == "L"] == [pytest.approx(0.0900)]
+        assert r["flexure"].demand == pytest.approx(M, abs=0.02) and r["shear"].demand == pytest.approx(Vv, abs=0.01)
+        assert any("a concentrated live load on the stringer" in a for a in s.assumptions)
+    assert calc.results("stair_stringer", dict(v, live_source=""), ASD)["state"] == "incomplete"
+    assert not any("concentrated live load on the stringer" in a for a in calc.build("stair_stringer", V, ASD)[0].assumptions)

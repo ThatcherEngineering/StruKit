@@ -2481,7 +2481,7 @@ STAIR_TREAD_P = 300.0                                                           
 
 
 def stair_stringer_sheet(mark, shape, Fy, run_ft, riser_in, tread_in, trib_ft, dead_psf, dead_note, extra_plf, extra_note, occupancy,
-                         braced, combos, defl_checks, method):
+                         braced, combos, defl_checks, method, live_other=None):
     """Steel stair stringer by the horizontal plane method of AISC Design Guide 34 (Example
     10.1.2): a simple span equal to the horizontal run; loads per foot of run; the stringer's
     own weight times the slope ratio; deflection times 1/cos^2 of the slope against the run
@@ -2489,7 +2489,11 @@ def stair_stringer_sheet(mark, shape, Fy, run_ft, riser_in, tread_in, trib_ft, d
     and finishes on the horizontal projection; extra_plf: other dead load on the stringer
     (guard, handrail) per foot of run. Runs the steel beam sheet (I-shape, channel, HSS, pipe)."""
     from . import shapes, ws_steel_beam
-    if occupancy not in STAIR_LIVE:
+    if live_other is not None:
+        # a uniform live load typed with its source (for example an industrial stair); live_other = dict(psf, source)
+        if not live_other.get("psf") or live_other["psf"] <= 0 or not (live_other.get("source") or "").strip():
+            raise WorksheetError(f"{mark}: the typed live load needs its value and where it comes from")
+    elif occupancy not in STAIR_LIVE:
         raise WorksheetError(f"{mark}: the occupancy is one of: " + "; ".join(STAIR_LIVE))
     for nm, v in (("the horizontal run", run_ft), ("the riser height", riser_in), ("the tread length", tread_in), ("the tread width carried", trib_ft)):
         if v is None or v <= 0:
@@ -2514,12 +2518,13 @@ def stair_stringer_sheet(mark, shape, Fy, run_ft, riser_in, tread_in, trib_ft, d
             continue
     if pr is None:
         raise WorksheetError(f"{mark}: shape '{shape}' is not in the {shapes.SOURCE} I-shape, channel, HSS or pipe tables")
-    live = STAIR_LIVE[occupancy]
+    live = live_other["psf"] if live_other is not None else STAIR_LIVE[occupancy]
+    live_txt = live_other["source"].strip() if live_other is not None else f"{occupancy}, ASCE/SEI 7-22 Table 4.3-1"
     loads = [dict(case="D", kind="uniform", w=dead_psf * trib_ft / 1000.0, label=f"{dead_psf:g} psf x {trib_ft:g} ft: {dead_note.strip()}"),
              dict(case="D", kind="uniform", w=k * pr["W"] / 1000.0, label=f"self-weight {pr['W']:g} lb/ft x slope ratio {k:.3f}")]
     if extra_plf:
         loads.append(dict(case="D", kind="uniform", w=extra_plf / 1000.0, label=f"{extra_plf:g} lb/ft: {extra_note.strip()}"))
-    loads.append(dict(case="L", kind="uniform", w=live * trib_ft / 1000.0, label=f"{live:g} psf x {trib_ft:g} ft: {occupancy}, ASCE/SEI 7-22 Table 4.3-1"))
+    loads.append(dict(case="L", kind="uniform", w=live * trib_ft / 1000.0, label=f"{live:g} psf x {trib_ft:g} ft: {live_txt}"))
     sheet = ws_steel_beam.run(mark, shape, Fy, run_ft, loads, combos, defl_checks, "continuous", method, False)
     F = k * k                                                     # 1 / cos^2, Design Guide 34 Example 10.1.2
     for r in sheet.rows:
@@ -2534,7 +2539,8 @@ def stair_stringer_sheet(mark, shape, Fy, run_ft, riser_in, tread_in, trib_ft, d
     sheet.assumptions = [a for a in sheet.assumptions if "self-weight" not in a] + [
         "Horizontal plane method (AISC Design Guide 34): a simple span equal to the horizontal run, with the loads per foot of run.",
         f"The stringer carries {trib_ft:g} ft of tread width.",
-        "Not checked on this sheet: the treads and risers (300 lb concentrated load, ASCE/SEI 7-22 Sect. 4.15), the end connections, "
+        "Not checked on this sheet: " + ("a concentrated live load on the stringer, " if live_other is not None else "")
+        + "the treads and risers (300 lb concentrated load, ASCE/SEI 7-22 Sect. 4.15), the end connections, "
         "landings and their framing, axial force in the stringer, vibration."]
     return sheet
 
