@@ -145,8 +145,11 @@ class _Page:
         kw = max([kw] + [c.stringWidth(str(k), FR, 8.5) + 6 for k, _ in rows])      # the value column starts clear of the longest label
         for k, v in rows:
             c.setFont(FR, 8.5); c.setFillColorRGB(*GREY); c.drawString(x, yy, k)
-            c.setFillColorRGB(*INK); c.drawString(x + kw, yy, v)
-            yy -= 11.5
+            c.setFillColorRGB(*INK)
+            v = str(v)
+            for t in ([v] if c.stringWidth(v, FR, 8.5) <= RM - x - kw else _wrapw(v, FR, 8.5, RM - x - kw)):     # a value never passes the right margin
+                c.drawString(x + kw, yy, t)
+                yy -= 11.5
         if y is None:
             self.y = yy
         return yy
@@ -205,7 +208,8 @@ def _steps(p, title, lines):
         c.rect(LM, p.y + 6, RM - LM, box_top - p.y - 6, fill=0, stroke=1)
 
     for ln in lines:
-        need = 10.0 + (8.5 if ln.note else 0)
+        notes = _wrapw(ln.note, FR, 7.5, RM - LM - 26) if ln.note else []
+        need = 10.0 + 8.5 * len(notes)
         if p.y - need < 64:
             close()
             p.room(1000)
@@ -213,12 +217,20 @@ def _steps(p, title, lines):
             box_top = p.y + 9
         val = ln.value if isinstance(ln.value, str) else f"{ln.value:.2f}" if not ln.unit else _fmt(ln.value, ln.unit)
         c.setFont(FM, 8); c.setFillColorRGB(*INK)
-        c.drawString(LM + 6, p.y, f"{ln.label} = {val}")
+        left = f"{ln.label} = {val}"
+        room = RM - LM - 12
+        if c.stringWidth(left, FM, 8) > room:                      # a long line continues below, inside the box
+            for t in _table_line(left, room, FM, 8)[:-1]:
+                c.drawString(LM + 6, p.y, t); p.y -= 9.5
+            left = _table_line(left, room, FM, 8)[-1]
+        c.drawString(LM + 6, p.y, left)
         c.setFont(FR, 7.5); c.setFillColorRGB(*GREY)
-        c.drawRightString(RM - 6, p.y, ln.source)
-        if ln.note:
+        if c.stringWidth(left, FM, 8) + c.stringWidth(ln.source or "", FR, 7.5) + 10 > room:     # the reference goes on its own line when the two would meet
             p.y -= 8.5
-            c.drawString(LM + 18, p.y, ln.note)
+        c.drawRightString(RM - 6, p.y, ln.source)
+        for t in notes:
+            p.y -= 8.5
+            c.drawString(LM + 18, p.y, t)
         p.y -= 10.0
     close()
     p.y -= 6
@@ -478,7 +490,12 @@ def _sketch_title(c, x, top, text, centred=False):
 
 
 def _small(c, x, y, text, size=6):
-    c.setFillColorRGB(*GREY); c.setFont(FR, size); c.drawCentredString(x, y, text)
+    """A caption centred on x. One too wide to stay inside the margins at that centre is broken into lines that do."""
+    c.setFillColorRGB(*GREY); c.setFont(FR, size)
+    room = 2 * min(x - LM, RM - x)
+    lines = [text] if c.stringWidth(text, FR, size) <= room else _wrapw(text, FR, size, room)
+    for i, t in enumerate(lines):
+        c.drawCentredString(x, y - (size + 1.5) * i, t)
 
 
 def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
@@ -1230,12 +1247,12 @@ def _picture(c, top, pic):
                     c.drawPath(t, fill=1, stroke=0)
                     c.setFont(FR, 5.5); c.drawRightString(xl - 18, yy - 2, f"{ld['case']} {ld['P']:,.0f} lb")
         c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK)
-        _sketch_title(c, 505, top, "SECTION")
-        s_ = memberart.wood_section(c, 528, top - 50, 46, 46, d["b"], d["d"], d.get("plies", 1), kind=d.get("kind", "sawn"))
-        memberart._dim_h(c, 528 - d["b"] * s_ / 2, 528 + d["b"] * s_ / 2, top - 50 - d["d"] * s_ / 2 - 8, f"{d['b']:g}", FR,
+        _sketch_title(c, 495, top, "SECTION")
+        s_ = memberart.wood_section(c, 518, top - 50, 46, 46, d["b"], d["d"], d.get("plies", 1), kind=d.get("kind", "sawn"))
+        memberart._dim_h(c, 518 - d["b"] * s_ / 2, 518 + d["b"] * s_ / 2, top - 50 - d["d"] * s_ / 2 - 8, f"{d['b']:g}", FR,
                          ext_from=top - 50 - d["d"] * s_ / 2)
-        memberart._dim_v(c, top - 50 - d["d"] * s_ / 2, top - 50 + d["d"] * s_ / 2, 528 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,
-                         ext_from=528 + d["b"] * s_ / 2)
+        memberart._dim_v(c, top - 50 - d["d"] * s_ / 2, top - 50 + d["d"] * s_ / 2, 518 + d["b"] * s_ / 2 + 7, f"{d['d']:g}", FR,
+                         ext_from=518 + d["b"] * s_ / 2)
         _small(c, 476, top - 106 - drop, "section to scale, dimensions in inches" + ("; loads in lb and plf" if (ax or lat) else ""))
         return top - 110 - drop
     if name == "ijoist":
@@ -1332,7 +1349,7 @@ def _picture(c, top, pic):
                          ext_from=cy - B * s / 2)
         memberart._dim_v(c, cy - B * s / 2, cy + B * s / 2, cx + N * s / 2 + 6, f"{B:g}", FR, ext_from=cx + N * s / 2)
         # section along the moment: bearing block and rod tension for the governing case
-        x0 = 486
+        x0 = 474
         _sketch_title(c, x0, top, "SECTION")
         s2 = 70 / N
         px, py, tp = x0 + 4, top - 52, max(d["t"] * s2, 2.0)
@@ -1359,9 +1376,8 @@ def _picture(c, top, pic):
             t = c.beginPath(); t.moveTo(rx, py + tp + 21); t.lineTo(rx - 2.5, py + tp + 16); t.lineTo(rx + 2.5, py + tp + 16); t.close()
             c.drawPath(t, fill=1, stroke=0)
             c.setFont(FM, 6); c.drawString(px - 2, py + tp + 24, f"T = {d['T']:.1f} k")
-        _small(c, 476, top - 104, "dimensions in inches; section shows the bearing block and rod tension")
-        _small(c, 476, top - 111, f"for {d['case']}")
-        return top - 115
+        _small(c, 476, top - 104, f"dimensions in inches; section shows the bearing block and rod tension for {d['case']}")
+        return top - 124
     if name == "footing_moment":
         _sketch_title(c, 470, top, "SECTION AND SOIL PRESSURE", centred=True)
         base = top - 74
@@ -1501,18 +1517,20 @@ def _beam_loads(c, x0, x1, y, span, loads):
         at = {}
         for ld in pts:
             at.setdefault(round(ld["x_ft"], 3), []).append(f"{ld['case']} {ld['P']:,.0f}")
-        for xf, parts in at.items():
+        boxes, top_lvl = [], 0
+        for xf, parts in sorted(at.items()):
             xx = x0 + (x1 - x0) * xf / span
-            _arrow_down(c, xx, yy + 13, yy, head=2.8)
             c.setFont(FR, 5.5)
             txt = " + ".join(parts) + " lb"
-            if xx - x0 < 20:
-                c.drawString(xx + 2.5, yy + 8.5, txt)
-            elif x1 - xx < 20:
-                c.drawRightString(xx - 2.5, yy + 8.5, txt)
-            else:
-                c.drawString(xx + 2.5, yy + 8.5, txt)
-        yy += 16
+            w = c.stringWidth(txt, FR, 5.5)
+            xa, xb = (xx - 2.5 - w, xx - 2.5) if (x1 - xx < 20 and xx - x0 >= 20) else (xx + 2.5, xx + 2.5 + w)
+            lvl = 0                                          # labels of loads close together step up, each clear of the others
+            while any(l == lvl and xa < b_ + 3 and a_ < xb + 3 for a_, b_, l in boxes):
+                lvl += 1
+            boxes.append((xa, xb, lvl)); top_lvl = max(top_lvl, lvl)
+            _arrow_down(c, xx, yy + 13 + 7 * lvl, yy, head=2.8)
+            c.drawString(xa, yy + 8.5 + 7 * lvl, txt)
+        yy += 16 + 7 * top_lvl
     for ld in uni:
         xa = x0 + (x1 - x0) * ld.get("x1_ft", 0.0) / span
         xb = x0 + (x1 - x0) * ld.get("x2_ft", span) / span
@@ -1654,7 +1672,7 @@ def _block_picture(c, top, pic):
         c.rect(rx - 2.4, ctop + tp, 4.8, 2, fill=1, stroke=0)
     xr = cx0 + SN * s2 + 8
     memberart._dim_v(c, ctop - d["hef"] * s2, ctop, xr, "hef = " + g(d["hef"]), FR, ext_from=cx0 + SN * s2)
-    memberart._dim_v(c, ctop - d["ha"] * s2, ctop, xr + 44, "ha = " + g(d["ha"]), FR, ext_from=cx0 + SN * s2)
+    memberart._dim_v(c, ctop - d["ha"] * s2, ctop, xr + 34, "ha = " + g(d["ha"]), FR, ext_from=cx0 + SN * s2)
     yb2 = ctop - d["ha"] * s2 - 8
     memberart._dim_h(c, cx0, cx0 + d["c_end"] * s2, yb2, g(d["c_end"]), FR, ext_from=ctop - d["ha"] * s2)
     memberart._dim_h(c, cx0 + d["c_end"] * s2, cx0 + (d["c_end"] + d["s_rows"]) * s2, yb2, g(d["s_rows"]), FR,
