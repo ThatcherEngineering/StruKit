@@ -934,6 +934,151 @@
      }
     ]
    }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "Column HSS6x6x1/2",
+    "shape": "HSS6X6X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B, sheet S0 Steel Notes",
+    "height": "13.33",
+    "Kx": "1",
+    "Ky": "1",
+    "k_source": "pinned at the base plate and at the beams; height taken to the top of slab, 113 ft 4 in.",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "P": "29.0",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: interior column on line K"
+     },
+     {
+      "case": "L",
+      "P": "45.5",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: interior column on line K"
+     }
+    ],
+    "moments": []
+   }
+  },
+  {
+   "kind": "base_plate",
+   "values": {
+    "mark": "Det 1.1: base plate under HSS6x6x1/2",
+    "shape": "HSS6X6X1/2",
+    "N": "12",
+    "B": "12",
+    "t": "1",
+    "Fy": "36",
+    "fc": "4500",
+    "full": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "P": "29.0",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: interior column on line K"
+     },
+     {
+      "case": "L",
+      "P": "45.5",
+      "label": "plan takedown, sheet S1.0, 72 psf dead and 125 psf live: interior column on line K"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "Column HSS5x5x3/8",
+    "shape": "HSS5X5X3/8",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B, sheet S0 Steel Notes",
+    "height": "13.33",
+    "Kx": "1",
+    "Ky": "1",
+    "k_source": "pinned at the base plate and at the beams; height taken to the top of slab, 113 ft 4 in.",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "P": "8.7",
+      "label": "upper bound: two W12x30 and two W10x17 at their largest StruCalc reactions"
+     },
+     {
+      "case": "L",
+      "P": "43.9",
+      "label": "upper bound: two W12x30 and two W10x17 at their largest StruCalc reactions"
+     }
+    ],
+    "moments": []
+   }
+  },
+  {
+   "kind": "base_plate",
+   "values": {
+    "mark": "Det 1.0: base plate under HSS5x5x3/8",
+    "shape": "HSS5X5X3/8",
+    "N": "12",
+    "B": "12",
+    "t": "0.625",
+    "Fy": "36",
+    "fc": "4500",
+    "full": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "P": "8.7",
+      "label": "upper bound: two W12x30 and two W10x17 at their largest StruCalc reactions"
+     },
+     {
+      "case": "L",
+      "P": "43.9",
+      "label": "upper bound: two W12x30 and two W10x17 at their largest StruCalc reactions"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "stair_stringer",
+   "values": {
+    "mark": "West stair stringer, lower flight",
+    "shape": "MC12X10.6",
+    "Fy": "36",
+    "run": "13.75",
+    "riser": "6.875",
+    "tread": "11",
+    "trib": "1.92",
+    "dead": "12",
+    "dead_note": "grating treads on 2 x 2 x 1/4 angles (weight taken as 12 psf; tread by the manufacturer)",
+    "extra": "10",
+    "extra_note": "guard",
+    "occupancy": "stairs and exit ways",
+    "braced": "yes",
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "IBC Table 1604.3, floor members"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "guard",
+   "values": {
+    "mark": "Det 47: guard, posts at 4 ft",
+    "rail": "PIPE1-1/4STD",
+    "rail_Fy": "35",
+    "rail_Fy_source": "ASTM A53 Grade B, sheet S0 Steel Notes",
+    "post": "HSS1-1/2X1-1/2X1/4",
+    "post_Fy": "46",
+    "post_Fy_source": "ASTM A500 Grade B, sheet S0 Steel Notes",
+    "spacing": "4",
+    "height": "3.5",
+    "uniform": "applies"
+   }
   }
  ]
 }

@@ -65,6 +65,23 @@ M += [
  ep("Det 12: W16x31 end plate to PEMB column", "W16X31", 4, 8.5, 18, 5, 3.75, 3.5),
  ep("Det 13, 29, 30, 33, 34: W18x40 end plate to PEMB column", "W18X40", 5, 8, 20, 5.5, 4, 3),
 ]
+# Columns and base plates. Column loads from the plan takedown:
+#  HSS6x6x1/2 on line K (interior): W21x50 girder 37.2 (south span) + 12.7 (north span, 9 ft 4 in., one pair of W14x30) + two W14x30 at the column = 29.0 D, 45.5 L
+#  HSS5x5x3/8: upper bound, two W12x30 and two W10x17 at their largest StruCalc reactions = 8.7 D, 43.9 L
+COLS = [("HSS6X6X1/2", "1", "Det 1.1", 29.0, 45.5, PLAN + ": interior column on line K"),
+        ("HSS5X5X3/8", "0.625", "Det 1.0", 8.7, 43.9, "upper bound: two W12x30 and two W10x17 at their largest StruCalc reactions")]
+for shp, t, det, D_, L_, src in COLS:
+    ld = [dict(case="D", P=str(D_), label=src), dict(case="L", P=str(L_), label=src)]
+    M.append(("hss_column", dict(mark=f"Column {shp.replace('X', 'x')}", shape=shp, Fy="46", Fy_source="ASTM A500 Grade B, sheet S0 Steel Notes", height="13.33", Kx="1", Ky="1",
+              k_source="pinned at the base plate and at the beams; height taken to the top of slab, 113 ft 4 in.", self_weight="yes", loads=ld, moments=[])))
+    M.append(("base_plate", dict(mark=f"{det}: base plate under {shp.replace('X', 'x')}", shape=shp, N="12", B="12", t=t, Fy="36", fc="4500", full="yes", loads=ld)))
+# Stairs, sheet S2.3: MC12x10.6 stringers, 3 ft 8 in. clear, 11 in. treads, 6-7/8 in. risers; lower flight of the west stair 15 treads (13 ft 9 in. run, counted on the plan).
+M.append(("stair_stringer", dict(mark="West stair stringer, lower flight", shape="MC12X10.6", Fy="36", run="13.75", riser="6.875", tread="11", trib="1.92", dead="12",
+          dead_note="grating treads on 2 x 2 x 1/4 angles (weight taken as 12 psf; tread by the manufacturer)", extra="10", extra_note="guard", occupancy="stairs and exit ways",
+          braced="yes", defl=[dict(label="live", expr="L", ratio="360", source="IBC Table 1604.3, floor members")])))
+# Guard, detail 47 and S0 (50 plf or 200 lb): post spacing is not on the drawings; run at 4 ft.
+M.append(("guard", dict(mark="Det 47: guard, posts at 4 ft", rail="PIPE1-1/4STD", rail_Fy="35", rail_Fy_source="ASTM A53 Grade B, sheet S0 Steel Notes", post="HSS1-1/2X1-1/2X1/4",
+          post_Fy="46", post_Fy_source="ASTM A500 Grade B, sheet S0 Steel Notes", spacing="4", height="3.5", uniform="applies")))
 json.dump(dict(format="strukit-project", version=1, project=proj, members=[dict(kind=k, values=v) for k, v in M]), open("/home/claude/jobs/2026-001/2026-001-Connections.strukit", "w"), indent=1)
 if __name__ == "__main__":
     for k, v in M:
