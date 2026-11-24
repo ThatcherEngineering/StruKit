@@ -384,7 +384,7 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     p.y -= 2
     p.head("Load Combinations")
     for cb in combos:
-        p.text(f"{cb.name:<18} reactions " + " / ".join(f"{v:.2f}" for v in sheet.reactions[cb.name]) + " kip", font=FM, size=8, dy=10)
+        p.text(f"{cb.name:<18} reactions " + " / ".join(f"{v:.2f}" for v in sheet.reactions[cb.name]) + " kip" + (f"; moment at the support {sheet.support_moment[cb.name]:.2f} kip-ft" if getattr(sheet, "support_moment", {}).get(cb.name) is not None else ""), font=FM, size=8, dy=10)
         p.text(cb.source, size=7.5, color=GREY, x=LM + 12)
 
     # diagrams for the governing combination

@@ -167,3 +167,30 @@ def test_base_plate_with_moment_on_the_screen():
     assert any("Anchor rod grade" in m for m in calc.results("base_plate_moment", dict(v, rod_source=""), PROJ)["messages"])
     stop = calc.results("base_plate_moment", dict(v, cases=[dict(name="U", P="-50", M="1", V="0")]), PROJ)
     assert stop["state"] == "stopped" and "uplift" in stop["messages"][0]
+
+
+def test_steel_beam_fixed_at_one_support():
+    """A beam fixed to one column, cantilevering 10 ft and 6 ft: each arm is statically determinate (w a^2 / 2); the support moment is the
+    difference with every arm loaded and more with live load on the long arm only."""
+    from strukit.gui import calc
+    proj = dict(job="t", name="t", method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[dict(expr="D + L", source="t")])
+    v = dict(mark="CB1", shape="W12X26", Fy="50", support_type="one support, fixed (cantilevers each side of a column)", span="", more_spans="", oh_left="10", oh_right="6",
+             bracing="at points", brace_pts="", self_weight="no",
+             loads=[dict(case="D", kind="uniform", mag="0.2", x1="", x2="", label=""), dict(case="L", kind="uniform", mag="0.5", x1="", x2="", label="")],
+             defl=[dict(label="live", expr="L", ratio="180", source="t")])
+    s, kind, _ = calc.build("steel_beam", v, proj)
+    wu = 1.2 * 0.2 + 1.6 * 0.5
+    fl = next(r for r in s.rows if r.check == "flexure")
+    assert fl.demand == pytest.approx(wu * 10 ** 2 / 2, rel=1e-3) and "Cb = 1.00" in fl.note and "Lb = 10 ft" in fl.note
+    sh = next(r for r in s.rows if r.check == "shear")
+    assert sh.demand == pytest.approx(wu * 10, rel=1e-3)
+    assert s.reactions["1.2D + 1.6L"][0] == pytest.approx(wu * 16, rel=1e-3)
+    # support moment: live on the long arm only, dead on both
+    assert s.support_moment["1.2D + 1.6L"] == pytest.approx(wu * 50 - 1.2 * 0.2 * 18, rel=1e-3)
+    d = next(r for r in s.rows if r.check.startswith("deflection"))
+    from strukit import shapes
+    assert d.demand == pytest.approx(0.5 / 12 * 120 ** 4 / (8 * 29000 * shapes.get("W12X26")["Ix"]), rel=0.01) and "2 x 10 ft / 180" in d.note
+    with pytest.raises(Exception, match="bottom flange is in compression"):
+        calc.build("steel_beam", dict(v, bracing="continuous"), proj)
+    with pytest.raises(calc.Missing):
+        calc.build("steel_beam", dict(v, support_type=""), proj)
