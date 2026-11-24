@@ -1237,9 +1237,15 @@ def _picture(c, top, pic):
         cx, cy = 384 + 37, top - 44
         c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(0.87, 0.90, 0.93)
         c.rect(cx - N * s / 2, cy - B * s / 2, N * s, B * s, fill=1, stroke=1)
-        c.saveState(); c.translate(cx, cy); c.rotate(90)
-        memberart.steel_section(c, 0, 0, d["bf"] * s, d["d"] * s, d["d"], d["bf"], d["tf"], d["tw"])
-        c.restoreState()
+        if d.get("kind", "I") == "I":
+            c.saveState(); c.translate(cx, cy); c.rotate(90)
+            memberart.steel_section(c, 0, 0, d["bf"] * s, d["d"] * s, d["d"], d["bf"], d["tf"], d["tw"])
+            c.restoreState()
+        else:                                             # rectangular HSS, depth along the moment (page width)
+            wall = max(d["tf"] * s, 1.2)
+            c.setFillColorRGB(*memberart.STEEL_FILL); c.rect(cx - d["d"] * s / 2, cy - d["bf"] * s / 2, d["d"] * s, d["bf"] * s, fill=1, stroke=1)
+            c.setFillColorRGB(0.87, 0.90, 0.93)
+            c.rect(cx - d["d"] * s / 2 + wall, cy - d["bf"] * s / 2 + wall, d["d"] * s - 2 * wall, d["bf"] * s - 2 * wall, fill=1, stroke=1)
         r = max(d["rod_d"] * s / 2, 1.3)
         for sx in (-1, 1):
             for k in range(d["n"]):
