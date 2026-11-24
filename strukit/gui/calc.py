@@ -210,6 +210,18 @@ FORMS = {
                 F("group", "Bolted: bolt type", "select", options=["A325", "A490", "F3148"], required=False),
                 F("threads", "Bolted: threads", "select", options=["N", "X"], required=False)],
         tables=[T("loads", "Beam end reaction", [CASE, F("P", "Reaction", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "base_plate_biaxial": dict(
+        title="Column Base Plate, Biaxial Bending (four rods)", code="AISC 360-22", mark="BPX",
+        fields=[F("shape", "Column", "shape_col", help="W shape, or square or rectangular HSS"), F("N", "Plate length (along the column depth)", unit="in"), F("B", "Plate width", unit="in"),
+                F("t", "Plate thickness", unit="in"), F("Fy", "Plate Fy", unit="ksi"), F("fc", "Concrete f'c", unit="psi"),
+                F("area_ratio", "Support area over plate area, A2 / A1", help="1 where the plate covers the whole support; not over 4 counts"),
+                F("rod_d", "Anchor rod diameter", unit="in", help="four rods, one near each corner"),
+                F("rod_grade", "Anchor rod grade", "select", required=False, options=["F1554 Gr. 36", "F1554 Gr. 55", "F1554 Gr. 105", "other"]),
+                F("rod_Fu", "Anchor rod Fu (grade: other)", unit="ksi", required=False), F("rod_source", "Anchor rod material (grade: other)", "text", required=False),
+                F("rod_edge", "Rods from the plate ends", unit="in"), F("rod_side", "Rods from the plate sides", unit="in"),
+                F("loads_from", "Loads come from", "text", required=False)],
+        tables=[T("cases", "Combined loads", [F("name", "Combination or run", "text"), F("P", "Axial compression", unit="kip"), F("Mx", "Moment, column strong axis", unit="kip-ft"),
+                                              F("My", "Moment, column weak axis", unit="kip-ft")])]),
     "cap_plate": dict(
         title="Beam over HSS Column, Cap Plate Moment Connection", code="AISC 360-22", mark="CP",
         fields=[F("beam", "Beam (continuous over the column)", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
@@ -1523,6 +1535,22 @@ def build(kind, values, project):
         kw = dict(weld=r.num("weld", False), FEXX=r.num("FEXX", False), n_bolts=r.num("n_bolts", False), d=r.num("d", False), group=r.text("group", False), threads=r.text("threads", False))
         r.done()
         return ws_more.seat_sheet(mark, *args, loads, cb, m, **kw), "simple", {}
+    if kind == "base_plate_biaxial":
+        m = method(project, r.miss)
+        from .. import anchor_rods as _ar
+        _g = _ar.grade(r.text("rod_grade", False) or "")
+        if _g:
+            _fu, _src = _g[0], _g[3]
+        else:
+            _fu, _src = r.num("rod_Fu", label="Anchor rod Fu"), r.text("rod_source", False)
+            if not _src:
+                r.miss.append("Anchor rod grade is blank (or pick other and type Fu and the material)")
+        cases = r.rows("cases")
+        if not cases:
+            r.miss.append("No load case is entered")
+        args = (r.text("shape"), r.num("N"), r.num("B"), r.num("t"), r.num("Fy"), r.num("fc"), r.num("area_ratio"), r.num("rod_d"), _fu, _src, r.num("rod_edge"), r.num("rod_side"))
+        r.done()
+        return ws_more.base_plate_biaxial_sheet(mark, *args, cases, m), "simple", {}
     if kind == "cap_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], P=x["P"], M=x["M"]) for x in r.rows("runs")]
@@ -3797,6 +3825,24 @@ def frame_knee(project, members, mark):
                 picks.append(b)
         axes[nm] = [dict(name=b["run"], P=b["P"], M=b[mk_] / 12.0) for b in picks]
     return dict(axes=axes, messages=run.get("problems") or [], method=run["method"])
+
+
+def frame_base_biaxial(project, members, mark):
+    """Base forces of one frame column for the biaxial base plate screen, at the project's method: the runs with the largest strong-axis moment,
+    the largest weak-axis moment, the largest compression and the least compression, each with its concurrent axial load and both moments.
+    dict(rows=[dict(name, P kips, Mx, My kip-ft)], messages, method)."""
+    run = model_frame_sway(project, members)
+    if not run.get("levels"):
+        return dict(rows=[], messages=run.get("problems") or ["the frame did not run"])
+    col = next((c for c in run["columns"] if c["mark"] == mark), None)
+    if col is None or not col.get("base"):
+        return dict(rows=[], messages=[f"{mark} is not a column of the placed frame"])
+    picks = []
+    for chooser in (lambda b: b["Ms"], lambda b: b["Mw"], lambda b: b["P"], lambda b: -b["P"]):
+        b = max(col["base"], key=chooser)
+        if b not in picks:
+            picks.append(b)
+    return dict(rows=[dict(name=b["run"], P=b["P"], Mx=b["Ms"] / 12.0, My=b["Mw"] / 12.0) for b in picks], messages=run.get("problems") or [], method=run["method"])
 
 
 def reactions(kind, values, project, members=None):

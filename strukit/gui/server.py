@@ -281,6 +281,8 @@ def api(path, body):
         return {}
     if path == "/api/calc":
         return calc.results(body["kind"], body.get("values") or {}, body.get("project") or {})
+    if path == "/api/frame_base_biaxial":
+        return calc.frame_base_biaxial(body.get("project") or {}, body.get("members") or [], body.get("mark"))
     if path == "/api/frame_knee":
         return calc.frame_knee(body.get("project") or {}, body.get("members") or [], body.get("mark"))
     if path == "/api/reactions":

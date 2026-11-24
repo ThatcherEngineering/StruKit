@@ -3331,6 +3331,105 @@ def seat_sheet(mark, beam, beam_Fy, beam_source, t, length, osl, vleg, angle_Fy,
     return sheet
 
 
+def biaxial_base_strength(P, L, W, f, c, x, fp, tp, Fy, T_rods, lrfd=True):
+    """Moment strength of a base plate connection in one direction at axial compression P, AISC Design Guide 1 (3rd Ed.) Sect. 4.3.7 as used in
+    Example 4.7-14. L: plate dimension along the bending, W: across it, f: plate centre to the rods in tension, c: plate cantilever at the
+    bearing interface, x: cantilever from the yield line to the rods at the tension interface, fp: available bearing stress, T_rods: available
+    tension of the rods on the tension side. kips, inches. Returns dict(M, T, Y, governs, T_plate, M_bearing, M_plate, q)."""
+    q = fp * W
+    Mpl = (0.90 * Fy if lrfd else Fy / 1.67) * W * tp ** 2 / 4          # yield line across the plate width
+    M_bearing = fp * W * c ** 2 / 2                                     # the most the bearing can put on the cantilever
+    T_plate = Mpl / x if x > 1e-9 else float("inf")                    # Eq. 4-62 turned around: plate bending at the tension interface
+    T = min(T_rods, T_plate)
+    Y = (T + P) / q
+    if Y > L:
+        raise WorksheetError("base plate: the axial load is more than the plate can bear")
+    M = q * Y * (L / 2 - Y / 2) + T * f
+    return dict(M=M, T=T, Y=Y, governs="anchor rods" if T_rods <= T_plate else "plate bending at the rods", T_plate=T_plate, M_bearing=M_bearing, M_plate=Mpl, q=q)
+
+
+def base_plate_biaxial_sheet(mark, shape, N, B, tp, Fy_plate, fc_psi, area_ratio, rod_d, rod_Fu, rod_source, edge_N, edge_B, cases, method):
+    """Column base plate with axial compression and moment about both axes, four anchor rods (one near each corner): AISC Design Guide 1 (3rd Ed.)
+    Sect. 4.3.8, Eq. 4-69, as worked in Example 4.7-14. The moment strength in each direction is found at the case's axial load (anchor rods, or
+    plate bending at the rods), then (Mrx / Mcx)^2 + (Mry / Mcy)^2 <= 1. cases: dict(name, P kips compression, Mx, My kip-ft) at the method's level."""
+    from . import bolts
+    if not (rod_source or "").strip():
+        raise WorksheetError(f"{mark}: the anchor rod material is blank")
+    if not cases:
+        raise WorksheetError(f"{mark}: no load case is entered")
+    col_kind = "I"
+    try:
+        p = shapes.get(shape)
+        dcol, bcol, tfl = p["d"], p["bf"], p["tf"]
+    except Exception:
+        try:
+            p = shapes.hss(shape)
+        except Exception:
+            raise WorksheetError(f"{mark}: '{shape}' is not a W shape or HSS in the shapes table")
+        if p.get("type") != "HSS-RECT":
+            raise WorksheetError(f"{mark}: round sections are outside this method (AISC Design Guide 1 Sect. 3.2.1)")
+        col_kind, dcol, bcol, tfl = "HSS", p["Ht"], p["B"], p["tdes"]
+    lrfd = method == "LRFD"
+    if not 1.0 <= area_ratio:
+        raise WorksheetError(f"{mark}: the support area over the plate area is 1.0 or more")
+    fc = fc_psi / 1000.0
+    fp_n = min(0.85 * fc * math.sqrt(area_ratio), 1.7 * fc)
+    fp = 0.65 * fp_n if lrfd else fp_n / 2.31
+    m = (N - 0.95 * dcol) / 2
+    n = (B - (0.80 if col_kind == "I" else 0.95) * bcol) / 2
+    if m <= 0 or n <= 0:
+        raise WorksheetError(f"{mark}: the plate must be larger than the column")
+    c = max(m, n)
+    fx, fy = N / 2 - edge_N, B / 2 - edge_B
+    xx = fx - dcol / 2 + tfl / 2
+    xy = (n - edge_B) if col_kind == "I" else (fy - bcol / 2 + tfl / 2)
+    if xx <= 0 or xy <= 0:
+        raise WorksheetError(f"{mark}: the anchor rods must be outside the column on the plate")
+    rt = bolts.tension(rod_d, f"FU={rod_Fu:g}", method).R_avail
+    t_bear = c * math.sqrt(2 * fp / ((0.90 if lrfd else 1 / 1.67) * Fy_plate))
+    out = []
+    for cs in cases:
+        P, Mx, My = cs["P"], abs(cs["Mx"]) * 12, abs(cs["My"]) * 12
+        if P < 0:
+            raise WorksheetError(f"{mark}: case '{cs['name']}' has axial tension; Eq. 4-69 is for axial compression (AISC Design Guide 1 Sect. 4.3.8)")
+        sx = biaxial_base_strength(P, N, B, fx, c, xx, fp, tp, Fy_plate, 2 * rt, lrfd)
+        sy = biaxial_base_strength(P, B, N, fy, c, xy, fp, tp, Fy_plate, 2 * rt, lrfd)
+        out.append(dict(c=cs, P=P, Mx=Mx, My=My, sx=sx, sy=sy, val=(Mx / sx["M"]) ** 2 + (My / sy["M"]) ** 2))
+    w = max(out, key=lambda o: o["val"])
+    Ln = footing_line
+    fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
+    steps = [Ln("Available bearing stress, fp(max)", fp, "ksi", "AISC Design Guide 1 (3rd Ed.) Eq. 4-2; AISC 360-22 Sect. J8", f"0.85 f'c (A2 / A1)^0.5, A2 / A1 = {area_ratio:g}; " + fac(0.65, 2.31)),
+             Ln("Plate cantilevers m, n", c, "in", "Design Guide 1 Eq. 4-10, 4-11", f"m = {m:.2f} in., n = {n:.2f} in.; the larger is used"),
+             Ln("Plate thickness so the bearing side cannot yield", t_bear, "in", "Design Guide 1 Eq. 4-51a", f"l (2 fp / (Fy)) ^0.5 with " + fac(0.90, 1.67)),
+             Ln("Anchor rod available tension, each", rt, "kip", "AISC 360-22 Sect. J3.7, Table J3.2", f"{rod_d:g} in. rod, Fu = {rod_Fu:g} ksi ({rod_source.strip()}); two rods on the tension side"),
+             Ln("Rods from the plate centre, strong / weak direction", fx, "in", "", f"f = {fx:g} in. and {fy:g} in."),
+             Ln("Tension the plate can take at the rods, strong direction", w["sx"]["T_plate"], "kip", "Design Guide 1 Eq. 4-62", f"x = f - d / 2 + tf / 2 = {xx:.2f} in."),
+             Ln("Tension the plate can take at the rods, weak direction", w["sy"]["T_plate"], "kip", "Design Guide 1 Eq. 4-62", f"cantilever to the rods = {xy:.2f} in."),
+             Ln("Bearing length Y at strength, strong direction", w["sx"]["Y"], "in", "Design Guide 1 Eq. 4-55", f"(T + P) / qmax, qmax = {w['sx']['q']:.1f} kip/in., P = {w['P']:.1f} kip"),
+             Ln("Moment strength Mcx at this axial load", w["sx"]["M"] / 12, "kip-ft", "Design Guide 1 Sect. 4.3.8, Eq. 4-58", f"governed by the {w['sx']['governs']}; T = {w['sx']['T']:.1f} kip"),
+             Ln("Bearing length Y at strength, weak direction", w["sy"]["Y"], "in", "Design Guide 1 Eq. 4-55", f"qmax = {w['sy']['q']:.1f} kip/in."),
+             Ln("Moment strength Mcy at this axial load", w["sy"]["M"] / 12, "kip-ft", "Design Guide 1 Sect. 4.3.8, Eq. 4-58", f"governed by the {w['sy']['governs']}; T = {w['sy']['T']:.1f} kip"),
+             Ln("(Mrx / Mcx)^2 + (Mry / Mcy)^2", w["val"], "", "Design Guide 1 Eq. 4-69", f"Mrx = {w['Mx'] / 12:.1f} kip-ft, Mry = {w['My'] / 12:.1f} kip-ft")]
+    rows = [Row("Plate thickness, bearing side", "", t_bear, tp, "in", "AISC Design Guide 1 Eq. 4-51a", "required so that the plate does not yield under the bearing, against provided")]
+    for o in out:
+        rows.append(Row("Biaxial interaction", o["c"]["name"], o["val"], 1.0, "", "AISC Design Guide 1 Eq. 4-69",
+                        f"P = {o['P']:.1f} kip; Mrx / Mcx = {o['Mx'] / 12:.1f} / {o['sx']['M'] / 12:.1f}, Mry / Mcy = {o['My'] / 12:.1f} / {o['sy']['M'] / 12:.1f} kip-ft"))
+    info = [("Column", shapes.normalize(shape)), ("Base Plate", f"{N:g} in. (along the column depth) x {B:g} in. x {tp:g} in., Fy = {Fy_plate:g} ksi"),
+            ("Concrete", f"f'c = {fc_psi:g} psi, A2 / A1 = {area_ratio:g}"),
+            ("Anchor Rods", f"(4) {rod_d:g} in., {rod_source.strip()}, {edge_N:g} in. from the plate ends and {edge_B:g} in. from the plate sides")]
+    load_lines = [f"P = {o['P']:>7.2f} kip   Mx = {o['Mx'] / 12:>7.2f} kip-ft   My = {o['My'] / 12:>7.2f} kip-ft   {o['c']['name']}" for o in out]
+    sheet = SimpleSheet(mark, "Column Base Plate, Biaxial Bending with Axial Compression", "Base Plate", method, info, load_lines,
+                        [(f"Combined loads at the {method} level, as entered", "")], f"Calculation ({w['c']['name']})", steps, rows,
+                        ["The moment strength in each direction is found with the axial load held and the moment raised until the two rods on the tension side, or the plate at those rods, reach their strength.",
+                         "Shear is carried to the foundation by friction or a shear lug, not by the anchor rods (the condition for Eq. 4-69).",
+                         "Mx bends the column about its strong axis; the plate dimension N runs along the column depth."],
+                        ["anchorage of the rods in the concrete (ACI 318-19 Chapter 17)", "shear at the base", "welds of the column to the plate", "axial tension with bending"])
+    sheet.blocks.append(dict(title="Base Plate", head="Base Plate", picture=("base_biaxial", dict(N=N, B=B, d=dcol, b=bcol, tf=tfl, tw=p.get("tw") or tfl, kind=col_kind, edge_N=edge_N,
+                                                                                                edge_B=edge_B, rod_d=rod_d))))
+    sheet.biax = dict(fp=fp, m=m, n=n, rt=rt, t_bear=t_bear, cases=out, worst=w)
+    return sheet
+
+
 def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, col_source, tp, bp, plate_Fy, plate_Fu, plate_source, d, group, s, g, weld, FEXX, loads,
                     combos, method, runs=None, runs_from=""):
     """Wide-flange beam continuous over an HSS column, moment connection through a cap plate with four bolts: AISC Design Guide 24 (2nd Ed.)
