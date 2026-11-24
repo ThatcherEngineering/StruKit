@@ -2506,7 +2506,7 @@ def stair_stringer_sheet(mark, shape, Fy, run_ft, riser_in, tread_in, trib_ft, d
     k = math.hypot(riser_in, tread_in) / tread_in                 # slope ratio, sloped length over run
     cos = 1.0 / k
     pr = None
-    for get in (shapes.get, shapes.channel, shapes.hss, shapes.angle):
+    for get in (shapes.get, shapes.channel, shapes.hss):
         try:
             pr = get(shape)
             break
