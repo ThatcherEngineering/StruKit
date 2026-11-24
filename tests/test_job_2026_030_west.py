@@ -46,7 +46,7 @@ def test_west_carport_package_has_the_summary_and_the_frame_sheet(tmp_path):
     d = json.load(open(os.path.join(HERE, "data", "job_2026_030_west.strukit")))
     proj, ms = d["project"], d["members"]
     fs = calc.frame_sheet(proj, ms)
-    assert fs is not None and len(fs.rows) == 16 + 2 * 8 and fs.ok and len(fs.blocks) == 4
+    assert fs is not None and len(fs.rows) == 16 + 2 * 8 and fs.ok and len(fs.blocks) == 5 and fs.blocks[0]["picture"][0] == "frame3d"
     sm = calc.summary_sheet(proj, [("FR", "3D Frame Analysis", fs)])
     assert dict(sm.info)["Status"] == "ALL CHECKS OK" and dict(sm.info)["Checks"] == "32" and "D/C" in dict(sm.info)["Governing"]
     n, skipped = calc.package_pdf(proj, ms, str(tmp_path / "p.pdf"))
