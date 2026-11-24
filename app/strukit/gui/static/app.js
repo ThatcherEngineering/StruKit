@@ -988,13 +988,18 @@ function drawProject(main) {
             el("td", {}, l.total == null ? "" : Math.round(l.total).toLocaleString() + " " + l.unit)))))
           : el("div", { class: "small" }, "Members linked with “Take the reaction of the member above” are listed here after the load path is recalculated. The links are kept in the project file."),
         el("h2", {}, "What StruKit covers today"),
-        el("ul", { class: "msg small" }, ["Steel: beams, columns, moment frames, tension members, angle struts, HSS; shear tabs, end plates, seats, welds, bolts, base plates and anchor rods (AISC 360-22, ACI 318-19 Ch. 17).",
+        el("ul", { class: "msg small" }, ["Steel: beams (spans, overhangs, or fixed at one column), columns, moment frames, tension members, angle struts, HSS; shear tabs, shear end plates, seats, welds, bolts (AISC 360-22).",
+          "Steel moment connections: beam over an HSS column on a cap plate; flush end plates with two or four tension bolts; four-bolt extended end plate (AISC Design Guides 24 and 39).",
+          "Column bases: centred, with moment about one axis, with moment about both axes (four rods), uplift; anchor rods in concrete (AISC Design Guide 1, ACI 318-19 Ch. 17).",
           "Wood: sawn lumber, glulam, LVL, PSL, LSL and I-joists; posts and built-up columns; nailed, screwed, lagged and bolted connections (2018 NDS).",
           "Lateral: wood shear walls (segmented, perforated, force transfer around an opening), hold-downs, diaphragms, collectors (SDPWS-2021).",
           "Loads: snow, drift, rain, live load reduction, wind and seismic (ASCE/SEI 7-22).",
           "Concrete: isolated and continuous footings, footings with moment (ACI 318-19). Stairs and guards.",
           "Gravity takedown: a member can take the reaction of the member above it; see Load path.",
-          "Not yet: masonry, retaining walls, a building model, 3D frame analysis.",
+          "Building model: levels and grids, members placed in plan, sloped members, a quick start for a row of bents (carport, pavilion), plan and 3D views; wind and seismic to the wall lines.",
+          "3D frame: the placed steel beams, columns and braces as one frame, run free to sway by the direct analysis method with wind (enclosed or open building), seismic and notional loads; member checks, drift, column base and connection forces carried to their screens.",
+          "Every calc package starts with a Design Summary of every check and, with a placed frame, a 3D Frame Analysis sheet.",
+          "Not yet: masonry, retaining walls, cold-formed purlins and girts, built-up (three-plate) sections, wood members in the 3D frame.",
           "Every blank box is asked for; nothing is assumed."].map(t => el("li", {}, t))))));
 }
 

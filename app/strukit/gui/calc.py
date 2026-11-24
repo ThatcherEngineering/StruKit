@@ -3515,6 +3515,60 @@ def model_frame_sway(project, members):
         except Exception as e:
             problems.append(f"The open-building wind sheet could not be put on the frame: {e}")
             fr_sets = []
+    # unbalanced snow on pitched rafters (ASCE/SEI 7-22 Sect. 7.6.1, from the project's roof snow sheet), as arrangements of load case S
+    us_sets, unb_elems = [], set()
+    snows = [m for m in members or [] if m.get("kind") == "snow"]
+    if snows and any(abs(cb.factors.get("S", 0.0)) > 0 for cb in cbs):
+        try:
+            rs = build("snow", snows[0]["values"], project)[0].snow
+        except Exception:
+            rs = None
+        if rs is not None and rs.unbalanced and rs.balanced > 0:
+            by_el = {mm.name: mm for mm in fr.members}
+            S_on = {}
+            for nm_, c, w in beam_loads:
+                if c == "S":
+                    S_on[nm_] = S_on.get(nm_, 0.0) + w
+            lines = {}                                        # (axis along the rafter, position across) -> sloped elements carrying S
+            for mk, els in B["beam_elems"].items():
+                for e_ in els:
+                    mm = by_el[e_]
+                    a_, b_ = fr.nodes[mm.i], fr.nodes[mm.j]
+                    if abs(b_[2] - a_[2]) < 1e-6 or e_ not in S_on:
+                        continue
+                    ax_ = 0 if abs(b_[0] - a_[0]) > abs(b_[1] - a_[1]) else 1
+                    lines.setdefault((ax_, round(a_[1 - ax_] / FT / MODEL_TOL)), []).append(e_)
+            u = rs.unbalanced
+            for lee in (1, -1):                               # the leeward side is toward the larger (+1) or the smaller (-1) coordinate
+                loads, axis_ = [], None
+                for (ax_, _), els in lines.items():
+                    ends = [fr.nodes[by_el[e_].i] for e_ in els] + [fr.nodes[by_el[e_].j] for e_ in els]
+                    top = max(ends, key=lambda q: q[2])
+                    if top[2] - min(q[2] for q in ends) < 1e-6 or all(abs(q[ax_] - top[ax_]) < 1e-6 or (q[ax_] - top[ax_]) > 0 for q in ends) or \
+                            all(abs(q[ax_] - top[ax_]) < 1e-6 or (q[ax_] - top[ax_]) < 0 for q in ends):
+                        continue                              # no ridge on this line (a single slope)
+                    axis_ = ax_
+                    xr_ = top[ax_] / FT
+                    for e_ in els:
+                        mm = by_el[e_]
+                        x1_, x2_ = sorted((fr.nodes[mm.i][ax_] / FT, fr.nodes[mm.j][ax_] / FT))
+                        mid = (x1_ + x2_) / 2
+                        if (mid - xr_) * lee > 0:             # leeward: ps, plus the surcharge within its extent from the ridge
+                            d1, d2 = abs(x1_ - xr_), abs(x2_ - xr_)
+                            lo_, hi_ = min(d1, d2), max(d1, d2)
+                            inside = max(0.0, min(hi_, u["extent"]) - lo_) / (hi_ - lo_) if hi_ > lo_ else 0.0
+                            p_ = u["leeward"] + u["surcharge"] * inside
+                        else:
+                            p_ = u["windward"]
+                        loads.append((e_, (0.0, 0.0, -S_on[e_] * p_ / rs.balanced)))
+                if loads:
+                    us_sets.append(dict(axis=axis_, loads=loads, case="S", label=f"unbalanced snow, leeward side toward {'+' if lee > 0 else '-'}{'XY'[axis_]}"))
+                    unb_elems.update(e_ for e_, _ in loads)
+            if us_sets:
+                notes.append(f"Unbalanced snow (ASCE/SEI 7-22 Sect. 7.6.1, sheet {snows[0]['values'].get('mark')}): on the pitched rafters, windward side {u['windward']:.1f} psf and leeward side "
+                             f"{u['leeward']:.1f} psf" + (f" plus {u['surcharge']:.1f} psf within {u['extent']:.1f} ft of the ridge" if u["surcharge"] else "") +
+                             f", each way, in place of the balanced load in every combination with S that has no wind. The S load typed on each rafter is taken as the balanced "
+                             f"{rs.balanced:.1f} psf x its tributary width. Unbalanced snow with wind in the same combination is not run.")
     need_e = any(abs(cb.factors.get("E", 0.0)) > 0 for cb in cbs)
     eq_F, eq_mark = {}, ""
     seis = [m for m in members or [] if m.get("kind") == "seismic_elf"]
@@ -3683,18 +3737,24 @@ def model_frame_sway(project, members):
                 if level_of_node.get(nd) in Y:
                     Y[level_of_node[nd]] += f_ * P
         wsets = fr_sets if (fr_sets and abs(cb.factors.get("W", 0.0)) > 0) else None
+        grav_noS = []
         for nm_, c, w in beam_loads:
             f_ = cb.factors.get(c, 0.0) * alpha
             if c == "W" and wsets and nm_ in free_elems:
                 continue
             if f_:
                 grav_members.append((nm_, "global", (0, 0, -f_ * w)))
+                if not (c == "S" and nm_ in unb_elems):
+                    grav_noS.append(grav_members[-1])
                 lv = level_of_node.get(next(mm for mm in fr.members if mm.name == nm_).i)
                 if lv in Y:
                     Y[lv] += f_ * w * mlen[nm_]
         dirs = [(st_["axis"], st_["sign"], st_) for st_ in wsets] if wsets else [(0, 1, None), (0, -1, None), (1, 1, None), (1, -1, None)]
+        if us_sets and abs(cb.factors.get("S", 0.0)) > 0 and not wsets:
+            dirs = list(dirs) + [(u_["axis"], sg_, u_) for u_ in us_sets for sg_ in (1, -1)]
         for axis, sign, wset in dirs:
-            gm_run = grav_members + ([(e_, "global", tuple(cb.factors["W"] * alpha * g_ for g_ in g)) for e_, g in wset["loads"]] if wset else [])
+            wcase = (wset or {}).get("case", "W")
+            gm_run = (grav_noS if wcase == "S" else grav_members) + ([(e_, "global", tuple(cb.factors[wcase] * alpha * g_ for g_ in g)) for e_, g in wset["loads"]] if wset else [])
             nl = {nd: [0, 0, -P, 0, 0, 0] for nd, P in grav_nodes.items()}
             for lv in order:
                 lat = 0.003 * max(Y[lv], 0.0) + (abs(fW) * alpha * wind_F[lv][axis] if (fW and lv in wind_F) else 0.0) + abs(fE) * alpha * eq_F.get(lv, 0.0)
@@ -3704,7 +3764,8 @@ def model_frame_sway(project, members):
                     for nd, share in spread(lv, 1 - axis, 0.0001 * max(Y[lv], 0.0)).items():
                         nl.setdefault(nd, [0, 0, 0, 0, 0, 0])[1 - axis] += share
             nl = {nd: tuple(v_) for nd, v_ in nl.items()}
-            label = f"{cb.name}, " + (wset["label"] if wset else ("wind" if fW else "seismic" if fE else "notional load") + f" in {'+' if sign > 0 else '-'}{'XY'[axis]}")
+            label = f"{cb.name}, " + ((wset["label"] + (f", notional load in {'+' if sign > 0 else '-'}{'XY'[axis]}" if wcase == "S" else "")) if wset else
+                                      ("wind" if fW else "seismic" if fE else "notional load") + f" in {'+' if sign > 0 else '-'}{'XY'[axis]}")
             try:
                 r1, r2, slack = solve_run(nl, gm_run)
             except Frame3DError as e:
