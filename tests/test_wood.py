@@ -67,8 +67,8 @@ def test_load_duration():
     assert wood.load_duration(["D", "L"])[:2] == (1.0, "L")
     assert wood.load_duration(["D", "L", "S"])[:2] == (1.15, "S")
     assert wood.load_duration(["D", "Lr"])[0] == 1.25 and wood.load_duration(["D", "W", "S"])[0] == 1.6
-    with pytest.raises(wood.WoodError, match="R"):
-        wood.load_duration(["D", "R"])
+    with pytest.raises(wood.WoodError, match="H"):                      # a case with no duration in the table or by ruling
+        wood.load_duration(["D", "H"])
 
 
 def test_beam_stability_by_hand():
@@ -107,7 +107,7 @@ def test_stops_on_bad_input():
     with pytest.raises(WorksheetError, match="Table 4A"):
         ws_wood.beam("X", "HEM-FIR", "No. 1/ No. 2", "2x10", 1, 12, HEADER, DL, [], 0, 3, False, False, False)
     with pytest.raises(WorksheetError, match="load duration"):
-        ws_wood.beam("X", "HEM-FIR", "No. 2", "2x10", 1, 12, [dict(case="R", kind="uniform", w=50)], [Combo("R", {"R": 1}, "x")], [], 0, 3,
+        ws_wood.beam("X", "HEM-FIR", "No. 2", "2x10", 1, 12, [dict(case="H", kind="uniform", w=50)], [Combo("H", {"H": 1}, "x")], [], 0, 3,
                      False, False, False)
 
 

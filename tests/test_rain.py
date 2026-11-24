@@ -86,3 +86,19 @@ def test_rain_load_api_for_the_beam_screens():
                 secondary="effective moment of inertia entered", Is="150", dp="", dp_source="")
     assert "unstable" in server.api("/api/rain_load", dict(values=soft, project={}))["error"]
     assert "not complete" in server.api("/api/rain_load", dict(values=dict(v, ds=""), project={}))["error"]
+
+
+def test_rain_on_a_wood_beam_uses_the_two_month_duration(tmp_path):
+    """Ruling of 2026-11-23 18:05: rain load on wood takes CD = 1.15, as snow (NDS Table 2.3.2 lists no duration for rain)."""
+    from strukit import calcsheet, wood
+    from strukit.gui import calc
+    assert wood.CD["R"][0] == 1.15 and wood.load_duration(["D", "R"])[:2] == (1.15, "R")
+    proj = dict(method="ASD", combos_asd=[dict(expr="D + R", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 3")])
+    v = dict(mark="WB1", species="DOUGLAS FIR-LARCH", grade="No. 2", size="2x8", plies="3", span="8", bracing="supported throughout", bearing="3", service="dry service",
+             incised="no", repetitive="no", unit_weight="", loads=[dict(case="D", kind="uniform", mag="100", x1="", x2="", label=""),
+                                                                   dict(case="R", kind="uniform", mag="200", x1="", x2="", label="")], defl=[])
+    s, kind, kw = calc.build("wood_beam", v, proj)
+    snow, _, _ = calc.build("wood_beam", dict(v, loads=[v["loads"][0], dict(v["loads"][1], case="S")]),
+                            dict(method="ASD", combos_asd=[dict(expr="D + S", source="test combination")]))
+    assert s.rows[0].capacity == pytest.approx(snow.rows[0].capacity) and s.rows[0].demand == pytest.approx(snow.rows[0].demand)
+    assert any("Thatcher Engineering standard for rain load" in str(getattr(l, "note", "")) for l in s.steps)
