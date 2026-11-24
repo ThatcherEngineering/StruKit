@@ -74,3 +74,15 @@ def test_low_slope_screening_design_guide_40_example_5(tmp_path):
     assert calc.results("rain_load", dict(v, ls_Ls=""), {})["state"] == "incomplete"
     none, _, _ = calc.build("rain_load", dict(v, slope=""), {})
     assert none.rain["low"] is None
+
+
+def test_rain_load_api_for_the_beam_screens():
+    from strukit.gui import server
+    v = dict(mark="RN1", risk="II", i="7.55", i_source="Hazard Tool", A="1900", ds="2", ds_source="inlet", head_type="typed in", dh="1.5", dh_source="table",
+             pond_type="typed in", dp="0.5", dp_source="analysis")
+    got = server.api("/api/rain_load", dict(values=v, project={}))
+    assert got == dict(R=pytest.approx(5.2 * 4.0), ponding=False)
+    soft = dict(v, pond_type="from the bay stiffness", D="15", D_source="roof", Lp="50", Ls="38", S="6.25", primary="structural steel member", Ip="900",
+                secondary="effective moment of inertia entered", Is="150", dp="", dp_source="")
+    assert "unstable" in server.api("/api/rain_load", dict(values=soft, project={}))["error"]
+    assert "not complete" in server.api("/api/rain_load", dict(values=dict(v, ds=""), project={}))["error"]
