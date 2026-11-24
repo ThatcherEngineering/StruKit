@@ -129,6 +129,66 @@ def _solve(lay, EI, items):
     return bm.solve(lay.total * 12.0, [s * 12.0 for s in lay.supports], EI, pts, dist)
 
 
+class Basis:
+    """Solves each load once at unit factor on one common mesh (every support, end and load
+    boundary is a node) and builds the result of any arrangement by superposition. The
+    analysis is linear, so this equals solving the arrangement directly."""
+
+    def __init__(self, lay, EI, by_case):
+        self.lay, self.EI, self.cache = lay, EI, {}
+        br = set()
+        for lst in by_case.values():
+            for ld in lst:
+                for _, pc in _pieces(lay, ld):
+                    br.update((pc["x1_ft"], pc["x2_ft"]) if pc["kind"] == "uniform" else (pc["x_ft"],))
+                if ld["kind"] == "uniform":
+                    br.update((ld.get("x1_ft", 0.0), ld.get("x2_ft", lay.total)))
+        self.nodes = [bm.PointLoad(x * 12.0, 0.0) for x in sorted(br) if 0.0 <= x <= lay.total]
+
+    def _unit(self, ld):
+        key = (ld["kind"], ld.get("w"), ld.get("w2", ld.get("w")), ld.get("x1_ft", 0.0), ld.get("x2_ft", self.lay.total)) if ld["kind"] == "uniform" \
+            else (ld["kind"], ld["P"], ld["x_ft"])
+        if key not in self.cache:
+            lay = self.lay
+            if ld["kind"] == "uniform":
+                r = bm.solve(lay.total * 12.0, [s * 12.0 for s in lay.supports], self.EI, list(self.nodes),
+                             [bm.DistLoad(key[3] * 12, key[4] * 12, key[1] / 12.0, key[2] / 12.0)])
+            else:
+                r = bm.solve(lay.total * 12.0, [s * 12.0 for s in lay.supports], self.EI, list(self.nodes) + [bm.PointLoad(ld["x_ft"] * 12, ld["P"])])
+            self.cache[key] = r
+        return self.cache[key]
+
+    def solve(self, items):
+        out = None
+        for fac, ld in items:
+            if not fac:
+                continue
+            u = self._unit(ld)
+            if out is None:
+                out = bm.BeamResult(u.x, fac * u.V, fac * u.M, fac * u.defl, {k: fac * v for k, v in u.reactions.items()}, {})
+            else:
+                out.V = out.V + fac * u.V; out.M = out.M + fac * u.M; out.defl = out.defl + fac * u.defl
+                for k, v in u.reactions.items():
+                    out.reactions[k] += fac * v
+        return out
+
+
+_RECENT = {}
+
+
+def basis_for(lay, EI, by_case):
+    """The Basis for this beam and these loads, kept between calls (one member is analysed
+    for many load combinations and deflection checks in a row)."""
+    key = (tuple(lay.spans), lay.left, lay.right, EI,
+           tuple(sorted((c, tuple(sorted((k, v) for k, v in ld.items() if isinstance(v, (int, float, str)))))
+                        for c, lst in by_case.items() for ld in lst)))
+    if key not in _RECENT:
+        if len(_RECENT) >= 6:
+            _RECENT.pop(next(iter(_RECENT)))
+        _RECENT[key] = Basis(lay, EI, by_case)
+    return _RECENT[key]
+
+
 def arrangements(lay, by_case, factors, snow_partial=True):
     """Every load arrangement to analyse for one set of load factors: list of
     (description, [(factor, load)])."""
@@ -170,11 +230,12 @@ class Envelope:
     n: int
 
 
-def envelope(lay, EI, by_case, factors, snow_partial=True):
+def envelope(lay, EI, by_case, factors, snow_partial=True, basis=None):
     sup = [s * 12.0 for s in lay.supports]
     best = None
+    basis = basis or basis_for(lay, EI, by_case)
     for on, items in arrangements(lay, by_case, factors, snow_partial):
-        r = _solve(lay, EI, items)
+        r = basis.solve(items)
         if r is None:
             continue
         mp, mn, v = max(float(r.M.max()), 0.0), max(-float(r.M.min()), 0.0), float(abs(r.V).max())
@@ -193,12 +254,13 @@ def envelope(lay, EI, by_case, factors, snow_partial=True):
     return best
 
 
-def deflection(lay, EI, by_case, factors, ratio, snow_partial=True):
+def deflection(lay, EI, by_case, factors, ratio, snow_partial=True, basis=None):
     """Worst deflection-to-limit over the overhangs and spans and the live load
     arrangements: (deflection in, limit in, segment label, limit text) or None."""
     worst = None
+    basis = basis or basis_for(lay, EI, by_case)
     for on, items in arrangements(lay, by_case, factors, snow_partial):
-        r = _solve(lay, EI, items)
+        r = basis.solve(items)
         if r is None:
             continue
         for x0, x1, label, Ld in lay.segments:

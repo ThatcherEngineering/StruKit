@@ -104,7 +104,7 @@ def _cb(res, a, b):
 
 
 def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
-        include_self_weight, self_weight_case="D"):
+        include_self_weight, self_weight_case="D", spans=None, overhang_left=0.0, overhang_right=0.0):
     """bracing: "continuous", or a list of brace locations in ft (ends are added)."""
     if method not in ("ASD", "LRFD"):
         raise WorksheetError("method must be ASD or LRFD")
@@ -146,15 +146,31 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
                            "included in the loads entered.")
     if props.get("type") in ("C", "MC"):
         assumptions.append("The loads act through the shear center of the channel; torsion is not checked.")
+    from . import contbeam
+    try:
+        lay = contbeam.layout(span_ft, spans, overhang_left, overhang_right)
+    except ValueError as e:
+        raise WorksheetError(f"{mark}: {str(e).replace('beam: ', '')}")
+    total_ft = lay.total
     if bracing == "continuous":
         segs, btxt, brace_pts = None, "continuously braced (Lb = 0)", []
     else:
-        pts = sorted({0.0, float(span_ft)} | {float(x) for x in bracing})
-        if pts[0] < 0 or pts[-1] > span_ft:
+        pts = sorted({0.0, float(total_ft)} | {float(x) for x in bracing})
+        if pts[0] < 0 or pts[-1] > total_ft + 1e-9:
             raise WorksheetError(f"{mark}: a brace point is off the beam")
         segs = list(zip(pts[:-1], pts[1:]))
         btxt = "braced at " + ", ".join(f"{x:g}" for x in pts) + " ft"
         brace_pts = pts
+    if not lay.simple:
+        if bracing != "continuous":
+            pts = sorted({0.0, float(lay.total)} | {float(x) for x in bracing} | {float(x) for x in lay.supports})
+            if pts[0] < 0 or pts[-1] > lay.total + 1e-9:
+                raise WorksheetError(f"{mark}: a brace point is off the beam")
+            segs = list(zip(pts[:-1], pts[1:]))
+            btxt = "braced at " + ", ".join(f"{x:g}" for x in pts) + " ft (supports and brace points)"
+            brace_pts = pts
+        return _run_continuous(mark, shape, Fy, lay, all_loads, combos, defl_checks, segs, btxt, brace_pts, method, include_self_weight,
+                               props, check, assumptions)
     EI = E * props["Ix"] / 144.0                                   # kip-ft^2
     sheet = SteelBeamSheet(mark, shapes.normalize(shape), Fy, span_ft, method, props, all_loads,
                            btxt, include_self_weight, assumptions=assumptions,
@@ -199,4 +215,81 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
             f"{E:.0f} x {props['Ix']:.0f}"))
     if not defl_checks:
         sheet.assumptions.append("No deflection limit was given; deflection is not checked.")
+    return sheet
+
+
+def _run_continuous(mark, shape, Fy, lay, all_loads, combos, defl_checks, segs, btxt, brace_pts, method, include_self_weight, props, check,
+                    assumptions):
+    """More than one span, or overhangs (contbeam.py): every arrangement of the live load cases
+    on whole spans and overhangs (ASCE/SEI 7-22 Sect. 4.3.3) and the partial snow cases
+    (Sect. 7.5.1); each unbraced segment is checked with its own Cb for the moment diagram
+    of each arrangement. Supports are taken as brace points. Units inside: kips, in."""
+    from . import contbeam
+    L_ft = lay.total
+    for ld in all_loads:
+        if ld["kind"] == "point" and not (0 <= ld["x_ft"] <= L_ft + 1e-9):
+            raise WorksheetError(f"{mark}: a point load is off the beam")
+    by_case = {}
+    for ld in all_loads:
+        by_case.setdefault(ld["case"], []).append(ld)
+    EI = E * props["Ix"]                                           # kip-in^2
+    sheet = SteelBeamSheet(mark, shapes.normalize(shape), Fy, L_ft, method, props, all_loads, btxt, include_self_weight,
+                           assumptions=assumptions, brace_points=brace_pts)
+    sheet.span_text = lay.describe()
+    sheet.supports = list(lay.supports)
+    whole = [(0.0, L_ft)]
+    basis = contbeam.Basis(lay, EI, by_case)
+    worst_m, worst_v, n_arr = None, None, 0
+    for cb in combos:
+        arrs = contbeam.arrangements(lay, by_case, cb.factors)
+        first = True
+        for _, items in arrs:
+            res = basis.solve(items)
+            if res is None:
+                continue
+            n_arr += 1
+            if first:                                              # the arrangement with every span loaded comes first
+                sheet.reactions[cb.name] = tuple(res.reactions[min(res.reactions, key=lambda k: abs(k - s_ * 12))] for s_ in lay.supports)
+                first = False
+            Vmax = float(np.max(np.abs(res.V)))
+            for a, b in (segs if segs is not None else whole):
+                m = (res.x >= a * 12 - 1e-6) & (res.x <= b * 12 + 1e-6)
+                Mseg = float(np.max(np.abs(res.M[m]))) / 12.0      # kip-ft
+                if segs is None:
+                    Lb, Cb = 0.0, 1.0
+                else:
+                    xq = [(a + (b - a) * k) * 12 for k in (0.25, 0.5, 0.75)]
+                    MA, MB, MC = (abs(float(np.interp(x, res.x, res.M))) for x in xq)
+                    Lb, Cb = (b - a), (steel_beam.cb_factor(Mseg * 12, MA, MB, MC) if Mseg > 1e-9 else 1.0)
+                chk = check(props, Fy, Lb * 12, Cb, method)
+                row = Row("flexure", cb.name, Mseg, chk.M_avail / 12, "kip-ft", "AISC 360-22 Ch. F: " + chk.governs,
+                          f"Lb = {Lb:g} ft, Cb = {Cb:.2f}, segment {a:g} to {b:g} ft")
+                if worst_m is None or row.dc > worst_m[0].dc:
+                    worst_m = (row, chk, res)
+            v_row = Row("shear", cb.name, Vmax, chk.V_avail, "kip", getattr(chk, "v_source", "AISC 360-22 Sect. G2.1"))
+            if worst_v is None or v_row.dc > worst_v.dc:
+                worst_v = v_row
+        if cb.name not in sheet.reactions:
+            sheet.reactions[cb.name] = tuple(0.0 for _ in lay.supports)
+    if worst_m is None:
+        raise WorksheetError(f"{mark}: no load combination loads the beam")
+    sheet.rows += [worst_m[0], worst_v]
+    sheet.steps = worst_m[1].lines
+    sheet.governing = dict(flexure=worst_m[0].combo, shear=worst_v.combo)
+    r = worst_m[2]
+    sheet.diagram = dict(x=(r.x / 12).tolist(), V=r.V.tolist(), M=(r.M / 12).tolist())
+    for dc in defl_checks:
+        w = contbeam.deflection(lay, EI, by_case, dc.factors, dc.ratio, basis=basis)
+        if w is None:
+            continue
+        sheet.rows.append(Row(f"deflection, {dc.label}", "+".join((f"{f:g}" if f != 1 else "") + c for c, f in dc.factors.items()), w[0], w[1], "in",
+                              dc.source, f"{w[2]}; limit {w[3]}; E Ix = {E:.0f} x {props['Ix']:.0f}"))
+    if not defl_checks:
+        sheet.assumptions.append("No deflection limit was given; deflection is not checked.")
+    sheet.assumptions += [
+        "Live load is placed on every combination of spans and overhangs and each check takes the worst arrangement (ASCE/SEI 7-22 Sect. 4.3.3); "
+        "snow is placed by the partial loading cases of Sect. 7.5.1.",
+        ("The compression flange is braced continuously, top or bottom, wherever it is in compression." if segs is None else
+         "Each brace point and each support braces the compression flange, top or bottom, whichever is in compression there."),
+        "Reactions shown are for every span loaded."]
     return sheet

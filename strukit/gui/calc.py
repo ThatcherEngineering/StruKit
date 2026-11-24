@@ -32,6 +32,9 @@ FORMS = {
     "steel_beam": dict(
         title="Steel Beam", code="AISC 360-22", mark="B",
         fields=[F("shape", "Section", "shape_any", help="W, M, S or HP shape, C or MC channel, square, rectangular or round HSS, or pipe"), F("Fy", "Fy", unit="ksi"), F("span", "Span", unit="ft"),
+                F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False, help="separated by commas, left to right after the first span; blank = one span"),
+                F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load and brace positions are measured from the left end of the member"),
+                F("oh_right", "Overhang past the right support", unit="ft", required=False),
                 F("bracing", "Compression flange braced", "select", options=["continuous", "at points"]),
                 F("brace_pts", "Brace points", "text", "ft", required=False,
                   help="distances from the left end, separated by commas; the ends are always braced"),
@@ -1149,11 +1152,13 @@ def build(kind, values, project):
         if br == "at points":
             pts = r.nums("brace_pts") or []
         loads = []
+        more = (r.nums("more_spans") or []) if r.text("more_spans", False) else []
+        total = (span or 0.0) + sum(more) + (r.num("oh_left", False) or 0.0) + (r.num("oh_right", False) or 0.0)
         for ld in r.rows("loads"):
             if ld["kind"] == "uniform":
                 d = dict(case=ld["case"], kind="uniform", w=ld["mag"])
                 if ld["x1"] is not None or ld["x2"] is not None:
-                    d.update(x1_ft=ld["x1"] or 0.0, x2_ft=ld["x2"] if ld["x2"] is not None else span)
+                    d.update(x1_ft=ld["x1"] or 0.0, x2_ft=ld["x2"] if ld["x2"] is not None else total)
             else:
                 if ld["x1"] is None:
                     r.miss.append("Loads: a point load needs its location (From / at)")
@@ -1166,7 +1171,8 @@ def build(kind, values, project):
         dc = checks(r.rows("defl"), r.miss, "Deflection limits")
         cases_used([ld["case"] for ld in loads], cb, r.miss)
         r.done()
-        s = ws_steel_beam.run(mark, shape, Fy, span, loads, cb, dc, "continuous" if br == "continuous" else pts, m, sw)
+        s = ws_steel_beam.run(mark, shape, Fy, span, loads, cb, dc, "continuous" if br == "continuous" else pts, m, sw,
+                              spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0, overhang_right=r.num("oh_right", False) or 0.0)
         return s, "steel_beam", dict(combos=cb)
     if kind == "steel_column":
         cb, m = combos(project, r.miss), method(project, r.miss)
