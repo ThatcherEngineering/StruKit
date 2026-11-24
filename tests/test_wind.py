@@ -772,3 +772,17 @@ def test_enclosure_classification_wind_design_manual_example_1(tmp_path):
     assert kind == "simple" and s.enclosure["classification"] == "partially enclosed"
     calcsheet.simple_pdf(s, str(tmp_path / "e.pdf"), "Job", "ASCE/SEI 7-22", "Nov 23, 2026")
     assert calc.results("wind_enclosure", dict(v, openings_basis=""), {})["state"] == "incomplete"
+
+
+def test_open_hip_roof_cladding_by_the_thatcher_standard():
+    """Ruling of 2026-11-23 19:00 ("Sure go number 2"): cladding on an open hip roof uses the pitched free roof figure, 30.5-2, on each plane at its own slope."""
+    from strukit.gui import calc
+    v = dict(mark="WO4", V="115", V_source="Hazard Tool", exposure="C", exposure_basis="open terrain", h="14", roof="hip", theta="15", theta_hip="30", L="30", width="50",
+             flow="clear", flow_basis="open below", Kzt="1.0", Kzt_source="flat site", elevation="", elevation_source="")
+    s, _, _ = calc.build("wind_free_roof", v, {})
+    cc = s.free_roof["cc"]
+    main, end = cc["main roof planes"], cc["hip-end roof planes"]
+    ref15, ref30 = wind.free_cc(115, "C", 14.0, 15.0, 30.0, "pitched"), wind.free_cc(115, "C", 14.0, 30.0, 30.0, "pitched")
+    assert main["rows"] == ref15["rows"] and end["rows"] == ref30["rows"] and main["a"] == 3.0
+    assert main["rows"][0]["zones"][3][:2] == (2.2, -2.2) and end["rows"][0]["zones"][3][:2] == (2.6, -1.8)
+    assert not any("30.5-1" in t for t in s.not_checked) and sum("Components and Cladding" in b_["title"] for b_ in s.blocks) == 2

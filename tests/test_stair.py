@@ -54,10 +54,20 @@ def test_bent_plate_tread_design_guide_34_example_10_2_2(tmp_path):
     a = stair_tread_sheet("TR1", 0.1875, 12.0, 2.0, 3.0, 26.7, "approximate, A786", 60.0, 1000.0, "OSHA industrial stair", "ASD")
     (_, Mu_, Vu_), (_, Mc_, Vc_) = a.tread["cases"]
     assert Vu_ == pytest.approx(105, abs=1) and Mu_ == pytest.approx(78.8, abs=0.5) and Vc_ == pytest.approx(1020, rel=0.005) and Mc_ == pytest.approx(761, abs=1.5)
-    assert a.tread["Vc"] == pytest.approx(7200, rel=0.005) and a.tread["Mc"] == pytest.approx(909, rel=0.005) and a.ok
+    # the example's strength, 1.6 Fy S, is StruKit's Mp; the tread plate (b/t = 62 over 46.1) is slender, so Mn = Fy Se governs (ruling of 2026-11-23 19:00)
+    assert a.tread["Vc"] == pytest.approx(7200, rel=0.005) and a.tread["Mp"] / 1.67 * 1000 / 12 == pytest.approx(909, rel=0.005)
+    assert a.tread["plate"] == "slender" and a.tread["lam"] == pytest.approx(62.0) and a.tread["be"] == pytest.approx(9.47, abs=0.01)       # 1.92 x 0.1875 x 32.96 x (1 - 0.38 x 32.96 / 62)
+    assert a.tread["Se"] == pytest.approx(0.420, abs=0.001) and a.tread["Mc"] == pytest.approx(26.7 * a.tread["Se"] / 1.67 * 1000 / 12) and a.tread["Mc"] == pytest.approx(560, abs=1)
+    assert not a.ok and [r.check for r in a.rows if r.status != "OK"] == ["Tread bending"] and not any("local buckling" in x for x in a.not_checked)
     l = stair_tread_sheet("TR1", 0.1875, 12.0, 2.0, 3.0, 26.7, "approximate, A786", 60.0, 1000.0, "OSHA industrial stair", "LRFD")
     assert l.tread["cases"][1][2] == pytest.approx(1620, rel=0.005) and l.tread["cases"][1][1] == pytest.approx(1210, rel=0.005)
-    assert l.tread["Vc"] == pytest.approx(10800, rel=0.005) and l.tread["Mc"] == pytest.approx(1360, rel=0.01)
+    assert l.tread["Vc"] == pytest.approx(10800, rel=0.005) and 0.90 * l.tread["Mp"] * 1000 / 12 == pytest.approx(1360, rel=0.01) and l.tread["Mc"] == pytest.approx(842, abs=1.5)
+    # compact plate: 1/4 in. x 8 in., A36: b/t = 30 under 1.12 (29000/36)^0.5 = 31.8 -> Mn = Mp;  noncompact: 3/16 x 7.5 in.: b/t = 38, between 31.8 and 39.7
+    c = stair_tread_sheet("TR2", 0.25, 8.0, 2.0, 3.0, 36, "A36", 100.0, 300.0, "Table 4.3-1", "ASD")
+    assert c.tread["plate"] == "compact" and c.tread["Mn"] == c.tread["Mp"] and c.ok
+    n = stair_tread_sheet("TR3", 0.1875, 7.5, 2.0, 3.0, 36, "A36", 100.0, 300.0, "Table 4.3-1", "ASD")
+    k = (38.0 - 1.12 * (29000 / 36) ** 0.5) / (0.28 * (29000 / 36) ** 0.5)
+    assert n.tread["plate"] == "noncompact" and n.tread["Mn"] == pytest.approx(n.tread["Mp"] - (n.tread["Mp"] - 36 * min(n.tread["S"], n.tread["S_top"])) * k)
     v = dict(mark="TR1", t="0.1875", b="12", d="2", span="3", Fy="26.7", Fy_source="approx", live_psf="60", live_P="1000", live_source="OSHA")
     s, kind, _ = calc.build("stair_tread", v, dict(method="ASD"))
     calcsheet.simple_pdf(s, str(tmp_path / "t.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
