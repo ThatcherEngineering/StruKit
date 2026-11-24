@@ -349,7 +349,8 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     sx = 536
     c.setFillColorRGB(*BLUE); c.setFont(FB, 8); c.drawCentredString(sx, top - 4, "SECTION")
     if hss_kind is None:
-        memberart.steel_section(c, sx, top - 38, 40, 46, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
+        (memberart.channel_section if pr.get("type") in ("C", "MC") else memberart.steel_section)(
+            c, sx, top - 38, 40, 46, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
         c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawCentredString(sx, top - 72, "to scale")
     else:
         _hss_section(c, sx - 6, top - 36, 40.0, dict(kind=hss_kind, OD=pr.get("OD"), H=pr.get("Ht"), B=pr.get("B"), t=pr["tdes"]))

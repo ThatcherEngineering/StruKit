@@ -2,7 +2,8 @@
 
 Source on file: SHAPE160.xlsx (AISC, August 2023), U.S. customary columns.
 Loaded here: W, M, S and HP shapes (data/aisc_shapes_v16_I.csv); rectangular, square and round
-HSS and pipe (data/aisc_shapes_v16_HSS.csv, built by tools/parse_hss.py).
+HSS and pipe (data/aisc_shapes_v16_HSS.csv, built by tools/parse_hss.py); C and MC channels
+(data/aisc_shapes_v16_C.csv, built by tools/parse_channels.py).
 """
 import csv
 import os
@@ -77,3 +78,31 @@ def hss(name):
 
 def hss_labels(kind=None):
     return [k for k, v in _load_hss().items() if kind is None or v["type"] == kind]
+
+
+_C_PATH = os.path.join(os.path.dirname(__file__), "data", "aisc_shapes_v16_C.csv")
+_c_cache = None
+
+
+def _load_c():
+    global _c_cache
+    if _c_cache is None:
+        with open(_C_PATH, newline="") as f:
+            _c_cache = {}
+            for r in csv.DictReader(line for line in f if not line.startswith("#")):
+                _c_cache[r["label"]] = {k: (v if k in ("type", "label") else float(v)) for k, v in r.items() if v != ""}
+    return _c_cache
+
+
+def channel(name):
+    """Properties of a C or MC channel by its Manual label, e.g. 'C15x33.9', 'MC12x10.6'.
+    bf_2tf holds the flange width-to-thickness ratio b/t (full flange width over thickness)."""
+    table = _load_c()
+    key = normalize(name)
+    if key not in table:
+        raise ShapeError(f"shape '{name}' is not in the {SOURCE} channel table")
+    return dict(table[key])
+
+
+def channel_labels():
+    return list(_load_c())

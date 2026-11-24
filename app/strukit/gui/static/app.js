@@ -602,7 +602,7 @@ function example() {
   $("#build").textContent = "build " + INFO.version;
   document.body.append(el("datalist", { id: "shapes" }, INFO.shapes.map(s => el("option", { value: s }))));
   document.body.append(el("datalist", { id: "shapes_hss" }, (INFO.hss_shapes || []).map(s => el("option", { value: s }))));
-  document.body.append(el("datalist", { id: "shapes_any" }, INFO.shapes.concat(INFO.hss_shapes || []).map(s => el("option", { value: s }))));
+  document.body.append(el("datalist", { id: "shapes_any" }, INFO.shapes.concat(INFO.channel_shapes || [], INFO.hss_shapes || []).map(s => el("option", { value: s }))));
   for (const [k, f] of Object.entries(INFO.forms))
     $("#addbtns").append(el("button", { onclick: () => { S.members.push({ kind: k, values: { mark: "" } }); setDirty(); select(S.members.length - 1); } }, f.title));
   $("#bOpen").onclick = () => open(); $("#bSave").onclick = () => save(false); $("#bSaveAs").onclick = () => save(true);

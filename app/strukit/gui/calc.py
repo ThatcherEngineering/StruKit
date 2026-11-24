@@ -31,7 +31,7 @@ CASE = F("case", "Case", "text", help="D, L, Lr, S, W, E, Em (seismic with overs
 FORMS = {
     "steel_beam": dict(
         title="Steel Beam", code="AISC 360-22", mark="B",
-        fields=[F("shape", "Section", "shape_any", help="W, M, S or HP shape, square, rectangular or round HSS, or pipe"), F("Fy", "Fy", unit="ksi"), F("span", "Span", unit="ft"),
+        fields=[F("shape", "Section", "shape_any", help="W, M, S or HP shape, C or MC channel, square, rectangular or round HSS, or pipe"), F("Fy", "Fy", unit="ksi"), F("span", "Span", unit="ft"),
                 F("bracing", "Compression flange braced", "select", options=["continuous", "at points"]),
                 F("brace_pts", "Brace points", "text", "ft", required=False,
                   help="distances from the left end, separated by commas; the ends are always braced"),

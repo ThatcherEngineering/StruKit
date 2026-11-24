@@ -53,6 +53,25 @@ def steel_section(c, cx, cy, box_w, box_h, d, bf, tf, tw, k=None):
     return s
 
 
+def channel_section(c, cx, cy, box_w, box_h, d, bf, tf, tw, k=None):
+    """Cut section of a channel, to scale, web at the left, centred on (cx, cy) inside
+    box_w x box_h. Returns the scale used (points per inch)."""
+    s = min(box_w / bf, box_h / d)
+    D, B, TF, TW = d * s, bf * s, tf * s, tw * s
+    r = max(0.0, min(((k - tf) if k else 0.0) * s, (B - TW) - 0.5, (D - 2 * TF) / 2 - 0.5))
+    x0, y0 = cx - B / 2, cy - D / 2
+    p = c.beginPath()
+    p.moveTo(x0, y0); p.lineTo(x0 + B, y0); p.lineTo(x0 + B, y0 + TF)
+    p.lineTo(x0 + TW + r, y0 + TF)
+    p.curveTo(x0 + TW + r / 2, y0 + TF, x0 + TW, y0 + TF + r / 2, x0 + TW, y0 + TF + r)
+    p.lineTo(x0 + TW, y0 + D - TF - r)
+    p.curveTo(x0 + TW, y0 + D - TF - r / 2, x0 + TW + r / 2, y0 + D - TF, x0 + TW + r, y0 + D - TF)
+    p.lineTo(x0 + B, y0 + D - TF); p.lineTo(x0 + B, y0 + D); p.lineTo(x0, y0 + D); p.close()
+    c.setLineWidth(0.7); c.setStrokeColorRGB(*STEEL_LINE); c.setFillColorRGB(*STEEL_FILL)
+    c.drawPath(p, fill=1, stroke=1)
+    return s
+
+
 LVL_FILL, LVL_LINE, LVL_GRAIN = (0.84, 0.72, 0.52), (0.38, 0.25, 0.12), (0.60, 0.45, 0.28)
 GLU_FILL, GLU_LINE, GLU_GRAIN = (0.95, 0.86, 0.66), (0.42, 0.28, 0.13), (0.62, 0.46, 0.26)
 
