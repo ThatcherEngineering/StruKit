@@ -210,6 +210,16 @@ FORMS = {
                 F("group", "Bolted: bolt type", "select", options=["A325", "A490", "F3148"], required=False),
                 F("threads", "Bolted: threads", "select", options=["N", "X"], required=False)],
         tables=[T("loads", "Beam end reaction", [CASE, F("P", "Reaction", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "cap_plate": dict(
+        title="Beam over HSS Column, Cap Plate Moment Connection", code="AISC 360-22", mark="CP",
+        fields=[F("beam", "Beam (continuous over the column)", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
+                F("column", "Column (square HSS)", "hss_shape"), F("col_Fy", "Column Fy", unit="ksi"), F("col_source", "Source of the column Fy", "text"),
+                F("tp", "Cap plate thickness", unit="in"), F("bp", "Cap plate width across the beam", unit="in"),
+                F("plate_Fy", "Plate Fy", unit="ksi"), F("plate_Fu", "Plate Fu", unit="ksi"), F("plate_source", "Source of the plate Fy and Fu", "text"),
+                F("d", "Bolt diameter", unit="in", help="four bolts, two each side of the column"), F("group", "Bolt type", "select", options=["A325", "A490", "F3148"]),
+                F("s", "Bolt spacing along the beam", unit="in", help="the bolts sit outside the HSS walls"), F("g", "Gage across the beam flange", unit="in"),
+                F("weld", "Fillet weld, cap plate to the HSS", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
+        tables=[T("loads", "Loads at the joint", [CASE, F("P", "Column compression", unit="kip"), F("M", "Moment across the joint", unit="kip-ft"), F("label", "Note", "text", required=False)])]),
     "end_plate": dict(
         title="Shear End-Plate Connection", code="AISC 360-22", mark="EP",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
@@ -1512,6 +1522,16 @@ def build(kind, values, project):
         kw = dict(weld=r.num("weld", False), FEXX=r.num("FEXX", False), n_bolts=r.num("n_bolts", False), d=r.num("d", False), group=r.text("group", False), threads=r.text("threads", False))
         r.done()
         return ws_more.seat_sheet(mark, *args, loads, cb, m, **kw), "simple", {}
+    if kind == "cap_plate":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        loads = [dict(case=x["case"], P=x["P"], M=x["M"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), r.text("beam_source"), r.text("column"), r.num("col_Fy"), r.text("col_source"), r.num("tp"), r.num("bp"),
+                r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.num("s"), r.num("g"), r.num("weld"), r.num("FEXX"))
+        r.done()
+        return ws_more.cap_plate_sheet(mark, *args, loads, cb, m), "simple", {}
     if kind == "end_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]

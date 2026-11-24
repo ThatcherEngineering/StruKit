@@ -3331,6 +3331,117 @@ def seat_sheet(mark, beam, beam_Fy, beam_source, t, length, osl, vleg, angle_Fy,
     return sheet
 
 
+def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, col_source, tp, bp, plate_Fy, plate_Fu, plate_source, d, group, s, g, weld, FEXX, loads,
+                    combos, method):
+    """Wide-flange beam continuous over an HSS column, moment connection through a cap plate with four bolts: AISC Design Guide 24 (2nd Ed.)
+    Sect. 6.2 as worked in Example 6.1. loads: dict(case, P kips of column compression, M kip-ft across the joint). s: bolt spacing along the
+    beam (the bolts sit outside the HSS walls), g: gage across the beam flange, bp: cap plate width across the beam."""
+    from . import bolts, welds
+    from .steel_beam import SteelInputError
+    for nm, v in (("the source of the beam Fy and Fu", beam_source), ("the source of the column Fy", col_source), ("the source of the plate Fy and Fu", plate_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if not combos or not loads:
+        raise WorksheetError(f"{mark}: loads and load combinations are needed")
+    try:
+        bm = shapes.get(beam)
+    except Exception:
+        raise WorksheetError(f"{mark}: '{beam}' is not a W, M, S or HP shape in the shapes table (this sheet covers a wide-flange beam over the column)")
+    try:
+        col = shapes.hss(column)
+    except Exception:
+        raise WorksheetError(f"{mark}: '{column}' is not in the HSS table")
+    if col.get("type") != "HSS-RECT" or abs(col["B"] - col["Ht"]) > 1e-6:
+        raise WorksheetError(f"{mark}: this sheet covers a square HSS column (AISC Design Guide 24 Example 6.1)")
+    if not bm.get("k1"):
+        raise WorksheetError(f"{mark}: the shapes table has no k1 for {beam}")
+    B, t = col["B"], col["tdes"]
+    tw, tf, dd, k, k1 = bm["tw"], bm["tf"], bm["d"], bm["kdes"], bm["k1"]
+    if s <= B + d:
+        raise WorksheetError(f"{mark}: the bolts must be outside the HSS walls: the spacing along the beam, {s:g} in., must be more than the column width plus a bolt diameter, {B + d:g} in.")
+    if not (tw + d < g < min(bp, bm["bf"]) - d):
+        raise WorksheetError(f"{mark}: the gage {g:g} in. does not fit the beam flange ({bm['bf']:g} in.) and the cap plate width ({bp:g} in.)")
+    lrfd = method == "LRFD"
+    E = 29000.0
+    av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
+    fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
+    cases = []
+    for cb in combos:
+        P = sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)
+        M = abs(sum(cb.factors.get(ld["case"], 0.0) * ld["M"] for ld in loads)) * 12.0
+        T2 = max(0.0, (M - P * B / 2) / (B / 2 + s / 2))
+        cases.append(dict(name=cb.name, P=P, M=M, T=T2 / 2, C=T2 + P))
+    wt = max(cases, key=lambda c: c["T"])                      # largest bolt tension
+    wc = max(cases, key=lambda c: c["C"])                      # largest compression at the column wall
+    T, C = wt["T"], wc["C"]
+    try:
+        rt = bolts.tension(d, group, method).R_avail
+    except SteelInputError as ex:
+        raise WorksheetError(f"{mark}: {ex}")
+    tnp = lambda T_, b1, p_, Fu_: math.sqrt(4 * T_ * b1 / (0.90 * p_ * Fu_)) if lrfd else math.sqrt(4 * 1.67 * T_ * b1 / (p_ * Fu_))
+    bf_, bf1 = (g - tw) / 2, (g - tw) / 2 - d / 2
+    pf = 1.75 * bf_ + min(s / 2, 1.75 * bf_)
+    t_f = tnp(T, bf1, pf, beam_Fu)
+    bc_, bc1 = (s - B) / 2, (s - B) / 2 - d / 2
+    le = (bp - g) / 2
+    pc = min(le, 1.75 * bc_) + min(g / 2, 1.75 * bc_)
+    t_c = tnp(T, bc1, pc, plate_Fu)
+    lb = 5 * tp + t
+    Ry = av(beam_Fy * tw * (5 * k + lb), 1.00, 1.50)
+    Rc_n = 0.80 * tw ** 2 * (1 + 3 * (lb / dd) * (tw / tf) ** 1.5) * math.sqrt(E * beam_Fy * tf / tw)
+    Rc = av(Rc_n, 0.75, 2.00)
+    N = 2 * k1 + 5 * tf
+    wdt = min(5 * tp + N, B)
+    Rwy = av(col_Fy * t * wdt, 1.00, 1.50)
+    lbw = 2 * k1
+    Rwc_n = 0.80 * t ** 2 * (1 + 3 * (lbw / (B / 2)) * (t / tp) ** 1.5) * math.sqrt(E * col_Fy * tp / t)
+    Rwc = av(Rwc_n, 0.75, 2.00)
+    w1, w2 = g, d + 2 * bc_
+    if 2 * w1 > B or 2 * w2 > B:
+        per_in, wtxt = 2 * T / B, "2 T / B (the 45 degree spread from the two bolts overlaps)"
+    else:
+        per_in, wtxt = T / min(w1, w2), f"T / the lesser of g = {w1:g} in. and db + 2b = {w2:g} in."
+    Rw = av(0.60 * FEXX * 0.7071 * weld, 0.75, 2.00)           # kip per inch of one fillet
+    wmin = welds.min_fillet_size(min(t, tp))
+    Ln = footing_line
+    steps = [Ln("Bolt tension without prying, T", T, "kip", "AISC Design Guide 24 (2nd Ed.) Example 6.1", f"{wt['name']}: 2T = (M - P B / 2) / (B / 2 + s / 2); M = {wt['M'] / 12:.1f} kip-ft, P = {wt['P']:.1f} kip, B = {B:g} in., s = {s:g} in."),
+             Ln("Beam flange: thickness for no prying, tnp", t_f, "in", "AISC Manual Eq. 9-34", f"b = (g - tw) / 2 = {bf_:.3g} in., b' = {bf1:.3g} in., p = {pf:.3g} in.; " + fac(0.90, 1.67)),
+             Ln("Cap plate: thickness for no prying, tnp", t_c, "in", "AISC Manual Eq. 9-34", f"b = (s - B) / 2 = {bc_:.3g} in., b' = {bc1:.3g} in., p = {pc:.3g} in.; " + fac(0.90, 1.67)),
+             Ln("Bolt available tension", rt, "kip", "AISC 360-22 Sect. J3.7, Table J3.2", f"{d:g} in. {group}"),
+             Ln("Compression at the column wall, C = 2T + P", C, "kip", "AISC Design Guide 24 Example 6.1", wc["name"]),
+             Ln("Beam web local yielding", Ry, "kip", "AISC 360-22 Eq. J10-2", f"lb = 5 tp + t = {lb:.3g} in., k = {k:g} in.; " + fac(1.00, 1.50)),
+             Ln("Beam web local crippling", Rc, "kip", "AISC 360-22 Eq. J10-4", fac(0.75, 2.00)),
+             Ln("HSS wall local yielding", Rwy, "kip", "AISC 360-22 Eq. J10-2, one wall", f"width = 5 tp + N = {wdt:.3g} in., N = 2 k1 + 5 tf = {N:.3g} in.; " + fac(1.00, 1.50)),
+             Ln("HSS wall local crippling", Rwc, "kip", "AISC 360-22 Eq. J10-4, one wall", f"lb = 2 k1 = {lbw:.3g} in., d = B / 2; " + fac(0.75, 2.00)),
+             Ln("Weld of the cap plate to the HSS, load per inch", per_in, "kip/in", "AISC Design Guide 24 Example 6.1", wtxt),
+             Ln("Fillet weld strength per inch", Rw, "kip/in", "AISC 360-22 Eq. J2-4", f"0.60 FEXX x 0.707 w; " + fac(0.75, 2.00))]
+    rows = [Row("Bolt tension", wt["name"], T, rt, "kip", "AISC 360-22 Sect. J3.7", f"({4}) {d:g} in. {group}, two in tension"),
+            Row("Beam flange thickness, no prying", wt["name"], t_f, tf, "in", "AISC Manual Eq. 9-34", "required against the flange thickness"),
+            Row("Cap plate thickness, no prying", wt["name"], t_c, tp, "in", "AISC Manual Eq. 9-34", "required against the plate thickness"),
+            Row("Beam web local yielding", wc["name"], C, Ry, "kip", "AISC 360-22 Eq. J10-2", shapes.normalize(beam)),
+            Row("Beam web local crippling", wc["name"], C, Rc, "kip", "AISC 360-22 Eq. J10-4", ""),
+            Row("HSS wall local yielding", wc["name"], C, Rwy, "kip", "AISC 360-22 Eq. J10-2", shapes.normalize(column)),
+            Row("HSS wall local crippling", wc["name"], C, Rwc, "kip", "AISC 360-22 Eq. J10-4", ""),
+            Row("Weld, cap plate to HSS", wt["name"], per_in, Rw, "kip/in", "AISC 360-22 Eq. J2-4", f"{weld:g} in. fillet, E{FEXX:g}XX"),
+            Row("Minimum fillet weld size", "", wmin, weld, "in", "AISC 360-22 Table J2.4", "required against provided")]
+    info = [("Beam", f"{shapes.normalize(beam)}, tw = {tw:g} in., tf = {tf:g} in., k = {k:g} in., k1 = {k1:g} in., Fy = {beam_Fy:g} ksi, Fu = {beam_Fu:g} ksi ({beam_source.strip()})"),
+            ("Column", f"{shapes.normalize(column)}, B = {B:g} in., t = {t:g} in., Fy = {col_Fy:g} ksi ({col_source.strip()})"),
+            ("Cap Plate", f"{tp:g} in. thick, {bp:g} in. wide across the beam, Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()})"),
+            ("Bolts", f"(4) {d:g} in. {group}, {s:g} in. apart along the beam, gage {g:g} in."),
+            ("Weld", f"{weld:g} in. fillet, cap plate to the HSS, E{FEXX:g}XX")]
+    load_lines = [f"{x_['case']:<3} P = {x_['P']:>7.2f} kip   M = {x_['M']:>7.2f} kip-ft" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
+    sheet = SimpleSheet(mark, "Beam over HSS Column, Cap Plate Moment Connection", "Connection", method, info, load_lines, [(cb.name, cb.source) for cb in combos],
+                        "Calculation", steps, rows,
+                        ["The compression of the couple acts at the face of the column; the two bolts beyond the other face carry the tension.",
+                         "The beam flange and the cap plate are each thick enough that there is no prying; where either is thinner than tnp the check is flagged (prying is not evaluated).",
+                         "The force spreads at 2.5 to 1 through the flange and the cap plate (AISC 360-22 Commentary Figure C-K2.2). The chord-stress factor Qf is 1.0: the force is parallel to the stress in the HSS wall."],
+                        ["bolts in shear and bearing at the bolt holes", "beam web compression buckling (AISC 360-22 Sect. J10.5) where load is applied at the top flange over the column",
+                         "the beam and the column themselves", "moment about the other axis of the column"])
+    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("cap_plate", dict(B=B, s=s, g=g, bp=bp, tp=tp, d=d, tf=tf, beam=shapes.normalize(beam), column=shapes.normalize(column)))))
+    sheet.cap = dict(T=T, C=C, t_f=t_f, t_c=t_c, bf=bf_, bf1=bf1, pf=pf, bc=bc_, bc1=bc1, pc=pc, le=le, lb=lb, Ry=Ry, Rc=Rc, N=N, width=wdt, Rwy=Rwy, Rwc=Rwc, per_in=per_in, Rw=Rw, rt=rt)
+    return sheet
+
+
 def bent_plate_tread(b, t, d):
     """Section of a bent plate tread, legs turned down at both edges: width b, thickness t, overall depth d (in.), square corners.
     Bending about the horizontal axis. Returns dict(A, y, Ix, S, S_top, Zx, h_t)."""
