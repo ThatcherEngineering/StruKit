@@ -1,0 +1,635 @@
+{
+ "format": "strukit-project",
+ "version": 1,
+ "project": {
+  "name": "Rusler Implements Mezzanine",
+  "number": "2026-001",
+  "address": "29050 CO-96, Pueblo, CO 81001",
+  "date": "2026-11-23",
+  "method": "ASD",
+  "combos_asd": [
+   {
+    "expr": "D",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 1a"
+   },
+   {
+    "expr": "D + L",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 2a"
+   },
+   {
+    "expr": "D + Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 3a"
+   },
+   {
+    "expr": "D + 0.7S",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 3a"
+   },
+   {
+    "expr": "D + R",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 3a"
+   },
+   {
+    "expr": "D + 0.75L + 0.75Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 4a"
+   },
+   {
+    "expr": "D + 0.75L + 0.525S",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 4a"
+   },
+   {
+    "expr": "D + 0.75L + 0.75R",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 4a"
+   },
+   {
+    "expr": "D + 0.6W",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 5a"
+   },
+   {
+    "expr": "D + 0.75L + 0.45W + 0.75Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 6a"
+   },
+   {
+    "expr": "D + 0.75L + 0.45W + 0.525S",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 6a"
+   },
+   {
+    "expr": "D + 0.75L + 0.45W + 0.75R",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 6a"
+   },
+   {
+    "expr": "0.6D + 0.6W",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 7a"
+   }
+  ],
+  "combos_lrfd": [
+   {
+    "expr": "1.4D",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 1a"
+   },
+   {
+    "expr": "1.2D + 1.6L + 0.5Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 2a"
+   },
+   {
+    "expr": "1.2D + 1.6L + 0.3S",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 2a"
+   },
+   {
+    "expr": "1.2D + 1.6L + 0.5R",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 2a"
+   },
+   {
+    "expr": "1.2D + 1.6Lr + 1.0L",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.6Lr + 0.5W",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.0S + 1.0L",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.0S + 0.5W",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.6R + 1.0L",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.6R + 0.5W",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.0W + 1.0L + 0.5Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 4a"
+   },
+   {
+    "expr": "1.2D + 1.0W + 1.0L + 0.3S",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 4a"
+   },
+   {
+    "expr": "1.2D + 1.0W + 1.0L + 0.5R",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 4a"
+   },
+   {
+    "expr": "0.9D + 1.0W",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 5a"
+   }
+  ]
+ },
+ "members": [
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 2, 3, 16, 17: W10x17 to HSS5x5x3/8",
+    "beam": "W10X17",
+    "tp": "0.375",
+    "d": "0.75",
+    "n": "3",
+    "spacing": "2.5",
+    "lev": "1.5",
+    "leh": "2",
+    "a": "3.0",
+    "weld": "0.25",
+    "loads": [
+     {
+      "case": "D",
+      "P": "3.48",
+      "label": "FloorBeamD.2"
+     },
+     {
+      "case": "L",
+      "P": "8.62",
+      "label": "FloorBeamD.2"
+     }
+    ],
+    "col_Fy": "46",
+    "col_Fu": "58",
+    "col_source": "ASTM A500 Grade B, sheet S0 Steel Notes",
+    "column": "HSS5X5X3/8"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 11: W8x15 to HSS5x5x3/8",
+    "beam": "W8X15",
+    "tp": "0.375",
+    "d": "0.75",
+    "n": "2",
+    "spacing": "3",
+    "lev": "1.5",
+    "leh": "2",
+    "a": "3.0",
+    "weld": "0.25",
+    "loads": [
+     {
+      "case": "D",
+      "P": "0.5",
+      "label": "FloorBeamB.3"
+     },
+     {
+      "case": "L",
+      "P": "9.02",
+      "label": "FloorBeamB.3"
+     }
+    ],
+    "col_Fy": "46",
+    "col_Fu": "58",
+    "col_source": "ASTM A500 Grade B, sheet S0 Steel Notes",
+    "column": "HSS5X5X3/8"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 2, 3, 17: W12x30 to HSS5x5x3/8",
+    "beam": "W12X30",
+    "tp": "0.375",
+    "d": "0.75",
+    "n": "3",
+    "spacing": "3",
+    "lev": "2",
+    "leh": "2",
+    "a": "3.0",
+    "weld": "0.25",
+    "loads": [
+     {
+      "case": "D",
+      "P": "0.87",
+      "label": "FloorBeamY.2"
+     },
+     {
+      "case": "L",
+      "P": "13.35",
+      "label": "FloorBeamY.2"
+     }
+    ],
+    "support_name": "through plate in HSS5X5X3/8",
+    "support_t": "0.349",
+    "support_Fu": "58"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 7, 19, 20: W14x30 to HSS6x6x1/2",
+    "beam": "W14X30",
+    "tp": "0.375",
+    "d": "0.75",
+    "n": "3",
+    "spacing": "3",
+    "lev": "2.5",
+    "leh": "2",
+    "a": "3.0",
+    "weld": "0.25",
+    "loads": [
+     {
+      "case": "D",
+      "P": "3.14",
+      "label": "FloorBeamD.3"
+     },
+     {
+      "case": "L",
+      "P": "31.47",
+      "label": "FloorBeamD.3"
+     }
+    ],
+    "col_Fy": "46",
+    "col_Fu": "58",
+    "col_source": "ASTM A500 Grade B, sheet S0 Steel Notes",
+    "column": "HSS6X6X1/2"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 16: W16x31 to HSS6x6x1/2",
+    "beam": "W16X31",
+    "tp": "0.4375",
+    "d": "0.75",
+    "n": "4",
+    "spacing": "3",
+    "lev": "2",
+    "leh": "2",
+    "a": "3.0",
+    "weld": "0.25",
+    "loads": [
+     {
+      "case": "D",
+      "P": "1.34",
+      "label": "FloorBeamG.2 (W16x40 in the file)"
+     },
+     {
+      "case": "L",
+      "P": "16.93",
+      "label": "FloorBeamG.2 (W16x40 in the file)"
+     }
+    ],
+    "support_name": "through plate in HSS6X6X1/2",
+    "support_t": "0.465",
+    "support_Fu": "58"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 7, 19, 20: W21x50 to HSS6x6x1/2",
+    "beam": "W21X50",
+    "tp": "0.4375",
+    "d": "0.75",
+    "n": "5",
+    "spacing": "3",
+    "lev": "2.5",
+    "leh": "2",
+    "a": "3.0",
+    "weld": "0.25",
+    "loads": [
+     {
+      "case": "D",
+      "P": "1.84",
+      "label": "FloorBeamY.3 (W18x40 in the file)"
+     },
+     {
+      "case": "L",
+      "P": "38.8",
+      "label": "FloorBeamY.3 (W18x40 in the file)"
+     }
+    ],
+    "support_name": "through plate in HSS6X6X1/2",
+    "support_t": "0.465",
+    "support_Fu": "58"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 4, 8, 10: W8x15 to W18x40",
+    "beam": "W8X15",
+    "tp": "0.375",
+    "d": "0.625",
+    "n": "3",
+    "spacing": "2",
+    "lev": "1.75",
+    "leh": "1.5",
+    "a": "3.0",
+    "weld": "0.1875",
+    "loads": [
+     {
+      "case": "D",
+      "P": "0.5",
+      "label": "FloorBeamB.3"
+     },
+     {
+      "case": "L",
+      "P": "9.02",
+      "label": "FloorBeamB.3"
+     }
+    ],
+    "support_name": "W18X40 web, full-depth stiffener plate",
+    "support_t": "0.315",
+    "support_Fu": "65"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 5: W8x15 to W21x50",
+    "beam": "W8X15",
+    "tp": "0.375",
+    "d": "0.5",
+    "n": "3",
+    "spacing": "1.5",
+    "lev": "1.75",
+    "leh": "1.5",
+    "a": "3.0",
+    "weld": "0.1875",
+    "loads": [
+     {
+      "case": "D",
+      "P": "0.5",
+      "label": "FloorBeamB.3"
+     },
+     {
+      "case": "L",
+      "P": "9.02",
+      "label": "FloorBeamB.3"
+     }
+    ],
+    "support_name": "W21X50 web, full-depth stiffener plate",
+    "support_t": "0.38",
+    "support_Fu": "65"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 24: W8x15 to W14x30",
+    "beam": "W8X15",
+    "tp": "0.375",
+    "d": "0.75",
+    "n": "2",
+    "spacing": "3.5",
+    "lev": "1.9375",
+    "leh": "1.5",
+    "a": "3.0",
+    "weld": "0.1875",
+    "loads": [
+     {
+      "case": "D",
+      "P": "0.5",
+      "label": "FloorBeamB.3"
+     },
+     {
+      "case": "L",
+      "P": "9.02",
+      "label": "FloorBeamB.3"
+     }
+    ],
+    "support_name": "W14X30 web, full-depth stiffener plate",
+    "support_t": "0.27",
+    "support_Fu": "65"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 6, 9: W10x17 to W18x40 or W12x30",
+    "beam": "W10X17",
+    "tp": "0.375",
+    "d": "0.75",
+    "n": "3",
+    "spacing": "2.75",
+    "lev": "1.75",
+    "leh": "1.5",
+    "a": "3.0",
+    "weld": "0.1875",
+    "loads": [
+     {
+      "case": "D",
+      "P": "3.48",
+      "label": "FloorBeamD.2"
+     },
+     {
+      "case": "L",
+      "P": "8.62",
+      "label": "FloorBeamD.2"
+     }
+    ],
+    "support_name": "W12X30 web, full-depth stiffener plate",
+    "support_t": "0.26",
+    "support_Fu": "65"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 23: W10x17 to W16x31",
+    "beam": "W10X17",
+    "tp": "0.375",
+    "d": "0.75",
+    "n": "3",
+    "spacing": "3",
+    "lev": "1.5",
+    "leh": "1.5",
+    "a": "3.0",
+    "weld": "0.1875",
+    "loads": [
+     {
+      "case": "D",
+      "P": "3.48",
+      "label": "FloorBeamD.2"
+     },
+     {
+      "case": "L",
+      "P": "8.62",
+      "label": "FloorBeamD.2"
+     }
+    ],
+    "support_name": "W16X31 web, full-depth stiffener plate",
+    "support_t": "0.275",
+    "support_Fu": "65"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 14, 37, 38: W14x30 to W16x31 or W21x50",
+    "beam": "W14X30",
+    "tp": "0.375",
+    "d": "0.75",
+    "n": "3",
+    "spacing": "3",
+    "lev": "3",
+    "leh": "1.5",
+    "a": "3.0",
+    "weld": "0.1875",
+    "loads": [
+     {
+      "case": "D",
+      "P": "3.14",
+      "label": "FloorBeamD.3"
+     },
+     {
+      "case": "L",
+      "P": "31.47",
+      "label": "FloorBeamD.3"
+     }
+    ],
+    "support_name": "W16X31 web, full-depth stiffener plate",
+    "support_t": "0.275",
+    "support_Fu": "65"
+   }
+  },
+  {
+   "kind": "single_plate",
+   "values": {
+    "beam_Fu": "65",
+    "beam_source": "ASTM A992, sheet S0 Steel Notes",
+    "plate_Fy": "36",
+    "plate_Fu": "58",
+    "plate_source": "ASTM A36, sheet S0 Steel Notes",
+    "group": "A325",
+    "threads": "N",
+    "holes": "STD",
+    "FEXX": "70",
+    "mark": "Det 31, 32: W18x40 to W18x40",
+    "beam": "W18X40",
+    "tp": "0.375",
+    "d": "0.75",
+    "n": "4",
+    "spacing": "3.8125",
+    "lev": "2.5",
+    "leh": "1.5",
+    "a": "3.0",
+    "weld": "0.1875",
+    "loads": [
+     {
+      "case": "D",
+      "P": "1.84",
+      "label": "FloorBeamY.4"
+     },
+     {
+      "case": "L",
+      "P": "23.5",
+      "label": "FloorBeamY.4"
+     }
+    ],
+    "support_name": "W18X40 web, full-depth stiffener plate",
+    "support_t": "0.315",
+    "support_Fu": "65"
+   }
+  }
+ ]
+}
