@@ -1022,6 +1022,8 @@ FORMS = {
                 F("n_rods", "Rods on each side"), F("rod_edge", "Rods from the plate end", unit="in"),
                 F("rod_side", "Rods from the plate sides", unit="in"),
                 F("n_shear", "Rods counted on for shear", help="0 = the rods do not carry the base shear"),
+                F("fw_size", "Column flange fillet weld size", unit="in", required=False, help="optional: checks the weld along the outside of the tension flange for the moment"),
+                F("fw_FEXX", "Flange weld electrode strength", unit="ksi", required=False),
                 F("loads_from", "Loads come from", "text", required=False, help="printed on the sheet"),
                 F("anc_hef", "Anchorage: rod embedment to the head, hef", unit="in", required=False,
                   help="ACI 318-19 Chapter 17; leave blank to leave the anchorage in the concrete unchecked"),
@@ -2063,9 +2065,12 @@ def build(kind, values, project):
             fact = r.rows("cases_lrfd")
             if m == "ASD" and not fact:
                 r.miss.append("Anchorage: enter the factored (LRFD) load cases; ACI 318-19 Chapter 17 is strength design")
+        fw = None
+        if r.num("fw_size", False) is not None:
+            fw = dict(size=r.num("fw_size", False), FEXX=r.num("fw_FEXX", True, label="Flange weld electrode strength"))
         r.done()
         ss = ws_more.base_plate_moment_sheet(mark, shape, N, B, t, Fy, fc, sup, rod[0], rod[1], rod[2], int(rod[3]),
-                                             rod[4], rod[5], int(rod[6]), cases, m, anchorage=anc, cases_factored=fact)
+                                             rod[4], rod[5], int(rod[6]), cases, m, anchorage=anc, cases_factored=fact, flange_weld=fw)
         if r.text("loads_from", False):
             ss.assumptions.insert(0, "Loads: " + r.text("loads_from", False) + ".")
         return ss, "simple", {}
