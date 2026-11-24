@@ -2390,3 +2390,66 @@ def hss_column_sheet(mark, shape, Fy, Fy_source, height_ft, Kx, Ky, k_source, lo
                                                          moment=has_m))))
     sheet.hss = dict(Pc=Pc, Mcx=Mcx, Mcy=Mcy, res=res, strength=st)
     return sheet
+
+
+STAIR_LIVE = {"stairs and exit ways": 100.0, "one- and two-family dwellings": 40.0}      # psf, ASCE/SEI 7-22 Table 4.3-1
+STAIR_TREAD_P = 300.0                                                                     # lb on a tread, Table 4.3-1 and Sect. 4.15
+
+
+def stair_stringer_sheet(mark, shape, Fy, run_ft, riser_in, tread_in, trib_ft, dead_psf, dead_note, extra_plf, extra_note, occupancy,
+                         braced, combos, defl_checks, method):
+    """Steel stair stringer by the horizontal plane method of AISC Design Guide 34 (Example
+    10.1.2): a simple span equal to the horizontal run; loads per foot of run; the stringer's
+    own weight times the slope ratio; deflection times 1/cos^2 of the slope against the run
+    over the limit. trib_ft: tread width carried by this stringer; dead_psf: treads, risers
+    and finishes on the horizontal projection; extra_plf: other dead load on the stringer
+    (guard, handrail) per foot of run. Runs the steel beam sheet (I-shape, channel, HSS, pipe)."""
+    from . import shapes, ws_steel_beam
+    if occupancy not in STAIR_LIVE:
+        raise WorksheetError(f"{mark}: the occupancy is one of: " + "; ".join(STAIR_LIVE))
+    for nm, v in (("the horizontal run", run_ft), ("the riser height", riser_in), ("the tread length", tread_in), ("the tread width carried", trib_ft)):
+        if v is None or v <= 0:
+            raise WorksheetError(f"{mark}: {nm} must be positive")
+    if dead_psf is None or dead_psf < 0 or (extra_plf or 0) < 0:
+        raise WorksheetError(f"{mark}: the dead loads are zero or more")
+    if not (dead_note or "").strip():
+        raise WorksheetError(f"{mark}: say what the tread dead load is made of")
+    if extra_plf and not (extra_note or "").strip():
+        raise WorksheetError(f"{mark}: say what the other dead load on the stringer is")
+    if not braced:
+        raise WorksheetError(f"{mark}: a stringer that the treads and risers do not brace is not built here; "
+                             "use the Steel Beam screen with the loads above and the sloped length between braces")
+    k = math.hypot(riser_in, tread_in) / tread_in                 # slope ratio, sloped length over run
+    cos = 1.0 / k
+    pr = None
+    for get in (shapes.get, shapes.channel, shapes.hss):
+        try:
+            pr = get(shape)
+            break
+        except shapes.ShapeError:
+            continue
+    if pr is None:
+        raise WorksheetError(f"{mark}: shape '{shape}' is not in the {shapes.SOURCE} I-shape, channel, HSS or pipe tables")
+    live = STAIR_LIVE[occupancy]
+    loads = [dict(case="D", kind="uniform", w=dead_psf * trib_ft / 1000.0, label=f"{dead_psf:g} psf x {trib_ft:g} ft: {dead_note.strip()}"),
+             dict(case="D", kind="uniform", w=k * pr["W"] / 1000.0, label=f"self-weight {pr['W']:g} lb/ft x slope ratio {k:.3f}")]
+    if extra_plf:
+        loads.append(dict(case="D", kind="uniform", w=extra_plf / 1000.0, label=f"{extra_plf:g} lb/ft: {extra_note.strip()}"))
+    loads.append(dict(case="L", kind="uniform", w=live * trib_ft / 1000.0, label=f"{live:g} psf x {trib_ft:g} ft: {occupancy}, ASCE/SEI 7-22 Table 4.3-1"))
+    sheet = ws_steel_beam.run(mark, shape, Fy, run_ft, loads, combos, defl_checks, "continuous", method, False)
+    F = k * k                                                     # 1 / cos^2, Design Guide 34 Example 10.1.2
+    for r in sheet.rows:
+        if r.check.startswith("deflection"):
+            r.demand *= F
+            r.note = f"horizontal-span value x 1/cos^2 = {F:.2f}; " + (r.note or "").replace("limit L/", "limit run/")
+    theta = math.degrees(math.acos(cos))
+    sheet.heading = f"Stringer {mark} - Steel Stair Stringer"
+    sheet.span_text = f"{run_ft:g} ft run; {riser_in:g} in. risers, {tread_in:g} in. treads"
+    sheet.bracing_text = "braced by the treads and risers (Lb = 0)"
+    sheet.stair = dict(riser_in=riser_in, tread_in=tread_in, rise_total_in=run_ft * 12 * riser_in / tread_in, k=k, F=F, trib=trib_ft, live=live)
+    sheet.assumptions = [a for a in sheet.assumptions if "self-weight" not in a] + [
+        "Horizontal plane method (AISC Design Guide 34): a simple span equal to the horizontal run, with the loads per foot of run.",
+        f"The stringer carries {trib_ft:g} ft of tread width.",
+        "Not checked on this sheet: the treads and risers (300 lb concentrated load, ASCE/SEI 7-22 Sect. 4.15), the end connections, "
+        "landings and their framing, axial force in the stringer, vibration."]
+    return sheet

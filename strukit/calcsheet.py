@@ -292,7 +292,7 @@ def _closing(p, assumptions, not_checked=()):
 def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     """Write the calc sheet for a ws_steel_beam.SteelBeamSheet. `combos` are the Combo
     objects that were run, printed with their sources."""
-    p = _Page(path, f"Beam {sheet.mark} - Steel Bending Member", job, code, sheet.method,
+    p = _Page(path, getattr(sheet, "heading", None) or f"Beam {sheet.mark} - Steel Bending Member", job, code, sheet.method,
               page, pages, date)
     c, pr = p.c, sheet.props
 
@@ -302,7 +302,7 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     depth_in = pr["d"] if hss_kind is None else (pr["OD"] if hss_kind == "round" else pr["Ht"])
     p.head("Member")
     p.kv([("Section", f"{sheet.shape}  (Fy = {sheet.Fy:g} ksi)"),
-          ("Span", f"{sheet.span_ft:g} ft, simply supported"),
+          ("Span", getattr(sheet, "span_text", None) or f"{sheet.span_ft:g} ft, simply supported"),
           ("Bracing", sheet.bracing_text),
           ] + ([("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"),
                 ("", f"tf = {pr['tf']:g} in, tw = {pr['tw']:g} in"),
@@ -317,34 +317,38 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     x0, w = 338, 166
     c.setFillColorRGB(*BLUE); c.setFont(FB, 8); c.drawString(x0, top - 4, "LOADING SKETCH")
     by = top - 64                                    # underside of the beam
-    hb, true_scale = memberart.elev_depth(sheet.span_ft * 12, depth_in, w)
-    memberart.steel_elevation(c, x0, by, w, hb, depth_in, pr["tf"] if hss_kind is None else max(pr["tdes"], depth_in * 0.06))
-    c.setStrokeColorRGB(*BLUE); c.setFillColorRGB(0.91, 0.93, 0.96); c.setLineWidth(0.6)
-    if any(ld["kind"] == "uniform" for ld in sheet.loads):
-        c.rect(x0, by + hb + 4, w, 10, fill=1, stroke=1)
-    c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
-    for xx in (x0 + 3, x0 + w - 3):
-        t = c.beginPath(); t.moveTo(xx, by - 1); t.lineTo(xx - 6, by - 12); t.lineTo(xx + 6, by - 12); t.close()
-        c.drawPath(t, fill=0, stroke=1)
-    for ld in sheet.loads:
-        if ld["kind"] == "point":
-            xx = x0 + w * ld["x_ft"] / sheet.span_ft
-            c.line(xx, by + hb + 30, xx, by + hb + 7)
-            t = c.beginPath(); t.moveTo(xx, by + hb + 1); t.lineTo(xx - 3, by + hb + 8); t.lineTo(xx + 3, by + hb + 8); t.close()
-            c.drawPath(t, fill=1, stroke=0)
-    c.setFillColorRGB(*GREY); c.setFont(FM, 7.5)
-    c.drawCentredString(x0 + w / 2, by - 22, f"L = {sheet.span_ft:g} ft")
-    if not true_scale:
-        c.setFont(FR, 6); c.drawCentredString(x0 + w / 2, by - 30, "side view: depth enlarged for clarity")
-    uni = [f"{ld['case']} {ld['w']:.3f}" for ld in sheet.loads if ld["kind"] == "uniform"]
-    if uni:
-        c.setFillColorRGB(*BLUE); c.setFont(FM, 7.5)
-        c.drawCentredString(x0 + w / 2, by + hb + 34, "w = " + " + ".join(uni) + " kip/ft")
-    for bx in getattr(sheet, "brace_points", []):
-        xx = x0 + w * bx / sheet.span_ft
-        c.setStrokeColorRGB(*FLAGC); c.setLineWidth(0.9)
-        xx = min(max(xx, x0 + 4), x0 + w - 4); m = by + hb / 2
-        c.line(xx - 2.5, m - 2.5, xx + 2.5, m + 2.5); c.line(xx - 2.5, m + 2.5, xx + 2.5, m - 2.5)
+    stair = getattr(sheet, "stair", None)
+    if stair:
+        by = _stair_sketch(c, x0, top, w, sheet, stair)
+    else:
+        hb, true_scale = memberart.elev_depth(sheet.span_ft * 12, depth_in, w)
+        memberart.steel_elevation(c, x0, by, w, hb, depth_in, pr["tf"] if hss_kind is None else max(pr["tdes"], depth_in * 0.06))
+        c.setStrokeColorRGB(*BLUE); c.setFillColorRGB(0.91, 0.93, 0.96); c.setLineWidth(0.6)
+        if any(ld["kind"] == "uniform" for ld in sheet.loads):
+            c.rect(x0, by + hb + 4, w, 10, fill=1, stroke=1)
+        c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
+        for xx in (x0 + 3, x0 + w - 3):
+            t = c.beginPath(); t.moveTo(xx, by - 1); t.lineTo(xx - 6, by - 12); t.lineTo(xx + 6, by - 12); t.close()
+            c.drawPath(t, fill=0, stroke=1)
+        for ld in sheet.loads:
+            if ld["kind"] == "point":
+                xx = x0 + w * ld["x_ft"] / sheet.span_ft
+                c.line(xx, by + hb + 30, xx, by + hb + 7)
+                t = c.beginPath(); t.moveTo(xx, by + hb + 1); t.lineTo(xx - 3, by + hb + 8); t.lineTo(xx + 3, by + hb + 8); t.close()
+                c.drawPath(t, fill=1, stroke=0)
+        c.setFillColorRGB(*GREY); c.setFont(FM, 7.5)
+        c.drawCentredString(x0 + w / 2, by - 22, f"L = {sheet.span_ft:g} ft")
+        if not true_scale:
+            c.setFont(FR, 6); c.drawCentredString(x0 + w / 2, by - 30, "side view: depth enlarged for clarity")
+        uni = [f"{ld['case']} {ld['w']:.3f}" for ld in sheet.loads if ld["kind"] == "uniform"]
+        if uni:
+            c.setFillColorRGB(*BLUE); c.setFont(FM, 7.5)
+            c.drawCentredString(x0 + w / 2, by + hb + 34, "w = " + " + ".join(uni) + " kip/ft")
+        for bx in getattr(sheet, "brace_points", []):
+            xx = x0 + w * bx / sheet.span_ft
+            c.setStrokeColorRGB(*FLAGC); c.setLineWidth(0.9)
+            xx = min(max(xx, x0 + 4), x0 + w - 4); m = by + hb / 2
+            c.line(xx - 2.5, m - 2.5, xx + 2.5, m + 2.5); c.line(xx - 2.5, m + 2.5, xx + 2.5, m - 2.5)
     # cut section, to scale
     sx = 536
     c.setFillColorRGB(*BLUE); c.setFont(FB, 8); c.drawCentredString(sx, top - 4, "SECTION")
@@ -2001,6 +2005,40 @@ def _hss_column_picture(c, top, d):
     _hss_section(c, cx + 150, yb + hh / 2 + 4, 62.0, d)
     _small(c, (LM + RM) / 2, yb - 24, f"{d['shape']}; elevation schematic, section to scale, dimensions in inches")
     return yb - 30
+
+
+def _stair_sketch(c, x0, top, w, sheet, st):
+    """Stair stringer in place of the level beam sketch: the sloped stringer with its treads to
+    scale, supports at each end, the uniform loads on the horizontal projection, the run and
+    the rise dimensioned. Returns the y used as the underside for the layout below."""
+    run, rise = sheet.span_ft * 12.0, st["rise_total_in"]
+    s_ = min((w - 44) / run, 44.0 / rise)
+    xa, ya = x0 + 8, top - 100
+    xb, yb = xa + run * s_, ya + rise * s_
+    n = max(int(round(rise / st["riser_in"])), 1)
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(3.0); c.line(xa, ya, xb, yb)
+    c.setLineWidth(0.5); c.setStrokeColorRGB(*GREY)
+    for k in range(n):                                    # treads and risers
+        x1, y1 = xa + run * s_ * k / n, ya + rise * s_ * k / n
+        x2, y2 = xa + run * s_ * (k + 1) / n, ya + rise * s_ * (k + 1) / n
+        c.line(x1, y1, x1, y2); c.line(x1, y2, x2, y2)
+    c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
+    for xx, yy in ((xa, ya), (xb, yb)):
+        t = c.beginPath(); t.moveTo(xx, yy - 2); t.lineTo(xx - 5, yy - 11); t.lineTo(xx + 5, yy - 11); t.close()
+        c.drawPath(t, fill=0, stroke=1)
+    yl = yb + 12
+    c.setStrokeColorRGB(*BLUE); c.setFillColorRGB(*BLUE); c.setLineWidth(0.5)
+    c.line(xa, yl + 9, xb, yl + 9)
+    m = max(int((xb - xa) / 12), 4)
+    for k in range(m + 1):
+        _arrow_down(c, xa + (xb - xa) * k / m, yl + 9, yl, head=1.8)
+    uni = [f"{ld['case']} {ld['w']:.3f}" for ld in sheet.loads if ld["kind"] == "uniform"]
+    c.setFont(FM, 6.5); c.drawString(x0, top - 15, "w = " + " + ".join(uni) + " kip/ft of run")
+    memberart._dim_h(c, xa, xb, ya - 16, f"run {sheet.span_ft:g} ft", FR, ext_from=ya - 11)
+    memberart._dim_v(c, ya, yb, xb + 10, f"{rise:.1f} in", FR, ext_from=xb)
+    c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+    c.drawCentredString((xa + xb) / 2, ya - 36, f"to scale; risers {st['riser_in']:g} in, treads {st['tread_in']:g} in")
+    return ya - 6
 
 
 def _rain_picture(c, top, d):
