@@ -904,7 +904,9 @@ FORMS = {
                 F("height", "Height from the post base to the top rail", unit="ft"),
                 F("uniform", "50 lb/ft uniform load", "select", options=["applies", "exception"], help="ASCE 7-22 Sect. 4.5.1.1: not required for one- and two-family dwellings, "
                   "factory, industrial and storage areas not open to the public serving 50 occupants or fewer, and roofs not intended for occupancy"),
-                F("uniform_basis", "Exception: which one applies", "text", required=False)],
+                F("uniform_basis", "Exception: which one applies", "text", required=False),
+                F("stringer", "Posts on the top flange of a channel: the channel", "text", required=False, help="optional, for example C12x20.7; checks the channel web for the post moment (Design Guide 34)"),
+                F("stringer_Fy", "Channel yield stress, Fy", unit="ksi", required=False), F("stringer_Fy_source", "Where that Fy comes from", "text", required=False)],
         tables=[]),
     "rain_load": dict(
         title="Rain Load", code="ASCE/SEI 7-22", mark="RN",
@@ -1877,8 +1879,10 @@ def build(kind, values, project):
         uni = (r.text("uniform") or "") != "exception"
         args = (r.text("rail"), r.num("rail_Fy"), r.text("rail_Fy_source"), r.text("post"), r.num("post_Fy"), r.text("post_Fy_source"), r.num("spacing"), r.num("height"))
         ub = r.text("uniform_basis", not uni) or ""
+        stg = r.text("stringer", False) or ""
+        sFy, sFs = (r.num("stringer_Fy", True, label="Channel yield stress, Fy"), r.text("stringer_Fy_source", True)) if stg else (None, "")
         r.done()
-        return ws_more.guard_sheet(mark, *args, uni, ub, m), "simple", {}
+        return ws_more.guard_sheet(mark, *args, uni, ub, m, stringer=stg or None, stringer_Fy=sFy, stringer_Fy_source=sFs or ""), "simple", {}
     if kind == "rain_load":
         risk, i, i_s, A, ds, ds_s = r.text("risk"), r.num("i"), r.text("i_source"), r.num("A"), r.num("ds"), r.text("ds_source")
         if (r.text("head_type") or "") == "channel scupper":

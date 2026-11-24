@@ -272,3 +272,25 @@ def test_overloaded_cantilevered_column_stops_with_a_plain_message():
              self_weight="yes", loads=[dict(case="D", P="900", label="")], lateral=[], leaning=[], drift=[])
     r = calc.results("steel_column", v, proj)
     assert r["state"] == "stopped" and "cross-section strength" in r["messages"][0]
+
+
+def test_guard_post_on_a_channel_stringer_design_guide_34_example_10_1_8():
+    """DG 34 Example 10.1.8 (pp. 82-84): HSS1.900x0.145 post on a C12x20.7 (A36): Beff = 21.0 in., Z = 0.418 in3, S = 0.278 in3, Mn = 15.0 kip-in.,
+    available 13.5 kip-in. LRFD and 8.98 kip-in. ASD, against 200 lb at 42 in. (8.40 kip-in. ASD)."""
+    from strukit.ws_more import guard_sheet
+    from strukit.gui import calc
+    a = ("HSS1.900X0.145", 46, "A500 C", "HSS1.900X0.145", 46, "A500 C", 4.0, 3.5, False, "industrial area, 50 occupants or fewer")
+    s = guard_sheet("GD1", *a, "ASD", stringer="C12X20.7", stringer_Fy=36, stringer_Fy_source="A36")
+    f = s.guard["flange"]
+    assert f["Beff"] == pytest.approx(21.0, abs=0.05) and f["Z"] == pytest.approx(0.418, abs=0.001) and f["S"] == pytest.approx(0.278, abs=0.001)
+    assert f["Mn"] == pytest.approx(15.0, abs=0.05) and f["Mc"] * 12 / 1000 == pytest.approx(8.98, abs=0.03)
+    row = s.rows[-1]
+    assert row.check.startswith("Channel stringer") and row.demand == pytest.approx(700.0) and row.status == "OK"
+    l = guard_sheet("GD1", *a, "LRFD", stringer="C12X20.7", stringer_Fy=36, stringer_Fy_source="A36")
+    assert l.guard["flange"]["Mc"] * 12 / 1000 == pytest.approx(13.5, abs=0.05) and l.rows[-1].demand * 12 / 1000 == pytest.approx(13.44, abs=0.01)
+    assert guard_sheet("GD1", *a, "ASD").guard["flange"] is None
+    v = dict(mark="GD1", rail="HSS1.900X0.145", rail_Fy="46", rail_Fy_source="A500 C", post="HSS1.900X0.145", post_Fy="46", post_Fy_source="A500 C", spacing="4", height="3.5",
+             uniform="applies", uniform_basis="", stringer="C12X20.7", stringer_Fy="", stringer_Fy_source="")
+    assert calc.results("guard", v, dict(method="ASD"))["state"] == "incomplete"
+    out = calc.results("guard", dict(v, stringer_Fy="36", stringer_Fy_source="A36"), dict(method="ASD"))
+    assert out["state"] != "incomplete"
