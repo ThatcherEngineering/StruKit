@@ -51,6 +51,11 @@ class Layout:
     spans: list            # ft
     left: float            # overhang, ft
     right: float
+    fixed: bool = False    # one support, fixed against rotation (a beam cantilevering each side of a column); spans is then empty
+
+    def bm_supports(self):
+        """(supports, fixed) for beam.solve, inches."""
+        return ([], [self.left * 12.0]) if self.fixed else ([s * 12.0 for s in self.supports], [])
 
     @property
     def total(self):
@@ -69,11 +74,11 @@ class Layout:
         """(x0, x1, label, deflection length) for each overhang and span, ft."""
         out, x = [], 0.0
         if self.left:
-            out.append((0.0, self.left, "left overhang", 2 * self.left)); x = self.left
+            out.append((0.0, self.left, "left cantilever" if self.fixed else "left overhang", 2 * self.left)); x = self.left
         for i, s in enumerate(self.spans, 1):
             out.append((x, x + s, f"span {i}" if len(self.spans) > 1 else "span", s)); x += s
         if self.right:
-            out.append((x, x + self.right, "right overhang", 2 * self.right))
+            out.append((x, x + self.right, "right cantilever" if self.fixed else "right overhang", 2 * self.right))
         return out
 
     @property
@@ -81,13 +86,20 @@ class Layout:
         return len(self.spans) == 1 and not self.left and not self.right
 
     def describe(self):
+        if self.fixed:
+            arms = [f"{v:g} ft to the {k}" for k, v in (("left", self.left), ("right", self.right)) if v]
+            return "fixed at one support, cantilevering " + " and ".join(arms)
         t = f"{self.spans[0]:g} ft, simply supported" if len(self.spans) == 1 else \
             "continuous over " + str(len(self.spans) + 1) + " supports, spans " + ", ".join(f"{s:g}" for s in self.spans) + " ft"
         oh = [f"{v:g} ft overhang at the {k}" for k, v in (("left", self.left), ("right", self.right)) if v]
         return t + ("; " + " and ".join(oh) if oh else "")
 
 
-def layout(span_ft, spans=None, left=0.0, right=0.0):
+def layout(span_ft, spans=None, left=0.0, right=0.0, fixed=False):
+    if fixed:
+        if (left or 0) < 0 or (right or 0) < 0 or not ((left or 0) + (right or 0) > 0):
+            raise ValueError("beam: a beam fixed at one support needs a cantilever length on at least one side")
+        return Layout([], float(left or 0.0), float(right or 0.0), True)
     sp = [float(s) for s in (spans if spans else [span_ft])]
     if not sp or any(s is None or s <= 0 for s in sp) or (left or 0) < 0 or (right or 0) < 0:
         raise ValueError("beam: every span must be positive and overhangs not negative")
@@ -126,7 +138,8 @@ def _solve(lay, EI, items):
             pts.append(bm.PointLoad(ld["x_ft"] * 12, fac * ld["P"]))
     if not pts and not dist:
         return None
-    return bm.solve(lay.total * 12.0, [s * 12.0 for s in lay.supports], EI, pts, dist)
+    sup, fx = lay.bm_supports()
+    return bm.solve(lay.total * 12.0, sup, EI, pts, dist, fixed=fx)
 
 
 class Basis:
@@ -143,6 +156,8 @@ class Basis:
                     br.update((pc["x1_ft"], pc["x2_ft"]) if pc["kind"] == "uniform" else (pc["x_ft"],))
                 if ld["kind"] == "uniform":
                     br.update((ld.get("x1_ft", 0.0), ld.get("x2_ft", lay.total)))
+        if lay.fixed:                                         # the moment jumps at a fixed support: a node just each side of it
+            br.update((lay.left - 1e-4, lay.left + 1e-4))
         self.nodes = [bm.PointLoad(x * 12.0, 0.0) for x in sorted(br) if 0.0 <= x <= lay.total]
 
     def _unit(self, ld):
@@ -151,10 +166,10 @@ class Basis:
         if key not in self.cache:
             lay = self.lay
             if ld["kind"] == "uniform":
-                r = bm.solve(lay.total * 12.0, [s * 12.0 for s in lay.supports], self.EI, list(self.nodes),
-                             [bm.DistLoad(key[3] * 12, key[4] * 12, key[1] / 12.0, key[2] / 12.0)])
+                r = bm.solve(lay.total * 12.0, lay.bm_supports()[0], self.EI, list(self.nodes),
+                             [bm.DistLoad(key[3] * 12, key[4] * 12, key[1] / 12.0, key[2] / 12.0)], fixed=lay.bm_supports()[1])
             else:
-                r = bm.solve(lay.total * 12.0, [s * 12.0 for s in lay.supports], self.EI, list(self.nodes) + [bm.PointLoad(ld["x_ft"] * 12, ld["P"])])
+                r = bm.solve(lay.total * 12.0, lay.bm_supports()[0], self.EI, list(self.nodes) + [bm.PointLoad(ld["x_ft"] * 12, ld["P"])], fixed=lay.bm_supports()[1])
             self.cache[key] = r
         return self.cache[key]
 
@@ -165,11 +180,13 @@ class Basis:
                 continue
             u = self._unit(ld)
             if out is None:
-                out = bm.BeamResult(u.x, fac * u.V, fac * u.M, fac * u.defl, {k: fac * v for k, v in u.reactions.items()}, {})
+                out = bm.BeamResult(u.x, fac * u.V, fac * u.M, fac * u.defl, {k: fac * v for k, v in u.reactions.items()}, {k: fac * v for k, v in u.fixed_moments.items()})
             else:
                 out.V = out.V + fac * u.V; out.M = out.M + fac * u.M; out.defl = out.defl + fac * u.defl
                 for k, v in u.reactions.items():
                     out.reactions[k] += fac * v
+                for k, v in u.fixed_moments.items():
+                    out.fixed_moments[k] = out.fixed_moments.get(k, 0.0) + fac * v
         return out
 
 
@@ -268,6 +285,6 @@ def deflection(lay, EI, by_case, factors, ratio, snow_partial=True, basis=None):
             d = float(abs(r.defl[m]).max())
             lim = Ld * 12.0 / ratio
             if worst is None or d / lim > worst[0] / worst[1]:
-                txt = f"2 x {Ld / 2:g} ft / {ratio:g}" if "overhang" in label else f"{Ld:g} ft / {ratio:g}"
+                txt = f"2 x {Ld / 2:g} ft / {ratio:g}" if ("overhang" in label or "cantilever" in label) else f"{Ld:g} ft / {ratio:g}"
                 worst = (d, lim, label, txt, r)
     return worst

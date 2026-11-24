@@ -32,7 +32,10 @@ CASE = F("case", "Case", "text", help="D, L, Lr, S, W, E, Em (seismic with overs
 FORMS = {
     "steel_beam": dict(
         title="Steel Beam", code="AISC 360-22", mark="B",
-        fields=[F("shape", "Section", "shape_any", help="W, M, S or HP shape, C or MC channel, square, rectangular or round HSS, or pipe"), F("Fy", "Fy", unit="ksi"), F("span", "Span", unit="ft"),
+        fields=[F("shape", "Section", "shape_any", help="W, M, S or HP shape, C or MC channel, square, rectangular or round HSS, or pipe"), F("Fy", "Fy", unit="ksi"),
+                F("support_type", "Supports", "select", options=["bearing supports (spans)", "one support, fixed (cantilevers each side of a column)"], required=False,
+                  help="blank = bearing supports; for a beam fixed to one column, leave Span blank and give the cantilever lengths in the two overhang boxes"),
+                F("span", "Span", unit="ft", required=False),
                 F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False, help="separated by commas, left to right after the first span; blank = one span"),
                 F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load and brace positions are measured from the left end of the member"),
                 F("oh_right", "Overhang past the right support", unit="ft", required=False),
@@ -1310,13 +1313,16 @@ def build(kind, values, project):
         r.miss.append("Mark is blank")
     if kind == "steel_beam":
         cb, m = combos(project, r.miss), method(project, r.miss)
-        shape, Fy, span = r.text("shape"), r.num("Fy"), r.num("span")
+        fixed = str(values.get("support_type") or "").lower().startswith("one support")
+        shape, Fy, span = r.text("shape"), r.num("Fy"), (None if fixed else r.num("span", False))
+        if not fixed and span is None:
+            r.miss.append("Span is blank")
         br, sw = r.text("bracing"), yes(r.text("self_weight"))
         pts = []
         if br == "at points":
-            pts = r.nums("brace_pts") or []
+            pts = ((r.nums("brace_pts") or []) if r.text("brace_pts", False) else []) if fixed else (r.nums("brace_pts") or [])
         loads = []
-        more = (r.nums("more_spans") or []) if r.text("more_spans", False) else []
+        more = (r.nums("more_spans") or []) if (r.text("more_spans", False) and not fixed) else []
         total = (span or 0.0) + sum(more) + (r.num("oh_left", False) or 0.0) + (r.num("oh_right", False) or 0.0)
         for ld in r.rows("loads"):
             if ld["kind"] == "uniform":
@@ -1336,7 +1342,7 @@ def build(kind, values, project):
         cases_used([ld["case"] for ld in loads], cb, r.miss)
         r.done()
         s = ws_steel_beam.run(mark, shape, Fy, span, loads, cb, dc, "continuous" if br == "continuous" else pts, m, sw,
-                              spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0, overhang_right=r.num("oh_right", False) or 0.0)
+                              spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0, overhang_right=r.num("oh_right", False) or 0.0, fixed=fixed)
         return s, "steel_beam", dict(combos=cb)
     if kind == "steel_column":
         cb, m = combos(project, r.miss), method(project, r.miss)

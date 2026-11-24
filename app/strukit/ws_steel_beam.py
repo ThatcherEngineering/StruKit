@@ -104,7 +104,7 @@ def _cb(res, a, b):
 
 
 def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
-        include_self_weight, self_weight_case="D", spans=None, overhang_left=0.0, overhang_right=0.0):
+        include_self_weight, self_weight_case="D", spans=None, overhang_left=0.0, overhang_right=0.0, fixed=False):
     """bracing: "continuous", or a list of brace locations in ft (ends are added)."""
     if method not in ("ASD", "LRFD"):
         raise WorksheetError("method must be ASD or LRFD")
@@ -148,9 +148,12 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
         assumptions.append("The loads act through the shear center of the channel; torsion is not checked.")
     from . import contbeam
     try:
-        lay = contbeam.layout(span_ft, spans, overhang_left, overhang_right)
+        lay = contbeam.layout(span_ft, spans, overhang_left, overhang_right, fixed)
     except ValueError as e:
         raise WorksheetError(f"{mark}: {str(e).replace('beam: ', '')}")
+    if fixed and bracing == "continuous":
+        raise WorksheetError(f"{mark}: on a cantilever the bottom flange is in compression; choose 'at points' and list where the bottom flange is braced "
+                             "(leave the list blank if it is braced only at the support)")
     total_ft = lay.total
     if bracing == "continuous":
         segs, btxt, brace_pts = None, "continuously braced (Lb = 0)", []
@@ -237,6 +240,8 @@ def _run_continuous(mark, shape, Fy, lay, all_loads, combos, defl_checks, segs, 
                            assumptions=assumptions, brace_points=brace_pts)
     sheet.span_text = lay.describe()
     sheet.supports = list(lay.supports)
+    sheet.support_moment = {}
+    sheet.fixed = lay.fixed
     whole = [(0.0, L_ft)]
     basis = contbeam.Basis(lay, EI, by_case)
     worst_m, worst_v, n_arr = None, None, 0
@@ -248,6 +253,9 @@ def _run_continuous(mark, shape, Fy, lay, all_loads, combos, defl_checks, segs, 
             if res is None:
                 continue
             n_arr += 1
+            if lay.fixed and res.fixed_moments:
+                Mf = max(abs(v) for v in res.fixed_moments.values()) / 12.0
+                sheet.support_moment[cb.name] = max(sheet.support_moment.get(cb.name, 0.0), Mf)
             if first:                                              # the arrangement with every span loaded comes first
                 sheet.reactions[cb.name] = tuple(res.reactions[min(res.reactions, key=lambda k: abs(k - s_ * 12))] for s_ in lay.supports)
                 first = False
@@ -261,6 +269,8 @@ def _run_continuous(mark, shape, Fy, lay, all_loads, combos, defl_checks, segs, 
                     xq = [(a + (b - a) * k) * 12 for k in (0.25, 0.5, 0.75)]
                     MA, MB, MC = (abs(float(np.interp(x, res.x, res.M))) for x in xq)
                     Lb, Cb = (b - a), (steel_beam.cb_factor(Mseg * 12, MA, MB, MC) if Mseg > 1e-9 else 1.0)
+                    if lay.fixed and (a <= 1e-9 or b >= L_ft - 1e-9):
+                        Cb = 1.0                                   # a segment that reaches the free end of a cantilever (Sect. F1)
                 chk = check(props, Fy, Lb * 12, Cb, method)
                 row = Row("flexure", cb.name, Mseg, chk.M_avail / 12, "kip-ft", "AISC 360-22 Ch. F: " + chk.governs,
                           f"Lb = {Lb:g} ft, Cb = {Cb:.2f}, segment {a:g} to {b:g} ft")
@@ -292,4 +302,10 @@ def _run_continuous(mark, shape, Fy, lay, all_loads, combos, defl_checks, segs, 
         ("The compression flange is braced continuously, top or bottom, wherever it is in compression." if segs is None else
          "Each brace point and each support braces the compression flange, top or bottom, whichever is in compression there."),
         "Reactions shown are for every span loaded."]
+    if lay.fixed:
+        sheet.assumptions[-3:] = [
+            "The beam is fixed to its one support (a column); the support takes the moment listed with the reactions, which is the largest over the arrangements "
+            "of live and snow load on one cantilever or both (ASCE/SEI 7-22 Sect. 4.3.3, 7.5.1).",
+            "The bottom flange is braced at the support and at the listed brace points only; Cb = 1.0 for a segment that reaches a free end (AISC 360-22 Sect. F1).",
+            "Reactions shown are for both cantilevers loaded. The connection to the column and the column are checked separately."]
     return sheet
