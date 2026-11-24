@@ -169,3 +169,52 @@ def test_space_frame_notes_and_problems():
     c1 = fr["columns"][0]["cases"]
     assert c1["L"][0] == pytest.approx(c1["L"][1], rel=2e-3) and c1["D"][0] == pytest.approx(c1["D"][1], rel=2e-3)
     assert "needs at least one" in calc.model_frame(PROJ, [m for m in ms if m["kind"] != "hss_column"])["problems"][0]
+
+
+def _portal(fix="moment", base="", wind=True, P_extra=0.0):
+    """Example C.1A-like frame placed in the model: W12x65 columns 20 ft with pinned bases, W18x40 beam 30 ft with moment connections, in the X-Z plane."""
+    proj = dict(method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[dict(expr="D + L", source="t")], name="t", number="t", date="2026-11-23",
+                model=dict(levels=[dict(name="Base", elev="0"), dict(name="Roof", elev="20")], grids_x=[], grids_y=[]))
+    bm = dict(kind="steel_beam", values=dict(mark="BM", shape="W18X40", Fy="50", span="30", more_spans="", oh_left="", oh_right="", bracing="continuous", brace_pts="", self_weight="no",
+              loads=[dict(case="D", kind="uniform", mag="0.4", x1="", x2="", label=""), dict(case="L", kind="uniform", mag="1.2", x1="", x2="", label="")], defl=DEFL,
+              at_level="Roof", at_x1="0", at_y1="0", at_x2="30", at_y2="0", at_fix_i=fix, at_fix_j=fix))
+    col = lambda mark, x: dict(kind="steel_column", values=dict(mark=mark, shape="W12X65", at_level="Roof", at_base="Base", at_x1=str(x), at_y1="0", at_base_fix=base, self_weight="no",
+                               loads=([dict(case="L", P=str(P_extra), label="")] if P_extra else [])))
+    return proj, [bm, col("CL", 0), col("CR", 30)]
+
+
+def test_sway_frame_by_direct_analysis():
+    proj, ms = _portal()
+    out = calc.model_frame_sway(proj, ms)
+    # in-plane (X) the moment frame works; out of plane (Y) two pinned-base columns with nothing else are a mechanism: reported in plain words
+    assert out["levels"] == [] and "needs moment connections, fixed column bases, or both, in each direction" in out["problems"][-1]
+    proj, ms = _portal(base="fixed")
+    out = calc.model_frame_sway(proj, ms)
+    assert out["problems"] == [] and out["runs"] == 4 and {(l["level"], l["dir"]) for l in out["levels"]} == {("Roof", "X"), ("Roof", "Y")}
+    X = next(l for l in out["levels"] if l["dir"] == "X")
+    assert abs(X["second"]) >= abs(X["first"]) > 0 and 1.0 <= X["ratio"] < 1.5
+    wu = 1.2 * 0.4 + 1.6 * 1.2
+    cols = {c["mark"]: c for c in out["columns"]}
+    assert cols["CL"]["P"] + cols["CR"]["P"] == pytest.approx(wu * 30, rel=0.02)            # the two columns carry the factored beam load
+    assert cols["CL"]["Ms"] > 100 and out["beams"][0]["M"] > cols["CL"]["Ms"] * 0.5         # frame action: moment in the columns and the beam
+    # the same frame analysed directly with frame2d at the same loads and reduced stiffness agrees on the sway
+    from strukit.frame2d import Frame
+    from strukit import shapes
+    c_, b_ = shapes.get("W12X65"), shapes.get("W18X40")
+    f = Frame(); f.node("a", 0, 0); f.node("b", 0, 240); f.node("c", 360, 240); f.node("d", 360, 0)
+    f.member("c1", "a", "b", 29000, c_["A"], c_["Ix"]); f.member("bm", "b", "c", 29000, b_["A"], b_["Ix"]); f.member("c2", "d", "c", 29000, c_["A"], c_["Ix"])
+    f.support("a", "fixed"); f.support("d", "fixed")
+    N = 0.003 * wu * 30
+    r = f.solve({"b": (N / 2, 0, 0), "c": (N / 2, 0, 0)}, [("bm", 0, -wu / 12, "length")], second_order=True, n_sub=8, stiffness_factor=0.8)
+    assert X["second"] == pytest.approx((r.disp["b"][0] + r.disp["c"][0]) / 2, rel=0.02)
+
+
+def test_sway_frame_asd_and_pinned_beam_mechanism():
+    proj, ms = _portal(base="fixed")
+    lr = calc.model_frame_sway(proj, ms)
+    asd = calc.model_frame_sway(dict(proj, method="ASD"), ms)
+    assert asd["problems"] == [] and "x 1.6 and results / 1.6" in asd["notes"][0]
+    assert {c["mark"]: c["P"] for c in asd["columns"]}["CL"] == pytest.approx((0.4 + 1.2) * 15, rel=0.02)
+    assert asd["columns"][0]["P"] < lr["columns"][0]["P"]
+    proj, ms = _portal(fix="pinned", base="")                                              # pinned beam, pinned bases: nothing resists sway
+    assert "needs moment connections" in calc.model_frame_sway(proj, ms)["problems"][-1]
