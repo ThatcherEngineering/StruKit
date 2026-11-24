@@ -1,0 +1,2595 @@
+{
+ "format": "strukit-project",
+ "version": 1,
+ "project": {
+  "name": "Rusler Implements Mezzanine",
+  "number": "2026-001",
+  "address": "29050 CO-96, Pueblo, CO 81001",
+  "date": "2026-11-23",
+  "method": "ASD",
+  "combos_asd": [
+   {
+    "expr": "D",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 1a"
+   },
+   {
+    "expr": "D + L",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 2a"
+   },
+   {
+    "expr": "D + Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 3a"
+   },
+   {
+    "expr": "D + 0.7S",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 3a"
+   },
+   {
+    "expr": "D + R",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 3a"
+   },
+   {
+    "expr": "D + 0.75L + 0.75Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 4a"
+   },
+   {
+    "expr": "D + 0.75L + 0.525S",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 4a"
+   },
+   {
+    "expr": "D + 0.75L + 0.75R",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 4a"
+   },
+   {
+    "expr": "D + 0.6W",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 5a"
+   },
+   {
+    "expr": "D + 0.75L + 0.45W + 0.75Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 6a"
+   },
+   {
+    "expr": "D + 0.75L + 0.45W + 0.525S",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 6a"
+   },
+   {
+    "expr": "D + 0.75L + 0.45W + 0.75R",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 6a"
+   },
+   {
+    "expr": "0.6D + 0.6W",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 7a"
+   }
+  ],
+  "combos_lrfd": [
+   {
+    "expr": "1.4D",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 1a"
+   },
+   {
+    "expr": "1.2D + 1.6L + 0.5Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 2a"
+   },
+   {
+    "expr": "1.2D + 1.6L + 0.3S",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 2a"
+   },
+   {
+    "expr": "1.2D + 1.6L + 0.5R",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 2a"
+   },
+   {
+    "expr": "1.2D + 1.6Lr + 1.0L",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.6Lr + 0.5W",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.0S + 1.0L",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.0S + 0.5W",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.6R + 1.0L",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.6R + 0.5W",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3a"
+   },
+   {
+    "expr": "1.2D + 1.0W + 1.0L + 0.5Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 4a"
+   },
+   {
+    "expr": "1.2D + 1.0W + 1.0L + 0.3S",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 4a"
+   },
+   {
+    "expr": "1.2D + 1.0W + 1.0L + 0.5R",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 4a"
+   },
+   {
+    "expr": "0.9D + 1.0W",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 5a"
+   }
+  ]
+ },
+ "members": [
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamA",
+    "shape": "W8X15",
+    "Fy": "50",
+    "span": "13",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.75",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.432",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamB.1",
+    "shape": "W8X15",
+    "Fy": "50",
+    "span": "11",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "7.8",
+      "x1": "5.5",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamC.1",
+    "shape": "W6X15",
+    "Fy": "50",
+    "span": "5.75",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "4.6",
+      "x1": "1",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamD.1",
+    "shape": "W10X17",
+    "Fy": "50",
+    "span": "15.5",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.75",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.432",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamA.1",
+    "shape": "W6X15",
+    "Fy": "50",
+    "span": "13",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.438",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.252",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamB.2",
+    "shape": "W8X15",
+    "Fy": "50",
+    "span": "10",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "4.6",
+      "x1": "3.33333",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "4.6",
+      "x1": "4.66667",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamB.3",
+    "shape": "W8X15",
+    "Fy": "50",
+    "span": "11.5",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "7.8",
+      "x1": "5.75",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "4.6",
+      "x1": "0.5",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamC.2",
+    "shape": "W6X15",
+    "Fy": "50",
+    "span": "4",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "4.6",
+      "x1": "1",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamE.1",
+    "shape": "W10X17",
+    "Fy": "50",
+    "span": "9",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "9.3",
+      "x1": "2",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamD.2",
+    "shape": "W10X17",
+    "Fy": "50",
+    "span": "15.5",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.75",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.432",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "3",
+      "x1": "1",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamE.2",
+    "shape": "W12X22",
+    "Fy": "50",
+    "span": "16",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "9.3",
+      "x1": "6",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "9.3",
+      "x1": "12",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamF.1",
+    "shape": "W8X10",
+    "Fy": "50",
+    "span": "11.3333",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.625",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.36",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamG.1",
+    "shape": "W12X26",
+    "Fy": "50",
+    "span": "19.1667",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "5.6",
+      "x1": "4.8",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "5.6",
+      "x1": "9.6",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "5.6",
+      "x1": "14.4",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamD.3",
+    "shape": "W14X30",
+    "Fy": "50",
+    "span": "15.5",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.675",
+      "x1": "0",
+      "x2": "11",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.39",
+      "x1": "0",
+      "x2": "11",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "10.5",
+      "x1": "11",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.375",
+      "x1": "11",
+      "x2": "15.5",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.216",
+      "x1": "11",
+      "x2": "15.5",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "25",
+      "x1": "1",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamF.2",
+    "shape": "W12X26",
+    "Fy": "50",
+    "span": "15.5",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.625",
+      "x1": "0",
+      "x2": "11.5",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.36",
+      "x1": "0",
+      "x2": "11.5",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.315",
+      "x1": "11.5",
+      "x2": "15.5",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.18",
+      "x1": "11.5",
+      "x2": "15.5",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "10.5",
+      "x1": "11.5",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "2.6",
+      "x1": "12",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "2.6",
+      "x1": "15",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamG.2",
+    "shape": "W16X40",
+    "Fy": "50",
+    "span": "24",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "5.6",
+      "x1": "4.8",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "5.6",
+      "x1": "9.6",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "5.6",
+      "x1": "14.4",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "11",
+      "x1": "19",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamZ.1",
+    "shape": "W12X30",
+    "Fy": "50",
+    "span": "24.5",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.6",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.36",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamY.1",
+    "shape": "W14X30",
+    "Fy": "50",
+    "span": "16.5",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "12.1",
+      "x1": "4.66667",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "12.1",
+      "x1": "9.33333",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "12.1",
+      "x1": "14",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamY.2",
+    "shape": "W12X30",
+    "Fy": "50",
+    "span": "10",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.25",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.144",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "24.2",
+      "x1": "5",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamY.3",
+    "shape": "W18X40",
+    "Fy": "50",
+    "span": "20",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.25",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.144",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "24.2",
+      "x1": "5",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "24.2",
+      "x1": "10",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "24.2",
+      "x1": "15",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "end_ratio": "0",
+    "mark": "Column-A.1",
+    "shape": "HSS6X6X3/8",
+    "Fy": "46",
+    "Fy_source": "A500 Gr.B-46, as in the StruCalc file",
+    "height": "13",
+    "Kx": "0.769231",
+    "Ky": "0.0769231",
+    "k_source": "unbraced lengths 10 ft and 1 ft with K = 1.0, as in the StruCalc file",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "P": "80",
+      "label": "Axial"
+     }
+    ],
+    "moments": [
+     {
+      "case": "L",
+      "Mx": "21",
+      "My": "",
+      "label": "end moment"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamB.4",
+    "shape": "W12X26",
+    "Fy": "50",
+    "span": "17",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "7.8",
+      "x1": "5.5",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "7.8",
+      "x1": "11",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "7.8",
+      "x1": "14.5",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamB.5",
+    "shape": "W18X40",
+    "Fy": "50",
+    "span": "24",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "4.4",
+      "x1": "1",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "7.8",
+      "x1": "5",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "7.8",
+      "x1": "10",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "7.8",
+      "x1": "15",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "7.8",
+      "x1": "20",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "4.4",
+      "x1": "23",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamE.3",
+    "shape": "W18X40",
+    "Fy": "50",
+    "span": "24",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.125",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.072",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "9.5",
+      "x1": "6",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "9.5",
+      "x1": "12",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "9.5",
+      "x1": "18",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamY.4",
+    "shape": "W18X40",
+    "Fy": "50",
+    "span": "20",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.25",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.144",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "14",
+      "x1": "5",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "14",
+      "x1": "10",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "14",
+      "x1": "15",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "FloorBeamY.5",
+    "shape": "W18X40",
+    "Fy": "50",
+    "span": "20",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.25",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.144",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "14",
+      "x1": "5",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "14",
+      "x1": "10",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "L",
+      "kind": "point",
+      "mag": "14",
+      "x1": "15",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "Cantilever",
+    "shape": "HSS2-1/2X2-1/2X1/4",
+    "Fy": "46",
+    "span": "0.5",
+    "more_spans": "",
+    "oh_left": "",
+    "oh_right": "2.3333",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "0.625",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.36",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "as in the StruCalc file"
+     },
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "as in the StruCalc file"
+     }
+    ]
+   }
+  }
+ ],
+ "strucalc": {
+  "FloorBeamA": [
+   {
+    "name": "Shear Force Y",
+    "demand": 7780.5,
+    "strength": 39739.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 25286.625,
+    "strength": 33932.1367,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.5526,
+    "strength": 0.65,
+    "unit": "in",
+    "combo": "D+L",
+    "controls": true
+   }
+  ],
+  "FloorBeamB.1": [
+   {
+    "name": "Shear Force Y",
+    "demand": 5066.00049,
+    "strength": 39739.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 24656.5,
+    "strength": 33932.1367,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.2982,
+    "strength": 0.3667,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamC.1": [
+   {
+    "name": "Shear Force Y",
+    "demand": 4409.496,
+    "strength": 27554.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 4289.27246,
+    "strength": 25365.21,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": true
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.0227,
+    "strength": 0.1917,
+    "unit": "in",
+    "combo": "L",
+    "controls": false
+   }
+  ],
+  "FloorBeamD.1": [
+   {
+    "name": "Shear Force Y",
+    "demand": 9292.253,
+    "strength": 48480.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 36007.4648,
+    "strength": 46656.6875,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.6556,
+    "strength": 0.775,
+    "unit": "in",
+    "combo": "D+L",
+    "controls": true
+   }
+  ],
+  "FloorBeamA.1": [
+   {
+    "name": "Shear Force Y",
+    "demand": 4582.5,
+    "strength": 27554.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 14893.125,
+    "strength": 25365.21,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.5369,
+    "strength": 0.65,
+    "unit": "in",
+    "combo": "D+L",
+    "controls": true
+   }
+  ],
+  "FloorBeamB.2": [
+   {
+    "name": "Shear Force Y",
+    "demand": 6580.00732,
+    "strength": 39739.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 22198.3926,
+    "strength": 33932.1367,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.2405,
+    "strength": 0.3333,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamB.3": [
+   {
+    "name": "Shear Force Y",
+    "demand": 9518.777,
+    "strength": 39739.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 27079.5781,
+    "strength": 33932.1367,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.3658,
+    "strength": 0.3833,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamC.2": [
+   {
+    "name": "Shear Force Y",
+    "demand": 3873.999,
+    "strength": 27554.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 3767.99683,
+    "strength": 25365.21,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": true
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.0096,
+    "strength": 0.1333,
+    "unit": "in",
+    "combo": "L",
+    "controls": false
+   }
+  ],
+  "FloorBeamE.1": [
+   {
+    "name": "Shear Force Y",
+    "demand": 8196.338,
+    "strength": 48480.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 15856.9658,
+    "strength": 46656.6875,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": true
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.0728,
+    "strength": 0.3,
+    "unit": "in",
+    "combo": "L",
+    "controls": false
+   }
+  ],
+  "FloorBeamD.2": [
+   {
+    "name": "Shear Force Y",
+    "demand": 12098.9453,
+    "strength": 48480.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 37523.0977,
+    "strength": 46656.6875,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.6882,
+    "strength": 0.775,
+    "unit": "in",
+    "combo": "D+L",
+    "controls": true
+   }
+  ],
+  "FloorBeamE.2": [
+   {
+    "name": "Shear Force Y",
+    "demand": 12214.5,
+    "strength": 63960.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 55336.332,
+    "strength": 73103.79,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.5263,
+    "strength": 0.5333,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamF.1": [
+   {
+    "name": "Shear Force Y",
+    "demand": 5638.3335,
+    "strength": 26826.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 15975.2764,
+    "strength": 21870.2246,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": true
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.4135,
+    "strength": 0.5667,
+    "unit": "in",
+    "combo": "D+L",
+    "controls": false
+   }
+  ],
+  "FloorBeamG.1": [
+   {
+    "name": "Shear Force Y",
+    "demand": 10551.7188,
+    "strength": 56120.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 63813.8,
+    "strength": 92814.375,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.6337,
+    "strength": 0.6389,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamD.3": [
+   {
+    "name": "Shear Force Y",
+    "demand": 34612.3945,
+    "strength": 74520.01,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 67186.67,
+    "strength": 118013.969,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Shear Force X",
+    "demand": 580.6462,
+    "strength": 77731.5,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment X",
+    "demand": 8370.001,
+    "strength": 22430.14,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.3005,
+    "strength": 0.5167,
+    "unit": "in",
+    "combo": "L",
+    "controls": false
+   },
+   {
+    "name": "Deflection X",
+    "demand": 0.0,
+    "strength": 0.5167,
+    "unit": "in",
+    "combo": "L",
+    "controls": false
+   },
+   {
+    "name": "Bending-Compression",
+    "demand": 0.9425,
+    "strength": 1.0,
+    "unit": "Unit",
+    "combo": "D+L",
+    "controls": true
+   }
+  ],
+  "FloorBeamF.2": [
+   {
+    "name": "Shear Force Y",
+    "demand": 18450.84,
+    "strength": 56120.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 59450.69,
+    "strength": 92814.375,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.3395,
+    "strength": 0.5167,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamG.2": [
+   {
+    "name": "Shear Force Y",
+    "demand": 18272.3711,
+    "strength": 97600.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 113893.813,
+    "strength": 182135.734,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.7328,
+    "strength": 0.8,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamZ.1": [
+   {
+    "name": "Shear Force Y",
+    "demand": 12127.5146,
+    "strength": 63960.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 74280.9453,
+    "strength": 107534.93,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 1.1628,
+    "strength": 1.225,
+    "unit": "in",
+    "combo": "D+L",
+    "controls": true
+   }
+  ],
+  "FloorBeamY.1": [
+   {
+    "name": "Shear Force Y",
+    "demand": 22405.9844,
+    "strength": 74520.01,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 97960.5,
+    "strength": 118013.969,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.5289,
+    "strength": 0.55,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamY.2": [
+   {
+    "name": "Shear Force Y",
+    "demand": 14219.998,
+    "strength": 63960.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 65800.01,
+    "strength": 107534.93,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": true
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.1345,
+    "strength": 0.3333,
+    "unit": "in",
+    "combo": "L",
+    "controls": false
+   }
+  ],
+  "FloorBeamY.3": [
+   {
+    "name": "Shear Force Y",
+    "demand": 40640.04,
+    "strength": 112769.992,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 263699.75,
+    "strength": 195608.766,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.9837,
+    "strength": 0.6667,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "Column-A.1": [
+   {
+    "name": "Shear Force Y",
+    "demand": 1615.38464,
+    "strength": 57102.25,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 20999.9863,
+    "strength": 36267.4648,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.3434,
+    "strength": 0.4333,
+    "unit": "in",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Compressive Force",
+    "demand": 80357.2344,
+    "strength": 173294.641,
+    "unit": "lbf",
+    "combo": "D",
+    "controls": false
+   },
+   {
+    "name": "Bending-Compression",
+    "demand": 0.9784,
+    "strength": 1.0,
+    "unit": "Unit",
+    "combo": "D+L",
+    "controls": true
+   }
+  ],
+  "Angle": [
+   {
+    "name": "Shear Force Y",
+    "demand": 12697.2529,
+    "strength": 77604.79,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 31496.5859,
+    "strength": 32874.25,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": true
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.0587,
+    "strength": 0.1667,
+    "unit": "in",
+    "combo": "L",
+    "controls": false
+   }
+  ],
+  "FloorBeamB.4": [
+   {
+    "name": "Shear Force Y",
+    "demand": 16119.0205,
+    "strength": 56120.0,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 65300.3945,
+    "strength": 92814.375,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.5407,
+    "strength": 0.5667,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamB.5": [
+   {
+    "name": "Shear Force Y",
+    "demand": 23494.33,
+    "strength": 112769.992,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 131475.516,
+    "strength": 195608.766,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.7276,
+    "strength": 0.8,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamE.3": [
+   {
+    "name": "Shear Force Y",
+    "demand": 17094.02,
+    "strength": 112769.992,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 131064.227,
+    "strength": 195608.766,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.6854,
+    "strength": 0.8,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamY.4": [
+   {
+    "name": "Shear Force Y",
+    "demand": 25339.9941,
+    "strength": 112769.992,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 161699.844,
+    "strength": 195608.766,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.5904,
+    "strength": 0.6667,
+    "unit": "in",
+    "combo": "L",
+    "controls": true
+   }
+  ],
+  "FloorBeamY.5": [
+   {
+    "name": "Shear Force Y",
+    "demand": 25339.9941,
+    "strength": 112769.992,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 161699.844,
+    "strength": 195608.766,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Shear Force X",
+    "demand": 300.0001,
+    "strength": 94814.99,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment X",
+    "demand": 6000.00244,
+    "strength": 24950.1,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.5904,
+    "strength": 0.6667,
+    "unit": "in",
+    "combo": "L",
+    "controls": false
+   },
+   {
+    "name": "Bending-Compression",
+    "demand": 1.0671,
+    "strength": 1.0,
+    "unit": "Unit",
+    "combo": "D+L",
+    "controls": true
+   }
+  ],
+  "Cantilever": [
+   {
+    "name": "Shear Force Y",
+    "demand": 5631.32,
+    "strength": 13862.8018,
+    "unit": "lbf",
+    "combo": "D+L",
+    "controls": false
+   },
+   {
+    "name": "Moment Y",
+    "demand": 2677.65723,
+    "strength": 3741.51685,
+    "unit": "lbf-ft",
+    "combo": "D+L",
+    "controls": true
+   },
+   {
+    "name": "Deflection Y",
+    "demand": 0.0016,
+    "strength": 0.025,
+    "unit": "in",
+    "combo": "D+L",
+    "controls": false
+   }
+  ]
+ }
+}

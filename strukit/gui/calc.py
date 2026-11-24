@@ -106,7 +106,9 @@ FORMS = {
         fields=[F("shape", "Section", "hss_shape", help="square, rectangular or round HSS, or pipe, by its Manual label: HSS6x6x1/4, HSS8x4x3/16, HSS5.563x0.258, Pipe 4 STD"),
                 F("Fy", "Fy", unit="ksi"), F("Fy_source", "Where Fy comes from", "text", help="for example: ASTM A500 Grade C"),
                 F("height", "Height", unit="ft"), F("Kx", "Kx"), F("Ky", "Ky"), F("k_source", "K comes from", "text"),
-                F("self_weight", "Add self-weight", "select", options=["yes", "no"])],
+                F("self_weight", "Add self-weight", "select", options=["yes", "no"]),
+                F("end_ratio", "End moments: smaller over larger, M1 / M2", required=False,
+                  help="blank: Cm = 1.0. 0 for a moment at one end only, 1 for equal moments in reverse curvature, -1 in single curvature (AISC 360-22 Eq. A-8-4)")],
         tables=[T("loads", "Axial loads", [CASE, F("P", "P", unit="kip"), F("label", "Note", "text", required=False)]),
                 T("moments", "Moments (first-order)", [CASE, F("Mx", "Mx", unit="kip-ft", required=False), F("My", "My", unit="kip-ft", required=False),
                                                        F("label", "Note", "text", required=False)],
@@ -1960,9 +1962,10 @@ def build(kind, values, project):
         cases_used([x["case"] for x in ld] + [x["case"] for x in mo], cb, r.miss)
         args = (r.text("shape"), r.num("Fy"), r.text("Fy_source"), r.num("height"), r.num("Kx"), r.num("Ky"), r.text("k_source"))
         sw = yes(r.text("self_weight"))
+        er = r.num("end_ratio", False)
         r.done()
         return ws_more.hss_column_sheet(mark, *args, [dict(case=x["case"], P=x["P"], label=x.get("label") or "") for x in ld],
-                                        [dict(case=x["case"], Mx=x.get("Mx"), My=x.get("My"), label=x.get("label") or "") for x in mo], bool(sw), cb, m), "simple", {}
+                                        [dict(case=x["case"], Mx=x.get("Mx"), My=x.get("My"), label=x.get("label") or "") for x in mo], bool(sw), cb, m, end_ratio=er), "simple", {}
     if kind == "guard":
         m = method(project, r.miss)
         uni = (r.text("uniform") or "") != "exception"

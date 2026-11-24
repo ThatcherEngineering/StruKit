@@ -2362,11 +2362,16 @@ def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_sour
     return sheet
 
 
-def hss_column_sheet(mark, shape, Fy, Fy_source, height_ft, Kx, Ky, k_source, loads, moments, self_weight, combos, method):
+def hss_column_sheet(mark, shape, Fy, Fy_source, height_ft, Kx, Ky, k_source, loads, moments, self_weight, combos, method, end_ratio=None):
     """HSS or pipe column with its ends held against sidesway, AISC 360-22: compression (E3, E7),
     bending about either axis (F7, F8) from first-order moments entered by load case, the B1
     multiplier (App. 8.1.2, Cm = 1.0, Pe1 with EI and the full height) and Eq. H1-1.
-    loads: [dict(case, P kips, label)]; moments: [dict(case, Mx, My kip-ft, label)]."""
+    loads: [dict(case, P kips, label)]; moments: [dict(case, Mx, My kip-ft, label)].
+    end_ratio: None for Cm = 1.0, or M1 / M2, the smaller end moment over the larger (positive in reverse curvature, negative in single curvature,
+    0 for a moment at one end only), for Cm = 0.6 - 0.4 (M1 / M2), Eq. A-8-4; the moments entered are then the larger end moments, with no load between the ends."""
+    if end_ratio is not None and not -1.0 <= end_ratio <= 1.0:
+        raise WorksheetError(f"{mark}: the end moment ratio M1 / M2 is between -1 and 1")
+    Cm = 1.0 if end_ratio is None else 0.6 - 0.4 * end_ratio
     from . import hss, shapes, steel_beamcol
     from .steel_beam import SteelInputError
     for nm, v in (("where Fy comes from", Fy_source), ("where the K factors come from", k_source)):
@@ -2401,9 +2406,9 @@ def hss_column_sheet(mark, shape, Fy, Fy_source, height_ft, Kx, Ky, k_source, lo
         o = dict(cb=cb, P=P, Mx=Mx, My=My, B1x=1.0, B1y=1.0, Pe1x=None, Pe1y=None)
         try:
             if Mx:
-                o["B1x"], o["Pe1x"] = steel_beamcol.b1(P, pr["Ix"], L_in, method)
+                o["B1x"], o["Pe1x"] = steel_beamcol.b1(P, pr["Ix"], L_in, method, Cm)
             if My:
-                o["B1y"], o["Pe1y"] = steel_beamcol.b1(P, pr["Iy"], L_in, method)
+                o["B1y"], o["Pe1y"] = steel_beamcol.b1(P, pr["Iy"], L_in, method, Cm)
         except SteelInputError as e:
             raise WorksheetError(f"{mark}: {str(e).replace('steel column: ', '')}")
         o["Mrx"], o["Mry"] = o["B1x"] * abs(Mx), o["B1y"] * abs(My)
@@ -2448,7 +2453,7 @@ def hss_column_sheet(mark, shape, Fy, Fy_source, height_ft, Kx, Ky, k_source, lo
         for ax in ("x", "y"):
             if o["Pe1" + ax]:
                 steps += [Ln(f"Pe1{ax} = pi^2 E I{ax} / Lc1^2", o["Pe1" + ax], "kip", "Eq. A-8-5", f"Lc1 = {height_ft:g} ft"),
-                          Ln(f"B1{ax}", f"{o['B1' + ax]:.3f}", "", "Eq. A-8-3", "Cm = 1.0; alpha = " + ("1.6" if method == "ASD" else "1.0")),
+                          Ln(f"B1{ax}", f"{o['B1' + ax]:.3f}", "", "Eq. A-8-3", (f"Cm = {Cm:g}; " if end_ratio is None else f"Cm = 0.6 - 0.4 ({end_ratio:g}) = {Cm:g} (Eq. A-8-4); ") + "alpha = " + ("1.6" if method == "ASD" else "1.0") + "; not less than 1.0"),
                           Ln(f"Mr{ax} = B1{ax} M{ax}", o["Mr" + ax], "kip-ft", "Eq. A-8-1", f"first-order {abs(o['M' + ax]):.2f} kip-ft")]
         steps.append(Ln("Pr / Pc", f"{o['P'] / Pc:.3f}", "", "Sect. H1.1", f"Pr = {o['P']:.1f} kip"))
     rows = [Row("Axial compression", ga["cb"].name, ga["P"], Pc, "kip", "AISC 360-22 Sect. E3" + (", E7" if not rnd and c["slender_walls"] else ""), "")]
@@ -2462,7 +2467,8 @@ def hss_column_sheet(mark, shape, Fy, Fy_source, height_ft, Kx, Ky, k_source, lo
             ("Ends", "held against sidesway at both ends")]
     assume = ["The ends of the column are held against sidesway; stability by the effective length method (AISC 360-22 App. 7.2)."]
     if has_m:
-        assume += ["Moments are first-order values entered by load case; the larger moment along the height is used with Cm = 1.0 (App. 8.1.2).",
+        assume += [("Moments are first-order values entered by load case; the larger moment along the height is used with Cm = 1.0 (App. 8.1.2)." if end_ratio is None else
+                    f"Moments are first-order end moments entered by load case, the larger of the two ends, with no load between the ends; M1 / M2 = {end_ratio:g} (App. 8.1.2)."),
                    "Unbraced over the full height for bending."]
     sheet = SimpleSheet(mark, "HSS or Pipe Column", "Column", method, info, load_lines, [(cb.name, cb.source) for cb in combos],
                         f"Governing Calculation ({gc['cb'].name})", steps, rows, assume,
