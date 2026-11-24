@@ -485,9 +485,9 @@ function fillBar(m, changed) {
   if (m.kind.startsWith("wind_") && m.kind !== "wind_kzt" && m.kind !== "wind_enclosure") return fillKztBar(m, changed);
   if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) return fillLoadsBar(m, changed);
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
-  const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame");
-  if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame once the project has one.");
-  const pick = el("select", {}, el("option", { value: "" }, "choose a column or frame"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
+  const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame" || (x.kind === "guard" && m.kind === "base_plate_moment"));
+  if (!src.length) return el("div", { class: "fill small" }, "Loads can be filled in from a steel column or moment frame" + (m.kind === "base_plate_moment" ? ", or a guard post," : "") + " once the project has one.");
+  const pick = el("select", {}, el("option", { value: "" }, "choose a column, frame or guard"), src.map(x => el("option", { value: S.members.indexOf(x) }, (x.values.mark || "(no mark)") + " \u00b7 " + INFO.forms[x.kind].title)));
   const base = el("select", { style: "display:none" });
   let got = null;
   pick.addEventListener("change", async () => {
@@ -511,7 +511,9 @@ function fillBar(m, changed) {
       m.values.cases = use.map(r => ({ name: r.name, P: f(r.P), M: f(r.M), V: f(r.V) }));
       m.values.cases_lrfd = S.project.method === "LRFD" ? [] : st.map(r => ({ name: r.name, P: f(r.P), M: f(r.M), V: f(r.V) }));
       if (S.project.method !== "LRFD" && !st.length) toast("The rod anchorage in the concrete needs the LRFD combinations too (ACI 318 is strength design). Add them on the Project page and fill again.", 12000);
-      m.values.loads_from = "base reactions of " + (s.values.mark || "member") + (got.bases.length > 1 ? " at " + b : "") + (s.kind === "frame" || (s.values.ends || "").startsWith("free") ? ", second-order analysis" : "");
+      m.values.loads_from = s.kind === "guard" ? "post base moment and shear of guard " + (s.values.mark || "") + ", no axial load"
+        : "base reactions of " + (s.values.mark || "member") + (got.bases.length > 1 ? " at " + b : "") + (s.kind === "frame" || (s.values.ends || "").startsWith("free") ? ", second-order analysis" : "");
+      if (s.kind === "guard") { m.values.shape = m.values.shape || s.values.post; toast("Guard post base loads filled. The guard load acts in any direction: check the plate with the moment about each axis if the base is not the same both ways.", 12000); }
       changed(); drawMain(); return;
     }
     if (!sv.length || !st.length) return toast("Both ASD and LRFD load combinations are needed on the Project page: service loads size the footing on the soil, factored loads design the concrete.", 12000);
