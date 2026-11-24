@@ -3009,8 +3009,8 @@ def _model_frame_build(project, members, sway=False):
             level_of_node[nd] = pl["level"]
         for i in range(len(cl) - 1):
             nm = f"bm:{v['mark']}:{i}"
-            mom_i = str(v.get("at_fix_i") or "").strip().lower().startswith("moment")
-            mom_j = str(v.get("at_fix_j") or "").strip().lower().startswith("moment")
+            mom_i = str(v.get("at_fix_i") or "").strip().lower().startswith("moment") or sup_x[0] > 1e-6       # an overhang tip is a free end, not a pin
+            mom_j = str(v.get("at_fix_j") or "").strip().lower().startswith("moment") or Lm - sup_x[-1] > 1e-6
             fr.member(nm, names[i], names[i + 1], E_, G_, sec["A"], sec["Ix"], sec["Iy"], sec["J"],
                       release_i=("my", "mz") if (i == 0 and not mom_i) else (), release_j=("my", "mz") if (i == len(cl) - 2 and not mom_j) else ())
             beam_elems.setdefault(v["mark"], []).append(nm)

@@ -1,0 +1,895 @@
+{
+ "format": "strukit-project",
+ "version": 1,
+ "project": {
+  "name": "Wayfarer Vans, West Carport (StruKit test run)",
+  "number": "2026-030",
+  "date": "2026-11-23",
+  "method": "LRFD",
+  "combos_lrfd": [
+   {
+    "expr": "1.4D",
+    "source": "ASCE/SEI 7-16 Sect. 2.3.1"
+   },
+   {
+    "expr": "1.2D + 1.6S + 0.5W",
+    "source": "ASCE/SEI 7-16 Sect. 2.3.1"
+   },
+   {
+    "expr": "1.2D + 1.0W + 0.5S",
+    "source": "ASCE/SEI 7-16 Sect. 2.3.1"
+   },
+   {
+    "expr": "0.9D + 1.0W",
+    "source": "ASCE/SEI 7-16 Sect. 2.3.1"
+   }
+  ],
+  "combos_asd": [
+   {
+    "expr": "D + S",
+    "source": "ASCE/SEI 7-16 Sect. 2.4.1"
+   },
+   {
+    "expr": "D + 0.6W",
+    "source": "ASCE/SEI 7-16 Sect. 2.4.1"
+   },
+   {
+    "expr": "D + 0.75S + 0.45W",
+    "source": "ASCE/SEI 7-16 Sect. 2.4.1"
+   }
+  ],
+  "model": {
+   "levels": [
+    {
+     "name": "Base",
+     "elev": "0"
+    },
+    {
+     "name": "Roof",
+     "elev": "11.77"
+    }
+   ],
+   "grids_x": [
+    {
+     "name": "1",
+     "at": "0"
+    },
+    {
+     "name": "2",
+     "at": "10"
+    },
+    {
+     "name": "3",
+     "at": "30"
+    },
+    {
+     "name": "4",
+     "at": "50"
+    },
+    {
+     "name": "5",
+     "at": "70"
+    },
+    {
+     "name": "6",
+     "at": "90"
+    },
+    {
+     "name": "7",
+     "at": "110"
+    },
+    {
+     "name": "8",
+     "at": "130"
+    }
+   ],
+   "grids_y": [
+    {
+     "name": "A",
+     "at": "0"
+    },
+    {
+     "name": "B",
+     "at": "18.5"
+    }
+   ]
+  }
+ },
+ "members": [
+  {
+   "kind": "wind_free_roof",
+   "values": {
+    "mark": "WO1",
+    "V": "130",
+    "V_source": "sealed report 2026-030, Risk Category II",
+    "exposure": "C",
+    "exposure_basis": "sealed report 2026-030",
+    "h": "13.27",
+    "roof": "monoslope",
+    "theta": "4.76",
+    "L": "21.75",
+    "width": "131",
+    "flow": "clear",
+    "flow_basis": "open carport, vehicles under less than 50 percent blockage (sealed report)",
+    "Kzt": "1.0",
+    "Kzt_source": "sealed report 2026-030"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C1A",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "0",
+    "at_y1": "0",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C1B",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "0",
+    "at_y1": "18.5",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "R1",
+    "shape": "HSS10X6X3/8",
+    "Fy": "46",
+    "support_type": "",
+    "span": "18.5",
+    "more_spans": "",
+    "oh_left": "1.0",
+    "oh_right": "2.25",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.0335",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead load 6.1 psf x 5.5 ft"
+     },
+     {
+      "case": "S",
+      "kind": "uniform",
+      "mag": "0.1987",
+      "x1": "",
+      "x2": "",
+      "label": "roof snow load 36.12 psf x 5.5 ft"
+     },
+     {
+      "case": "W",
+      "kind": "uniform",
+      "mag": "0.1550",
+      "x1": "",
+      "x2": "",
+      "label": "wind, downward case 28.18 psf x 5.5 ft"
+     }
+    ],
+    "defl": [
+     {
+      "label": "snow",
+      "expr": "S",
+      "ratio": "180",
+      "source": "sealed report 2026-030"
+     }
+    ],
+    "at_level": "Roof",
+    "at_x1": "0",
+    "at_y1": "-1",
+    "at_x2": "0",
+    "at_y2": "20.75"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C2A",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "10",
+    "at_y1": "0",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C2B",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "10",
+    "at_y1": "18.5",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "R2",
+    "shape": "HSS10X6X3/8",
+    "Fy": "46",
+    "support_type": "",
+    "span": "18.5",
+    "more_spans": "",
+    "oh_left": "1.0",
+    "oh_right": "2.25",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.0915",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead load 6.1 psf x 15 ft"
+     },
+     {
+      "case": "S",
+      "kind": "uniform",
+      "mag": "0.5418",
+      "x1": "",
+      "x2": "",
+      "label": "roof snow load 36.12 psf x 15 ft"
+     },
+     {
+      "case": "W",
+      "kind": "uniform",
+      "mag": "0.4227",
+      "x1": "",
+      "x2": "",
+      "label": "wind, downward case 28.18 psf x 15 ft"
+     }
+    ],
+    "defl": [
+     {
+      "label": "snow",
+      "expr": "S",
+      "ratio": "180",
+      "source": "sealed report 2026-030"
+     }
+    ],
+    "at_level": "Roof",
+    "at_x1": "10",
+    "at_y1": "-1",
+    "at_x2": "10",
+    "at_y2": "20.75"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C3A",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "30",
+    "at_y1": "0",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C3B",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "30",
+    "at_y1": "18.5",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "R3",
+    "shape": "HSS10X6X3/8",
+    "Fy": "46",
+    "support_type": "",
+    "span": "18.5",
+    "more_spans": "",
+    "oh_left": "1.0",
+    "oh_right": "2.25",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.1220",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead load 6.1 psf x 20 ft"
+     },
+     {
+      "case": "S",
+      "kind": "uniform",
+      "mag": "0.7224",
+      "x1": "",
+      "x2": "",
+      "label": "roof snow load 36.12 psf x 20 ft"
+     },
+     {
+      "case": "W",
+      "kind": "uniform",
+      "mag": "0.5636",
+      "x1": "",
+      "x2": "",
+      "label": "wind, downward case 28.18 psf x 20 ft"
+     }
+    ],
+    "defl": [
+     {
+      "label": "snow",
+      "expr": "S",
+      "ratio": "180",
+      "source": "sealed report 2026-030"
+     }
+    ],
+    "at_level": "Roof",
+    "at_x1": "30",
+    "at_y1": "-1",
+    "at_x2": "30",
+    "at_y2": "20.75"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C4A",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "50",
+    "at_y1": "0",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C4B",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "50",
+    "at_y1": "18.5",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "R4",
+    "shape": "HSS10X6X3/8",
+    "Fy": "46",
+    "support_type": "",
+    "span": "18.5",
+    "more_spans": "",
+    "oh_left": "1.0",
+    "oh_right": "2.25",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.1220",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead load 6.1 psf x 20 ft"
+     },
+     {
+      "case": "S",
+      "kind": "uniform",
+      "mag": "0.7224",
+      "x1": "",
+      "x2": "",
+      "label": "roof snow load 36.12 psf x 20 ft"
+     },
+     {
+      "case": "W",
+      "kind": "uniform",
+      "mag": "0.5636",
+      "x1": "",
+      "x2": "",
+      "label": "wind, downward case 28.18 psf x 20 ft"
+     }
+    ],
+    "defl": [
+     {
+      "label": "snow",
+      "expr": "S",
+      "ratio": "180",
+      "source": "sealed report 2026-030"
+     }
+    ],
+    "at_level": "Roof",
+    "at_x1": "50",
+    "at_y1": "-1",
+    "at_x2": "50",
+    "at_y2": "20.75"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C5A",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "70",
+    "at_y1": "0",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C5B",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "70",
+    "at_y1": "18.5",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "R5",
+    "shape": "HSS10X6X3/8",
+    "Fy": "46",
+    "support_type": "",
+    "span": "18.5",
+    "more_spans": "",
+    "oh_left": "1.0",
+    "oh_right": "2.25",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.1220",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead load 6.1 psf x 20 ft"
+     },
+     {
+      "case": "S",
+      "kind": "uniform",
+      "mag": "0.7224",
+      "x1": "",
+      "x2": "",
+      "label": "roof snow load 36.12 psf x 20 ft"
+     },
+     {
+      "case": "W",
+      "kind": "uniform",
+      "mag": "0.5636",
+      "x1": "",
+      "x2": "",
+      "label": "wind, downward case 28.18 psf x 20 ft"
+     }
+    ],
+    "defl": [
+     {
+      "label": "snow",
+      "expr": "S",
+      "ratio": "180",
+      "source": "sealed report 2026-030"
+     }
+    ],
+    "at_level": "Roof",
+    "at_x1": "70",
+    "at_y1": "-1",
+    "at_x2": "70",
+    "at_y2": "20.75"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C6A",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "90",
+    "at_y1": "0",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C6B",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "90",
+    "at_y1": "18.5",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "R6",
+    "shape": "HSS10X6X3/8",
+    "Fy": "46",
+    "support_type": "",
+    "span": "18.5",
+    "more_spans": "",
+    "oh_left": "1.0",
+    "oh_right": "2.25",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.1220",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead load 6.1 psf x 20 ft"
+     },
+     {
+      "case": "S",
+      "kind": "uniform",
+      "mag": "0.7224",
+      "x1": "",
+      "x2": "",
+      "label": "roof snow load 36.12 psf x 20 ft"
+     },
+     {
+      "case": "W",
+      "kind": "uniform",
+      "mag": "0.5636",
+      "x1": "",
+      "x2": "",
+      "label": "wind, downward case 28.18 psf x 20 ft"
+     }
+    ],
+    "defl": [
+     {
+      "label": "snow",
+      "expr": "S",
+      "ratio": "180",
+      "source": "sealed report 2026-030"
+     }
+    ],
+    "at_level": "Roof",
+    "at_x1": "90",
+    "at_y1": "-1",
+    "at_x2": "90",
+    "at_y2": "20.75"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C7A",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "110",
+    "at_y1": "0",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C7B",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "110",
+    "at_y1": "18.5",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "R7",
+    "shape": "HSS10X6X3/8",
+    "Fy": "46",
+    "support_type": "",
+    "span": "18.5",
+    "more_spans": "",
+    "oh_left": "1.0",
+    "oh_right": "2.25",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.1220",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead load 6.1 psf x 20 ft"
+     },
+     {
+      "case": "S",
+      "kind": "uniform",
+      "mag": "0.7224",
+      "x1": "",
+      "x2": "",
+      "label": "roof snow load 36.12 psf x 20 ft"
+     },
+     {
+      "case": "W",
+      "kind": "uniform",
+      "mag": "0.5636",
+      "x1": "",
+      "x2": "",
+      "label": "wind, downward case 28.18 psf x 20 ft"
+     }
+    ],
+    "defl": [
+     {
+      "label": "snow",
+      "expr": "S",
+      "ratio": "180",
+      "source": "sealed report 2026-030"
+     }
+    ],
+    "at_level": "Roof",
+    "at_x1": "110",
+    "at_y1": "-1",
+    "at_x2": "110",
+    "at_y2": "20.75"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C8A",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "130",
+    "at_y1": "0",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "C8B",
+    "shape": "HSS8X8X1/2",
+    "Fy": "46",
+    "Fy_source": "ASTM A500 Grade B (sealed report: 46 ksi)",
+    "height": "11.77",
+    "Kx": "1.0",
+    "Ky": "1.0",
+    "k_source": "direct analysis method",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Roof",
+    "at_base": "Base",
+    "at_x1": "130",
+    "at_y1": "18.5",
+    "at_base_fix": "fixed"
+   }
+  },
+  {
+   "kind": "steel_beam",
+   "values": {
+    "mark": "R8",
+    "shape": "HSS10X6X3/8",
+    "Fy": "46",
+    "support_type": "",
+    "span": "18.5",
+    "more_spans": "",
+    "oh_left": "1.0",
+    "oh_right": "2.25",
+    "bracing": "continuous",
+    "brace_pts": "",
+    "self_weight": "yes",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "0.0640",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead load 6.1 psf x 10.5 ft"
+     },
+     {
+      "case": "S",
+      "kind": "uniform",
+      "mag": "0.3793",
+      "x1": "",
+      "x2": "",
+      "label": "roof snow load 36.12 psf x 10.5 ft"
+     },
+     {
+      "case": "W",
+      "kind": "uniform",
+      "mag": "0.2959",
+      "x1": "",
+      "x2": "",
+      "label": "wind, downward case 28.18 psf x 10.5 ft"
+     }
+    ],
+    "defl": [
+     {
+      "label": "snow",
+      "expr": "S",
+      "ratio": "180",
+      "source": "sealed report 2026-030"
+     }
+    ],
+    "at_level": "Roof",
+    "at_x1": "130",
+    "at_y1": "-1",
+    "at_x2": "130",
+    "at_y2": "20.75"
+   }
+  }
+ ]
+}
