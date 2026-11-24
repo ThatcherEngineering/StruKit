@@ -896,3 +896,53 @@ def free_roof_hip(V, exposure, h, theta, theta_hip, L, length, obstructed=False,
                              for i, (z, c_) in enumerate(FREE_PARALLEL)]
         dirs.append(d)
     return dict(qh=qh, Kh=kh, factor=k, dirs=dirs)
+
+
+# Components and cladding of free roofs, net pressure coefficients CN, ASCE/SEI 7-22 Figures 30.5-1 (monoslope), 30.5-2 (pitched) and
+# 30.5-3 (troughed), pdf pp. 397-399, read from the page images.  Per angle: zone 3, zone 2, zone 1, each (plus, minus), for an effective
+# wind area of a^2 or less.  Over a^2 up to 4 a^2 zone 3 takes the zone 2 values; over 4 a^2 every zone takes the zone 1 values.
+FREE_CC = {
+    "monoslope": {False: {0: ((2.4, -3.3), (1.8, -1.7), (1.2, -1.1)), 7.5: ((3.2, -4.2), (2.4, -2.1), (1.6, -1.4)), 15: ((3.6, -3.8), (2.7, -2.9), (1.8, -1.9)),
+                          30: ((5.2, -5.0), (3.9, -3.8), (2.6, -2.5)), 45: ((5.2, -4.6), (3.9, -3.5), (2.6, -2.3))},
+                  True: {0: ((1.0, -3.6), (0.8, -1.8), (0.5, -1.2)), 7.5: ((1.6, -5.1), (1.2, -2.6), (0.8, -1.7)), 15: ((2.4, -4.2), (1.8, -3.2), (1.2, -2.1)),
+                         30: ((3.2, -4.6), (2.4, -3.5), (1.6, -2.3)), 45: ((4.2, -3.8), (3.2, -2.9), (2.1, -1.9))}},
+    "pitched": {False: {0: ((2.4, -3.3), (1.8, -1.7), (1.2, -1.1)), 7.5: ((2.2, -3.6), (1.7, -1.8), (1.1, -1.2)), 15: ((2.2, -2.2), (1.7, -1.7), (1.1, -1.1)),
+                        30: ((2.6, -1.8), (2.0, -1.4), (1.3, -0.9)), 45: ((2.2, -1.6), (1.7, -1.2), (1.1, -0.8))},
+                True: {0: ((1.0, -3.6), (0.8, -1.8), (0.5, -1.2)), 7.5: ((1.0, -5.1), (0.8, -2.6), (0.5, -1.7)), 15: ((1.0, -3.2), (0.8, -2.4), (0.5, -1.6)),
+                       30: ((1.0, -2.4), (0.8, -1.8), (0.5, -1.2)), 45: ((1.0, -2.4), (0.8, -1.8), (0.5, -1.2))}},
+    "troughed": {False: {0: ((2.4, -3.3), (1.8, -1.7), (1.2, -1.1)), 7.5: ((2.4, -3.3), (1.8, -1.7), (1.2, -1.1)), 15: ((2.2, -2.2), (1.7, -1.7), (1.1, -1.1)),
+                         30: ((1.8, -2.6), (1.4, -2.0), (0.9, -1.3)), 45: ((1.6, -2.2), (1.2, -1.7), (0.8, -1.1))},
+                 True: {0: ((1.0, -3.6), (0.8, -1.8), (0.5, -1.2)), 7.5: ((1.0, -4.8), (0.8, -2.4), (0.5, -1.6)), 15: ((1.0, -2.4), (0.8, -1.8), (0.5, -1.2)),
+                        30: ((1.0, -2.8), (0.8, -2.1), (0.5, -1.4)), 45: ((1.0, -2.4), (0.8, -1.8), (0.5, -1.2))}},
+}
+FREE_CC_FIGURE = {"monoslope": "Figure 30.5-1", "pitched": "Figure 30.5-2", "troughed": "Figure 30.5-3"}
+
+
+def free_cc_cn(theta, roof="monoslope", obstructed=False):
+    """CN for an effective wind area of a^2 or less: ((z3+, z3-), (z2+, z2-), (z1+, z1-)), interpolated on the roof angle (note 3)."""
+    if roof not in FREE_CC:
+        raise WindError("wind: free roof cladding is for monoslope, pitched and troughed roofs (Figures 30.5-1 to 30.5-3)")
+    if theta is None or theta < 0 or theta > 45:
+        raise WindError("wind: a free roof is between 0 and 45 degrees")
+    t = FREE_CC[roof][bool(obstructed)]
+    ks = sorted(t)
+    for lo, hi in zip(ks, ks[1:]):
+        if lo <= theta <= hi:
+            f = (theta - lo) / (hi - lo)
+            return tuple(tuple(a + f * (b - a) for a, b in zip(za, zb)) for za, zb in zip(t[lo], t[hi]))
+    raise WindError("wind: a free roof is between 0 and 45 degrees")
+
+
+def free_cc(V, exposure, h, theta, least_dim, roof="monoslope", obstructed=False, Kzt=1.0, Ke=1.0):
+    """Components and cladding of a free roof, p = qh Kd G CN (Eq. 30.5-1), not less than 16 psf either way (Sect. 30.2.2).
+    Returns dict(qh, a, factor, figure, rows=[dict(band, lo, hi, zones={3: (CN+, CN-, p+, p-), 2: ..., 1: ...})])."""
+    if least_dim is None or least_dim <= 0:
+        raise WindError("wind: the least horizontal dimension of the roof must be positive")
+    qh, kh = velocity_pressure(V, exposure, h, Kzt, Ke)
+    k = qh * KD_CC * G_RIGID
+    a = max(min(0.10 * least_dim, 0.4 * h), 0.04 * least_dim, 3.0)
+    z3, z2, z1 = free_cc_cn(theta, roof, obstructed)
+    rows = []
+    for band, lo, hi, zs in (("a^2 or less", 0.0, a * a, (z3, z2, z1)), ("over a^2 to 4 a^2", a * a, 4 * a * a, (z2, z2, z1)), ("over 4 a^2", 4 * a * a, None, (z1, z1, z1))):
+        rows.append(dict(band=band, lo=lo, hi=hi, zones={n: (c[0], c[1], max(k * c[0], MIN_CC), min(k * c[1], -MIN_CC)) for n, c in zip((3, 2, 1), zs)}))
+    return dict(qh=qh, Kh=kh, a=a, factor=k, figure=FREE_CC_FIGURE[roof], rows=rows)

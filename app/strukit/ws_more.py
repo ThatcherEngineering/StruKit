@@ -2624,7 +2624,27 @@ def wind_free_roof_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, 
                                  after=[f"Roof {L:g} ft by {width:g} ft in plan. Along the wind: plus is with the wind. Vertical: plus is downward, minus is uplift. "
                                         "Af is the roof projected on a vertical plane normal to the wind; framing and fascia are not in it."]))
         sheet.not_checked = [t for t in sheet.not_checked if "27.1.5" not in t] + ["wind on the framing below the roof in the Sect. 27.1.5 area Af"]
-    sheet.free_roof = dict(r, totals=tot)
+    cc = None
+    if width is not None:
+        try:
+            cc = wind.free_cc(V, exposure, h, theta, min(L, width), roof, obstructed, Kzt, Ke)
+        except wind.WindError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        aa = cc["a"] ** 2
+        t4 = [f"p = qh Kd G CN = {cc['factor']:.2f} CN psf (Eq. 30.5-1); a = {cc['a']:.1f} ft, a^2 = {aa:,.0f} ft2, 4 a^2 = {4 * aa:,.0f} ft2",
+              f"{'effective wind area':<26}{'zone 3':>22}{'zone 2':>22}{'zone 1':>22}"]
+        for x in cc["rows"]:
+            ar = f"{x['hi']:,.0f} ft2 or less" if x["lo"] == 0 else f"over {x['lo']:,.0f} to {x['hi']:,.0f} ft2" if x["hi"] else f"over {x['lo']:,.0f} ft2"
+            t4.append(f"{ar:<26}" + "".join(f"{'CN ' + format(x['zones'][z][0], '.2f') + ' / ' + format(x['zones'][z][1], '.2f'):>22}" for z in (3, 2, 1)))
+            t4.append(f"{'':<26}" + "".join(f"{format(x['zones'][z][2], '.1f') + ' / ' + format(x['zones'][z][3], '.1f') + ' psf':>22}" for z in (3, 2, 1)))
+        sheet.blocks.append(dict(title=f"Components and Cladding of the Roof ({cc['figure']})", lines=t4,
+                                 after=[f"Zone 3 is the strip within a of an edge, zone 2 the next strip, from a to 2a, and zone 1 the rest ({cc['figure']})"
+                                        + ("" if mono else f"; the {'ridge' if roof == 'pitched' else 'valley'} " + ("counts as an edge of each roof plane (roof 10 degrees or over)" if theta >= 10 else "is not an edge (roof under 10 degrees)"))
+                                        + f". a is from the least horizontal dimension, "
+                                        f"{min(L, width):g} ft, and h. Net pressures normal to the roof, plus toward the top surface and minus away from it; each element is designed "
+                                        "for both. Not less than 16 psf either way (Sect. 30.2.2). Kd = 0.85, G = 0.85."]))
+        sheet.not_checked = [t for t in sheet.not_checked if "30.5-1" not in t]
+    sheet.free_roof = dict(r, totals=tot, cc=cc)
     return sheet
 
 
