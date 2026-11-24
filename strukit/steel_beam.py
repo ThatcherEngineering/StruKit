@@ -73,6 +73,7 @@ def check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
     p = props
     L = []
     rt = math.sqrt(E / Fy)
+    channel = p.get("type") in ("C", "MC")
 
     # --- element slenderness, Table B4.1b ---
     # the tabulated bf/2tf is used when the Shapes Database supplies it
@@ -80,7 +81,7 @@ def check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
     lam_pf, lam_rf = 0.38 * rt, 1.0 * rt
     lam_w = p["h_tw"]
     lam_pw = 3.76 * rt
-    L.append(Line("flange bf/2tf", lam_f, "", "Table B4.1b Case 10",
+    L.append(Line("flange b/t" if channel else "flange bf/2tf", lam_f, "", "Table B4.1b Case 10",
                   f"compact limit {lam_pf:.2f}, noncompact limit {lam_rf:.2f}"))
     L.append(Line("web h/tw", lam_w, "", "Table B4.1b Case 15", f"compact limit {lam_pw:.2f}"))
     if lam_w > lam_pw:
@@ -88,6 +89,8 @@ def check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
             f"steel beam: web h/tw = {lam_w:.1f} exceeds the compact limit {lam_pw:.1f} "
             "(Table B4.1b Case 15). Sections F4 / F5 are not built yet.")
     flange = "compact" if lam_f <= lam_pf else ("noncompact" if lam_f <= lam_rf else "slender")
+    if channel and flange != "compact":
+        raise SteelInputError(f"steel beam: channel flange b/t = {lam_f:.2f} exceeds the compact limit {lam_pf:.2f}; Sect. F2 is for compact channels")
 
     # --- yielding, F2.1 ---
     Mp = Fy * p["Zx"]
@@ -95,7 +98,13 @@ def check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
 
     # --- lateral-torsional buckling, F2.2 ---
     rts = p["rts"] if "rts" in p else rts_from(p["Iy"], p["Cw"], p["Sx"])
-    c = 1.0                                                       # Eq. F2-8a, I-shapes
+    if channel:
+        if not (p.get("Iy") and p.get("Cw")):
+            raise SteelInputError("steel beam: a channel needs Iy and Cw (Eq. F2-8b)")
+        c = p["ho"] / 2 * math.sqrt(p["Iy"] / p["Cw"])          # Eq. F2-8b, channels
+        L.append(Line("c = (ho / 2) (Iy / Cw)^0.5", c, "", "Eq. F2-8b"))
+    else:
+        c = 1.0                                                   # Eq. F2-8a, I-shapes
     jc = p["J"] * c / (p["Sx"] * p["ho"])
     Lp = 1.76 * p["ry"] * rt
     Lr = 1.95 * rts * (E / (0.7 * Fy)) * math.sqrt(
@@ -137,7 +146,7 @@ def check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
 
     # --- shear, G2.1 ---
     Aw = p["d"] * p["tw"]
-    if lam_w <= 2.24 * rt:
+    if lam_w <= 2.24 * rt and not channel:                       # G2.1(a) is for rolled I-shaped members
         Cv1, phi_v, om_v, vsrc = 1.0, 1.00, 1.50, "Sect. G2.1(a), Eq. G2-2"
     else:
         kv = 5.34                                                # G2.1(b)(2)(i), no stiffeners

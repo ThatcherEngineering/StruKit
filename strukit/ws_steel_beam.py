@@ -116,14 +116,19 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
         for k in ("case", "kind"):
             if k not in ld:
                 raise WorksheetError(f"{mark}: a load is missing '{k}'")
+    hss_props = None
     try:
         props, check = shapes.get(shape), steel_beam.check
     except shapes.ShapeError:
-        from . import hss
         try:
-            props = shapes.hss(shape)
+            props, check = shapes.channel(shape), steel_beam.check
         except shapes.ShapeError:
-            raise WorksheetError(f"{mark}: shape '{shape}' is not in the {shapes.SOURCE} I-shape, HSS or pipe tables")
+            try:
+                hss_props = props = shapes.hss(shape)
+            except shapes.ShapeError:
+                raise WorksheetError(f"{mark}: shape '{shape}' is not in the {shapes.SOURCE} I-shape, channel, HSS or pipe tables")
+    if hss_props is not None:
+        from . import hss
         def check(pr, Fy_, Lb_, Cb_, method_):
             try:
                 return hss.beam_check(pr, Fy_, Lb_, Cb_, method_)
@@ -139,6 +144,8 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
     else:
         assumptions.append("Beam self-weight is NOT added separately; it is taken as "
                            "included in the loads entered.")
+    if props.get("type") in ("C", "MC"):
+        assumptions.append("The loads act through the shear center of the channel; torsion is not checked.")
     if bracing == "continuous":
         segs, btxt, brace_pts = None, "continuously braced (Lb = 0)", []
     else:
