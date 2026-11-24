@@ -2233,6 +2233,9 @@ def _frame3d_picture(c, top, d):
             if not any(box[0] < q[2] and q[0] < box[2] and box[1] < q[3] and q[1] < box[3] for q in placed):
                 break
         placed.append(box)
+        # a white patch under the mark, so a member line passing behind it in a crowded view never runs through the letters
+        c.setFillColorRGB(1, 1, 1); c.rect(box[0], box[1], box[2] - box[0], box[3] - box[1], fill=1, stroke=0)
+        c.setFillColorRGB(*GREY)
         c.drawCentredString(mx, my - 0.35 * fs, mark)
     c.setFillColorRGB(*INK); c.setStrokeColorRGB(*INK)
     yb = oy + sc * y0 - 12
