@@ -602,11 +602,14 @@ function fillBar(m, changed) {
       let got;
       try { got = await post("/api/frame_base_biaxial", { project: S.project, members: S.members, mark: pick.value }); } catch (e) { return toast(e.message, 12000); }
       if (!got.rows || !got.rows.length) return toast((got.messages || []).join("  ") || "The frame did not run.", 12000);
-      m.values.cases = got.rows.map(r => ({ name: r.name, P: r.P.toFixed(2), Mx: r.Mx.toFixed(2), My: r.My.toFixed(2) }));
+      const comp = got.rows.filter(r => r.P >= 0), up = got.rows.filter(r => r.P < 0);
+      if (!comp.length) return toast("Every governing run puts this column in uplift; this screen is for axial compression. Use the Base Plate with Moment or uplift screen.", 14000);
+      m.values.cases = comp.map(r => ({ name: r.name, P: r.P.toFixed(2), Mx: r.Mx.toFixed(2), My: r.My.toFixed(2) }));
       m.values.loads_from = "base forces of column " + pick.value + " in the 3D frame analysis, second-order analysis";
+      got.uplift = up;
       if (!m.values.shape) { const c = cols.find(x => x.values.mark === pick.value); if (c) m.values.shape = c.values.shape; }
       changed(); drawMain();
-      toast("Filled " + got.rows.length + " runs from the frame. A run with uplift on the column is outside this screen: use the Base Plate with Moment or uplift screen for it.", 12000);
+      toast("Filled " + comp.length + " runs from the frame." + (up.length ? " Left out, because the column is in uplift (" + up.map(r => r.P.toFixed(1) + " kip").join(", ") + "): " + up.map(r => r.name).join("; ") + ". Check those on the Base Plate with Moment or uplift screen." : ""), 16000);
     } }, "Fill Loads");
     return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the loads from the 3D frame"), pick, go);
   }
