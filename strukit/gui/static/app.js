@@ -368,6 +368,19 @@ const TD_POSTS = ["wood_post", "builtup_post", "lvl_post", "wey_post", "glulam_p
 const TD_KIP = ["steel_beam", "steel_column", "hss_column", "single_plate", "end_plate", "seat", "base_plate"];
 const TD_TARGET_P = ["wood_post", "builtup_post", "lvl_post", "wey_post", "glulam_post", "steel_column", "hss_column", "single_plate", "end_plate", "seat", "base_plate"];
 
+let LINKS = [];
+// Runs every stored takedown link from the top of the load path down and puts the refreshed loads on the members.
+async function runTakedown(quiet = false) {
+  let out;
+  try { out = await post("/api/takedown", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return null; }
+  if (out.problems.length) toast(out.problems.join("  "), 16000);
+  out.members.forEach((nm, i) => { S.members[i].values = nm.values; });
+  LINKS = out.links;
+  setDirty(); await recalcAll();
+  if (!quiet && !out.problems.length) toast(out.links.length ? out.links.length + " link" + (out.links.length > 1 ? "s" : "") + " recalculated, from the top of the load path down." : "No member takes its loads from another member yet.", 9000);
+  return out;
+}
+
 // Gravity takedown: the reaction of another member, by load case, added to this member as loads.
 function fillTakedownBar(m, changed) {
   const isBeam = TD_BEAMS.includes(m.kind);
@@ -378,6 +391,8 @@ function fillTakedownBar(m, changed) {
   const sup = el("select", { style: "display:none" });
   const count = el("input", { type: "text", value: "1", style: "width:3.2em", title: "how many of these members land here" });
   const at = el("input", { type: "text", placeholder: "at ft", style: "width:4.5em" + (isBeam ? "" : ";display:none"), title: "distance from the left end of this member" });
+  const line = el("select", { style: "display:none", title: "a row of joists or rafters bearing along this member" }, el("option", { value: "" }, "one member, as a point load"), el("option", { value: "line" }, "a row of them, as a load per foot"));
+  line.addEventListener("change", () => { at.placeholder = line.value ? "from ft (blank = all)" : "at ft"; at.style.width = line.value ? "9em" : "4.5em"; });
   let got = null;
   pick.addEventListener("change", async () => {
     got = null; sup.style.display = "none"; sup.textContent = "";
@@ -387,27 +402,25 @@ function fillTakedownBar(m, changed) {
       got = await post("/api/case_reactions", { kind: s.kind, values: s.values, project: S.project });
       got.supports.forEach((r, i) => sup.append(el("option", { value: i }, r.name + ": " + Object.entries(r.cases).map(([c, v]) => c + " " + Math.round(v).toLocaleString()).join(", ") + " lb")));
       sup.style.display = "";
+      const sp = parseFloat(s.values.spacing);
+      line.style.display = (isBeam && sp > 0) ? "" : "none"; line.value = (isBeam && sp > 0) ? "line" : ""; line.dispatchEvent(new Event("change"));
     } catch (e) { toast(e.message, 12000); }
   });
   const go = el("button", { class: "btn", onclick: () => {
     if (!got || !got.supports.length) return toast("Choose the member above first.");
     const s = S.members[+pick.value], r = got.supports[+sup.value], n = parseFloat(count.value) || 1;
     const x = at.value.trim();
-    if (isBeam && (x === "" || isNaN(parseFloat(x)))) return toast("Type where the reaction lands on this member, in feet from its left end.");
-    const tag = "reaction of " + (s.values.mark || "member") + ", " + r.name;
-    const kip = TD_KIP.includes(m.kind), f = (kip ? 0.001 : 1) * n;
-    const fmt = v => String(kip ? Math.round(v * f * 1000) / 1000 : Math.round(v * f));
-    m.values.loads = (m.values.loads || []).filter(q => !String(q.label || "").startsWith(tag) && (q.case || q.mag || q.P));
-    const note = tag + (n !== 1 ? " x " + n : "");
-    Object.entries(r.cases).forEach(([c, v]) => {
-      if (Math.abs(v) < 0.5) return;
-      if (isBeam) m.values.loads.push({ case: c, kind: "point", mag: fmt(v), mag2: "", x1: x, x2: "", label: note });
-      else m.values.loads.push({ case: c, P: fmt(v), label: note });
-    });
-    changed(); drawMain();
-    toast("Loads added from " + (s.values.mark || "the member above") + " by load case. Press Add again after that member changes." + (got.notes && got.notes.length ? " Note: " + got.notes.join("; ") + "." : ""), 14000);
+    if (isBeam && !line.value && (x === "" || isNaN(parseFloat(x)))) return toast("Type where the reaction lands on this member, in feet from its left end.");
+    if (!(s.values.mark || "").trim()) return toast("Give the member above a mark first; the link is kept by mark.");
+    const lk = { src: s.values.mark, support: r.name, count: n };
+    if (isBeam) lk.x = x;
+    if (isBeam && line.value) { lk.mode = "line"; lk.spacing_in = parseFloat(s.values.spacing); lk.count = 1; }
+    m.values.loads = (m.values.loads || []).filter(q => !(q.link && q.link.src === lk.src && q.link.support === lk.support) && (q.case || q.mag || q.P));
+    m.values.loads.push(isBeam ? { case: "D", kind: "point", mag: "0", mag2: "", x1: x, x2: "", label: "", link: lk } : { case: "D", P: "0", label: "", link: lk });
+    changed();
+    runTakedown(true).then(o => { drawMain(); if (o && !o.problems.length) toast("Loads added from " + s.values.mark + " by load case and linked. They are recalculated by “Recalculate the load path” on the Project page." + (got.notes && got.notes.length ? " Note: " + got.notes.join("; ") + "." : ""), 14000); });
   } }, "Add Reaction");
-  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the reaction of the member above"), pick, sup, el("span", { class: "small" }, "x"), count, at, go);
+  return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the reaction of the member above"), pick, sup, line, el("span", { class: "small" }, "x"), count, at, go);
 }
 
 // Gravity takedown into an isolated or continuous footing: the governing service and factored reaction of the member above.
@@ -432,10 +445,10 @@ function fillFootingTakedownBar(m, changed) {
     if (!got || !got.supports.length) return toast("Choose the member above first.");
     const s = S.members[+pick.value], r = got.supports[+sup.value], n = parseFloat(count.value) || 1;
     if (!r.service || !r.strength) return toast("Both ASD and LRFD load combinations are needed on the Project page: service loads size the footing on the soil, factored loads design the concrete.", 12000);
-    Object.assign(m.values, { P_service: String(Math.round(r.service.P * n)), service_combo: r.service.name, Pu: String(Math.round(r.strength.P * n)), strength_combo: r.strength.name });
-    m.values.loads_from = "reaction of " + (s.values.mark || "member") + ", " + r.name + (n !== 1 ? " x " + n : "");
-    changed(); drawMain();
-    toast("Service " + Math.round(r.service.P * n).toLocaleString() + " lb (" + r.service.name + ") and factored " + Math.round(r.strength.P * n).toLocaleString() + " lb (" + r.strength.name + ") filled from " + (s.values.mark || "the member above") + ".", 12000);
+    if (!(s.values.mark || "").trim()) return toast("Give the member above a mark first; the link is kept by mark.");
+    m.values.link = { src: s.values.mark, support: r.name, count: n };
+    changed();
+    runTakedown(true).then(o => { drawMain(); if (o && !o.problems.length) toast("Service and factored loads filled from " + s.values.mark + " and linked.", 10000); });
   } }, "Fill Loads");
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the reaction of a beam, joist or post above"), pick, sup, el("span", { class: "small" }, "x"), count, go);
 }
@@ -692,11 +705,20 @@ function drawProject(main) {
             return el("tr", { style: "cursor:pointer", onclick: () => select(i) }, el("td", {}, m.values.mark || "(no mark)"), el("td", {}, INFO.forms[m.kind].title),
               el("td", { class: "st " + (r.status || "") }, st)); })))
           : el("div", { class: "small" }, "No members yet. Use “Add a member” at the left, or load the example project to see how the screens work."),
+        el("h2", {}, "Load path"),
+        el("div", { class: "fillbar" }, el("button", { class: "btn", onclick: async () => { await runTakedown(); select("project"); } }, "Recalculate the load path")),
+        (LINKS && LINKS.length) ? el("table", { class: "r" }, el("thead", {}, el("tr", {}, ["Member", "takes the reaction of", "at", "x", "Load"].map(t => el("th", {}, t)))),
+          el("tbody", {}, LINKS.map(l => el("tr", {}, el("td", {}, l.target), el("td", {}, l.source), el("td", {}, l.support), el("td", {}, String(l.count)),
+            el("td", {}, l.total == null ? "" : Math.round(l.total).toLocaleString() + " " + l.unit)))))
+          : el("div", { class: "small" }, "Members linked with “Take the reaction of the member above” are listed here after the load path is recalculated. The links are kept in the project file."),
         el("h2", {}, "What StruKit covers today"),
-        el("ul", { class: "msg small" }, ["Steel beams, columns (braced, with sideways load, cantilevered) and moment frames: AISC 360-22.",
-          "Fillet welds and bolt lines loaded through their centre; base plates under centred load or with moment, with anchor rod steel strength: AISC 360-22 J2, J3, J8, J9.",
-          "Isolated and continuous footings, and isolated footings with moment about one axis: ACI 318-19.",
-          "Not yet: wood, load generation (snow, wind, seismic), masonry, retaining walls, anchorage of rods in concrete (ACI 318 Chapter 17).",
+        el("ul", { class: "msg small" }, ["Steel: beams, columns, moment frames, tension members, angle struts, HSS; shear tabs, end plates, seats, welds, bolts, base plates and anchor rods (AISC 360-22, ACI 318-19 Ch. 17).",
+          "Wood: sawn lumber, glulam, LVL, PSL, LSL and I-joists; posts and built-up columns; nailed, screwed, lagged and bolted connections (2018 NDS).",
+          "Lateral: wood shear walls (segmented, perforated, force transfer around an opening), hold-downs, diaphragms, collectors (SDPWS-2021).",
+          "Loads: snow, drift, rain, live load reduction, wind and seismic (ASCE/SEI 7-22).",
+          "Concrete: isolated and continuous footings, footings with moment (ACI 318-19). Stairs and guards.",
+          "Gravity takedown: a member can take the reaction of the member above it; see Load path.",
+          "Not yet: masonry, retaining walls, a building model, 3D frame analysis.",
           "Every blank box is asked for; nothing is assumed."].map(t => el("li", {}, t))))));
 }
 

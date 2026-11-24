@@ -47,3 +47,59 @@ def test_governing_for_a_footing():
     c = r["cases"]
     assert r["service"]["P"] == pytest.approx(max(c.get("D", 0) + c.get("L", 0), c.get("D", 0) + c.get("Lr", 0), c.get("D", 0) + 0.75 * c.get("L", 0) + 0.75 * c.get("Lr", 0)))
     assert r["strength"]["name"].startswith("1.2D") and r["strength"]["P"] > r["service"]["P"]
+
+
+def _chain():
+    import copy
+    ms = copy.deepcopy(D11["members"])
+    g = lambda mark: next(m for m in ms if m["values"]["mark"] == mark)
+    g("Column B")["values"]["loads"] = [dict(case="D", P="0", label="x", link=dict(src="Floor Beam C", support="left support", count=1))]
+    g("Footing A")["values"]["link"] = dict(src="Column B", support="base", count=1)
+    g("Floor Beam C")["values"]["loads"].append(dict(case="D", kind="point", mag="0", mag2="", x1="3", x2="", label="x", link=dict(src="Deck Joist", support="left support", count=2, x="3")))
+    return ms, g
+
+
+def test_takedown_runs_top_down():
+    ms, g = _chain()
+    out = calc.takedown(D11["project"], ms)
+    assert out["problems"] == [] and [l["target"] for l in out["links"]] == ["Floor Beam C", "Column B", "Footing A"]
+    new = {m["values"]["mark"]: m["values"] for m in out["members"]}
+    joist = calc.case_reactions("wood_beam", g("Deck Joist")["values"], D11["project"])["supports"][0]["cases"]
+    pts = [r for r in new["Floor Beam C"]["loads"] if r.get("link")]
+    assert {r["case"]: float(r["mag"]) for r in pts} == {c: round(v * 2) for c, v in joist.items() if abs(v) >= 0.5} and pts[0]["label"].endswith("x 2")
+    beam = calc.case_reactions("lvl_beam", new["Floor Beam C"], D11["project"])["supports"][0]
+    post = {r["case"]: float(r["P"]) for r in new["Column B"]["loads"]}
+    assert post == {c: round(v) for c, v in beam["cases"].items()}                       # the post sees the beam WITH the joists just added
+    base = calc.case_reactions("builtup_post", new["Column B"], D11["project"])["supports"][0]
+    assert float(new["Footing A"]["P_service"]) == round(base["service"]["P"]) and new["Footing A"]["loads_from"] == "reaction of Column B, base"
+    again = calc.takedown(D11["project"], out["members"])                                # running it twice changes nothing
+    assert again["members"] == out["members"]
+    for m in out["members"]:
+        assert calc.results(m["kind"], m["values"], D11["project"])["state"] == "done", m["values"]["mark"]
+
+
+def test_takedown_problems():
+    ms, g = _chain()
+    g("Deck Joist")["values"]["loads"].append(dict(case="D", kind="point", mag="0", mag2="", x1="1", x2="", label="x", link=dict(src="Floor Beam C", support="left support", count=1, x="1")))
+    out = calc.takedown(D11["project"], ms)
+    assert out["problems"] and "circle" in out["problems"][0] and out["members"] is ms
+    ms, g = _chain()
+    g("Column B")["values"]["loads"][0]["link"]["src"] = "Gone"
+    out = calc.takedown(D11["project"], ms)
+    assert any("no longer in the project" in p_ for p_ in out["problems"])
+
+
+def test_row_of_joists_as_a_line_load():
+    import copy
+    ms = copy.deepcopy(D11["members"])
+    g = lambda mark: next(m for m in ms if m["values"]["mark"] == mark)
+    j = g("Floor Joist")["values"]
+    g("Floor Beam B")["values"]["loads"].append(dict(case="D", kind="uniform", mag="0", mag2="", x1="", x2="", label="",
+                                                    link=dict(src="Floor Joist", support="left support", count=1, mode="line", spacing_in=float(j["spacing"]))))
+    out = calc.takedown(D11["project"], ms)
+    assert out["problems"] == []
+    rows = [r for r in next(m for m in out["members"] if m["values"]["mark"] == "Floor Beam B")["values"]["loads"] if r.get("link")]
+    R = calc.case_reactions("ijoist", j, D11["project"])["supports"][0]["cases"]
+    assert rows and all(r["kind"] == "uniform" for r in rows)
+    assert {r["case"]: float(r["mag"]) for r in rows} == {c: round(v * 12 / float(j["spacing"]), 1) for c, v in R.items() if abs(v) >= 0.5}
+    assert "as a line at 16 in. o.c." in rows[0]["label"]
