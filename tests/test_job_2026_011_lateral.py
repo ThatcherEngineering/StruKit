@@ -13,7 +13,7 @@ def test_lateral_lines():
         got[m["values"]["mark"]] = r["status"]
     assert len(got) == 12
     flagged = [k for k, v in got.items() if v != "OK"]
-    assert flagged == ["Line 1, main level"]          # one 2'-8" pier between the awning windows
+    assert flagged == ["Line 1, main level", "Line 1, lower level"]     # one 2 ft 8 in. pier between the awning windows, and the hold-down below it
 
 
 def test_holddown_forces():

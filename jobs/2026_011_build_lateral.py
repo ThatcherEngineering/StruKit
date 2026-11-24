@@ -50,6 +50,7 @@ for (lev, ln), seg in SEG.items():
     v = dict(SW, mark=f"Line {ln}, {story}", lengths=seg, V=f"{V:.0f}", v_source=src)
     if lev == "Main floor":
         up, _, _ = calc.build("shear_wall", next(x for k, x in M if x["mark"] == f"Line {ln}, main level"), proj)
+        v.update(hd_model="STHD14", hd_stem="8", hd_position="end wall", hd_cracked="cracked")
         v.update(above_T=f"{max(g.T for g in up.wall.segments):.0f}", above_source=f"largest chord force of shear wall Line {ln}, main level, wind, ASD")
     M.append(("shear_wall", v))
 json.dump(dict(format="strukit-project", version=1, project=proj, members=[dict(kind=k, values=v) for k, v in M]), open("/home/claude/jobs/2026-011/2026-011-Lateral.strukit", "w"), indent=1)
