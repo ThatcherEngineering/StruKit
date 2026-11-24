@@ -788,3 +788,41 @@ def free_roof_monoslope(V, exposure, h, theta, L, obstructed=False, Kzt=1.0, Ke=
         cn = free_mono_cn(theta, obstructed)
         across = [dict(gamma=g, case=c, CNW=cn[g][c][0], CNL=cn[g][c][1], pW=k * cn[g][c][0], pL=k * cn[g][c][1]) for g in (0, 180) for c in ("A", "B")]
     return dict(qh=qh, Kh=kh, h_over_L=hl, factor=k, across=across, parallel=par, low=low)
+
+
+# Figure 27.3-5 (pdf p. 349), pitched free roofs, gamma = 0 and 180 (the same by symmetry): angle -> case -> (CNW, CNL) for [clear, obstructed].
+# Under 7.5 degrees the figure sends the reader to Figure 27.3-4 (its note 3).
+FREE_PITCHED = {
+    7.5: {"A": ((1.1, -0.3), (-1.6, -1.0)), "B": ((0.2, -1.2), (-0.9, -1.7))},
+    15.0: {"A": ((1.1, -0.4), (-1.2, -1.0)), "B": ((0.1, -1.1), (-0.6, -1.6))},
+    22.5: {"A": ((1.1, 0.1), (-1.2, -1.2)), "B": ((-0.1, -0.8), (-0.8, -1.7))},
+    30.0: {"A": ((1.3, 0.3), (-0.7, -0.7)), "B": ((-0.1, -0.9), (-0.2, -1.1))},
+    37.5: {"A": ((1.3, 0.6), (-0.6, -0.6)), "B": ((-0.2, -0.6), (-0.3, -0.9))},
+    45.0: {"A": ((1.1, 0.9), (-0.5, -0.5)), "B": ((-0.3, -0.5), (-0.3, -0.7))}}
+
+
+def free_pitched_cn(theta, obstructed=False):
+    """(CNW, CNL) for Cases A and B, Figure 27.3-5; under 7.5 degrees the Figure 27.3-4 values."""
+    if theta is None or theta < 0 or theta > 45:
+        raise WindError("wind: a pitched free roof is between 0 and 45 degrees (Figure 27.3-5)")
+    k = 1 if obstructed else 0
+    if theta < 7.5:
+        return {c: FREE_MONO[0.0][c][k] for c in ("A", "B")}
+    angs = sorted(FREE_PITCHED)
+    lo, hi = max(a for a in angs if a <= theta), min(a for a in angs if a >= theta)
+    f = 0.0 if hi == lo else (theta - lo) / (hi - lo)
+    return {c: tuple(x + (y - x) * f for x, y in zip(FREE_PITCHED[lo][c][k], FREE_PITCHED[hi][c][k])) for c in ("A", "B")}
+
+
+def free_roof(V, exposure, h, theta, L, roof="monoslope", obstructed=False, Kzt=1.0, Ke=1.0):
+    """free_roof_monoslope, or the same for a pitched (gable) free roof: L is then the whole
+    horizontal width, eave to eave, and the windward and leeward halves are the two slopes."""
+    if roof == "monoslope":
+        return free_roof_monoslope(V, exposure, h, theta, L, obstructed, Kzt, Ke)
+    if roof != "pitched":
+        raise WindError("wind: the free roof is monoslope or pitched")
+    r = free_roof_monoslope(V, exposure, h, min(theta, 45.0) if theta is not None else theta, L, obstructed, Kzt, Ke)      # range checks, qh and Figure 27.3-7
+    if r["across"] is not None:
+        cn = free_pitched_cn(theta, obstructed)
+        r["across"] = [dict(gamma=0, case=c, CNW=cn[c][0], CNL=cn[c][1], pW=r["factor"] * cn[c][0], pL=r["factor"] * cn[c][1]) for c in ("A", "B")]
+    return r
