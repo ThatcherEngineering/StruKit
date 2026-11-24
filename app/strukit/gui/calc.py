@@ -3773,6 +3773,105 @@ def sheet_pdf(kind, values, project, path):
     return path
 
 
+def bent_building(project, members, spec):
+    """Fills the building model with a row of two-column bents (carport, pavilion, shed frame): levels, grids, a column pair and a rafter at every
+    bent, with the roof loads on each rafter by its tributary width. spec (text values, feet unless noted): n (bents), spacing (one number, or a
+    list separated by commas, one fewer than n), end_start, end_end (roof past the first and last bent), col_spacing, cant_low, cant_high, height
+    (roof level), col_shape, col_Fy, raf_shape, raf_Fy, base ("pinned" / "fixed"), D, S, Lr (psf, blank = none), prefix. The roof is level at
+    `height`. Returns dict(project, members, added, problems); nothing is changed when there is a problem."""
+    import copy
+    sp, problems = spec or {}, []
+
+    def num(key, label, required=True, low=None):
+        t = str(sp.get(key) or "").strip().replace(",", "")
+        if not t:
+            if required:
+                problems.append(f"{label} is blank")
+            return None
+        try:
+            v = float(t)
+        except ValueError:
+            problems.append(f"{label}: '{t}' is not a number"); return None
+        if low is not None and v < low:
+            problems.append(f"{label} must be {low:g} or more"); return None
+        return v
+    n = num("n", "Number of bents", low=2)
+    cs, H = num("col_spacing", "Column spacing", low=0.5), num("height", "Height to the roof level", low=1)
+    cl, ch = num("cant_low", "Cantilever past the first column line", False, 0) or 0.0, num("cant_high", "Cantilever past the second column line", False, 0) or 0.0
+    e0, e1 = num("end_start", "Roof past the first bent", False, 0) or 0.0, num("end_end", "Roof past the last bent", False, 0) or 0.0
+    cFy, rFy = num("col_Fy", "Column Fy", low=1), num("raf_Fy", "Rafter Fy", low=1)
+    col, raf = str(sp.get("col_shape") or "").strip(), str(sp.get("raf_shape") or "").strip()
+    for nm, lab in ((col, "Column section"), (raf, "Rafter section")):
+        if not nm:
+            problems.append(f"{lab} is blank")
+    loads = [(c, num(c, f"{lab} load", False, 0)) for c, lab in (("D", "Dead"), ("S", "Snow"), ("Lr", "Roof live"))]
+    spac = []
+    if n is not None:
+        n = int(round(n))
+        parts = [t for t in str(sp.get("spacing") or "").replace(";", ",").split(",") if t.strip()]
+        try:
+            spac = [float(t) for t in parts]
+        except ValueError:
+            problems.append("Bent spacing: type one number, or the spacings separated by commas")
+        if len(spac) == 1:
+            spac = spac * (n - 1)
+        if not problems and (len(spac) != n - 1 or any(v <= 0 for v in spac)):
+            problems.append(f"Bent spacing: give one spacing, or {n - 1} spacings for {n} bents")
+    pre = str(sp.get("prefix") or "").strip()
+    kind_col = None
+    if col:
+        try:
+            shapes.hss(col); kind_col = "hss_column"
+        except Exception:
+            try:
+                shapes.get(col); kind_col = "steel_column"
+            except Exception:
+                problems.append(f"Column section '{col}' is not in the shapes table")
+    if raf:
+        try:
+            _frame_section("steel_beam", dict(shape=raf))
+        except ValueError as e:
+            problems.append(f"Rafter section: {e}")
+    if problems:
+        return dict(project=project, members=members, added=0, problems=problems)
+    xs = [0.0]
+    for v in spac:
+        xs.append(xs[-1] + v)
+    marks = {(m.get("values") or {}).get("mark") for m in members or []}
+    new = []
+    fixed = str(sp.get("base") or "").strip().lower().startswith("fix")
+    g = lambda v: f"{v:g}"
+    for i, x in enumerate(xs, 1):
+        trib = ((x - xs[i - 2]) / 2 if i > 1 else e0) + ((xs[i] - x) / 2 if i < len(xs) else e1)
+        for line, y in (("A", 0.0), ("B", cs)):
+            v = dict(mark=f"{pre}C{i}{line}", shape=col, Fy=g(cFy), height=g(H), self_weight="yes", loads=[], at_level="Roof", at_base="Base", at_x1=g(x), at_y1=g(y),
+                     at_base_fix="fixed" if fixed else "pinned")
+            v.update(dict(Fy_source="", Kx="1.0", Ky="1.0", k_source="direct analysis method (the frame run)", moments=[]) if kind_col == "hss_column" else
+                     dict(ends="held sideways (braced)", Kx="1.0", Ky="1.0", k_source="direct analysis method (the frame run)", lateral=[], leaning=[], drift=[]))
+            new.append(dict(kind=kind_col, values=v))
+        rows = [dict(case=c, kind="uniform", mag=f"{q * trib / 1000:.5f}", x1="", x2="", label=f"roof {dict(D='dead', S='snow', Lr='live')[c]} load {q:g} psf x {trib:g} ft")
+                for c, q in loads if q]
+        new.append(dict(kind="steel_beam", values=dict(mark=f"{pre}R{i}", shape=raf, Fy=g(rFy), support_type="", span=g(cs), more_spans="", oh_left=g(cl) if cl else "", oh_right=g(ch) if ch else "",
+                   bracing="continuous", brace_pts="", self_weight="yes", loads=rows, defl=[], at_level="Roof", at_x1=g(x), at_y1=g(-cl), at_x2=g(x), at_y2=g(cs + ch))))
+    clash = sorted(m["values"]["mark"] for m in new if m["values"]["mark"] in marks)
+    if clash:
+        return dict(project=project, members=members, added=0, problems=["These marks are already in the project: " + ", ".join(clash[:8]) + (" ..." if len(clash) > 8 else "") + ". Give a prefix."])
+    proj = copy.deepcopy(project or {})
+    mdl = proj.setdefault("model", {})
+    lv = mdl.setdefault("levels", [])
+    have = {str(l.get("name") or "").strip() for l in lv}
+    if "Base" not in have:
+        lv.insert(0, dict(name="Base", elev="0"))
+    if "Roof" not in have:
+        lv.append(dict(name="Roof", elev=g(H)))
+    if not mdl.get("grids_x"):
+        mdl["grids_x"] = [dict(name=str(i), at=g(x)) for i, x in enumerate(xs, 1)]
+    if not mdl.get("grids_y"):
+        mdl["grids_y"] = [dict(name="A", at="0"), dict(name="B", at=g(cs))]
+    return dict(project=proj, members=list(members or []) + new, added=len(new), problems=[],
+                notes=[f"{len(xs)} bents: {2 * len(xs)} columns and {len(xs)} rafters, roof {g(xs[-1] + e0 + e1)} ft long by {g(cs + cl + ch)} ft wide, level at {g(H)} ft."])
+
+
 def frame_sheet(project, members):
     """The 3D frame run (model_frame_sway) as a calc sheet for the package, or None when the project has no placed frame or the run did not finish."""
     from ..ws_more import SimpleSheet
