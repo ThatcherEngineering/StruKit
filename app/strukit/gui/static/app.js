@@ -704,6 +704,8 @@ function placementCard(m, changed) {
   fs.push({ key: "at_x1", label: brace ? "Lower end, X" : beam ? "Left end, X" : "Position, X", type: "text", required: false, help: pos }, { key: "at_y1", label: brace ? "Lower end, Y" : beam ? "Left end, Y" : "Position, Y", type: "text", required: false, help: pos });
   if (beam) fs.push({ key: "at_x2", label: brace ? "Upper end, X" : "Right end, X", type: "text", required: false, help: pos }, { key: "at_y2", label: brace ? "Upper end, Y" : "Right end, Y", type: "text", required: false, help: pos });
   if (brace) fs.push({ key: "at_brace", label: "In the 3D frame this brace takes", type: "select", options: ["tension only", "tension and compression"], required: false, help: m.kind === "tension_member" ? "blank = tension only" : "blank = tension and compression" });
+  if (TD_BEAMS.includes(m.kind)) fs.push({ key: "at_dz1", label: "Left end above the level (sloped member)", unit: "ft", type: "text", required: false, help: "blank = at the level, or following the sloped beam it sits on" },
+    { key: "at_dz2", label: "Right end above the level", unit: "ft", type: "text", required: false });
   if (m.kind === "steel_beam") fs.push({ key: "at_fix_i", label: "Left end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false, help: "blank = pinned (shear connection)" },
     { key: "at_fix_j", label: "Right end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false });
   if (m.kind === "steel_column" || m.kind === "hss_column") fs.push({ key: "at_base_fix", label: "Base (3D frame)", type: "select", options: ["pinned", "fixed"], required: false, help: "blank = pinned" },
@@ -843,7 +845,7 @@ function modelCard(changed) {
   const ratioCell = (c) => el("td", { class: c.ratio > 1 ? "st FLAG" : "", title: c.ratio_combo || "" }, c.ratio == null ? "not checked" : c.ratio.toFixed(2) + (c.ratio > 1 ? " FLAG" : " OK") + " (Eq. " + c.eq + ")");
   const n1 = (v, d = 1) => (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toLocaleString();
   const bentFields = [["n", "Number of bents"], ["spacing", "Bent spacing, ft (one number, or a list)"], ["end_start", "Roof past the first bent, ft"], ["end_end", "Roof past the last bent, ft"],
-    ["col_spacing", "Column spacing across the bent, ft"], ["cant_low", "Rafter cantilever past line A, ft"], ["cant_high", "Rafter cantilever past line B, ft"], ["height", "Height to the roof level, ft"],
+    ["col_spacing", "Column spacing across the bent, ft"], ["cant_low", "Rafter cantilever past line A, ft"], ["cant_high", "Rafter cantilever past line B, ft"], ["height", "Height to the top of the line A columns, ft"], ["slope", "Roof rise in 12, up toward line B (blank = level)"],
     ["col_shape", "Column section"], ["col_Fy", "Column Fy, ksi"], ["raf_shape", "Rafter section"], ["raf_Fy", "Rafter Fy, ksi"], ["D", "Roof dead load, psf"], ["S", "Roof snow load, psf"], ["Lr", "Roof live load, psf"],
     ["prefix", "Mark prefix (optional)"]];
   const bentBtn = el("button", { class: "btn", onclick: async () => {
