@@ -593,6 +593,25 @@ function fillBar(m, changed) {
   if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) { const a = fillLoadsBar(m, changed), b = fillTakedownBar(m, changed); return (a || b) ? el("div", {}, a, b) : null; }
   if (TD_BEAMS.includes(m.kind) || TD_TARGET_P.includes(m.kind)) { const b = fillTakedownBar(m, changed); if (b) return b; }
   if (m.kind === "footing_cont") return fillFootingTakedownBar(m, changed);
+  if (m.kind === "cap_plate") {
+    const cols = S.members.filter(x => (x.kind === "steel_column" || x.kind === "hss_column") && x.values.at_x1 && x.values.at_level);
+    if (!cols.length) return el("div", { class: "fill small" }, "The combined loads can be filled from a column of the 3D frame once the project has columns placed in the building model.");
+    const pick = el("select", {}, el("option", { value: "" }, "choose a frame column"), cols.map(x => el("option", { value: x.values.mark }, x.values.mark || "(no mark)")));
+    const axis = el("select", {}, ["strong-axis moment", "weak-axis moment"].map(a => el("option", { value: a }, a)));
+    const go = el("button", { class: "btn", onclick: async () => {
+      if (!pick.value) return toast("Choose the column first.");
+      let got;
+      try { got = await post("/api/frame_knee", { project: S.project, members: S.members, mark: pick.value }); } catch (e) { return toast(e.message, 12000); }
+      const rows = (got.axes || {})[axis.value];
+      if (!rows || !rows.length) return toast((got.messages || []).join("  ") || "The frame did not run.", 12000);
+      m.values.runs = rows.map(r => ({ name: r.name, P: r.P.toFixed(2), M: r.M.toFixed(2) }));
+      m.values.loads_from = "forces at the top of column " + pick.value + " in the 3D frame analysis, " + axis.value + ", second-order analysis";
+      if (!m.values.column) { const c = cols.find(x => x.values.mark === pick.value); if (c && c.kind === "hss_column") m.values.column = c.values.shape; }
+      changed(); drawMain();
+      toast("Filled " + rows.length + " runs from the frame: largest moment, largest and least column load.", 9000);
+    } }, "Fill Loads");
+    return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the joint loads from the 3D frame"), pick, axis, go);
+  }
   if (m.kind !== "footing_moment" && m.kind !== "footing_iso" && m.kind !== "base_plate_moment") return null;
   const src = S.members.filter(x => x.kind === "steel_column" || x.kind === "frame" || (x.kind === "hss_column" && x.values.at_x1 && x.values.at_level) || (x.kind === "guard" && m.kind === "base_plate_moment"));
   const td = m.kind === "footing_iso" ? fillFootingTakedownBar(m, changed) : null;

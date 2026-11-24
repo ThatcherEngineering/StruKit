@@ -35,3 +35,22 @@ def test_cap_plate_flags_and_stops():
     # compression large enough that no bolt is in tension
     none = calc.build("cap_plate", dict(V, loads=[dict(case="D", P="60", M="5", label="")]), dict(PROJ, method="LRFD"))[0]
     assert none.cap["T"] == 0 and none.cap["C"] == pytest.approx(1.2 * 60)
+
+
+def test_cap_plate_takes_combined_runs_and_the_frame_gives_them():
+    runs = [dict(name="run A", P="45", M="27"), dict(name="run B", P="-2", M="10")]
+    s = calc.build("cap_plate", dict(V, loads=[], runs=runs, loads_from="forces at the top of column C1"), dict(PROJ, method="LRFD"))[0]
+    assert s.cap["T"] == pytest.approx(7.58, abs=0.01) and s.cap["C"] == pytest.approx(60.16, abs=0.02)      # run A is Example 6.1's LRFD loading
+    assert "forces at the top of column C1" in s.combo_lines[0][0]
+    # uplift on the column adds to the bolt tension and is not counted as compression
+    u = calc.build("cap_plate", dict(V, loads=[], runs=[runs[1]]), dict(PROJ, method="LRFD"))[0]
+    assert u.cap["T"] == pytest.approx((120 + 2 * 4) / 9.5 / 2, rel=1e-6) and u.cap["C"] == pytest.approx(2 * u.cap["T"])
+    import json, os
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_030_west.strukit")))
+    k = calc.frame_knee(d["project"], d["members"], "C4A")
+    assert set(k["axes"]) == {"strong-axis moment", "weak-axis moment"} and k["method"] == "LRFD"
+    rows = k["axes"]["weak-axis moment"]
+    run = calc.model_frame_sway(d["project"], d["members"])
+    c = next(c for c in run["columns"] if c["mark"] == "C4A")
+    assert max(r["M"] for r in rows) == pytest.approx(c["Mw"] / 12, rel=0.02)          # the knee moment is the column's largest
+    assert max(r["P"] for r in rows) == pytest.approx(c["P"], rel=0.06)                  # the column load less the column's own weight
