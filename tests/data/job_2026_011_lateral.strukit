@@ -1,0 +1,275 @@
+{
+ "format": "strukit-project",
+ "version": 1,
+ "project": {
+  "name": "Humbargar Residence Addition",
+  "number": "2026-011",
+  "address": "441 Senter Drive, Castle Rock, CO 80104",
+  "date": "2026-11-23",
+  "method": "ASD",
+  "combos_asd": [
+   {
+    "expr": "D + L",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 2"
+   },
+   {
+    "expr": "D + Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 3"
+   },
+   {
+    "expr": "D + 0.75L + 0.75Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 4"
+   }
+  ],
+  "combos_lrfd": [
+   {
+    "expr": "1.2D + 1.6L + 0.5Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 2"
+   },
+   {
+    "expr": "1.2D + 1.6Lr + 1.0L",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3"
+   }
+  ]
+ },
+ "members": [
+  {
+   "kind": "wind_mwfrs",
+   "values": {
+    "mark": "Wind",
+    "V": "115",
+    "V_source": "sheet S0, Design Criteria",
+    "exposure": "C",
+    "exposure_basis": "sheet S0, Design Criteria",
+    "enclosure": "enclosed",
+    "enclosure_basis": "sheet S0, Design Criteria, internal pressure coefficient +/-0.18",
+    "across": "27.25",
+    "along": "29.6",
+    "roof": "gable or flat",
+    "eave": "20.5",
+    "h": "20.5",
+    "theta": "1.2",
+    "Kzt": "1.0",
+    "Kzt_source": "no hill, ridge or escarpment noted on the drawings",
+    "overhang": "2"
+   }
+  },
+  {
+   "kind": "seismic_elf",
+   "values": {
+    "mark": "Seismic",
+    "SDS": "0.225",
+    "SD1": "0.093",
+    "S1": "0.058",
+    "TL": "4",
+    "ground_source": "sheet S0, Design Criteria (Site Class D, Risk Category II); TL: ASCE 7-22 Figure 22-14, to be confirmed on the Hazard Tool",
+    "risk": "II",
+    "system": "Bearing wall: light-frame (wood) walls sheathed with wood structural panels",
+    "Ie": "1.0",
+    "Ie_source": "Risk Category II, Table 1.5-2",
+    "structure": "all other structural systems",
+    "hn": "20",
+    "rho": "1.0",
+    "rho_source": "Seismic Design Category B, Sect. 12.3.4.1",
+    "levels": [
+     {
+      "name": "Roof",
+      "w": "37.4",
+      "h": "20"
+     },
+     {
+      "name": "Main floor",
+      "w": "47.9",
+      "h": "10"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "diaphragm",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing and Single-Floor, 15/32 in, 8d common",
+    "edges": "unblocked",
+    "face": "2",
+    "case": "Case 1",
+    "panel_type": "OSB",
+    "load": "wind",
+    "mark": "Roof diaphragm, wind on Line 1",
+    "L": "27.25",
+    "W": "29.6",
+    "w": "104.0",
+    "w_source": "sheet Wind, wind parallel to the ridge, walls from 14.5 to 20.7854 ft: 173.3 plf x 0.6"
+   }
+  },
+  {
+   "kind": "diaphragm",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing and Single-Floor, 15/32 in, 8d common",
+    "edges": "unblocked",
+    "face": "2",
+    "case": "Case 1",
+    "panel_type": "OSB",
+    "load": "wind",
+    "mark": "Main floor diaphragm, wind on Line 1",
+    "L": "27.25",
+    "W": "29.6",
+    "w": "163.9",
+    "w_source": "sheet Wind, wind parallel to the ridge, walls from 4.5 to 14.5 ft: 273.1 plf x 0.6"
+   }
+  },
+  {
+   "kind": "diaphragm",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing and Single-Floor, 15/32 in, 8d common",
+    "edges": "unblocked",
+    "face": "2",
+    "case": "Case 1",
+    "panel_type": "OSB",
+    "load": "wind",
+    "mark": "Roof diaphragm, wind on Line A or B",
+    "L": "29.6",
+    "W": "27.25",
+    "w": "102.9",
+    "w_source": "sheet Wind, wind normal to the ridge, walls from 14.5 to 20.5 ft: 171.6 plf x 0.6"
+   }
+  },
+  {
+   "kind": "diaphragm",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing and Single-Floor, 15/32 in, 8d common",
+    "edges": "unblocked",
+    "face": "2",
+    "case": "Case 1",
+    "panel_type": "OSB",
+    "load": "wind",
+    "mark": "Main floor diaphragm, wind on Line A or B",
+    "L": "29.6",
+    "W": "27.25",
+    "w": "166.1",
+    "w_source": "sheet Wind, wind normal to the ridge, walls from 4.5 to 14.5 ft: 276.9 plf x 0.6"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line 1, main level",
+    "lengths": "2.67",
+    "V": "1523",
+    "v_source": "roof diaphragm 1523 lb, half the diaphragm load to each line"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line A, main level",
+    "lengths": "7.58, 5.33, 4.67",
+    "V": "1417",
+    "v_source": "roof diaphragm 1417 lb, half the diaphragm load to each line"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line B, main level",
+    "lengths": "5.33, 7.08, 4.17",
+    "V": "1417",
+    "v_source": "roof diaphragm 1417 lb, half the diaphragm load to each line"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line 1, lower level",
+    "lengths": "16.75",
+    "V": "3982",
+    "v_source": "roof diaphragm 1523 lb + main floor diaphragm 2459 lb, half the diaphragm load to each line"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line A, lower level",
+    "lengths": "22.58, 4.67",
+    "V": "3650",
+    "v_source": "roof diaphragm 1417 lb + main floor diaphragm 2232 lb, half the diaphragm load to each line"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line B, lower level",
+    "lengths": "5.33, 14.75",
+    "V": "3650",
+    "v_source": "roof diaphragm 1417 lb + main floor diaphragm 2232 lb, half the diaphragm load to each line"
+   }
+  }
+ ]
+}
