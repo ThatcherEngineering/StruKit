@@ -2213,11 +2213,12 @@ def _flush_end_plate_picture(c, top, d):
     gage, pfi and beam depth dimensioned. Beside it a side view of the beam on the column flange with the cap plate, to the same scale."""
     D, bf, tf, bp, tp, g, pfi, db = d["d"], d["bf"], d["tf"], d["bp"], d["tp"], d["g"], d["pfi"], d["db"]
     dc, tcf, tcap = d["dc"], d["tcf"], d["tcap"]
-    Hp = D + 1.0
+    ext = (d["pfo"] + 1.5) if d.get("pfo") else 0.5   # plate above the top of the beam
+    Hp = D + 0.5 + ext
     sc = min(170.0 / Hp, 9.0)
     xc, yt = LM + 150, top - 26                       # plate centre line, top of plate
     yb = yt - Hp * sc
-    y_top = yt - 0.5 * sc                             # top of the beam
+    y_top = yt - ext * sc                             # top of the beam
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
     c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xc - bp / 2 * sc, yb, bp * sc, Hp * sc, fill=1, stroke=1)
     c.setFillColorRGB(0.62, 0.68, 0.76)
@@ -2225,7 +2226,9 @@ def _flush_end_plate_picture(c, top, d):
     c.rect(xc - 1.2, y_top - (D - tf) * sc, 2.4, (D - 2 * tf) * sc, fill=1, stroke=0)
     c.setFillColorRGB(*INK)
     y1, y2 = y_top - (tf + pfi) * sc, y_top - (D - tf - pfi) * sc
-    rows_y = [y1, y2] + ([y1 - d["pb"] * sc] if d.get("pb") else [])
+    rows_y = [y1, y2] + ([y1 - d["pb"] * sc] if d.get("pb") else []) + ([y_top + d["pfo"] * sc] if d.get("pfo") else [])
+    if d.get("pfo"):
+        memberart._dim_v(c, y_top, y_top + d["pfo"] * sc, xc - bp / 2 * sc - 16, f"pfo = {d['pfo']:g} in", FR, ext_from=xc - g / 2 * sc)
     for yy in rows_y:
         for sx in (-1, 1):
             c.circle(xc + sx * g / 2 * sc, yy, max(db / 2 * sc, 1.8), fill=1, stroke=0)

@@ -3431,7 +3431,7 @@ def base_plate_biaxial_sheet(mark, shape, N, B, tp, Fy_plate, fc_psi, area_ratio
 
 
 def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, steel_source, bp, tp, plate_Fy, plate_Fu, plate_source, d, group, threads, g, pfi,
-                          w_flange, w_web, below, tcap, bcp, w_cap_flange, w_cap_web, FEXX, loads, combos, method, runs=None, runs_from="", n_rows=1, pb=None, col_side=True):
+                          w_flange, w_web, below, tcap, bcp, w_cap_flange, w_cap_web, FEXX, loads, combos, method, runs=None, runs_from="", n_rows=1, pb=None, col_side=True, extended=False, pfo=None, n_shear=2):
     """Two-bolt flush unstiffened end-plate moment connection, a wide-flange beam to the flange of a wide-flange column at the column top (with a
     column cap plate), thick end-plate procedure: AISC Design Guide 39 Sect. 5.1 and Table 5-2 as worked in Example 5.2-1.
     loads: dict(case, M kip-ft, T kips of beam axial tension, V kips). below: distance from the outside of the compression flange weld to the
@@ -3443,6 +3443,11 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
             raise WorksheetError(f"{mark}: {nm} is blank")
     if not runs and (not combos or not loads):
         raise WorksheetError(f"{mark}: loads and load combinations are needed")
+    if extended:
+        if col_side or n_rows != 1:
+            raise WorksheetError(f"{mark}: the extended end plate here is the four-bolt unstiffened one (two bolts outside and two inside the tension flange), beam side only")
+        if not (pfo and pfo > 0):
+            raise WorksheetError(f"{mark}: an extended end plate needs pfo, the outside of the tension flange to the outer bolts")
     if n_rows not in (1, 2):
         raise WorksheetError(f"{mark}: one or two rows of tension bolts")
     if n_rows == 2 and not (pb and pb > 0):
@@ -3450,11 +3455,11 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
     if n_rows == 2 and col_side:
         raise WorksheetError(f"{mark}: the column flange checks of this sheet are for the two-bolt connection; for four bolts choose 'beam side only' and check the support separately")
     try:
-        bm = shapes.get(beam)
+        bm = beam if isinstance(beam, dict) else shapes.get(beam)          # a dict of d, tw, bf, tf (and k1) for a built-up beam
         col = shapes.get(column) if col_side else None
     except Exception:
         raise WorksheetError(f"{mark}: the beam and the column are W, M, S or HP shapes from the shapes table")
-    if not bm.get("k1") or (col_side and not col.get("k1")):
+    if (not isinstance(beam, dict) and not bm.get("k1")) or (col_side and not col.get("k1")):
         raise WorksheetError(f"{mark}: the shapes table has no k1 for the beam or the column")
     if not col_side:
         col = dict(d=1.0, tw=1.0, bf=1.0, tf=1e9, kdes=1.0, k1=0.0)
@@ -3463,7 +3468,8 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
     E = 29000.0
     av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
     fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
-    db_, tbw, bbf, tbf, k1b = bm["d"], bm["tw"], bm["bf"], bm["tf"], bm["k1"]
+    db_, tbw, bbf, tbf, k1b = bm["d"], bm["tw"], bm["bf"], bm["tf"], bm.get("k1") or bm["tw"] / 2          # built-up: weld length 2 bf - tw
+    beam_name = bm.get("name", "built-up beam") if isinstance(beam, dict) else shapes.normalize(beam)
     dc, tcw, bcf, tcf, kc, k1c = col["d"], col["tw"], col["bf"], col["tf"], col["kdes"], col["k1"]
     if bbf < g:
         raise WorksheetError(f"{mark}: the gage {g:g} in. is more than the beam flange width {bbf:g} in. (AISC Design Guide 39 Eq. 4-1)")
@@ -3475,9 +3481,13 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
         raise WorksheetError(f"{mark}: {ex}")
     Fnv = FnvN if threads == "N" else FnvX
     Ab = math.pi * d ** 2 / 4
-    h1 = db_ - 1.5 * tbf - pfi
-    h2 = h1 - pb if n_rows == 2 else 0.0
-    sum_nh = 2 * h1 + (2 * h2 if n_rows == 2 else 0.0)
+    if extended:                                               # Table 5-10: h1 to the outer bolts, h2 to the inner bolts
+        h1, h2 = db_ - tbf / 2 + pfo, db_ - 1.5 * tbf - pfi
+        sum_nh = 2 * h1 + 2 * h2
+    else:
+        h1 = db_ - 1.5 * tbf - pfi
+        h2 = h1 - pb if n_rows == 2 else 0.0
+        sum_nh = 2 * h1 + (2 * h2 if n_rows == 2 else 0.0)
     bp_eff = min(bp, bbf + max(tp, 1.0))
     cases = []
     src = [(r_["name"], abs(r_["M"]) * 12.0, r_.get("T") or 0.0, abs(r_.get("V") or 0.0)) for r_ in runs] if runs else \
@@ -3491,14 +3501,18 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
     d_req = math.sqrt(4 * Meq / (math.pi * (0.75 if lrfd else 1 / 2.00) * Fnt * sum_nh))
     s_ = 0.5 * math.sqrt(bp_eff * g)
     pf = min(pfi, s_)
-    if n_rows == 1:
+    gamma_r = 1.0 if extended else 0.80
+    if extended:
+        Yp = bp_eff / 2 * (h1 / pfo + h2 * (1 / pf + 1 / s_) - 0.5) + 2 / g * (h2 * (s_ + pf))
+    elif n_rows == 1:
         Yp = bp_eff / 2 * (h1 * (1 / pf + 1 / s_)) + 2 / g * (h1 * (pf + s_))
     else:                                                      # Table 5-3, four-bolt flush unstiffened
         Yp = bp_eff / 2 * (h1 / pf + h2 / s_) + 2 / g * (h1 * (pf + 0.75 * pb) + h2 * (s_ + 0.25 * pb)) + g / 2
-    t_req = math.sqrt(1.10 * Meq / (0.80 * (0.90 if lrfd else 1 / 1.67) * plate_Fy * Yp))
+    t_req = math.sqrt(1.10 * Meq / (gamma_r * (0.90 if lrfd else 1 / 1.67) * plate_Fy * Yp))
     Rbt = Fnv * Ab
     Rbrg = min(2.4 * d * tp * plate_Fu, 2.4 * d * tcf * col_Fu) if col_side else 2.4 * d * tp * plate_Fu
-    Vn = 2 * min(Rbt, Rbrg)
+    n_shear = int(n_shear or 2)
+    Vn = n_shear * min(Rbt, Rbrg)
     Tcalc = wm["M"] / (db_ - tbf) + wm["T"] / 2
     Tyf = beam_Fy * bbf * tbf
     Tf = min(max(Tcalc, (0.60 if lrfd else 0.40) * Tyf), av(Tyf, 1.0, 1.50))
@@ -3507,7 +3521,11 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
     Rwf = av(fil(w_flange, lwf, 1.5), 0.75, 2.00)
     lwt = pfi + (pb if n_rows == 2 else 0.0) + 6.0                                            # 6 in. inside the tension bolt row (Sect. 3.7.5)
     Tyw = beam_Fy * tbw * lwt
-    Twd = max(Tcalc, (0.60 if lrfd else 0.40) * Tyw)
+    Tw = Tcalc * (0.5 if extended else 1.0)                    # ntrib / n: with an extended plate two of the four tension bolts are beside the web
+    Twd = max(Tw, (0.60 if lrfd else 0.40) * Tyw)
+    Vp = Tcalc / 2                                             # the outer bolts' half of the flange force crosses the extended part of the plate
+    Rpy = av(0.60 * plate_Fy * bp * tp, 1.00, 1.50)
+    Rpr = av(0.60 * plate_Fu * (bp - 2 * (bolts.standard_hole(d) + 0.0625)) * tp, 0.75, 2.00)
     Rwt = av(2 * fil(w_web, lwt, 1.5), 0.75, 2.00)
     lwv = min(db_ - 2 * tbf - lwt, db_ / 2 - tbf)
     if lwv <= 0:
@@ -3534,12 +3552,14 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
     Ln = footing_line
     G39 = "AISC Design Guide 39"
     steps = [Ln("Equivalent moment, Meq = M + (T / 2)(d - tbf)", Meq / 12, "kip-ft", f"{G39} Eq. 3-30", f"{wm['name']}: M = {wm['M'] / 12:.1f} kip-ft, T = {wm['T']:.2f} kip"),
-             Ln("h1, compression flange centre to the bolt line", h1, "in", f"{G39} Table 5-2", f"d - 1.5 tbf - pfi; pfi = {pfi:g} in." + (f"; second row h2 = h1 - pb = {h2:.3g} in." if n_rows == 2 else "")),
+             (Ln("h1, compression flange centre to the outer bolts", h1, "in", f"{G39} Table 5-10", f"d - tbf / 2 + pfo, pfo = {pfo:g} in.; inner bolts h2 = d - 1.5 tbf - pfi = {h2:.3g} in.") if extended else
+              Ln("h1, compression flange centre to the bolt line", h1, "in", f"{G39} Table 5-2", f"d - 1.5 tbf - pfi; pfi = {pfi:g} in." + (f"; second row h2 = h1 - pb = {h2:.3g} in." if n_rows == 2 else ""))),
              Ln("Required bolt diameter", d_req, "in", f"{G39} Eq. 5-3", f"(4 Meq / (pi Fnt sum(n h)))^0.5, sum(n h) = {sum_nh:.3g} in., Fnt = {Fnt:g} ksi; " + fac(0.75, 2.00)),
              Ln("End plate: s = 0.5 (bp g)^0.5", s_, "in", f"{G39} Table 5-2", f"bp = {bp_eff:g} in." + (f" (Eq. 4-3 limits the {bp:g} in. plate)" if bp_eff < bp - 1e-9 else "") + f"; pfi used = {pf:.3g} in."),
-             Ln("End plate yield line parameter, Yp", Yp, "in", f"{G39} Table 5-2" if n_rows == 1 else f"{G39} Table 5-3", "two-bolt flush unstiffened" if n_rows == 1 else f"four-bolt flush unstiffened, pb = {pb:g} in."),
-             Ln("Required end plate thickness", t_req, "in", f"{G39} Eq. 5-4", f"(1.10 Meq / (0.80 Fy Yp))^0.5; " + fac(0.90, 1.67)),
-             Ln("Shear at the two compression-side bolts, Vn", Vn, "kip", "AISC 360-22 Sect. J3.7, J3.11", f"each: bolt shear {Rbt:.1f} kip, bearing {Rbrg:.1f} kip; " + fac(0.75, 2.00)),
+             Ln("End plate yield line parameter, Yp", Yp, "in", f"{G39} Table 5-10" if extended else f"{G39} Table 5-2" if n_rows == 1 else f"{G39} Table 5-3",
+                "four-bolt extended unstiffened" if extended else "two-bolt flush unstiffened" if n_rows == 1 else f"four-bolt flush unstiffened, pb = {pb:g} in."),
+             Ln("Required end plate thickness", t_req, "in", f"{G39} Eq. 5-4", f"(1.10 Meq / ({gamma_r:g} Fy Yp))^0.5; " + fac(0.90, 1.67)),
+             Ln(f"Shear at the {n_shear} compression-side bolts, Vn", Vn, "kip", "AISC 360-22 Sect. J3.7, J3.11", f"each: bolt shear {Rbt:.1f} kip, bearing {Rbrg:.1f} kip; " + fac(0.75, 2.00)),
              Ln("Flange force for the welds", Tf, "kip", f"{G39} Eq. 3-38", f"calculated {Tcalc:.1f} kip; not less than {'0.60' if lrfd else '0.40'} Fy bf tf = {(0.60 if lrfd else 0.40) * Tyf:.1f} kip"),
              Ln("Beam flange to end plate weld", Rwf, "kip", "AISC 360-22 Eq. J2-4", f"{w_flange:g} in. fillets both sides, length 2 bf - 2 k1 = {lwf:.3g} in., x 1.5; " + fac(0.75, 2.00)),
              Ln("Web tension length, to 6 in. inside the last tension bolts", lwt, "in", f"{G39} Sect. 3.7.5", f"web yield there {av(Tyw, 0.90, 1.67):.1f} kip; weld force {Twd:.1f} kip (Eq. 3-41)"),
@@ -3554,12 +3574,14 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
                   Ln("Column web local yielding", Rwy, "kip", f"{G39} Eq. 3-46", f"(6 Ct kc + lb) Fy tcw, Ct = 1.0, lb = {lb:.3g} in. (Eq. 3-47); " + fac(1.00, 1.50)),
                   Ln("Column web local crippling", Rwc, "kip", "AISC 360-22 Eq. J10-4", fac(0.75, 2.00)),
                   Ln("Column panel zone shear strength", Rpz, "kip", "AISC 360-22 Eq. J10-9", fac(0.90, 1.67))]
+    if extended:
+        steps.append(Ln("Extended part of the plate in shear", Vp, "kip", f"{G39} Sect. 5.1; AISC 360-22 Sect. J4.2", f"half the flange force; yielding {Rpy:.1f} kip, rupture {Rpr:.1f} kip on the net width"))
     nm, nv = wm["name"], wv["name"]
     rows = [Row("Bolt diameter", nm, d_req, d, "in", f"{G39} Eq. 5-3", "required against provided"),
             Row("End plate thickness", nm, t_req, tp, "in", f"{G39} Eq. 5-4", "required against provided"),
-            Row("Shear at the compression bolts", nv, wv["V"], av(Vn, 0.75, 2.00), "kip", "AISC 360-22 Sect. J3.7", f"(2) {d:g} in. {group}-{threads}"),
+            Row("Shear at the compression bolts", nv, wv["V"], av(Vn, 0.75, 2.00), "kip", "AISC 360-22 Sect. J3.7", f"({n_shear}) {d:g} in. {group}-{threads}"),
             Row("Beam flange to end plate weld", nm, Tf, Rwf, "kip", "AISC 360-22 Eq. J2-4", ""),
-            Row("Beam web yielding at the bolts", nm, Tcalc, av(Tyw, 0.90, 1.67), "kip", "AISC 360-22 Eq. J4-1", ""),
+            Row("Beam web yielding at the bolts", nm, Tw, av(Tyw, 0.90, 1.67), "kip", "AISC 360-22 Eq. J4-1", ""),
             Row("Web weld at the tension bolts", nm, Twd, Rwt, "kip", "AISC 360-22 Eq. J2-4", ""),
             Row("Web weld for shear", nv, wv["V"], Rwv, "kip", "AISC 360-22 Eq. J2-4", ""),
             Row("Beam web shear at the weld", nv, wv["V"], Rvr, "kip", "AISC 360-22 Eq. J4-4", "")]
@@ -3572,11 +3594,15 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
                  Row("Column web local yielding", nm, Pfl, Rwy, "kip", f"{G39} Eq. 3-46", "at the beam's compression flange"),
                  Row("Column web local crippling", nm, Pfl, Rwc, "kip", "AISC 360-22 Eq. J10-4", ""),
                  Row("Column panel zone shear", nm, Tcalc, Rpz, "kip", "AISC 360-22 Eq. J10-9", "")]
-    info = [("Beam", f"{shapes.normalize(beam)}, d = {db_:g} in., bf = {bbf:g} in., tf = {tbf:g} in., tw = {tbw:g} in., Fy = {beam_Fy:g} ksi, Fu = {beam_Fu:g} ksi"),
+    if extended:
+        rows[2:2] = [Row("Extended plate, shear yielding", nm, Vp, Rpy, "kip", "AISC 360-22 Eq. J4-3", "half the flange force"),
+                     Row("Extended plate, shear rupture", nm, Vp, Rpr, "kip", "AISC 360-22 Eq. J4-4", "net of two holes")]
+    info = [("Beam", f"{beam_name}, d = {db_:g} in., bf = {bbf:g} in., tf = {tbf:g} in., tw = {tbw:g} in., Fy = {beam_Fy:g} ksi, Fu = {beam_Fu:g} ksi"),
             (("Column", f"{shapes.normalize(column)}, d = {dc:g} in., bf = {bcf:g} in., tf = {tcf:g} in., tw = {tcw:g} in., Fy = {col_Fy:g} ksi, Fu = {col_Fu:g} ksi ({steel_source.strip()})") if col_side
              else ("Support", f"beam side only; the member the end plate bolts to is checked separately ({steel_source.strip()})")),
             ("End Plate", f"{bp:g} in. wide x {tp:g} in., Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()}); gage {g:g} in., pfi = {pfi:g} in."),
-            ("Bolts", f"({2 * n_rows}) {d:g} in. {group}-{threads} at the tension flange" + (f" in two rows {pb:g} in. apart" if n_rows == 2 else "") + " and (2) at the compression flange"),
+            ("Bolts", (f"(4) {d:g} in. {group}-{threads} at the tension flange, two outside (pfo = {pfo:g} in.) and two inside" if extended else
+                       f"({2 * n_rows}) {d:g} in. {group}-{threads} at the tension flange" + (f" in two rows {pb:g} in. apart" if n_rows == 2 else "")) + f" and ({n_shear}) at the compression flange"),
             ("Welds", f"flange {w_flange:g} in., web {w_web:g} in. fillets both sides" + (f"; cap plate {tcap:g} x {bcp:g} in., {w_cap_flange:g} in. fillet to the column flange, {w_cap_web:g} in. fillets to the web" if col_side else "") + f"; E{FEXX:g}XX")]
     if runs:
         load_lines = [f"M = {abs(r_['M']):>7.2f} kip-ft   T = {(r_.get('T') or 0.0):>6.2f} kip   V = {abs(r_.get('V') or 0.0):>6.2f} kip   {r_['name']}" for r_ in runs]
@@ -3584,15 +3610,15 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
     else:
         load_lines = [f"{x_['case']:<3} M = {x_['M']:>7.2f} kip-ft   T = {x_.get('T', 0.0):>6.2f} kip   V = {x_.get('V', 0.0):>6.2f} kip" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
         combo_lines = [(cb.name, cb.source) for cb in combos]
-    sheet = SimpleSheet(mark, ("Two-Bolt" if n_rows == 1 else "Four-Bolt") + " Flush End-Plate Moment Connection", "Connection", method, info, load_lines, combo_lines, "Calculation", steps, rows,
+    sheet = SimpleSheet(mark, ("Four-Bolt Extended" if extended else ("Two-Bolt" if n_rows == 1 else "Four-Bolt") + " Flush") + " End-Plate Moment Connection", "Connection", method, info, load_lines, combo_lines, "Calculation", steps, rows,
                         ["Thick end plate: the plate" + (" and the column flange are each" if col_side else " is") + " strong enough for 1.10 Meq, so the bolts carry no prying force.",
-                         "The shear is carried by the two bolts at the compression flange. Tearout does not govern at those holes: the bolt force is toward the middle of the end plate and down the column flange.",
+                         f"The shear is carried by the {n_shear} bolts at the compression flange. Tearout does not govern at those holes: the bolt force is toward the middle of the end plate and down the column flange.",
                          ("The beam's compression flange is at least a column depth below the column top (Ct = 1.0). The panel zone strength is Eq. J10-9: panel zone deformation is not in the analysis and the column axial load is small against its yield load."
                           if col_side else "Beam side only: the support the end plate bolts to (its flange bending, web and bearing at the bolt holes) is checked separately.")],
                         ["bolt pretension and snug-tight requirements", "column web stiffeners where a web row fails", "the beam and the column themselves", "moment that puts the bottom flange in tension (reverse the connection or use bolts at both flanges for that moment)"])
-    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("flush_end_plate", dict(d=db_, bf=bbf, tf=tbf, bp=bp, tp=tp, g=g, pfi=pfi, db=d, dc=dc, tcf=tcf if col_side else 0.0, tcap=tcap or 0.0, pb=pb if n_rows == 2 else None,
-                                                                                                   beam=shapes.normalize(beam), column=shapes.normalize(column) if col_side else ""))))
-    sheet.ep = dict(h2=h2, Meq=Meq, h1=h1, d_req=d_req, s=s_, Yp=Yp, t_req=t_req, Rbt=Rbt, Rbrg=Rbrg, Vn=Vn, Tcalc=Tcalc, Tyf=Tyf, Tf=Tf, lwf=lwf, Rwf=Rwf, lwt=lwt, Tyw=Tyw, Twd=Twd, Rwt=Rwt,
+    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("flush_end_plate", dict(d=db_, bf=bbf, tf=tbf, bp=bp, tp=tp, g=g, pfi=pfi, db=d, dc=dc, tcf=tcf if col_side else 0.0, tcap=tcap or 0.0, pb=pb if n_rows == 2 else None, pfo=pfo if extended else None,
+                                                                                                   beam=beam_name, column=shapes.normalize(column) if col_side else ""))))
+    sheet.ep = dict(Vp=Vp, Rpy=Rpy, Rpr=Rpr, Tw=Tw, h2=h2, Meq=Meq, h1=h1, d_req=d_req, s=s_, Yp=Yp, t_req=t_req, Rbt=Rbt, Rbrg=Rbrg, Vn=Vn, Tcalc=Tcalc, Tyf=Tyf, Tf=Tf, lwf=lwf, Rwf=Rwf, lwt=lwt, Tyw=Tyw, Twd=Twd, Rwt=Rwt,
                     lwv=lwv, Rwv=Rwv, Rvr=Rvr, Rcf=Rcf, Rcw=Rcw, Rcr=Rcr, pcp=pcp, sc=sc_, Yc=Yc, Mcf=Mcf, Pfl=Pfl, lb=lb, Rwy=Rwy, Rwc=Rwc, Rpz=Rpz)
     return sheet
 
