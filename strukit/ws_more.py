@@ -3088,7 +3088,7 @@ def tension_member_sheet(mark, shape, Fy, Fu, steel_source, length_ft, n_holes, 
     steps = [Ln("Required tensile strength", T, "kip", worst, ""),
              Ln("Ag", Ag, "in2", shapes.SOURCE, shapes.normalize(shape)),
              Ln("An = Ag - n (dh + 1/16) t", An, "in2", "AISC 360-22 Sect. B4.3b",
-                f"{n_holes} holes, dh = {dh:g} in. (Table J3.3, {bolt_d:g} in. bolts), t = {hole_t:g} in." if n_holes else "no holes at the critical section"),
+                f"{n_holes} hole{'s' if n_holes != 1 else ''}, dh = {dh:g} in. (Table J3.3, {bolt_d:g} in. bolts), t = {hole_t:g} in." if n_holes else "no holes at the critical section"),
              Ln("U", f"{U:.3f}".rstrip("0").rstrip("."), "", "AISC 360-22 Table D3.1", U_source.strip()),
              Ln("Ae = An U", Ae, "in2", "Eq. D3-1", ""),
              Ln("Tensile yielding, Pn = Fy Ag", Py, "kip", "Eq. D2-1", f"Fy = {Fy:g} ksi; " + ("0.90 Pn" if lrfd else "Pn / 1.67") + f" = {Pyc:.1f} kip"),
@@ -3099,7 +3099,7 @@ def tension_member_sheet(mark, shape, Fy, Fu, steel_source, length_ft, n_holes, 
             Row("Slenderness L / r", "", slen, 300.0, "", "AISC 360-22 Sect. D1, User Note", "recommended limit")]
     info = [("Section", f"{shapes.normalize(shape)}, Fy = {Fy:g} ksi, Fu = {Fu:g} ksi ({steel_source.strip()})"),
             ("Length", f"{length_ft:g} ft"),
-            ("End connection", (f"bolted: {n_holes} holes across the section for {bolt_d:g} in. bolts in {hole_t:g} in. material" if n_holes else "welded, no holes") + f"; U = {U:.3f} ({U_source.strip()})")]
+            ("End connection", (f"bolted: {n_holes} hole{'s' if n_holes != 1 else ''} across the section for {bolt_d:g} in. bolts in {hole_t:g} in. material" if n_holes else "welded, no holes") + f"; U = {U:.3f} ({U_source.strip()})")]
     load_lines = [f"{x['case']:<3} {x['P']:>8.2f} kip" + (f"   {x['label']}" if x.get("label") else "") for x in loads]
     sheet = SimpleSheet(mark, "Steel Tension Member", "Member", method, info, load_lines, [(cb.name, cb.source) for cb in combos], f"Calculation ({worst})", steps, rows,
                         ["Axial tension only, applied through the centroid of the section.", "Standard bolt holes; holes in one line across the section (no stagger)."],
