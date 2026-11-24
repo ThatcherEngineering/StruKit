@@ -2531,6 +2531,21 @@ def stair_stringer_sheet(mark, shape, Fy, run_ft, riser_in, tread_in, trib_ft, d
         if r.check.startswith("deflection"):
             r.demand *= F
             r.note = f"horizontal-span value x 1/cos^2 = {F:.2f}; " + (r.note or "").replace("limit L/", "limit run/")
+    P_live = (live_other or {}).get("P")
+    if P_live:
+        # a concentrated live load anywhere on the stringer, not acting with the uniform live load (AISC Design Guide 34 Example 10.2.3):
+        # at mid-span for bending, beside a support for shear, with the dead load
+        wD = sum(l["w"] for l in loads if l["case"] == "D")
+        Pk = P_live / 1000.0
+        alt = [(cb, cb.factors.get("D", 0.0) * wD * run_ft ** 2 / 8 + cb.factors.get("L", 0.0) * Pk * run_ft / 4,
+                cb.factors.get("D", 0.0) * wD * run_ft / 2 + cb.factors.get("L", 0.0) * Pk) for cb in combos]
+        gm, gv = max(alt, key=lambda a_: a_[1]), max(alt, key=lambda a_: a_[2])
+        fl = next(r for r in sheet.rows if r.check == "flexure")
+        sh = next(r for r in sheet.rows if r.check == "shear")
+        at = max(i_ for i_, r in enumerate(sheet.rows) if r.check in ("flexure", "shear")) + 1
+        sheet.rows[at:at] = [Row("flexure, concentrated live load", gm[0].name, gm[1], fl.capacity, fl.unit, fl.source, f"wD L^2 / 8 + P L / 4, P = {P_live:,.0f} lb at mid-span"),
+                             Row("shear, concentrated live load", gv[0].name, gv[2], sh.capacity, sh.unit, sh.source, f"wD L / 2 + P, P = {P_live:,.0f} lb beside a support")]
+        sheet.stair_point = dict(M=gm[1], V=gv[2], P=P_live)
     theta = math.degrees(math.acos(cos))
     sheet.heading = f"Stringer {mark} - Steel Stair Stringer"
     sheet.span_text = f"{run_ft:g} ft run; {riser_in:g} in. risers, {tread_in:g} in. treads"
@@ -2539,7 +2554,8 @@ def stair_stringer_sheet(mark, shape, Fy, run_ft, riser_in, tread_in, trib_ft, d
     sheet.assumptions = [a for a in sheet.assumptions if "self-weight" not in a] + [
         "Horizontal plane method (AISC Design Guide 34): a simple span equal to the horizontal run, with the loads per foot of run.",
         f"The stringer carries {trib_ft:g} ft of tread width.",
-        "Not checked on this sheet: " + ("a concentrated live load on the stringer, " if live_other is not None else "")
+        *([f"A concentrated live load of {P_live:,.0f} lb ({live_txt}) is placed at mid-span for bending and beside a support for shear; it does not act with the uniform live load."] if P_live else []),
+        "Not checked on this sheet: " + ("a concentrated live load on the stringer, " if live_other is not None and not P_live else "") + ("deflection under the concentrated live load, " if P_live else "")
         + "the treads and risers (300 lb concentrated load, ASCE/SEI 7-22 Sect. 4.15), the end connections, "
         "landings and their framing, axial force in the stringer, vibration."]
     return sheet
