@@ -2148,9 +2148,24 @@ def reactions(kind, values, project):
     every LRFD combination (factored), so a footing or base plate can take them without
     retyping. Each list is the member run with that list of combinations; for a cantilevered
     column or a frame that is a second-order analysis at that load level. Units: lb, lb-ft."""
-    if kind not in ("steel_column", "frame"):
-        return dict(error="Loads can be taken from a steel column or a moment frame.")
+    if kind not in ("steel_column", "frame", "guard"):
+        return dict(error="Loads can be taken from a steel column, a moment frame or a guard.")
     out = dict(bases=[], service=[], strength=[], messages=[])
+    if kind == "guard":
+        # the governing post base moment and shear of the guard sheet, at each load level; no axial load is carried over
+        for which, key in (("ASD", "service"), ("LRFD", "strength")):
+            try:
+                sheet, _, _ = build(kind, values, dict(project, method=which))
+            except Missing as e:
+                out["messages"].append("The guard sheet is not complete: " + "; ".join(e.items))
+                continue
+            except (WorksheetError, SteelInputError, ValueError, KeyError) as e:
+                out["messages"].append(f"The guard sheet stopped: {e}")
+                continue
+            cs = sheet.guard["cases"]
+            out[key].append(dict(base="post base", name=sheet.combo_lines[0][0] + ", guard load", P=0.0, M=max(c[3] for c in cs), V=max(c[4] for c in cs), wt_factor=None))
+        out["bases"] = ["post base"]
+        return out
     for which, key in (("ASD", "service"), ("LRFD", "strength")):
         try:
             sheet, pk, kw = build(kind, values, dict(project, method=which, _file_method=project.get("method")))

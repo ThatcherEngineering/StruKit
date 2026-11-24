@@ -300,3 +300,17 @@ def test_landing_post_design_guide_34_example_10_1_5():
     """AISC Design Guide 34 Example 10.1.5: HSS3x3x3/16, A500 Gr. C (50 ksi), Lc = 6.5 ft: Manual Table 4-4 gives 60.4 kips LRFD and 40.2 kips ASD."""
     c = hss.rect_compression(shapes.hss("HSS3x3x3/16"), 50.0, 6.5 * 12)
     assert 0.90 * c["Pn"] == pytest.approx(60.4, abs=0.3) and c["Pn"] / 1.67 == pytest.approx(40.2, abs=0.2)
+
+
+def test_guard_post_base_loads_for_the_base_plate_screen():
+    """The base plate with moment screen can take a guard post's base loads: 200 lb at 3.5 ft = 700 lb-ft and 200 lb at ASD (50 lb/ft x 4 ft x 3.5 ft is also
+    700 lb-ft), 1.6 times that at LRFD; no axial load."""
+    from strukit.gui import calc
+    v = dict(mark="GD1", rail="HSS2X2X1/8", rail_Fy="50", rail_Fy_source="A500 C", post="HSS2X2X3/16", post_Fy="50", post_Fy_source="A500 C", spacing="4", height="3.5",
+             uniform="applies", uniform_basis="", stringer="", stringer_Fy="", stringer_Fy_source="")
+    out = calc.reactions("guard", v, dict(method="ASD"))
+    sv, st = out["service"][0], out["strength"][0]
+    assert out["bases"] == ["post base"] and sv["P"] == 0 and sv["M"] == pytest.approx(700.0) and sv["V"] == pytest.approx(200.0)
+    assert st["M"] == pytest.approx(1120.0) and st["V"] == pytest.approx(320.0) and "guard load" in sv["name"]
+    assert calc.reactions("guard", dict(v, post=""), dict(method="ASD"))["messages"]
+    assert "error" in calc.reactions("wood_beam", {}, {})
