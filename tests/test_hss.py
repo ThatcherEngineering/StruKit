@@ -165,7 +165,7 @@ def test_steel_beam_screen_takes_hss_and_pipe(tmp_path):
     w, _, _ = calc.build("steel_beam", dict(v, shape="W18X50"), lrfd)                    # I-shapes unchanged
     assert {x.check: x for x in w.rows}["shear"].source == "AISC 360-22 Sect. G2.1"
     assert calc.results("steel_beam", dict(v, shape="HSS99x9"), lrfd)["state"] == "stopped"
-    assert calc.results("steel_column", dict(mark="C1", shape="HSS6x6x1/4", Fy="50", height="12", ends="held sideways (braced)", Kx="1", Ky="1", k_source="x",
+    assert calc.results("steel_column", dict(mark="C1", shape="C15X33.9", Fy="50", height="12", ends="held sideways (braced)", Kx="1", Ky="1", k_source="x",
                                              self_weight="no", loads=[dict(case="D", P="5")], lateral=[], leaning=[], drift=[]), lrfd)["state"] == "stopped"
 
 
@@ -206,3 +206,33 @@ def test_base_plate_under_hss_and_pipe_columns(tmp_path):
     calcsheet.simple_pdf(p, str(tmp_path / "pp.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
     assert calc.results("base_plate", dict(v, shape="C12X20.7"), lrfd)["state"] == "stopped"
     assert calc.results("base_plate", dict(v, N="5", B="5"), lrfd)["state"] == "stopped"
+
+
+def test_steel_column_screen_takes_hss_and_pipe(tmp_path):
+    """The Steel Column screen with an HSS: braced, the same available strength as the HSS or Pipe Column screen (AISC Design Example E.9 method);
+    cantilevered HSS8x8x3/8, 10 ft, 2 kips wind at the top: first-order M = 20 kip-ft; Mn = Fy Zx; top drift P L^3 / (3 E I) = 2(120^3)/(3(29000)(100)) = 0.397 in."""
+    from strukit import calcsheet
+    from strukit.gui import calc
+    lrfd = dict(method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="ASCE/SEI 7-22 Sect. 2.3.1, combination 2"),
+                                            dict(expr="1.2D + 1.0W + 1.0L", source="ASCE/SEI 7-22 Sect. 2.3.1, combination 4")])
+    base = dict(mark="C5", shape="HSS6x6x1/4", Fy="50", height="12", ends="held sideways (braced)", Lx="", Ly="", Kx="1", Ky="1", k_source="pinned", self_weight="yes",
+                loads=[dict(case="D", P="20", label=""), dict(case="L", P="45", label="")], lateral=[], leaning=[], drift=[])
+    s, kind, kw = calc.build("steel_column", base, lrfd)
+    r = {x.check: x for x in s.rows}
+    assert kind == "steel_column" and r["axial compression"].capacity == pytest.approx(0.9 * hss.rect_compression(shapes.hss("HSS6x6x1/4"), 50.0, 144.0)["Pn"])
+    calcsheet.steel_column_pdf(s, str(tmp_path / "c.pdf"), "Job", "AISC 360-22", "Nov 23, 2026", **kw)
+    v = dict(base, shape="HSS8x8x3/8", height="10", ends="free both ways (cantilever)", k_source="direct analysis method", loads=[dict(case="D", P="6", label="")],
+             lateral=[dict(case="W", bending="x", kind="point", mag="2.0", x="10", label="")], drift=[dict(label="wind", expr="W", ratio="100", source="typed in")])
+    c, _, kw = calc.build("steel_column", v, lrfd)
+    rc = {x.check: x for x in c.rows}
+    p = shapes.hss("HSS8x8x3/8")
+    assert rc["bending about x (strong axis)"].capacity == pytest.approx(0.9 * 50 * p["Zx"] / 12) and "first-order 20.00 kip-ft" in rc["bending about x (strong axis)"].note
+    assert rc["shear, strong direction"].source == "AISC 360-22 Sect. G4" and rc["bending about y (weak axis)"].source.startswith("AISC 360-22 Sect. F7")
+    assert rc["drift at top, wind, about x"].demand == pytest.approx(2 * 120 ** 3 / (3 * 29000 * p["Ix"]), rel=0.002)
+    calcsheet.steel_column_pdf(c, str(tmp_path / "cc.pdf"), "Job", "AISC 360-22", "Nov 23, 2026", **kw)
+    pp, _, kw = calc.build("steel_column", dict(v, shape="Pipe 8 STD", Fy="35"), lrfd)
+    rp = {x.check: x for x in pp.rows}
+    assert rp["shear, strong direction"].source == "AISC 360-22 Sect. G5" and rp["bending about x (strong axis)"].capacity == pytest.approx(0.9 * 35 * shapes.hss("Pipe8STD")["Zx"] / 12)
+    calcsheet.steel_column_pdf(pp, str(tmp_path / "p.pdf"), "Job", "AISC 360-22", "Nov 23, 2026", **kw)
+    w, _, _ = calc.build("steel_column", dict(v, shape="W8X31"), lrfd)                  # I-shapes unchanged
+    assert {x.check: x for x in w.rows}["shear, weak direction"].source == "AISC 360-22 Sect. G6"

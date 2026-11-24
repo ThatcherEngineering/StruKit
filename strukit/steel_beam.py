@@ -60,6 +60,9 @@ def check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
     props: d, tw, bf, tf, h_tw (h/tw), Zx, Sx, ry, J, ho, and either rts or Iy + Cw.
     Lb in inches. method "ASD" or "LRFD".
     """
+    if props.get("type") in ("HSS-RECT", "HSS-ROUND", "PIPE"):
+        from . import hss
+        return hss.beam_check(props, Fy, Lb, Cb, method, E)
     missing = [k for k in REQUIRED if props.get(k) in (None, "")]
     if missing:
         raise SteelInputError("steel beam: missing section properties: " + ", ".join(missing))

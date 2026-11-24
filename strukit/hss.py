@@ -219,4 +219,78 @@ def beam_check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
     L.append(Line("phi_v Vn" if method == "LRFD" else "Vn / Omega_v", available(v["Vn"], "shear", method), "kip", "Sect. G1", "phi_v = 0.90, Omega_v = 1.67"))
     r = SteelBeamResult(f["Mn"], available(f["Mn"], "flexure", method), v["Vn"], available(v["Vn"], "shear", method), gov, f["cls"], L)
     r.v_source = vsrc
+    r.v_note = "shear carried by the two walls parallel to the load" if props.get("type") == "HSS-RECT" else ""
+    return r
+
+
+HSS_TYPES = ("HSS-RECT", "HSS-ROUND", "PIPE")
+
+
+def column_check(props, Fy, Lcx, Lcy, method="ASD", E=E_STEEL):
+    """Axial compression in the form the steel column sheet uses (steel_column.SteelColumnResult)."""
+    from .steel_beam import Line
+    from .steel_column import SteelColumnResult
+    L = []
+    if props.get("type") == "HSS-RECT":
+        c = rect_compression(props, Fy, Lcx, Lcy, E)
+        L += [Line("wall b/t, h/t", max(props["b_t"], props["h_t"]), "", "Table B4.1a Case 6", f"b/t = {props['b_t']:g}, h/t = {props['h_t']:g}; nonslender limit {c['lam_r']:.1f}"),
+              Line("Lcx / rx", c["Lc_rx"], "", "Sect. E2"), Line("Lcy / ry", c["Lc_ry"], "", "Sect. E2"),
+              Line("Fe", c["Fe"], "ksi", "Eq. E3-4"), Line("Fn", c["Fcr"], "ksi", f"Eq. {c['eq']}", f"Fy/Fe = {Fy / c['Fe']:.3f}")]
+        if c["slender_walls"]:
+            for w in c["walls"]:
+                if w["Fel"] is not None:
+                    L += [Line(f"{w['name']}: Fel", w["Fel"], "ksi", "Eq. E7-5", "c1 = 0.2, c2 = 1.38 (Table E7.1)"),
+                          Line(f"{w['name']}: effective width", w["effective"], "in", "Eq. E7-3", f"full width {w['width']:.2f} in")]
+            L += [Line("Ae", c["Ae"], "in2", "Sect. E7", f"Ag = {props['A']:g} in2"), Line("Pn = Fn Ae", c["Pn"], "kip", "Eq. E7-1")]
+        else:
+            L.append(Line("Pn = Fn Ag", c["Pn"], "kip", "Eq. E3-1"))
+        gov = "flexural buckling about " + ("x" if c["Lc_rx"] >= c["Lc_ry"] else "y") + " (E3)" + (", slender walls (E7)" if c["slender_walls"] else "")
+    else:
+        c = compression(props, Fy, max(Lcx, Lcy), E)
+        L += [Line("D/t", props["D_t"], "", "Table B4.1a Case 9", f"nonslender limit {c['lam_r']:.1f}"),
+              Line("Lc / r", c["Lc_r"], "", "Sect. E2"), Line("Fe", c["Fe"], "ksi", "Eq. E3-4"),
+              Line("Fn", c["Fcr"], "ksi", f"Eq. {c['eq']}", f"Fy/Fe = {Fy / c['Fe']:.3f}"), Line("Pn = Fn Ag", c["Pn"], "kip", "Eq. E3-1")]
+        gov = "flexural buckling (E3)"
+    Pa = available(c["Pn"], "compression", method)
+    L.append(Line("phi_c Pn" if method == "LRFD" else "Pn / Omega_c", Pa, "kip", "Sect. E1: phi_c = 0.90, Omega_c = 1.67"))
+    if c["Lc_r"] > 200:
+        L.append(Line("Lc / r", c["Lc_r"], "", "Sect. E2 User Note", "exceeds 200, the preferred maximum (a recommendation, not a limit)"))
+    return SteelColumnResult(c["Pn"], Pa, c["Fcr"], gov, c["Lc_r"], L)
+
+
+def weak_flexure(props, Fy, method="ASD", E=E_STEEL):
+    """Bending about y in the form steel_beamcol.weak_axis_flexure returns."""
+    from .steel_beam import Line
+    from .steel_beamcol import Strength
+    if props.get("type") == "HSS-RECT":
+        f = rect_flexure(props, Fy, "y", None, 1.0, E)
+        gov, sect = f"{f['governs']} (Eq. {f['eq']})", "AISC 360-22 Sect. F7: "
+        L = [Line("Mpy = Fy Zy", f["Mp"], "kip-in", "Eq. F7-1", f"flange {f['flange']}, web {f['web']} for bending about y")]
+        L += [Line(f"Mny, {nm}", M, "kip-in", f"Eq. {eq}") for nm, M, eq in f["states"][1:]]
+    else:
+        f = flexure(props, Fy, E)
+        gov, sect = ("yielding" if f["cls"] == "compact" else "local buckling") + f" (Eq. {f['eq']})", "AISC 360-22 Sect. F8: "
+        L = [Line("Mny = Mn (round section)", f["Mn"], "kip-in", f"Eq. {f['eq']}")]
+    av = available(f["Mn"], "flexure", method)
+    L.append(Line("phi_b Mny" if method == "LRFD" else "Mny / Omega_b", av, "kip-in", "Sect. F1(a): phi_b = 0.90, Omega_b = 1.67", f"governs: {gov}"))
+    r = Strength(f["Mn"], av, gov, L)
+    r.prefix = sect
+    return r
+
+
+def weak_shear(props, Fy, method="ASD", E=E_STEEL):
+    from .steel_beam import Line
+    from .steel_beamcol import Strength
+    if props.get("type") == "HSS-RECT":
+        v = rect_shear(props, Fy, "y", E)
+        L = [Line("Vny = 0.6 Fy Aw Cv2", v["Vn"], "kip", "Eq. G4-1", f"Aw = 2 b t = {v['Aw']:.2f} in2, Cv2 = {v['Cv2']:.3f}")]
+        src, note = "AISC 360-22 Sect. G4", "shear carried by the two walls parallel to the load"
+    else:
+        v = shear(props, Fy, None, E)
+        L = [Line("Vny = Fcr Ag / 2", v["Vn"], "kip", "Eq. G5-1", f"Fcr = {v['Fcr']:.1f} ksi")]
+        src, note = "AISC 360-22 Sect. G5", ""
+    av = available(v["Vn"], "shear", method)
+    L.append(Line("phi_v Vny" if method == "LRFD" else "Vny / Omega_v", av, "kip", "Sect. G1: phi_v = 0.90, Omega_v = 1.67"))
+    r = Strength(v["Vn"], av, "shear (" + src[-2:] + ")", L)
+    r.source, r.note = src, note
     return r

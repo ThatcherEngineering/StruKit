@@ -100,7 +100,13 @@ def run(mark, shape, Fy, height_ft, loads, combos, Kx, Ky, k_source, method,
                 raise WorksheetError(f"{mark}: a load is missing '{k}'")
     if not loads:
         raise WorksheetError(f"{mark}: no loads given")
-    props = shapes.get(shape)
+    try:
+        props = shapes.get(shape)
+    except shapes.ShapeError:
+        try:
+            props = shapes.hss(shape)
+        except shapes.ShapeError:
+            raise WorksheetError(f"{mark}: shape '{shape}' is not in the {shapes.SOURCE} I-shape, HSS or pipe tables")
     Lx = height_ft if Lx_ft is None else Lx_ft
     Ly = height_ft if Ly_ft is None else Ly_ft
     all_loads = list(loads)
@@ -222,15 +228,15 @@ def _lateral(sheet, chk, lateral, combos):
                         f"Cb = {q['Cb']:.2f}"))
         n1, q = worst(lambda t: t["Vx"])
         rows.append(Row("shear, strong direction", n1, q["Vx"], fx.V_avail, "kip",
-                        "AISC 360-22 Sect. G2.1", "shear carried by the web"))
+                        getattr(fx, "v_source", "AISC 360-22 Sect. G2.1"), getattr(fx, "v_note", "shear carried by the web")))
     if any(t[1]["My"] for t in allo):
         n1, q = worst(lambda t: t["Mry"])
         rows.append(Row("bending about y (weak axis)", n1, q["Mry"], wy.available / 12, "kip-ft",
-                        "AISC 360-22 Sect. F6: " + wy.governs,
+                        getattr(wy, "prefix", "AISC 360-22 Sect. F6: ") + wy.governs,
                         f"first-order {q['My']:.2f} kip-ft x B1 = {q['B1y']:.3f}"))
         n1, q = worst(lambda t: t["Vy"])
         rows.append(Row("shear, weak direction", n1, q["Vy"], vy.available, "kip",
-                        "AISC 360-22 Sect. G6", "shear carried by the two flanges"))
+                        getattr(vy, "source", "AISC 360-22 Sect. G6"), getattr(vy, "note", "shear carried by the two flanges")))
     rows.append(Row("combined compression and bending", name, o["val"], 1.0, "",
                     f"AISC 360-22 Sect. H1.1, {o['eq']}",
                     f"Pr/Pc = {o['P'] / chk.P_avail:.3f}; Mrx/Mcx = {o['Mrx'] * 12 / fx.M_avail:.3f}; "
@@ -423,14 +429,14 @@ def _sway(sheet, chk, lateral, combos, sway, leaning, drift_checks):
                         amp(q, "x") + f"; Lb = {q['Lb']:g} ft, Cb = {q['Cb']:.2f}"))
         n1, q = worst(lambda t: t["V"]["x"])
         rows.append(Row("shear, strong direction", n1, q["V"]["x"], vx_avail, "kip",
-                        "AISC 360-22 Sect. G2.1", "shear carried by the web"))
+                        getattr(fx, "v_source", "AISC 360-22 Sect. G2.1"), getattr(fx, "v_note", "shear carried by the web")))
     if any(t[1]["M"]["y"] for t in outs):
         n1, q = worst(lambda t: t["M"]["y"])
         rows.append(Row("bending about y (weak axis)", n1, q["M"]["y"], wy.available / 12, "kip-ft",
-                        "AISC 360-22 Sect. F6: " + wy.governs, amp(q, "y")))
+                        getattr(wy, "prefix", "AISC 360-22 Sect. F6: ") + wy.governs, amp(q, "y")))
         n1, q = worst(lambda t: t["V"]["y"])
         rows.append(Row("shear, weak direction", n1, q["V"]["y"], vy.available, "kip",
-                        "AISC 360-22 Sect. G6", "shear carried by the two flanges"))
+                        getattr(vy, "source", "AISC 360-22 Sect. G6"), getattr(vy, "note", "shear carried by the two flanges")))
     rows.append(Row("combined compression and bending", name, o["val"], 1.0, "",
                     f"AISC 360-22 Sect. H1.1, {o['eq']}",
                     f"Pr/Pc = {o['P'] / chk.P_avail:.3f}; Mrx/Mcx = {o['M']['x'] * 12 / fx.M_avail:.3f}; "

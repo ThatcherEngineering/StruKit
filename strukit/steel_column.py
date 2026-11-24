@@ -31,6 +31,9 @@ def check(props, Fy, Lcx, Lcy, Lcz=None, method="ASD", E=E_STEEL):
     """Nominal and available compressive strength. Lcx, Lcy, Lcz are effective lengths
     (KL) in inches for x-axis, y-axis and torsional buckling. Lcz=None means the
     torsional length does not exceed the lateral lengths, so E4 is not checked."""
+    if props.get("type") in ("HSS-RECT", "HSS-ROUND", "PIPE"):
+        from . import hss
+        return hss.column_check(props, Fy, Lcx, Lcy, method, E)
     p = props
     missing = [k for k in REQUIRED if p.get(k) in (None, "")]
     if not p.get("bf_2tf") and not (p.get("bf") and p.get("tf")):
