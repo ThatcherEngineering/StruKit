@@ -3,7 +3,7 @@ HSS10x6x3/8 rafters with rigid knees, 18.5 ft between columns, rafters cantileve
 Inputs are the sealed report's: D 6.1 psf, ps 36.12 psf, free-roof wind 130 mph Exposure C. The roof is modelled level at the mean column height."""
 import json, sys
 W = dict(mark="WO1", V="130", V_source="sealed report 2026-030, Risk Category II", exposure="C", exposure_basis="sealed report 2026-030", h="13.27", roof="monoslope", theta="4.76",
-         L="21.75", width="131", flow="clear", flow_basis="open carport, vehicles under less than 50 percent blockage (sealed report)", Kzt="1.0", Kzt_source="sealed report 2026-030")
+         L="21.75", width="131", flow="clear", flow_basis="open carport, vehicles under less than 50 percent blockage (sealed report)", Kzt="1.0", Kzt_source="sealed report 2026-030", model_axis="Y", model_low="smaller coordinate")
 frames = [0, 10, 30, 50, 70, 90, 110, 130]
 trib = [5.5, 15, 20, 20, 20, 20, 20, 10.5]
 D, S, WD = 6.1, 36.12, 28.18

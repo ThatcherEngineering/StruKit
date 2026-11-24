@@ -675,7 +675,10 @@ FORMS = {
                 F("Kzt", "Topographic factor, Kzt", help="1.0 where Sect. 26.8.1 does not apply"),
                 F("Kzt_source", "Where Kzt comes from", "text", help="for example: no hill, ridge or escarpment, Sect. 26.8.1"),
                 F("elevation", "Ground elevation above sea level", unit="ft", required=False, help="blank = Ke taken as 1.0"),
-                F("elevation_source", "Where the elevation comes from", "text", required=False)],
+                F("elevation_source", "Where the elevation comes from", "text", required=False),
+                F("model_axis", "Building model: roof dimension L runs along", "select", options=["X", "Y"], required=False,
+                  help="fill to put this sheet's wind cases on the placed frame when it is run free to sway"),
+                F("model_low", "Building model: the low eave of a monoslope roof is at the", "select", options=["smaller coordinate", "larger coordinate"], required=False)],
         tables=[]),
     "wind_pressure": dict(
         title="Wind Velocity Pressure", code="ASCE/SEI 7-22", mark="WV",
@@ -3187,7 +3190,8 @@ def model_frame_sway(project, members):
         pl = next(pl for m, pl in B["placed"] if m["values"].get("mark") == mark)
         level_of_node.setdefault(nt, pl["level"])
     # wind force per level and direction, kips, strength level
-    need_w = any(abs(cb.factors.get("W", 0.0)) > 0 for cb in cbs)
+    need_w = any(abs(cb.factors.get("W", 0.0)) > 0 for cb in cbs) and not any(
+        m.get("kind") == "wind_free_roof" and str((m.get("values") or {}).get("model_axis") or "").strip().upper() in ("X", "Y") for m in members or [])
     wind_F = {}
     if need_w:
         winds = [m for m in members or [] if m.get("kind") == "wind_mwfrs"]
@@ -3212,6 +3216,87 @@ def model_frame_sway(project, members):
             except Exception as e:
                 problems.append(f"The wind sheet could not be used: {e}"); need_w = False
 
+    # open building: the free-roof sheet's cases as loads on the rafters (kip/in. at 1.0 W), each with the direction the wind travels
+    fr_sets = []
+    frees = [m for m in members or [] if m.get("kind") == "wind_free_roof" and str((m.get("values") or {}).get("model_axis") or "").strip().upper() in ("X", "Y")]
+    if frees and any(abs(cb.factors.get("W", 0.0)) > 0 for cb in cbs):
+        fv = frees[0]["values"]
+        try:
+            fs_, _, _ = build("wind_free_roof", fv, project)
+            fd = fs_.free_roof
+            roof_kind = str(fv.get("roof") or "")
+            if not (roof_kind.startswith("monoslope") or roof_kind.startswith("pitched")) or not fd.get("across"):
+                raise ValueError("only monoslope and pitched roofs within the range of Figures 27.3-4 and 27.3-5 are put on the frame")
+            ax = "XY".index(str(fv["model_axis"]).strip().upper()); ot = 1 - ax
+            tan_t = math.tan(math.radians(float(fv.get("theta") or 0)))
+            low_small = not str(fv.get("model_low") or "").startswith("larger")
+            raf = []                                          # (mark, position across, element list)
+            for m, pl in B["placed"]:
+                mk = m["values"].get("mark")
+                if mk in B["beam_elems"] and pl["p2"] and abs(pl["p1"][ot] - pl["p2"][ot]) <= MODEL_TOL and abs(pl["p1"][ax] - pl["p2"][ax]) > MODEL_TOL:
+                    raf.append((mk, pl["p1"][ot], B["beam_elems"][mk], min(pl["p1"][ax], pl["p2"][ax]), max(pl["p1"][ax], pl["p2"][ax])))
+            if not raf:
+                raise ValueError("no placed steel beam runs along the roof dimension L")
+            c0, c1 = min(r_[3] for r_ in raf), max(r_[4] for r_ in raf)
+            cm = (c0 + c1) / 2
+            pos = sorted({round(r_[1], 3) for r_ in raf})
+            extra = max(0.0, (float(fv.get("width") or 0) - (pos[-1] - pos[0])) / 2) if str(fv.get("width") or "").strip() else 0.0
+            trib = {}
+            for i_, q in enumerate(pos):
+                trib[q] = ((q - pos[i_ - 1]) / 2 if i_ else extra) + ((pos[i_ + 1] - q) / 2 if i_ < len(pos) - 1 else extra)
+            hmean = float(fv.get("h") or 0)
+
+            def across_set(row):
+                if roof_kind.startswith("monoslope"):
+                    travel = (-1 if low_small else 1) if row["gamma"] == 0 else (1 if low_small else -1)     # gamma = 0: from the high edge toward the low edge
+                    high = -1 if low_small else 1                                                           # the top surface is pushed toward the high side
+                else:
+                    travel, high = (1 if row["gamma"] == 0 else -1), None
+                loads = []
+                for mk, q, els, _, _ in raf:
+                    for e_ in els:
+                        mm = by_elem[e_]
+                        a_, b_ = fr.nodes[mm.i][ax] / FT, fr.nodes[mm.j][ax] / FT
+                        lo_, hi_ = min(a_, b_), max(a_, b_)
+                        if hi_ - lo_ < 1e-9:
+                            continue
+                        # share of the element on the windward half (the half the wind reaches first)
+                        on_small = max(0.0, min(hi_, cm) - lo_) / (hi_ - lo_)
+                        fw_ = on_small if travel > 0 else 1 - on_small
+                        pw = fw_ * row["pW"] + (1 - fw_) * row["pL"]
+                        w = pw * trib[round(q, 3)] / 1000.0 / FT              # kip/in., plus = toward the roof surface
+                        if high is not None:
+                            hz = w * tan_t * high
+                        else:                                                # pitched: each slope is pushed toward the ridge side it faces away from
+                            hz = (fw_ * row["pW"] * travel - (1 - fw_) * row["pL"] * travel) * tan_t * trib[round(q, 3)] / 1000.0 / FT
+                        g = [0.0, 0.0, -w]; g[ax] = hz
+                        loads.append((e_, tuple(g)))
+                side = ("from the high side" if row["gamma"] == 0 else "from the low side") if roof_kind.startswith("monoslope") else ("in +" if travel > 0 else "in -") + "XY"[ax]
+                hsum = sum(g[ax] * abs(fr.nodes[by_elem[e_].j][ax] - fr.nodes[by_elem[e_].i][ax]) for e_, g in loads)
+                push = (1 if hsum > 0 else -1) if abs(hsum) > 1e-9 else travel      # the notional load goes the way the roof is pushed (the destabilizing direction, Sect. C2.2b)
+                return dict(axis=ax, sign=push, loads=loads, label=f"wind across the roof {side}, Case {row['case']}")
+
+            by_elem = {mm.name: mm for mm in fr.members}
+            for row in fd["across"]:
+                fr_sets.append(across_set(row))
+            for travel in ((1, -1) if fd.get("parallel") else ()):
+                for case in ("A", "B"):
+                    loads = []
+                    for mk, q, els, _, _ in raf:
+                        dist_ = (q - pos[0] + extra) if travel > 0 else (pos[-1] + extra - q)
+                        zone = next((z for z in fd["parallel"] if z["x0"] - 1e-9 <= dist_ and (z["x1"] is None or dist_ < z["x1"])), fd["parallel"][-1])
+                        w = zone["p" + case] * trib[round(q, 3)] / 1000.0 / FT
+                        loads += [(e_, (0.0, 0.0, -w)) for e_ in els]
+                    fr_sets.append(dict(axis=ot, sign=travel, loads=loads, label=f"wind along the eaves in {'+' if travel > 0 else '-'}{'XY'[ot]}, Case {case}"))
+            need_w = False
+            notes.append(f"Open building: the wind cases of sheet {fv.get('mark')} are put on the beams that run along the roof dimension L, by tributary width "
+                         f"({', '.join(f'{trib[q]:g}' for q in pos)} ft): for wind across the roof the windward-half and leeward-half net pressures of each case and direction, "
+                         "normal to the roof (the roof is modelled level; the horizontal part is pressure x tan(roof angle)); for wind along the eaves the Figure 27.3-7 "
+                         "pressure by the beam's distance from the windward edge. Wind loads typed on those members under load case W are left out of these runs. "
+                         "Not included: wind on fascia, columns and framing (Figure 29.4-1), and the Sect. 27.1.5 minimum.")
+        except Exception as e:
+            problems.append(f"The open-building wind sheet could not be put on the frame: {e}")
+            fr_sets = []
     need_e = any(abs(cb.factors.get("E", 0.0)) > 0 for cb in cbs)
     eq_F, eq_mark = {}, ""
     seis = [m for m in members or [] if m.get("kind") == "seismic_elf"]
@@ -3367,6 +3452,8 @@ def model_frame_sway(project, members):
         return (r_ + 8.0 / 9.0 * mm_, "H1-1a") if r_ >= 0.2 else (r_ / 2 + mm_, "H1-1b")
 
     drift, col_res, beam_res, worst_ratio, runs, unchecked = {}, {}, {}, 0.0, 0, set()
+    free_elems = {e_ for st_ in fr_sets for e_, _ in st_["loads"]}
+    audit = []
     for cb in cbs:
         fW = cb.factors.get("W", 0.0) if need_w else 0.0
         fE = cb.factors.get("E", 0.0) if eq_F else 0.0
@@ -3377,15 +3464,19 @@ def model_frame_sway(project, members):
                 grav_nodes[nd] = grav_nodes.get(nd, 0.0) + f_ * P
                 if level_of_node.get(nd) in Y:
                     Y[level_of_node[nd]] += f_ * P
+        wsets = fr_sets if (fr_sets and abs(cb.factors.get("W", 0.0)) > 0) else None
         for nm_, c, w in beam_loads:
             f_ = cb.factors.get(c, 0.0) * alpha
+            if c == "W" and wsets and nm_ in free_elems:
+                continue
             if f_:
                 grav_members.append((nm_, "global", (0, 0, -f_ * w)))
                 lv = level_of_node.get(next(mm for mm in fr.members if mm.name == nm_).i)
                 if lv in Y:
                     Y[lv] += f_ * w * mlen[nm_]
-        dirs = ((0, 1), (0, -1), (1, 1), (1, -1))
-        for axis, sign in dirs:
+        dirs = [(st_["axis"], st_["sign"], st_) for st_ in wsets] if wsets else [(0, 1, None), (0, -1, None), (1, 1, None), (1, -1, None)]
+        for axis, sign, wset in dirs:
+            gm_run = grav_members + ([(e_, "global", tuple(cb.factors["W"] * alpha * g_ for g_ in g)) for e_, g in wset["loads"]] if wset else [])
             nl = {nd: [0, 0, -P, 0, 0, 0] for nd, P in grav_nodes.items()}
             for lv in order:
                 lat = 0.003 * max(Y[lv], 0.0) + (abs(fW) * alpha * wind_F[lv][axis] if (fW and lv in wind_F) else 0.0) + abs(fE) * alpha * eq_F.get(lv, 0.0)
@@ -3395,13 +3486,15 @@ def model_frame_sway(project, members):
                     for nd, share in spread(lv, 1 - axis, 0.0001 * max(Y[lv], 0.0)).items():
                         nl.setdefault(nd, [0, 0, 0, 0, 0, 0])[1 - axis] += share
             nl = {nd: tuple(v_) for nd, v_ in nl.items()}
-            label = f"{cb.name}, " + ("wind" if fW else "seismic" if fE else "notional load") + f" in {'+' if sign > 0 else '-'}{'XY'[axis]}"
+            label = f"{cb.name}, " + (wset["label"] if wset else ("wind" if fW else "seismic" if fE else "notional load") + f" in {'+' if sign > 0 else '-'}{'XY'[axis]}")
             try:
-                r1, r2, slack = solve_run(nl, grav_members)
+                r1, r2, slack = solve_run(nl, gm_run)
             except Frame3DError as e:
                 msg = str(e).replace("frame: ", "")
                 return dict(levels=[], columns=[], beams=[], braces=[], notes=notes, problems=problems + [f"{label}: {msg}. A frame free to sway needs braces, moment connections, fixed column bases, or a mix, in each direction."])
             runs += 1
+            audit.append(dict(run=label, Rx=sum(float(v_[0]) for v_ in r2.reactions.values()) / alpha, Ry=sum(float(v_[1]) for v_ in r2.reactions.values()) / alpha,
+                              Rz=sum(float(v_[2]) for v_ in r2.reactions.values()) / alpha))
             for lv in order:
                 d1 = sum(r1.disp[nd][axis] for nd, _ in level_tops[lv]) / len(level_tops[lv]) / alpha
                 d2 = sum(r2.disp[nd][axis] for nd, _ in level_tops[lv]) / len(level_tops[lv]) / alpha
@@ -3415,7 +3508,7 @@ def model_frame_sway(project, members):
                 P = st_[0][0][0]                             # compression at the base end
                 Ms = max(max(abs(a_[4]), abs(b_[4])) for a_, b_ in st_)
                 Mw = max(max(abs(a_[5]), abs(b_[5])) for a_, b_ in st_)
-                cur = col_res.setdefault(mark, dict(mark=mark, P=0.0, P_combo="", Ms=0.0, Ms_combo="", Mw=0.0, Mw_combo="", ratio=None, eq="", ratio_combo=""))
+                cur = col_res.setdefault(mark, dict(mark=mark, T=0.0, T_combo="", P=0.0, P_combo="", Ms=0.0, Ms_combo="", Mw=0.0, Mw_combo="", ratio=None, eq="", ratio_combo=""))
                 S_ = strength.get(mark)
                 if S_:
                     for a_, b_ in st_:
@@ -3425,6 +3518,8 @@ def model_frame_sway(project, members):
                                 cur.update(ratio=val, eq=eq, ratio_combo=label, at=dict(P=P_ / alpha, Mx=abs(Mx_) / alpha, My=abs(My_) / alpha), cap=dict(Pc=S_["Pc"], Mcx=S_["Mcx"], Mcy=S_["Mcy"]))
                 if P / alpha > cur["P"]:
                     cur.update(P=P / alpha, P_combo=label)
+                if -P / alpha > cur["T"]:
+                    cur.update(T=-P / alpha, T_combo=label)
                 if Ms / alpha > cur["Ms"]:
                     cur.update(Ms=Ms / alpha, Ms_combo=label)
                 if Mw / alpha > cur["Mw"]:
@@ -3488,6 +3583,21 @@ def model_frame_sway(project, members):
                 hs = (elev[lv] - zb) * 12.0
                 elastic.append(dict(load=kind_, level=lv, dir="XY"[axis], disp=d_, story=d_ - below, h=hs, ratio=(hs / (d_ - below)) if d_ - below > 1e-9 else None))
                 below, zb = d_, elev[lv]
+    for st_ in fr_sets:
+        try:
+            r1, _, _ = solve_run({}, [(e_, "global", g) for e_, g in st_["loads"]], sf=1.0, second=False)
+        except Frame3DError:
+            continue
+        below, zb = 0.0, base_el
+        for lv in order:
+            d_ = abs(sum(r1.disp[nd][st_["axis"]] for nd, _ in level_tops[lv]) / len(level_tops[lv]))
+            hs = (elev[lv] - zb) * 12.0
+            cur = next((e_ for e_ in elastic if e_["load"] == "wind" and e_["level"] == lv and e_["dir"] == "XY"[st_["axis"]]), None)
+            if cur is None:
+                elastic.append(dict(load="wind", level=lv, dir="XY"[st_["axis"]], disp=d_, story=d_ - below, h=hs, ratio=(hs / (d_ - below)) if d_ - below > 1e-9 else None, case=st_["label"]))
+            elif d_ > cur["disp"]:
+                cur.update(disp=d_, story=d_ - below, ratio=(hs / (d_ - below)) if d_ - below > 1e-9 else None, case=st_["label"])
+            below, zb = d_, elev[lv]
     if elastic:
         notes.append("Drift table: each lateral load alone at its strength level (1.0 W; the seismic story forces), first-order, full stiffness. Wind drift limits are the "
                      "designer's; seismic displacements go to the seismic sheet's drift check (Cd, Ie and the Table 12.12-1 limit).")
@@ -3503,12 +3613,12 @@ def model_frame_sway(project, members):
                         row["de"] = f"{max(got):.4f}"
                 m["values"]["de_source"] = "3D frame analysis, first-order, full stiffness, the larger of the two directions"
                 break
-    notes.insert(0, f"Direct analysis method, AISC 360-22 Chapter C: {runs} second-order runs ({len(cbs)} {method_} combinations x four directions), stiffness x 0.8, "
+    notes.insert(0, f"Direct analysis method, AISC 360-22 Chapter C: {runs} second-order runs ({len(cbs)} {method_} combinations; each in four directions, or once for each wind case of an open building), stiffness x 0.8, "
                     "notional load 0.003 of the gravity load at each level with tau_b = 1.0" + (", loads x 1.6 and results / 1.6 (ASD)" if alpha != 1 else "") + ".")
     if worst_ratio > 1.5:
         problems.append(f"Second-order drift is {worst_ratio:.2f} times first-order drift (at the reduced stiffness). The frame is flexible; stiffen it.")
     return dict(levels=[drift[k_] for k_ in sorted(drift, key=lambda t: (elev[t[0]], t[1]))], columns=list(col_res.values()), beams=list(beam_res.values()), braces=list(brace_res.values()),
-                notes=notes, problems=problems, ratio=worst_ratio, runs=runs, method=method_, elastic=elastic, members=out_members,
+                notes=notes, problems=problems, ratio=worst_ratio, runs=runs, method=method_, elastic=elastic, members=out_members, audit=audit,
                 units="drift in.; column P kips (compression at the base), moments kip-in. about the column's strong and weak axes; beam M kip-in., V and axial kips")
 
 

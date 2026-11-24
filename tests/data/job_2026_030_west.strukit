@@ -112,7 +112,9 @@
     "flow": "clear",
     "flow_basis": "open carport, vehicles under less than 50 percent blockage (sealed report)",
     "Kzt": "1.0",
-    "Kzt_source": "sealed report 2026-030"
+    "Kzt_source": "sealed report 2026-030",
+    "model_axis": "Y",
+    "model_low": "smaller coordinate"
    }
   },
   {
