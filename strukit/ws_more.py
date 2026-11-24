@@ -2747,13 +2747,21 @@ def wind_free_hip_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, t
 
 
 def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, beam_source, tp, plate_Fy, plate_Fu, plate_source,
-                       d, group, threads, n, spacing, lev, leh, a, holes, weld, FEXX, loads, combos, method):
+                       d, group, threads, n, spacing, lev, leh, a, holes, weld, FEXX, loads, combos, method, support=None):
     """Single-plate (shear tab) connection of a wide-flange beam to an HSS column: conventional configuration of AISC Manual Part 10 as worked
     in AISC Design Guide 24 (2nd Ed.) Example 5.1.  One vertical row of 2 to 5 bolts (the rows of Manual Table 10-9 confirmed in the documents
-    on hand).  holes: "STD" or "SSLT" (horizontal short slots) in the plate; standard holes in the beam web.  loads: dict(case, P) kips."""
+    on hand).  holes: "STD" or "SSLT" (horizontal short slots) in the plate; standard holes in the beam web.  loads: dict(case, P) kips.
+    column blank with support = dict(name, t, Fu): the plate is welded to a column flange or girder web instead (AISC Design Examples v16
+    Example II.A-17A); the HSS wall checks are replaced by the support thickness that matches the weld."""
     from . import bolts
     from .steel_beam import SteelInputError
-    for nm, v in (("the source of the column Fy and Fu", col_source), ("the source of the beam Fu", beam_source), ("the source of the plate Fy and Fu", plate_source)):
+    hss_col = bool((column or "").strip())
+    if not hss_col:
+        if not support or not support.get("t") or not support.get("Fu") or not (support.get("name") or "").strip():
+            raise WorksheetError(f"{mark}: give the HSS column, or the support the plate is welded to with its thickness and Fu")
+    elif col_Fy is None or col_Fu is None:
+        raise WorksheetError(f"{mark}: the HSS column needs Fy and Fu")
+    for nm, v in ((("the source of the column Fy and Fu", col_source),) if hss_col else ()) + (("the source of the beam Fu", beam_source), ("the source of the plate Fy and Fu", plate_source)):
         if not (v or "").strip():
             raise WorksheetError(f"{mark}: {nm} is blank")
     if not combos:
@@ -2765,10 +2773,12 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
         raise WorksheetError(f"{mark}: this sheet covers one vertical row of 2 to 5 bolts (conventional configuration, AISC Manual Table 10-9); {n} entered")
     if holes not in ("STD", "SSLT"):
         raise WorksheetError(f"{mark}: plate holes are STD (standard) or SSLT (horizontal short slots)")
-    try:
-        col = shapes.hss(column)
-    except Exception:
-        raise WorksheetError(f"{mark}: '{column}' is not an HSS or pipe in the shapes table")
+    col = None
+    if hss_col:
+        try:
+            col = shapes.hss(column)
+        except Exception:
+            raise WorksheetError(f"{mark}: '{column}' is not an HSS or pipe in the shapes table")
     try:
         bm = shapes.get(beam)
     except Exception:
@@ -2793,8 +2803,9 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     totals = {cb.name: abs(sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)) for cb in combos}
     worst = max(totals, key=lambda k: totals[k])
     R = totals[worst]
-    tw, t = bm["tw"], col["tdes"]
-    rnd = col["type"] != "HSS-RECT"
+    tw = bm["tw"]
+    t = col["tdes"] if hss_col else support["t"]
+    rnd = hss_col and col["type"] != "HSS-RECT"
     Ln = footing_line
     e = a / 2
     C = bolts.group_coefficient(n, spacing, e)
@@ -2813,9 +2824,15 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     Rbs = av(Rbs_n, 0.75, 2.00)
     w_req = 0.625 * tp
     D16 = weld * 16
-    t_min = D16 * FEXX / min(30.2 * col_Fy, 22.6 * col_Fu)
-    punch = av(col_Fu * t * L ** 2 / 5, 0.75, 2.00)
-    if rnd:
+    if not hss_col:
+        t_min = 3.09 * D16 / support["Fu"]
+        punch = lam = lam_r = None
+    else:
+        t_min = D16 * FEXX / min(30.2 * col_Fy, 22.6 * col_Fu)
+        punch = av(col_Fu * t * L ** 2 / 5, 0.75, 2.00)
+    if not hss_col:
+        pass
+    elif rnd:
         lam, lam_r, lam_txt, lam_src = col["D_t"], 0.11 * 29000 / col_Fy, "D / t", "AISC Manual Part 10; 0.11 E / Fy"
     else:
         lam, lam_r, lam_txt, lam_src = max(col["b_t"], col["h_t"]), 1.40 * math.sqrt(29000 / col_Fy), "b / t", "AISC Manual Part 10; AISC 360-22 Table B4.1a Case 6"
@@ -2831,10 +2848,14 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
              Ln("Shear rupture, 0.60 Fu Anv", Vr, "kip", "Eq. J4-4", f"Anv = (l - n (dh + 1/16)) tp = {Anv:.2f} in2; " + fac(0.75, 2.00)),
              Ln("Block shear", Rbs, "kip", "Eq. J4-5, Ubs = 1.0", f"Agv = {Agv_b:.2f}, Anv = {Anv_b:.2f}, Ant = {Ant_b:.3f} in2; Rn = {Rbs_n:.0f} kip"),
              Ln("Weld each side, 5/8 tp", w_req, "in", "AISC Manual Part 10", f"provided {weld:g} in. fillet each side, develops the plate"),
-             Ln("Column wall to develop the weld, tmin", t_min, "in", "AISC Design Guide 24 Sect. 3.4, Tables 3-2 and 3-3",
-                f"D FEXX / min(30.2 Fy, 22.6 Fu), D = {D16:g} sixteenths; wall t = {t:g} in."),
-             Ln("Column wall shear yielding (punching), Fu t l^2 / 5", punch, "kip-in", "AISC Manual Eq. 10-10", f"against R a = {R:.1f} x {a:g} = {R * a:.0f} kip-in; " + fac(0.75, 2.00)),
-             Ln(f"Column wall {lam_txt}", f"{lam:.1f}", "", lam_src, f"limit {lam_r:.1f}: the column wall is not slender")]
+             ]
+    if hss_col:
+        steps += [Ln("Column wall to develop the weld, tmin", t_min, "in", "AISC Design Guide 24 Sect. 3.4, Tables 3-2 and 3-3",
+                     f"D FEXX / min(30.2 Fy, 22.6 Fu), D = {D16:g} sixteenths; wall t = {t:g} in."),
+                  Ln("Column wall shear yielding (punching), Fu t l^2 / 5", punch, "kip-in", "AISC Manual Eq. 10-10", f"against R a = {R:.1f} x {a:g} = {R * a:.0f} kip-in; " + fac(0.75, 2.00)),
+                  Ln(f"Column wall {lam_txt}", f"{lam:.1f}", "", lam_src, f"limit {lam_r:.1f}: the column wall is not slender")]
+    else:
+        steps.append(Ln("Support thickness to match the weld, tmin = 3.09 D / Fu", t_min, "in", "AISC Manual Eq. 9-2", f"D = {D16:g} sixteenths, Fu = {support['Fu']:g} ksi; {support['name'].strip()}, t = {t:g} in."))
     rows = [Row("Bolt shear with eccentricity", worst, R, C * rn, "kip", "AISC 360-22 Sect. J3.7; AISC Manual Tables 7-6, 10-9", f"({n}) {d:g} in. {group}-{threads}, C = {C:.2f}"),
             Row("Bolt bearing and tearout, plate", worst, R, brg_p, "kip", "AISC 360-22 Sect. J3.11a", f"plate {tp:g} in."),
             Row("Bolt bearing and tearout, beam web", worst, R, brg_w, "kip", "AISC 360-22 Sect. J3.11a", f"{shapes.normalize(beam)}, tw = {tw:g} in."),
@@ -2842,27 +2863,33 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
             Row("Plate shear rupture", worst, R, Vr, "kip", "AISC 360-22 Eq. J4-4", ""),
             Row("Plate block shear", worst, R, Rbs, "kip", "AISC 360-22 Eq. J4-5", ""),
             Row("Fillet weld size, each side", "", w_req, weld, "in", "AISC Manual Part 10", "5/8 of the plate thickness"),
-            Row("Column wall thickness at the weld", "", t_min, t, "in", "AISC Design Guide 24 Table 3-3", ""),
-            Row("Column wall shear yielding (punching)", worst, R * a, punch, "kip-in", "AISC Manual Eq. 10-10", ""),
-            Row(f"Column wall slenderness {lam_txt}", "", lam, lam_r, "", lam_src, "")]
+            ]
+    if hss_col:
+        rows += [Row("Column wall thickness at the weld", "", t_min, t, "in", "AISC Design Guide 24 Table 3-3", ""),
+                 Row("Column wall shear yielding (punching)", worst, R * a, punch, "kip-in", "AISC Manual Eq. 10-10", ""),
+                 Row(f"Column wall slenderness {lam_txt}", "", lam, lam_r, "", lam_src, "")]
+    else:
+        rows.append(Row("Support thickness at the weld", "", t_min, t, "in", "AISC Manual Eq. 9-2", support["name"].strip()))
     if holes == "STD":
         rows.append(Row("Plate or beam web thickness, rotational ductility", "", min(tp, tw), d / 2 + 1 / 16, "in", "AISC Manual Table 10-9", "the thinner of the two; d / 2 + 1/16 in."))
-    info = [("Column", f"{shapes.normalize(column)}, Fy = {col_Fy:g} ksi, Fu = {col_Fu:g} ksi ({col_source.strip()})"),
+    info = [("Column", f"{shapes.normalize(column)}, Fy = {col_Fy:g} ksi, Fu = {col_Fu:g} ksi ({col_source.strip()})") if hss_col else
+            ("Support", f"{support['name'].strip()}, t = {t:g} in., Fu = {support['Fu']:g} ksi"),
             ("Beam", f"{shapes.normalize(beam)}, tw = {tw:g} in., Fu = {beam_Fu:g} ksi ({beam_source.strip()})"),
             ("Plate", f"{tp:g} in. x {leh + a:g} in. x {L:g} in., Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()})"),
             ("Bolts", f"({n}) {d:g} in. {group}, threads {threads}, at {spacing:g} in.; {'standard holes' if holes == 'STD' else 'horizontal short-slotted holes'} in the plate, standard holes in the beam web"),
             ("Weld", f"{weld:g} in. fillet each side of the plate, full length, E{FEXX:g}XX")]
     load_lines = [f"{x['case']:<3} {x['P']:>8.2f} kip" + (f"   {x['label']}" if x.get("label") else "") for x in loads]
-    sheet = SimpleSheet(mark, "Single-Plate Shear Connection to an HSS Column", "Connection", method, info, load_lines, [(cb.name, cb.source) for cb in combos],
+    sheet = SimpleSheet(mark, "Single-Plate Shear Connection to an HSS Column" if hss_col else "Single-Plate Shear Connection", "Connection", method, info, load_lines, [(cb.name, cb.source) for cb in combos],
                         f"Calculation ({worst})", steps, rows,
                         ["Conventional configuration (AISC Manual Part 10): one vertical row of bolts, a not over 3-1/2 in., horizontal edge distances at least 2 bolt diameters in the plate "
                          "and in the beam web, bolts snug-tight or pretensioned bearing-type.",
                          "The beam end reaction is vertical shear only; the beam is not coped at the connection.",
-                         "The plate is welded to the flat of the column wall" + (" (round column: plate fitted to the wall)" if rnd else "") + ", centred on the column."],
+                         ("The plate is welded to the flat of the column wall" + (" (round column: plate fitted to the wall)" if rnd else "") + ", centred on the column.") if hss_col else
+                         "The support is stiff enough to take the connection as a conventional single plate (a column flange, or a girder web with framing on both sides or checked separately)."],
                         ["plate length against the beam T dimension (half of T to T, AISC Manual Part 10)", "axial force or torsion in the beam", "coped beams",
-                         "the column as a member", "erection and fit-up"])
+                         "the column as a member" if hss_col else "the support member, and its web or flange for the beam reaction", "erection and fit-up"])
     sheet.blocks.append(dict(title="Connection Elevation", head="Connection Elevation",
-                             picture=("single_plate", dict(n=n, s=spacing, lev=lev, leh=leh, a=a, L=L, tp=tp, weld=weld, column=shapes.normalize(column), beam=shapes.normalize(beam), d=d))))
+                             picture=("single_plate", dict(n=n, s=spacing, lev=lev, leh=leh, a=a, L=L, tp=tp, weld=weld, column=shapes.normalize(column) if hss_col else support["name"].strip(), beam=shapes.normalize(beam), d=d))))
     sheet.single_plate = dict(R=R, C=C, rn=rn, e=e, brg_p=brg_p, brg_w=brg_w, Vy=Vy, Vr=Vr, Rbs=Rbs, punch=punch, t_min=t_min, L=L, lam=lam, lam_r=lam_r)
     return sheet
 

@@ -69,3 +69,28 @@ def test_screen():
     s, kind, _ = calc.build("single_plate", v, proj)
     assert kind == "simple" and s.ok and s.single_plate["R"] == 50.0
     assert calc.results("single_plate", dict(v, col_source=""), proj)["state"] == "incomplete"
+
+
+@pytest.mark.parametrize("method, cb, R, vy, vr, bs", [("LRFD", Combo("1.2D + 1.6L", {"D": 1.2, "L": 1.6}, "t"), 49.6, 86.4, 58.5, 65.3), ("ASD", Combo("D + L", {"D": 1, "L": 1}, "t"), 33.0, 57.6, 39.0, 43.6)])
+def test_design_example_ii_a_17a_plate_to_column_flange(method, cb, R, vy, vr, bs, tmp_path):
+    """AISC Design Examples v16 Example II.A-17A: W16x50 to a W14x90 column flange (tf = 0.710 in.), 1/4 in. plate, (4) 3/4 in. Group 120-N bolts at 3 in.,
+    standard holes, a = 3 in., lev = 1-1/4, leh = 1-1/2, 3/16 in. fillets, D = 8 kips, L = 25 kips.  Published: e = 1.50 in., C = 3.54 (table interpolation),
+    shear yielding 86.4 / 57.6, rupture 58.5 / 39.0, block shear Rn 87.1 kips, 5/8 tp = 0.156 in., support tmin 0.143 in., thickness limit 0.438 in."""
+    s = single_plate_sheet("SP2", "", None, None, "", "W16X50", 65, "A992", 0.25, 50, 65, "A572 Gr. 50", 0.75, "A325", "N", 4, 3.0, 1.25, 1.5, 3.0, "STD", 0.1875, 70,
+                           [dict(case="D", P=8.0), dict(case="L", P=25.0)], [cb], method, support=dict(name="W14x90 column flange", t=0.710, Fu=65))
+    o = s.single_plate
+    assert o["R"] == pytest.approx(R) and o["e"] == 1.5 and o["C"] == pytest.approx(3.54, abs=0.02) and o["L"] == 11.5
+    assert o["Vy"] == pytest.approx(vy, rel=0.005) and o["Vr"] == pytest.approx(vr, rel=0.006) and o["Rbs"] == pytest.approx(bs, rel=0.006)
+    assert o["t_min"] == pytest.approx(0.143, abs=0.001) and o["punch"] is None
+    assert [r.check for r in s.rows][-2:] == ["Support thickness at the weld", "Plate or beam web thickness, rotational ductility"] and s.rows[-1].capacity == pytest.approx(0.4375) and s.ok
+    calcsheet.simple_pdf(s, str(tmp_path / "s.pdf"), "Job", "AISC 360-22", "Nov 23, 2026")
+
+
+def test_screen_needs_one_support():
+    v = dict(mark="SP1", column="", col_Fy="", col_Fu="", col_source="", support_name="", support_t="", support_Fu="", beam="W21X44", beam_Fu="65", beam_source="A992", tp="0.375", plate_Fy="50",
+             plate_Fu="65", plate_source="A572", d="0.75", group="A325", threads="N", n="5", spacing="3", lev="1.25", leh="1.5", a="2", holes="SSLT", weld="0.25", FEXX="70",
+             loads=[dict(case="D", P="12.5", label="")])
+    proj = dict(name="T", number="1", address="", method="ASD", date="2026-11-23", combos=[dict(expr="D + L", source="typed")])
+    assert calc.results("single_plate", v, proj)["state"] == "incomplete"
+    s, _, _ = calc.build("single_plate", dict(v, support_name="W14x90 flange", support_t="0.71", support_Fu="65"), proj)
+    assert s.title == "Single-Plate Shear Connection" and s.ok
