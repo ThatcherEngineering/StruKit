@@ -979,3 +979,19 @@ def enclosure(walls, roof_gross, roof_open=0.0):
         cls = "partially enclosed" if pe else "partially open"
         gov = pe[0]["name"] if pe else None
     return dict(classification=cls, GCpi=GCPI[cls], walls=out, governing=gov)
+
+
+# ASCE/SEI 7-22 Figure 29.4-1 (chimneys, tanks and similar structures), read from the page image (pdf p. 364): Cf at h/D = 1, 7, 25.
+OTHER_CF = {"square": (1.3, 1.4, 2.0), "square_diagonal": (1.0, 1.1, 1.5), "hexagonal": (1.0, 1.2, 1.4),
+            "round_smooth": (0.5, 0.6, 0.7), "round_rough": (0.7, 0.8, 0.9), "round_very_rough": (0.8, 1.0, 1.2), "round_slow": (0.7, 0.8, 1.2)}
+FLAT_MEMBER_CF = 2.0        # Figure 29.4-2, flat-sided members, solidity under 0.1 (pdf p. 364)
+
+
+def other_cf(section, h_over_D):
+    """Force coefficient Cf of Figure 29.4-1 with straight-line interpolation on h/D (note 2); h/D under 1 takes the value at 1 and over 25 the
+    value at 25. section: a key of OTHER_CF ("round_slow" is a round section with D sqrt(qz) of 2.5 or less)."""
+    if section not in OTHER_CF:
+        raise WindError("wind: unknown cross section for Figure 29.4-1")
+    a, b, c = OTHER_CF[section]
+    r = max(1.0, min(25.0, h_over_D))
+    return a + (b - a) * (r - 1) / 6 if r <= 7 else b + (c - b) * (r - 7) / 18

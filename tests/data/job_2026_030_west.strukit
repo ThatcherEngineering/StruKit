@@ -114,7 +114,8 @@
     "Kzt": "1.0",
     "Kzt_source": "sealed report 2026-030",
     "model_axis": "Y",
-    "model_low": "smaller coordinate"
+    "model_low": "smaller coordinate",
+    "fascia": "1.25"
    }
   },
   {

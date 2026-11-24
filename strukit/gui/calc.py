@@ -676,6 +676,8 @@ FORMS = {
                 F("Kzt_source", "Where Kzt comes from", "text", help="for example: no hill, ridge or escarpment, Sect. 26.8.1"),
                 F("elevation", "Ground elevation above sea level", unit="ft", required=False, help="blank = Ke taken as 1.0"),
                 F("elevation_source", "Where the elevation comes from", "text", required=False),
+                F("fascia", "Fascia depth at the roof edges (rafter + purlin + panel)", unit="ft", required=False,
+                  help="for the wind on the roof edge when this sheet's cases are put on the building model's frame; blank = none"),
                 F("model_axis", "Building model: roof dimension L runs along", "select", options=["X", "Y"], required=False,
                   help="fill to put this sheet's wind cases on the placed frame when it is run free to sway"),
                 F("model_low", "Building model: the low eave of a monoslope roof is at the", "select", options=["smaller coordinate", "larger coordinate"], required=False)],
@@ -3249,7 +3251,7 @@ def model_frame_sway(project, members):
             def across_set(row):
                 if roof_kind.startswith("monoslope"):
                     travel = (-1 if low_small else 1) if row["gamma"] == 0 else (1 if low_small else -1)     # gamma = 0: from the high edge toward the low edge
-                    high = -1 if low_small else 1                                                           # the top surface is pushed toward the high side
+                    high = 1 if low_small else -1                                                           # downward pressure pushes the roof toward the high side
                 else:
                     travel, high = (1 if row["gamma"] == 0 else -1), None
                 loads = []
@@ -3272,11 +3274,60 @@ def model_frame_sway(project, members):
                         g = [0.0, 0.0, -w]; g[ax] = hz
                         loads.append((e_, tuple(g)))
                 side = ("from the high side" if row["gamma"] == 0 else "from the low side") if roof_kind.startswith("monoslope") else ("in +" if travel > 0 else "in -") + "XY"[ax]
-                hsum = sum(g[ax] * abs(fr.nodes[by_elem[e_].j][ax] - fr.nodes[by_elem[e_].i][ax]) for e_, g in loads)
-                push = (1 if hsum > 0 else -1) if abs(hsum) > 1e-9 else travel      # the notional load goes the way the roof is pushed (the destabilizing direction, Sect. C2.2b)
+                loads += drag(ax, travel)
+                hsum = sum(g[ax] * math.dist(fr.nodes[by_elem[e_].i], fr.nodes[by_elem[e_].j]) for e_, g in loads)
+                push = (1 if hsum > 0 else -1) if abs(hsum) > 1e-9 else travel      # the notional load goes the way the frame is pushed (the destabilizing direction, Sect. C2.2b)
                 return dict(axis=ax, sign=push, loads=loads, label=f"wind across the roof {side}, Case {row['case']}")
 
             by_elem = {mm.name: mm for mm in fr.members}
+            fascia = float(fv.get("fascia") or 0) if str(fv.get("fascia") or "").strip() else 0.0
+            qf = fd["factor"]                                 # qh Kd G, psf
+            col_drag = []                                     # (element, force per inch of height at Cf, by wind axis)
+            for m, pl in B["placed"]:
+                mk = m["values"].get("mark")
+                if mk not in col_nodes:
+                    continue
+                pr_ = None
+                for get in (shapes.hss, shapes.get):
+                    try:
+                        pr_ = get(m["values"].get("shape") or ""); break
+                    except Exception:
+                        continue
+                if pr_ is None:
+                    continue
+                Hc = col_nodes[mk][3]
+                if pr_.get("OD"):
+                    Dc = pr_["OD"] / 12.0
+                    sect = "round_slow" if Dc * math.sqrt(fd["qh"]) <= 2.5 else "round_smooth"
+                    wide = Dc
+                else:
+                    dims = [pr_.get(k) for k in ("B", "Ht", "d", "bf") if pr_.get(k)]
+                    Dc, wide, sect = min(dims) / 12.0, max(dims) / 12.0, "square"
+                cf = _wind.other_cf(sect, Hc / Dc)
+                col_drag.append(("col:" + mk, qf * cf * wide / 1000.0 / FT, cf))
+
+            def drag(axis_, travel_):
+                """Wind on the columns (Figure 29.4-1) and on the roof-edge fascia (Figure 29.4-2, flat-sided member), Eq. 29.4-1 with qh, along the wind."""
+                out_ = []
+                for e_, w_, _ in col_drag:
+                    g = [0.0, 0.0, 0.0]; g[axis_] = w_ * travel_
+                    out_.append((e_, tuple(g)))
+                if fascia > 0:
+                    if axis_ == ax:                           # wind across the roof: the two eave edges, to every rafter by its tributary width
+                        for mk, q, els, r0, r1 in raf:
+                            F_ = 2 * qf * FLAT_CF * fascia * trib[round(q, 3)] / 1000.0
+                            for e_ in els:
+                                g = [0.0, 0.0, 0.0]; g[axis_] = F_ / ((r1 - r0) * FT) * travel_
+                                out_.append((e_, tuple(g)))
+                    else:                                     # wind along the eaves: each end edge onto its end rafter
+                        for mk, q, els, r0, r1 in raf:
+                            if round(q, 3) in (pos[0], pos[-1]):
+                                for e_ in els:
+                                    g = [0.0, 0.0, 0.0]; g[axis_] = qf * FLAT_CF * fascia / 1000.0 / FT * travel_ * (2 if len(pos) == 1 else 1)
+                                    out_.append((e_, tuple(g)))
+                return out_
+
+            FLAT_CF = _wind.FLAT_MEMBER_CF
             for row in fd["across"]:
                 fr_sets.append(across_set(row))
             for travel in ((1, -1) if fd.get("parallel") else ()):
@@ -3287,13 +3338,17 @@ def model_frame_sway(project, members):
                         zone = next((z for z in fd["parallel"] if z["x0"] - 1e-9 <= dist_ and (z["x1"] is None or dist_ < z["x1"])), fd["parallel"][-1])
                         w = zone["p" + case] * trib[round(q, 3)] / 1000.0 / FT
                         loads += [(e_, (0.0, 0.0, -w)) for e_ in els]
+                    loads += drag(ot, travel)
                     fr_sets.append(dict(axis=ot, sign=travel, loads=loads, label=f"wind along the eaves in {'+' if travel > 0 else '-'}{'XY'[ot]}, Case {case}"))
             need_w = False
             notes.append(f"Open building: the wind cases of sheet {fv.get('mark')} are put on the beams that run along the roof dimension L, by tributary width "
                          f"({', '.join(f'{trib[q]:g}' for q in pos)} ft): for wind across the roof the windward-half and leeward-half net pressures of each case and direction, "
                          "normal to the roof (the roof is modelled level; the horizontal part is pressure x tan(roof angle)); for wind along the eaves the Figure 27.3-7 "
                          "pressure by the beam's distance from the windward edge. Wind loads typed on those members under load case W are left out of these runs. "
-                         "Not included: wind on fascia, columns and framing (Figure 29.4-1), and the Sect. 27.1.5 minimum.")
+                         "Wind on the columns: F = qh Kd G Cf Af (Eq. 29.4-1) with Cf from Figure 29.4-1 by each column's height / width ("
+                         + ", ".join(sorted({f"{c_:.2f}" for _, _, c_ in col_drag})) + "), along the wind"
+                         + (f"; on the fascia, {fascia:g} ft deep on both roof edges that face the wind, Cf = 2.0 (Figure 29.4-2, flat-sided member), the far edge not taken as shielded" if fascia > 0 else "; no fascia depth is entered, so none on the roof edges")
+                         + ". qh is used for both. Not included: wind on purlins and other framing below the roof, and the Sect. 27.1.5 minimum.")
         except Exception as e:
             problems.append(f"The open-building wind sheet could not be put on the frame: {e}")
             fr_sets = []
