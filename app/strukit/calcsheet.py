@@ -428,8 +428,8 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
           ("Effective Length", f"Kx = {sheet.Kx:g}, Ky = {sheet.Ky:g}  ({sheet.k_source})"),
           ("Ends", ("fixed base; top free to move for bending about " + " and ".join(sheet.sway))
            if sheet.sway else "held against sideways movement top and bottom"),
-          ("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"),
-          ("", f"tf = {pr['tf']:g} in, tw = {pr['tw']:g} in"),
+          *([("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"), ("", f"tf = {pr['tf']:g} in, tw = {pr['tw']:g} in")] if hss_kind is None else
+            [("Dimensions", (f"OD = {pr['OD']:g} in" if hss_kind == "round" else f"H = {pr['Ht']:g} in, B = {pr['B']:g} in") + f", design t = {pr['tdes']:g} in")]),
           ("Properties", f"A = {pr['A']:g} in2, rx = {pr['rx']:g} in, ry = {pr['ry']:g} in"),
           ("", f"Ix = {pr['Ix']:g} in4, Iy = {pr['Iy']:g} in4, Zx = {pr['Zx']:g} in3, Zy = {pr['Zy']:g} in3"),
           ("Source", "AISC Shapes Database v16.0")])
@@ -439,7 +439,7 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     ey = top - 88
     _sketch_title(c, ex, top, "LOADING", centred=True)
     braces = [sheet.Ly_ft * 12 * k for k in range(1, 50) if sheet.Ly_ft * k < sheet.height_ft - 1e-6]
-    w = memberart.steel_column_elevation(c, ex, ey, eh, pr["d"], pr["tf"], sheet.height_ft * 12, braces)
+    w = memberart.steel_column_elevation(c, ex, ey, eh, depth_in, pr["tf"] if hss_kind is None else max(pr["tdes"], depth_in * 0.06), sheet.height_ft * 12, braces)
     c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
     c.line(ex, ey + eh + 16, ex, ey + eh + 6)
     t = c.beginPath(); t.moveTo(ex, ey + eh + 1); t.lineTo(ex - 3, ey + eh + 7); t.lineTo(ex + 3, ey + eh + 7); t.close()
@@ -465,8 +465,12 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
            + "width enlarged for clarity")
     sx = 530
     _sketch_title(c, sx, top, "SECTION", centred=True)
-    memberart.steel_section(c, sx, top - 44, 46, 50, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
-    _small(c, sx, top - 80, "to scale")
+    if hss_kind is None:
+        memberart.steel_section(c, sx, top - 44, 46, 50, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
+    else:
+        _hss_section(c, sx - 4, top - 40, 40.0, dict(kind=hss_kind, OD=pr.get("OD"), H=pr.get("Ht"), B=pr.get("B"), t=pr["tdes"]))
+    if hss_kind is None:
+        _small(c, sx, top - 80, "to scale")
     p.y = min(bottom_left, ey - 24) - 2
 
     if sheet.lateral:                                     # sideways load arrows on the picture

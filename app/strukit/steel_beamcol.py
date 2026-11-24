@@ -32,6 +32,9 @@ class Strength:
 
 def weak_axis_flexure(props, Fy, method="ASD", E=E_STEEL):
     """Mn and available strength for bending about the y axis. AISC 360-22 Sect. F6."""
+    if props.get("type") in ("HSS-RECT", "HSS-ROUND", "PIPE"):
+        from . import hss
+        return hss.weak_flexure(props, Fy, method, E)
     p = props
     for k in ("Zy", "Sy"):
         if p.get(k) in (None, ""):
@@ -64,6 +67,9 @@ def weak_axis_flexure(props, Fy, method="ASD", E=E_STEEL):
 def weak_axis_shear(props, Fy, method="ASD", E=E_STEEL):
     """Shear strength for load applied in the weak direction (parallel to the flanges).
     AISC 360-22 Sect. G6: each flange is a shear-resisting element; an I-shape has two."""
+    if props.get("type") in ("HSS-RECT", "HSS-ROUND", "PIPE"):
+        from . import hss
+        return hss.weak_shear(props, Fy, method, E)
     p = props
     lam = p["bf_2tf"] if p.get("bf_2tf") else p["bf"] / (2 * p["tf"])
     kv = 1.2

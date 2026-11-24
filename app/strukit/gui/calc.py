@@ -48,7 +48,7 @@ FORMS = {
                                                 F("ratio", "Span /"), F("source", "Source", "text")])]),
     "steel_column": dict(
         title="Steel Column", code="AISC 360-22", mark="C",
-        fields=[F("shape", "Section", "shape"), F("Fy", "Fy", unit="ksi"), F("height", "Height", unit="ft"),
+        fields=[F("shape", "Section", "shape_col", help="W, M, S or HP shape, HSS or pipe"), F("Fy", "Fy", unit="ksi"), F("height", "Height", unit="ft"),
                 F("ends", "Top of column", "select",
                   options=["held sideways (braced)", "free about x (cantilever, strong axis)",
                            "free about y (cantilever, weak axis)", "free both ways (cantilever)"]),
