@@ -4127,6 +4127,15 @@ def bent_building(project, members, spec):
     e0, e1 = num("end_start", "Roof past the first bent", False, 0) or 0.0, num("end_end", "Roof past the last bent", False, 0) or 0.0
     cFy, rFy = num("col_Fy", "Column Fy", low=1), num("raf_Fy", "Rafter Fy", low=1)
     rise = (num("slope", "Roof rise in 12", False, 0) or 0.0) / 12.0
+    pitched = str(sp.get("roof") or "").strip().lower().startswith("pitch")
+    xr = num("ridge", "Ridge from column line A", False, 0)
+    if pitched:
+        if not rise:
+            problems.append("A pitched roof needs its rise in 12")
+        if cs is not None:
+            xr = cs / 2 if xr is None else xr
+            if not 0 < xr < cs:
+                problems.append("The ridge must be between the two column lines")
     col, raf = str(sp.get("col_shape") or "").strip(), str(sp.get("raf_shape") or "").strip()
     for nm, lab in ((col, "Column section"), (raf, "Rafter section")):
         if not nm:
@@ -4178,6 +4187,14 @@ def bent_building(project, members, spec):
             new.append(dict(kind=kind_col, values=v))
         rows = [dict(case=c, kind="uniform", mag=f"{q * trib / 1000:.5f}", x1="", x2="", label=f"roof {dict(D='dead', S='snow', Lr='live')[c]} load {q:g} psf x {trib:g} ft")
                 for c, q in loads if q]
+        if pitched:
+            zr = xr * rise                                    # ridge above the line A column tops
+            base_ = dict(shape=raf, Fy=g(rFy), support_type="", more_spans="", bracing="continuous", brace_pts="", self_weight="yes", defl=[], at_level="Roof", at_x1=g(x), at_x2=g(x))
+            new.append(dict(kind="steel_beam", values=dict(base_, mark=f"{pre}R{i}A", span=g(xr), oh_left=g(cl) if cl else "", oh_right="", loads=[dict(r_) for r_ in rows],
+                                                           at_y1=g(-cl), at_y2=g(xr), at_dz1=g(round(-cl * rise, 4)), at_dz2=g(round(zr, 4)), at_fix_j="moment")))
+            new.append(dict(kind="steel_beam", values=dict(base_, mark=f"{pre}R{i}B", span=g(cs - xr), oh_left="", oh_right=g(ch) if ch else "", loads=[dict(r_) for r_ in rows],
+                                                           at_y1=g(xr), at_y2=g(cs + ch), at_dz1=g(round(zr, 4)), at_dz2=g(round(zr - (cs - xr + ch) * rise, 4)), at_fix_i="moment")))
+            continue
         new.append(dict(kind="steel_beam", values=dict(mark=f"{pre}R{i}", shape=raf, Fy=g(rFy), support_type="", span=g(cs), more_spans="", oh_left=g(cl) if cl else "", oh_right=g(ch) if ch else "",
                    bracing="continuous", brace_pts="", self_weight="yes", loads=rows, defl=[], at_level="Roof", at_x1=g(x), at_y1=g(-cl), at_x2=g(x), at_y2=g(cs + ch),
                    **(dict(at_dz1=g(round(-cl * rise, 4)), at_dz2=g(round((cs + ch) * rise, 4))) if rise else {}))))
@@ -4196,6 +4213,11 @@ def bent_building(project, members, spec):
         mdl["grids_x"] = [dict(name=str(i), at=g(x)) for i, x in enumerate(xs, 1)]
     if not mdl.get("grids_y"):
         mdl["grids_y"] = [dict(name="A", at="0"), dict(name="B", at=g(cs))]
+    if pitched:
+        return dict(project=proj, members=list(members or []) + new, added=len(new), problems=[],
+                    notes=[f"{len(xs)} bents: {2 * len(xs)} columns and {2 * len(xs)} rafter halves joined rigidly at the ridge, roof {g(xs[-1] + e0 + e1)} ft long by {g(cs + cl + ch)} ft wide, "
+                           f"rising {g(rise * 12)} in 12 from {g(H)} ft at column line A to the ridge {g(xr)} ft from line A at {g(round(H + xr * rise, 3))} ft. "
+                           "Each rafter half's own sheet treats the ridge as a support; for a ridge frame the 3D frame run is the check."])
     return dict(project=proj, members=list(members or []) + new, added=len(new), problems=[],
                 notes=[f"{len(xs)} bents: {2 * len(xs)} columns and {len(xs)} rafters, roof {g(xs[-1] + e0 + e1)} ft long by {g(cs + cl + ch)} ft wide, "
                        + (f"rising {g(rise * 12)} in 12 from {g(H)} ft at column line A to {g(round(H + cs * rise, 3))} ft at line B." if rise else f"level at {g(H)} ft.")])
