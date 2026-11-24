@@ -225,3 +225,33 @@ def test_unbalanced_snow_on_pitched_bents():
     # a single-slope building has no ridge: no unbalanced runs
     mono = calc.bent_building(proj, [SN], dict(spec, roof="", slope="1"))
     assert calc.model_frame_sway(mono["project"], mono["members"])["runs"] == 4
+
+
+def test_eave_portal_bays_carry_the_building_lengthwise():
+    """Zach, 2026-11-24 02:39: wide-flange beams tie the bents together and make portal frames along the building. Quick start with W12X26 eave
+    beams in bays 3 and 6, pinned struts in the other bays, and bases fixed for sway across the bents only (pinned along the building)."""
+    src = json.load(open(os.path.join(HERE, "data", "job_2026_030_west.strukit")))
+    proj = {k: v for k, v in src["project"].items() if k != "model"}
+    spec = dict(n="8", spacing="10, 20, 20, 20, 20, 20, 20", end_start="0.5", end_end="0.5", col_spacing="18.5", cant_low="1", cant_high="2.25", height="11", slope="1",
+                col_shape="HSS8X8X1/2", col_Fy="46", raf_shape="HSS10X6X3/8", raf_Fy="46", base="fixed for sway in Y only", D="6.1", S="36.12", Lr="",
+                eave_shape="W12X26", eave_Fy="50", eave_bays="3, 6", strut_shape="C8X11.5", strut_Fy="36")
+    out = calc.bent_building(proj, [src["members"][0]], spec)
+    assert out["problems"] == [] and out["added"] == 24 + 14
+    eb = {m["values"]["mark"]: m["values"] for m in out["members"] if m["values"].get("mark", "")[:1] == "E"}
+    assert sorted(k for k in eb if not k.startswith("ES")) == ["E3A", "E3B", "E6A", "E6B"] and len(eb) == 14
+    assert eb["E3A"]["at_fix_i"] == "moment" and "at_fix_i" not in eb["ES1A"]
+    assert float(eb["E3B"]["at_dz1"]) == pytest.approx(18.5 / 12, abs=1e-3) and "at_dz1" not in eb["E3A"]      # line B column tops are higher
+    assert calc._base_flags("fixed for sway in Y only") == (1, 1, 1, 1, 0, 1) and calc._base_flags("fixed for sway in X only") == (1, 1, 1, 0, 1, 1)
+    assert calc._base_flags("") == (1, 1, 1, 0, 0, 1) and calc._base_flags("fixed") == (1, 1, 1, 1, 1, 1)
+    r = calc.model_frame_sway(out["project"], out["members"])
+    assert r["problems"] == []
+    bm = {b["mark"]: b for b in r["beams"]}
+    # the portal beams take the frame moment; a pinned strut has only its own weight in bending (w L^2 / 8 = 0.0115 x 20^2 / 8 x 1.2 = 0.69 kip-ft)
+    assert all(float(bm[k]["M"]) / 12 > 5 for k in ("E3A", "E3B", "E6A", "E6B"))
+    assert all(float(bm[k]["M"]) / 12 < 1.0 for k in bm if k.startswith("ES"))
+    assert all(float(c["ratio"]) < 1 for c in r["columns"]) and all(float(b["ratio"]) < 1 for b in r["beams"])
+    # with the bases pinned along the building and no portal bay, nothing holds the building lengthwise: the run says so
+    bare = calc.bent_building(proj, [src["members"][0]], dict(spec, eave_shape="", eave_bays="", strut_shape=""))
+    assert calc.model_frame_sway(bare["project"], bare["members"])["problems"]
+    # input checks
+    assert calc.bent_building(proj, [], dict(spec, eave_bays="9"))["problems"] and calc.bent_building(proj, [], dict(spec, eave_bays=""))["problems"]

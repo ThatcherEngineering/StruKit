@@ -730,7 +730,7 @@ function placementCard(m, changed) {
     { key: "at_dz2", label: "Right end above the level", unit: "ft", type: "text", required: false });
   if (m.kind === "steel_beam") fs.push({ key: "at_fix_i", label: "Left end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false, help: "blank = pinned (shear connection)" },
     { key: "at_fix_j", label: "Right end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false });
-  if (m.kind === "steel_column" || m.kind === "hss_column") fs.push({ key: "at_base_fix", label: "Base (3D frame)", type: "select", options: ["pinned", "fixed"], required: false, help: "blank = pinned" },
+  if (m.kind === "steel_column" || m.kind === "hss_column") fs.push({ key: "at_base_fix", label: "Base (3D frame)", type: "select", options: ["pinned", "fixed", "fixed for sway in X only", "fixed for sway in Y only"], required: false, help: "blank = pinned" },
     { key: "at_web", label: "Web runs along (3D frame)", type: "select", options: ["X", "Y"], required: false, help: "the direction in which the column bends about its strong axis; blank = X" });
   return el("div", {}, el("h2", {}, "Place in the Building Model (optional)"), el("div", { class: "grid" }, fs.map(f => field(f, m.values, changed))),
     el("div", { class: "help" }, wall ? "Placed walls take their wind shear from “Send the wind to the wall lines” on the Project page."
@@ -869,6 +869,8 @@ function modelCard(changed) {
   const bentFields = [["n", "Number of bents"], ["spacing", "Bent spacing, ft (one number, or a list)"], ["end_start", "Roof past the first bent, ft"], ["end_end", "Roof past the last bent, ft"],
     ["col_spacing", "Column spacing across the bent, ft"], ["cant_low", "Rafter cantilever past line A, ft"], ["cant_high", "Rafter cantilever past line B, ft"], ["height", "Height to the top of the line A columns, ft"], ["slope", "Roof rise in 12, up toward line B (blank = level)"],
     ["col_shape", "Column section"], ["col_Fy", "Column Fy, ksi"], ["raf_shape", "Rafter section"], ["raf_Fy", "Rafter Fy, ksi"], ["D", "Roof dead load, psf"], ["S", "Roof snow load, psf"], ["Lr", "Roof live load, psf"],
+    ["eave_shape", "Eave beam section along the building, moment-connected (optional)"], ["eave_Fy", "Eave beam Fy, ksi"], ["eave_bays", "Portal bays with eave beams (bay numbers, or all)"],
+    ["strut_shape", "Eave strut section in the other bays, pinned (optional)"], ["strut_Fy", "Eave strut Fy, ksi"],
     ["prefix", "Mark prefix (optional)"]];
   const bentBtn = el("button", { class: "btn", onclick: async () => {
     let out;
@@ -881,7 +883,7 @@ function modelCard(changed) {
   const bentCard = el("details", {}, el("summary", {}, "Start a building of bents (carport, pavilion, shed frame)"),
     el("div", { class: "help" }, "Two columns and a rafter at every bent, rigid at the column tops. The roof loads go on each rafter by its tributary width. Everything added can be edited on its own screen afterward."),
     el("div", { class: "grid" }, bentFields.map(([k, label]) => field({ key: k, label, type: "text", required: false }, BENT, () => {})),
-      field({ key: "base", label: "Column bases", type: "select", options: ["pinned", "fixed"], required: false }, BENT, () => {}),
+      field({ key: "base", label: "Column bases", type: "select", options: ["pinned", "fixed", "fixed for sway in Y only", "fixed for sway in X only"], required: false, help: "The bents stand in the Y direction; X runs along the building. 'Fixed for sway in Y only' fixes the bases for the bents and leaves them pinned along the building." }, BENT, () => {}),
       field({ key: "roof", label: "Roof", type: "select", options: ["single slope or level", "pitched (ridge between the column lines)"], required: false }, BENT, () => {}),
       field({ key: "ridge", label: "Pitched: ridge from column line A, ft (blank = midway)", type: "text", required: false }, BENT, () => {})),
     el("div", { class: "fillbar" }, bentBtn));

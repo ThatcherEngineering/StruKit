@@ -3106,7 +3106,7 @@ def _model_frame_build(project, members, sway=False):
         web_y = str(v.get("at_web") or "").strip().upper().startswith("Y")
         fr.member("col:" + v["mark"], nb, nt, E_, G_, sec["A"], sec["Ix"], sec["Iy"], sec["J"], up=(0.0, 1.0, 0.0) if web_y else None)
         col_nodes[v["mark"]] = (nb, nt, sec, ztop - elev[pl["base"]])
-        col_fixed[v["mark"]] = str(v.get("at_base_fix") or "").strip().lower().startswith("fix")
+        col_fixed[v["mark"]] = _base_flags(v.get("at_base_fix"))
         held.add(nt)
         level_tops.setdefault(pl["level"], []).append((nt, pl["p1"]))
     # beams, cut at every point where something meets them
@@ -3215,7 +3215,7 @@ def _model_frame_build(project, members, sway=False):
             fr.support(nd, (1, 1, 0, 0, 0, 0))
     for mark, (nb, nt, _, _) in col_nodes.items():
         if nb in base_nodes:
-            fr.support(nb, "fixed" if col_fixed[mark] else (1, 1, 1, 0, 0, 1))
+            fr.support(nb, col_fixed[mark])
     for nd, mark, x in extra:
         fr.support(nd, "fixed")
     if extra:
@@ -4166,6 +4166,19 @@ def sheet_pdf(kind, values, project, path):
     return path
 
 
+def _base_flags(text):
+    """Support of a frame column base from the placement choice: "pinned" (or blank), "fixed", "fixed for sway in X only" (held against turning
+    about the Y axis, free about X) or "fixed for sway in Y only". Twist is always held. Flags are (ux, uy, uz, rx, ry, rz)."""
+    t = str(text or "").strip().lower()
+    if not t.startswith("fix"):
+        return (1, 1, 1, 0, 0, 1)
+    if "x only" in t:
+        return (1, 1, 1, 0, 1, 1)
+    if "y only" in t:
+        return (1, 1, 1, 1, 0, 1)
+    return (1, 1, 1, 1, 1, 1)
+
+
 def bent_building(project, members, spec):
     """Fills the building model with a row of two-column bents (carport, pavilion, shed frame): levels, grids, a column pair and a rafter at every
     bent, with the roof loads on each rafter by its tributary width. spec (text values, feet unless noted): n (bents), spacing (one number, or a
@@ -4221,6 +4234,32 @@ def bent_building(project, members, spec):
         if not problems and (len(spac) != n - 1 or any(v <= 0 for v in spac)):
             problems.append(f"Bent spacing: give one spacing, or {n - 1} spacings for {n} bents")
     pre = str(sp.get("prefix") or "").strip()
+    # beams along the building at the column tops: moment-connected in the portal bays, pinned struts in the others
+    eave, strut = str(sp.get("eave_shape") or "").strip(), str(sp.get("strut_shape") or "").strip()
+    eFy = num("eave_Fy", "Eave beam Fy", bool(eave), 1)
+    sFy = num("strut_Fy", "Eave strut Fy", bool(strut), 1)
+    portal = set()
+    bays_txt = str(sp.get("eave_bays") or "").strip().lower()
+    for nm, lab in ((eave, "Eave beam section"), (strut, "Eave strut section")):
+        if nm:
+            try:
+                _frame_section("steel_beam", dict(shape=nm))
+            except ValueError as e:
+                problems.append(f"{lab}: {e}")
+    if eave and n is not None and not problems:
+        if not bays_txt:
+            problems.append("Portal bays is blank: type the bay numbers with eave beams (bay 1 is between bents 1 and 2), or 'all'")
+        elif bays_txt == "all":
+            portal = set(range(1, n))
+        else:
+            try:
+                portal = {int(t) for t in bays_txt.replace(";", ",").split(",") if t.strip()}
+            except ValueError:
+                problems.append("Portal bays: type bay numbers separated by commas, or 'all'")
+            if portal and (min(portal) < 1 or max(portal) > n - 1):
+                problems.append(f"Portal bays: with {n} bents the bays are 1 to {n - 1}")
+    elif bays_txt and not eave:
+        problems.append("Portal bays are listed but the eave beam section is blank")
     kind_col = None
     if col:
         try:
@@ -4242,13 +4281,14 @@ def bent_building(project, members, spec):
         xs.append(xs[-1] + v)
     marks = {(m.get("values") or {}).get("mark") for m in members or []}
     new = []
-    fixed = str(sp.get("base") or "").strip().lower().startswith("fix")
+    base_txt = str(sp.get("base") or "").strip().lower()
+    base_txt = base_txt if base_txt.startswith("fix") else "pinned"
     g = lambda v: f"{v:g}"
     for i, x in enumerate(xs, 1):
         trib = ((x - xs[i - 2]) / 2 if i > 1 else e0) + ((xs[i] - x) / 2 if i < len(xs) else e1)
         for line, y in (("A", 0.0), ("B", cs)):
             v = dict(mark=f"{pre}C{i}{line}", shape=col, Fy=g(cFy), height=g(H), self_weight="yes", loads=[], at_level="Roof", at_base="Base", at_x1=g(x), at_y1=g(y),
-                     at_base_fix="fixed" if fixed else "pinned")
+                     at_base_fix=base_txt)
             v.update(dict(Fy_source="", Kx="1.0", Ky="1.0", k_source="direct analysis method (the frame run)", moments=[]) if kind_col == "hss_column" else
                      dict(ends="held sideways (braced)", Kx="1.0", Ky="1.0", k_source="direct analysis method (the frame run)", lateral=[], leaning=[], drift=[]))
             new.append(dict(kind=kind_col, values=v))
@@ -4265,6 +4305,22 @@ def bent_building(project, members, spec):
         new.append(dict(kind="steel_beam", values=dict(mark=f"{pre}R{i}", shape=raf, Fy=g(rFy), support_type="", span=g(cs), more_spans="", oh_left=g(cl) if cl else "", oh_right=g(ch) if ch else "",
                    bracing="continuous", brace_pts="", self_weight="yes", loads=rows, defl=[], at_level="Roof", at_x1=g(x), at_y1=g(-cl), at_x2=g(x), at_y2=g(cs + ch),
                    **(dict(at_dz1=g(round(-cl * rise, 4)), at_dz2=g(round((cs + ch) * rise, 4))) if rise else {}))))
+    n_eave = n_strut = 0
+    if eave or strut:
+        zB = (xr * rise - (cs - xr) * rise) if pitched else cs * rise          # line B column tops above line A's
+        for j in range(1, len(xs)):
+            sec, fy, rigid = (eave, eFy, True) if j in portal else (strut, sFy, False)
+            if not sec:
+                continue
+            n_eave, n_strut = n_eave + (2 if rigid else 0), n_strut + (0 if rigid else 2)
+            for line, y, dz in (("A", 0.0, 0.0), ("B", cs, zB)):
+                v = dict(mark=f"{pre}{'E' if rigid else 'ES'}{j}{line}", shape=sec, Fy=g(fy), support_type="", span=g(xs[j] - xs[j - 1]), more_spans="", oh_left="", oh_right="",
+                         bracing="at points", brace_pts="", self_weight="yes", loads=[], defl=[], at_level="Roof", at_x1=g(xs[j - 1]), at_y1=g(y), at_x2=g(xs[j]), at_y2=g(y))
+                if dz:
+                    v.update(at_dz1=g(round(dz, 4)), at_dz2=g(round(dz, 4)))
+                if rigid:
+                    v.update(at_fix_i="moment", at_fix_j="moment")
+                new.append(dict(kind="steel_beam", values=v))
     clash = sorted(m["values"]["mark"] for m in new if m["values"]["mark"] in marks)
     if clash:
         return dict(project=project, members=members, added=0, problems=["These marks are already in the project: " + ", ".join(clash[:8]) + (" ..." if len(clash) > 8 else "") + ". Give a prefix."])
@@ -4280,13 +4336,22 @@ def bent_building(project, members, spec):
         mdl["grids_x"] = [dict(name=str(i), at=g(x)) for i, x in enumerate(xs, 1)]
     if not mdl.get("grids_y"):
         mdl["grids_y"] = [dict(name="A", at="0"), dict(name="B", at=g(cs))]
+    extra = []
+    if n_eave:
+        extra.append(f"{n_eave} eave beams ({eave}) at the column tops with moment connections at both ends, in bay{'s' if len(portal) > 1 else ''} "
+                     + ", ".join(str(j) for j in sorted(portal)) + " of each column line: with the columns they are the portal frames along the building. "
+                     "Their own sheets carry only their weight, braced at the ends; the 3D frame run is their check. The beam-to-column moment connection is not checked.")
+    if n_strut:
+        extra.append(f"{n_strut} eave struts ({strut}) with pinned ends in the other bays; they carry axial force between the bents in the 3D frame run.")
+    if base_txt != "pinned" and "only" in base_txt:
+        extra.append("Column bases: " + base_txt + " (free to turn in the other direction).")
     if pitched:
         return dict(project=proj, members=list(members or []) + new, added=len(new), problems=[],
-                    notes=[f"{len(xs)} bents: {2 * len(xs)} columns and {2 * len(xs)} rafter halves joined rigidly at the ridge, roof {g(xs[-1] + e0 + e1)} ft long by {g(cs + cl + ch)} ft wide, "
+                    notes=extra + [f"{len(xs)} bents: {2 * len(xs)} columns and {2 * len(xs)} rafter halves joined rigidly at the ridge, roof {g(xs[-1] + e0 + e1)} ft long by {g(cs + cl + ch)} ft wide, "
                            f"rising {g(rise * 12)} in 12 from {g(H)} ft at column line A to the ridge {g(xr)} ft from line A at {g(round(H + xr * rise, 3))} ft. "
                            "Each rafter half's own sheet treats the ridge as a support; for a ridge frame the 3D frame run is the check."])
     return dict(project=proj, members=list(members or []) + new, added=len(new), problems=[],
-                notes=[f"{len(xs)} bents: {2 * len(xs)} columns and {len(xs)} rafters, roof {g(xs[-1] + e0 + e1)} ft long by {g(cs + cl + ch)} ft wide, "
+                notes=extra + [f"{len(xs)} bents: {2 * len(xs)} columns and {len(xs)} rafters, roof {g(xs[-1] + e0 + e1)} ft long by {g(cs + cl + ch)} ft wide, "
                        + (f"rising {g(rise * 12)} in 12 from {g(H)} ft at column line A to {g(round(H + cs * rise, 3))} ft at line B." if rise else f"level at {g(H)} ft.")])
 
 
