@@ -88,7 +88,7 @@ FORMS = {
         tables=[]),
     "tension_member": dict(
         title="Steel Tension Member", code="AISC 360-22", mark="TM",
-        fields=[F("shape", "Section", "shape_any", help="W, M, S, HP, C, MC, HSS or pipe"), F("Fy", "Fy", unit="ksi"), F("Fu", "Fu", unit="ksi"),
+        fields=[F("shape", "Section", "shape_tension", help="W, M, S, HP, C, MC, HSS, pipe or single angle (for example L3x3x3/16)"), F("Fy", "Fy", unit="ksi"), F("Fu", "Fu", unit="ksi"),
                 F("steel_source", "Where Fy and Fu come from", "text", help="for example: ASTM A992"), F("length", "Length", unit="ft"),
                 F("n_holes", "Bolt holes across the critical section", required=False, help="blank or 0 for a welded end"),
                 F("bolt_d", "Bolt diameter", unit="in", required=False), F("hole_t", "Thickness of the part the holes are in", unit="in", required=False),

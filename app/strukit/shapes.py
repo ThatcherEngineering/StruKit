@@ -106,3 +106,30 @@ def channel(name):
 
 def channel_labels():
     return list(_load_c())
+
+
+_L_PATH = os.path.join(os.path.dirname(__file__), "data", "aisc_shapes_v16_L.csv")
+_l_cache = None
+
+
+def _load_l():
+    global _l_cache
+    if _l_cache is None:
+        with open(_L_PATH, newline="") as f:
+            _l_cache = {}
+            for r in csv.DictReader(line for line in f if not line.startswith("#")):
+                _l_cache[r["label"]] = {k: (v if k in ("type", "label") else float(v)) for k, v in r.items() if v != ""}
+    return _l_cache
+
+
+def angle(name):
+    """Properties of a single angle by its Manual label, e.g. 'L3x3x3/16', 'L6x4x1/2'. rz is the radius of gyration about the minor principal axis."""
+    table = _load_l()
+    key = normalize(name)
+    if key not in table:
+        raise ShapeError(f"shape '{name}' is not in the {SOURCE} single angle table")
+    return dict(table[key])
+
+
+def angle_labels():
+    return list(_load_l())
