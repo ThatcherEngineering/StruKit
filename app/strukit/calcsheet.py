@@ -2225,14 +2225,19 @@ def _flush_end_plate_picture(c, top, d):
     c.rect(xc - 1.2, y_top - (D - tf) * sc, 2.4, (D - 2 * tf) * sc, fill=1, stroke=0)
     c.setFillColorRGB(*INK)
     y1, y2 = y_top - (tf + pfi) * sc, y_top - (D - tf - pfi) * sc
-    for yy in (y1, y2):
+    rows_y = [y1, y2] + ([y1 - d["pb"] * sc] if d.get("pb") else [])
+    for yy in rows_y:
         for sx in (-1, 1):
             c.circle(xc + sx * g / 2 * sc, yy, max(db / 2 * sc, 1.8), fill=1, stroke=0)
+    if d.get("pb"):
+        memberart._dim_v(c, y1 - d["pb"] * sc, y1, xc + bp / 2 * sc + 14, f"pb = {d['pb']:g} in", FR, ext_from=xc + g / 2 * sc)
     memberart._dim_h(c, xc - bp / 2 * sc, xc + bp / 2 * sc, yt + 14, f"bp = {bp:g} in", FR, ext_from=yt)
     memberart._dim_h(c, xc - g / 2 * sc, xc + g / 2 * sc, yb - 14, f"g = {g:g} in", FR, ext_from=y2)
     memberart._dim_v(c, y1, y_top - tf * sc, xc + bp / 2 * sc + 14, f"pfi = {pfi:g} in", FR, ext_from=xc + g / 2 * sc)
     memberart._dim_v(c, y_top - D * sc, y_top, xc - bp / 2 * sc - 16, f"d = {D:g} in", FR, ext_from=xc - bp / 2 * sc)
     _small(c, xc, yb - 30, "face of the end plate, to scale; tension flange at the top")
+    if not d.get("column"):
+        return yb - 38
     # side view
     xs = RM - 170                                      # outside face of the column flange
     c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xs, yb - 14, dc * sc, Hp * sc + 14, fill=1, stroke=1)
@@ -2242,7 +2247,7 @@ def _flush_end_plate_picture(c, top, d):
     c.setFillColorRGB(0.90, 0.92, 0.95); c.rect(xs - tp * sc - 70, y_top - D * sc, 70, D * sc, fill=1, stroke=1)
     c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xs - tp * sc - 70, y_top - tf * sc, 70, tf * sc, fill=1, stroke=0); c.rect(xs - tp * sc - 70, y_top - D * sc, 70, tf * sc, fill=1, stroke=0)
     c.setLineWidth(1.3)
-    for yy in (y1, y2):
+    for yy in rows_y:
         c.line(xs - tp * sc - 5, yy, xs + tcf * sc + 5, yy)
     c.setLineWidth(0.9); c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawString(xs - tp * sc - 66, y_top - D * sc / 2, d["beam"]); c.drawString(xs + tcf * sc + 8, yb + Hp * sc / 2, d["column"])

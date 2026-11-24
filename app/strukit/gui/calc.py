@@ -223,9 +223,14 @@ FORMS = {
         tables=[T("cases", "Combined loads", [F("name", "Combination or run", "text"), F("P", "Axial compression", unit="kip"), F("Mx", "Moment, column strong axis", unit="kip-ft"),
                                               F("My", "Moment, column weak axis", unit="kip-ft")])]),
     "flush_end_plate": dict(
-        title="Two-Bolt Flush End-Plate Moment Connection", code="AISC 360-22", mark="FEP",
+        title="Flush End-Plate Moment Connection (two or four tension bolts)", code="AISC 360-22", mark="FEP",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"),
-                F("column", "Column (the beam frames to its flange at the column top)", "shape"), F("col_Fy", "Column Fy", unit="ksi"), F("col_Fu", "Column Fu", unit="ksi"),
+                F("n_rows", "Rows of tension bolts (two bolts a row)", "select", options=["1", "2"], required=False, help="blank = 1"),
+                F("pb", "Spacing between the two rows, pb", unit="in", required=False),
+                F("col_side", "Checks on the support", "select", options=["column flange with a cap plate (two-bolt only)", "beam side only"], required=False,
+                  help="blank = column flange with a cap plate"),
+                F("column", "Column (the beam frames to its flange at the column top)", "shape", required=False), F("col_Fy", "Column Fy", unit="ksi", required=False),
+                F("col_Fu", "Column Fu", unit="ksi", required=False),
                 F("steel_source", "Source of the beam and column steel", "text"),
                 F("bp", "End plate width", unit="in"), F("tp", "End plate thickness", unit="in"), F("plate_Fy", "Plate Fy", unit="ksi"), F("plate_Fu", "Plate Fu", unit="ksi"),
                 F("plate_source", "Source of the plate Fy and Fu", "text"),
@@ -234,8 +239,8 @@ FORMS = {
                 F("g", "Gage", unit="in"), F("pfi", "Inside of the tension flange to the bolts, pfi", unit="in"),
                 F("w_flange", "Flange fillet weld, both sides", unit="in"), F("w_web", "Web fillet weld, both sides", unit="in"),
                 F("below", "End plate past the compression flange weld", unit="in", help="from the outside of the flange weld to the end of the plate"),
-                F("tcap", "Column cap plate thickness", unit="in"), F("bcp", "Column cap plate width", unit="in"),
-                F("w_cap_flange", "Cap plate to column flange fillet (one side)", unit="in"), F("w_cap_web", "Cap plate to column web fillets (both sides)", unit="in"),
+                F("tcap", "Column cap plate thickness", unit="in", required=False), F("bcp", "Column cap plate width", unit="in", required=False),
+                F("w_cap_flange", "Cap plate to column flange fillet (one side)", unit="in", required=False), F("w_cap_web", "Cap plate to column web fillets (both sides)", unit="in", required=False),
                 F("FEXX", "Electrode strength", unit="ksi")],
         tables=[T("loads", "Loads at the connection", [CASE, F("M", "Moment", unit="kip-ft"), F("T", "Beam axial tension", unit="kip", required=False), F("V", "Shear", unit="kip", required=False),
                                                        F("label", "Note", "text", required=False)]),
@@ -1577,11 +1582,17 @@ def build(kind, values, project):
         if not loads and not runs:
             r.miss.append("No load is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
-        args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), r.text("column"), r.num("col_Fy"), r.num("col_Fu"), r.text("steel_source"), r.num("bp"), r.num("tp"), r.num("plate_Fy"),
-                r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("g"), r.num("pfi"), r.num("w_flange"), r.num("w_web"), r.num("below"),
-                r.num("tcap"), r.num("bcp"), r.num("w_cap_flange"), r.num("w_cap_web"), r.num("FEXX"))
+        cside = not str(values.get("col_side") or "").startswith("beam side")
+        nrow = 2 if str(values.get("n_rows") or "").strip() == "2" else 1
+        cn = lambda key: r.num(key, cside, label=r.labels[key]) if cside else None
+        args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), (r.text("column", False) if cside else ""), cn("col_Fy"), cn("col_Fu"), r.text("steel_source"), r.num("bp"), r.num("tp"),
+                r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("g"), r.num("pfi"), r.num("w_flange"), r.num("w_web"),
+                r.num("below"), cn("tcap"), cn("bcp"), cn("w_cap_flange"), cn("w_cap_web"), r.num("FEXX"))
+        if cside and not r.text("column", False):
+            r.miss.append("Column is blank")
+        pb_ = r.num("pb", nrow == 2, label="Spacing between the two rows")
         r.done()
-        return ws_more.flush_end_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
+        return ws_more.flush_end_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or ""), n_rows=nrow, pb=pb_, col_side=cside), "simple", {}
     if kind == "cap_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], P=x["P"], M=x["M"]) for x in r.rows("runs")]
