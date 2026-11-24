@@ -2481,3 +2481,71 @@ def stair_stringer_sheet(mark, shape, Fy, run_ft, riser_in, tread_in, trib_ft, d
         "Not checked on this sheet: the treads and risers (300 lb concentrated load, ASCE/SEI 7-22 Sect. 4.15), the end connections, "
         "landings and their framing, axial force in the stringer, vibration."]
     return sheet
+
+
+def snow_corner_sheet(mark, pg, pg_source, W2, W2_source, ps_lower, ps_source, walls):
+    """Intersecting snow drifts at a reentrant corner, ASCE/SEI 7-22 Sect. 7.7.3: the drift
+    against each of the two walls by Sect. 7.7.1 (snow.lower_roof), and where they overlap the
+    larger of the two drift depths. walls: two dicts(name, step, lu_upper, lu_lower): the
+    height of the upper roof above the lower roof at that wall, the upper roof length and the
+    lower roof length, both measured perpendicular to that wall."""
+    for nm, v in (("the source of the ground snow load", pg_source), ("the source of W2", W2_source), ("the source of the balanced load on the lower roof", ps_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if len(walls) != 2:
+        raise WorksheetError(f"{mark}: a reentrant corner has two walls")
+    L = footing_line
+    res = []
+    try:
+        for w in walls:
+            res.append(snow.lower_roof(pg, W2, ps_lower, w["lu_upper"], w["lu_lower"], w["step"]))
+    except snow.SnowError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    g = res[0].gamma
+    steps = [L("gamma = 0.13 pg + 14", g, "pcf", "ASCE/SEI 7-22 Eq. 7.7-1", "not more than 30 pcf"),
+             L("hb = ps / gamma", res[0].hb, "ft", "Sect. 7.7.1", f"ps = {ps_lower:g} psf")]
+    dr = []
+    for w, r in zip(walls, res):
+        nm = w["name"]
+        if not r.required:
+            steps.append(L(f"{nm}: drift", "not required", "", "Sect. 7.7.1", r.why))
+            dr.append(dict(name=nm, h=0.0, w=0.0, pd=0.0, kind=""))
+            continue
+        d = r.governing
+        lu = w["lu_upper"] if d.kind == "leeward" else w["lu_lower"]
+        steps += [L(f"{nm}: hc = step - hb", r.hc, "ft", "Sect. 7.7.1", f"step {w['step']:g} ft"),
+                  L(f"{nm}: hd, {d.kind} drift" + (" = 0.75 x Eq. 7.6-1" if d.kind == "windward" else ""), d.hd_eq, "ft", "Eq. 7.6-1, Sect. 7.7.1, 7.7.3",
+                    f"lu = {lu:g} ft perpendicular to this wall, W2 = {W2:g}"),
+                  L(f"{nm}: drift height", d.height, "ft", "Sect. 7.7.1", "not more than hc"),
+                  L(f"{nm}: width w", d.width, "ft", "Sect. 7.7.1", ""),
+                  L(f"{nm}: pd = height x gamma", d.pd, "psf", "Sect. 7.7.1", "at the wall")]
+        dr.append(dict(name=nm, h=d.height, w=d.width, pd=d.pd, kind=d.kind))
+    a, b = dr
+    hmax = max(a["h"], b["h"])
+    steps.append(L("at the corner: the larger drift height", hmax, "ft", "Sect. 7.7.3", f"surcharge {hmax * g:.1f} psf; total {ps_lower + hmax * g:.1f} psf"))
+
+    def at(d1, d2):
+        h1 = a["h"] * (1 - d1 / a["w"]) if a["w"] and d1 <= a["w"] else 0.0
+        h2 = b["h"] * (1 - d2 / b["w"]) if b["w"] and d2 <= b["w"] else 0.0
+        return max(h1, h2) * g
+
+    fr = (0.0, 0.25, 0.5, 0.75, 1.0)
+    xs = [f * a["w"] for f in fr] if a["w"] else [0.0]
+    ys = [f * b["w"] for f in fr] if b["w"] else [0.0]
+    t = [f"{'':>22}" + "".join(f"{x:>8.1f}" for x in xs) + f"   ft from {a['name']}",
+         *[f"{y:>8.1f} ft from {b['name'][:6]:<6}" + "".join(f"{at(x, y):>8.1f}" for x in xs) for y in ys]]
+    info = [("Ground Snow", f"pg = {pg:g} psf ({pg_source.strip()}); W2 = {W2:g} ({W2_source.strip()})"),
+            ("Lower Roof", f"balanced snow load ps = {ps_lower:g} psf ({ps_source.strip()})"),
+            *[(w["name"], f"upper roof {w['step']:g} ft above the lower roof; upper roof {w['lu_upper']:g} ft and lower roof {w['lu_lower']:g} ft long, perpendicular to this wall")
+              for w in walls]]
+    sheet = SimpleSheet(mark, "Intersecting Snow Drifts", "Reentrant Corner", "Chapter 7", info, [], [], "Drift at Each Wall", steps, [],
+                        ["Each drift is the larger of the leeward and windward drifts at its wall (Sect. 7.7.1), with the roof lengths measured perpendicular to that wall (Sect. 7.7.3).",
+                         "Where the two drifts overlap the larger drift height governs; the two are not added (Sect. 7.7.3). The surcharge is added to the balanced snow load.",
+                         "Each drift tapers in a straight line from its height at the wall to zero at its width."],
+                        ["sliding snow (Sect. 7.9)", "parapet corners and roof projections (Sect. 7.8)", "structures separated by a gap (Sect. 7.7.2)",
+                         "unbalanced and partial loading of the lower roof"])
+    sheet.blocks.append(dict(title="Drift Surcharge at the Corner, psf", head="Plan of the Corner",
+                             picture=("snow_corner", dict(a=a, b=b, gamma=g, ps=ps_lower)), lines=t,
+                             after=[f"Surcharge in psf, added to the balanced load of {ps_lower:g} psf. Distances are measured out from each wall."]))
+    sheet.corner = dict(a=a, b=b, at=at, gamma=g)
+    return sheet

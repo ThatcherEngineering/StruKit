@@ -904,6 +904,21 @@ FORMS = {
                 F("ls_Ls", "Low slope check: span of the secondary members", unit="ft", required=False, help="blank = the bay value above"),
                 F("ls_S", "Low slope check: spacing of the secondary members", unit="ft", required=False, help="blank = the bay value above")],
         tables=[]),
+    "snow_corner": dict(
+        title="Intersecting Snow Drifts (reentrant corner)", code="ASCE/SEI 7-22", mark="SC",
+        fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
+                F("W2", "Winter wind parameter, W2", help="from the ASCE 7 Hazard Tool; Fig. 7.6-1"), F("W2_source", "Where W2 comes from", "text"),
+                F("ps", "Balanced snow load on the lower roof", unit="psf", help="from its Roof Snow Load sheet"),
+                F("ps_source", "Where that load comes from", "text", help="for example: sheet SN1"),
+                F("a_name", "Wall A: name", "text", help="for example: north wall of the addition"),
+                F("a_step", "Wall A: height of the upper roof above the lower roof", unit="ft"),
+                F("a_lu_upper", "Wall A: upper roof length, perpendicular to wall A", unit="ft"),
+                F("a_lu_lower", "Wall A: lower roof length, perpendicular to wall A", unit="ft"),
+                F("b_name", "Wall B: name", "text"),
+                F("b_step", "Wall B: height of the upper roof above the lower roof", unit="ft"),
+                F("b_lu_upper", "Wall B: upper roof length, perpendicular to wall B", unit="ft"),
+                F("b_lu_lower", "Wall B: lower roof length, perpendicular to wall B", unit="ft")],
+        tables=[]),
     "snow_drift": dict(
         title="Snow Drift on a Lower Roof", code="ASCE/SEI 7-22", mark="SD",
         fields=[F("pg", "Ground snow load, pg", unit="psf"), F("pg_source", "Where pg comes from", "text"),
@@ -1836,6 +1851,11 @@ def build(kind, values, project):
                 r.miss.append("Low slope check: the span and spacing of the secondary members are blank")
         r.done()
         return ws_more.rain_load_sheet(mark, risk, i, i_s, A, ds, ds_s, head, D=D, D_source=D_s or "", bay=bay, dp=dp, dp_source=dp_s or "", low=low), "simple", {}
+    if kind == "snow_corner":
+        pg, src, W2, w2s, ps, pss = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source"), r.num("ps"), r.text("ps_source")
+        walls = [dict(name=r.text(k + "_name"), step=r.num(k + "_step"), lu_upper=r.num(k + "_lu_upper"), lu_lower=r.num(k + "_lu_lower")) for k in ("a", "b")]
+        r.done()
+        return ws_more.snow_corner_sheet(mark, pg, src, W2, w2s, ps, pss, walls), "simple", {}
     if kind == "snow_drift":
         pg, src, W2, w2s = r.num("pg"), r.text("pg_source"), r.num("W2"), r.text("W2_source")
         par = (r.text("at") or "").startswith("a parapet")
