@@ -3183,6 +3183,54 @@ def model_frame_sway(project, members):
                 out[nd] = out.get(nd, 0.0) + total * share / len(rows[k_])
         return out
 
+    # member strengths for the checks from the frame's forces (kips, kip-in.)
+    from .. import steel_column as _sc, steel_beam as _sb, steel_beamcol as _bc
+    strength, kinds = {}, {}
+    for m, pl in B["placed"]:
+        v = m["values"]; mark = v.get("mark")
+        if not (mark in col_nodes or mark in B["beam_elems"]):
+            continue
+        try:
+            Fy = float(v.get("Fy") or 0)
+            if Fy <= 0:
+                raise ValueError("no Fy on its screen")
+            pr = None
+            for get in ((shapes.hss, shapes.get, shapes.channel) if m["kind"] == "hss_column" else (shapes.get, shapes.channel, shapes.hss)):
+                try:
+                    pr = get(v.get("shape") or ""); break
+                except Exception:
+                    continue
+            if mark in col_nodes:
+                L = col_nodes[mark][3] * 12.0
+                strength[mark] = dict(Pc=_sc.check(pr, Fy, L, L, method=method_).P_avail, Mcx=_sb.check(pr, Fy, L, 1.0, method_).M_avail,
+                                      Mcy=_bc.weak_axis_flexure(pr, Fy, method_).available, Pt=Fy * pr["A"] * (0.9 if method_ == "LRFD" else 1 / 1.67), L=L)
+            else:
+                Ltot = sum(mlen[e_] for e_ in B["beam_elems"][mark])
+                br = str(v.get("bracing") or "")
+                Lb_pos = 0.01
+                if br.startswith("at"):
+                    try:
+                        pts = sorted(set([0.0, Ltot / 12.0] + [float(t) for t in str(v.get("brace_pts") or "").replace(",", " ").split()]))
+                        Lb_pos = max(b_ - a_ for a_, b_ in zip(pts, pts[1:])) * 12.0
+                    except ValueError:
+                        Lb_pos = Ltot
+                Lb_neg = max(mlen[e_] for e_ in B["beam_elems"][mark]) if not br.startswith("at") else Lb_pos
+                cp, cn = _sb.check(pr, Fy, Lb_pos, 1.0, method_), _sb.check(pr, Fy, Lb_neg, 1.0, method_)
+                strength[mark] = dict(Mpos=cp.M_avail, Mneg=cn.M_avail, V=cp.V_avail, Pc=_sc.check(pr, Fy, Ltot, max(Lb_pos, Lb_neg), method=method_).P_avail,
+                                      Pt=Fy * pr["A"] * (0.9 if method_ == "LRFD" else 1 / 1.67), Lb_neg=Lb_neg, Lb_pos=Lb_pos, pr=pr, Fy=Fy, neg={}, pts=br.startswith("at"))
+        except Exception as e:
+            notes.append(f"{mark}: not checked from the frame forces ({str(e) or type(e).__name__}).")
+    if strength:
+        notes.append("Member checks from the frame forces: AISC 360-22 Eq. H1-1 at every station of every run, with the second-order forces and effective length = the "
+                     "member length (Sect. C3). Columns: unbraced over their full height about both axes, Cb = 1.0. Beams: the screen's bracing for the top flange; where the "
+                     "bottom flange is in compression the unbraced length is the distance between framing points with Cb by Eq. F1-1 from that run's moments; beam axial strength "
+                     "with the same length about the weak axis. Tension with bending by Sect. H1.2, yielding only.")
+
+    def h1(P, Pc, Pt, Mx, Mcx, My=0.0, Mcy=None):
+        r_ = (P / Pc) if P >= 0 else (-P / Pt)
+        mm_ = abs(Mx) / Mcx + ((abs(My) / Mcy) if Mcy else 0.0)
+        return (r_ + 8.0 / 9.0 * mm_, "H1-1a") if r_ >= 0.2 else (r_ / 2 + mm_, "H1-1b")
+
     drift, col_res, beam_res, worst_ratio, runs = {}, {}, {}, 0.0, 0
     for cb in cbs:
         fW = cb.factors.get("W", 0.0) if need_w else 0.0
@@ -3229,7 +3277,14 @@ def model_frame_sway(project, members):
                 P = st_[0][0][0]                             # compression at the base end
                 Ms = max(max(abs(a_[4]), abs(b_[4])) for a_, b_ in st_)
                 Mw = max(max(abs(a_[5]), abs(b_[5])) for a_, b_ in st_)
-                cur = col_res.setdefault(mark, dict(mark=mark, P=0.0, P_combo="", Ms=0.0, Ms_combo="", Mw=0.0, Mw_combo=""))
+                cur = col_res.setdefault(mark, dict(mark=mark, P=0.0, P_combo="", Ms=0.0, Ms_combo="", Mw=0.0, Mw_combo="", ratio=None, eq="", ratio_combo=""))
+                S_ = strength.get(mark)
+                if S_:
+                    for a_, b_ in st_:
+                        for P_, Mx_, My_ in ((a_[0], a_[4], a_[5]), (-b_[0], b_[4], b_[5])):
+                            val, eq = h1(P_ / alpha, S_["Pc"], S_["Pt"], Mx_ / alpha, S_["Mcx"], My_ / alpha, S_["Mcy"])
+                            if cur["ratio"] is None or val > cur["ratio"]:
+                                cur.update(ratio=val, eq=eq, ratio_combo=label, at=dict(P=P_ / alpha, Mx=abs(Mx_) / alpha, My=abs(My_) / alpha), cap=dict(Pc=S_["Pc"], Mcx=S_["Mcx"], Mcy=S_["Mcy"]))
                 if P / alpha > cur["P"]:
                     cur.update(P=P / alpha, P_combo=label)
                 if Ms / alpha > cur["Ms"]:
@@ -3240,7 +3295,23 @@ def model_frame_sway(project, members):
                 M = max(max(abs(a_[4]), abs(b_[4])) for e_ in els for a_, b_ in r2.stations[e_])
                 V = max(max(abs(a_[2]), abs(b_[2])) for e_ in els for a_, b_ in r2.stations[e_])
                 Nax = max(max(abs(a_[0]), abs(b_[0])) for e_ in els for a_, b_ in r2.stations[e_])
-                cur = beam_res.setdefault(mark, dict(mark=mark, M=0.0, M_combo="", V=0.0, N=0.0))
+                cur = beam_res.setdefault(mark, dict(mark=mark, M=0.0, M_combo="", V=0.0, N=0.0, ratio=None, eq="", ratio_combo="", v_ratio=None))
+                S_ = strength.get(mark)
+                if S_:
+                    cur["v_ratio"] = max(cur["v_ratio"] or 0.0, V / alpha / S_["V"])
+                    for e_ in els:
+                        ste = r2.stations[e_]
+                        Mq = [abs(ste[0][0][4])] + [abs(b_[4]) for _, b_ in ste]          # at the element's quarter points (n_sub = 4)
+                        Cb = round(min(_sb.cb_factor(max(Mq), Mq[1], Mq[2], Mq[3]), 3.0), 2) if max(Mq) > 1e-9 else 1.0
+                        key = (round(mlen[e_], 2), Cb)
+                        if key not in S_["neg"]:
+                            S_["neg"][key] = _sb.check(S_["pr"], S_["Fy"], mlen[e_] if not S_["pts"] else S_["Lb_pos"], Cb, method_).M_avail
+                        for a_, b_ in ste:
+                            for P_, sag in ((a_[0], a_[4]), (-b_[0], -b_[4])):
+                                Mc_ = S_["Mpos"] if sag >= 0 else S_["neg"][key]
+                                val, eq = h1(P_ / alpha, S_["Pc"], S_["Pt"], sag / alpha, Mc_)
+                                if cur["ratio"] is None or val > cur["ratio"]:
+                                    cur.update(ratio=val, eq=eq, ratio_combo=label, at=dict(P=P_ / alpha, Mx=sag / alpha), cap=dict(Pc=S_["Pc"], Mcx=Mc_))
                 if M / alpha > cur["M"]:
                     cur.update(M=M / alpha, M_combo=label)
                 cur["V"], cur["N"] = max(cur["V"], V / alpha), max(cur["N"], Nax / alpha)
