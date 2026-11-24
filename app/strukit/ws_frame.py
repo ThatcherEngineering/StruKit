@@ -190,7 +190,22 @@ def run(mark, lay, Fy, loads, combos, method, include_self_weight, unbraced_ft, 
     if include_self_weight not in (True, False):
         raise WorksheetError(f"{mark}: say whether self-weight is included (True or False)")
     alpha = 1.0 if method == "LRFD" else 1.6
-    props = {m.name: shapes.get(m.shape) for m in lay.members}
+    def _props(name):
+        try:
+            return shapes.get(name)
+        except shapes.ShapeError:
+            try:
+                return shapes.hss(name)
+            except shapes.ShapeError:
+                raise WorksheetError(f"{mark}: shape '{name}' is not in the {shapes.SOURCE} I-shape, HSS or pipe tables")
+
+    def _pns(pr_):
+        if pr_.get("type") in ("HSS-RECT", "HSS-ROUND", "PIPE"):
+            from . import hss
+            return hss.pns(pr_, Fy)[0]
+        return Fy * pr_["A"]
+
+    props = {m.name: _props(m.shape) for m in lay.members}
     brace = {}
     for m in lay.members:
         v = unbraced_ft.get(m.name, unbraced_ft.get(m.role + "s"))
@@ -324,7 +339,7 @@ def run(mark, lay, Fy, loads, combos, method, include_self_weight, unbraced_ft, 
                 new = {}
                 for m in lay.members:
                     Pr = max(0.0, -r2.members[m.name].N_min)       # at alpha level already
-                    rr = Pr / (Fy * props[m.name]["A"])
+                    rr = Pr / _pns(props[m.name])
                     if rr > 0.5:
                         new[m.name] = 4 * rr * (1 - rr)
                 if all(abs(new.get(k, 1.0) - tau.get(k, 1.0)) < 1e-3 for k in set(new) | set(tau)):
@@ -417,7 +432,7 @@ def run(mark, lay, Fy, loads, combos, method, include_self_weight, unbraced_ft, 
     L += [ln for ln in g["fl"].lines if ln.label[:2] in ("Mp", "Lp", "Lr", "Mn")]
     L.append(Line("Mr, second-order", g["Mr"], "kip-ft", "Sect. C2.1(b), C2.1(d)",
                   f"Lb = {g['Lb']:g} ft, Cb = {g['Cb']:.2f}"))
-    L.append(Line("Vr", g["Vr"], "kip", "second-order analysis", f"available {g['Vc']:.1f} kip (Sect. G2.1)"))
+    L.append(Line("Vr", g["Vr"], "kip", "second-order analysis", f"available {g['Vc']:.1f} kip ({getattr(g['fl'], 'v_source', 'AISC 360-22 Sect. G2.1').replace('AISC 360-22 ', '')})"))
     L.append(Line("combined ratio", g["combined"], "", g["eq"], "limit 1.0"))
     sheet.assumptions.append(
         "Stability by the direct analysis method (AISC 360-22 Chapter C): second-order analysis "
