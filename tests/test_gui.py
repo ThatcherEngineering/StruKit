@@ -150,7 +150,7 @@ def test_package_has_a_cover_with_contents(tmp_path):
         t = subprocess.run(["pdftotext", "-layout", "-l", "1", p, "-"], capture_output=True, text=True, timeout=30).stdout
     except FileNotFoundError:
         return
-    assert "Structural Calculations" in t and "Engineer's seal" in t and "Sheet 1 of" in t
+    assert "Structural Calculations" in t and "seal" not in t.lower() and "Sheet 1 of" in t
     assert "Members Not Included" in t.title() and "B9" in t and "D + L" in t
     assert "Flagged Checks" in t.title() or "No check in this package is flagged" in t
 

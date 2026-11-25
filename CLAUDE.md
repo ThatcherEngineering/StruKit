@@ -42,6 +42,7 @@ ruled there, do not ask again. The same two files also live in the claude.ai Pro
   one reading was chosen, what another reading would give, that Zach ruled something, what documents are on file, how a module was
   validated, or anything about StruKit's history. Stated assumptions and a "not checked on this sheet" list are fine.
 - "Thatcher Engineering standard" appears on a sheet only where Zach has actually ruled. Never his name.
+- No seal or signature box anywhere: Zach stamps his own cover sheet, which goes in front of StruKit's package.
 - Members are drawn as what they are (steel as steel shapes, wood with grain; sawn, LVL and glulam look distinct). Beams and columns carry
   loading diagrams; beams also shear and moment diagrams. Every connection sketch is dimensioned (plan and section where one view is not enough).
 - No text may overlap other text or run past the margin. `tests/conftest.py` audits every sheet the suite builds with

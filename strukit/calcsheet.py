@@ -1043,7 +1043,7 @@ def frame_pdf(sheet, path, job, code, date, page=1, pages=None):
 
 
 def _cover_pdf(cover, path, job, code, date, page=1, pages=1):
-    """Cover sheet of a calc package: the job, the engineer's seal box, the basis of design,
+    """Cover sheet of a calc package: the job, the basis of design,
     the load combinations with their sources, the contents with each member's result, the
     flagged checks and anything left out."""
     p = _Page(path, "Structural Calculations", job, "Cover sheet", "", page, pages, date)
@@ -1055,10 +1055,7 @@ def _cover_pdf(cover, path, job, code, date, page=1, pages=1):
             ("Site", (job.get("address") if isinstance(job, dict) else "") or "-"), ("Date", _date(date)),
             ("Prepared By", FIRM), ("Sheets", f"{pages}, including this cover")]
     p.kv(rows, kw=86)
-    # seal box
-    c.setStrokeColorRGB(*RULE); c.setLineWidth(0.8); c.rect(RM - 150, top - 96, 150, 96, fill=0, stroke=1)
-    c.setFillColorRGB(*GREY); c.setFont(FR, 7); c.drawCentredString(RM - 75, top - 104, "Engineer's seal and signature")
-    p.y = min(p.y, top - 110) - 2
+    p.y -= 4                                         # no seal box: the engineer's own cover sheet carries the seal (Zach, 2026-11-25 16:06)
     p.head("Basis of Design")
     for t in cover["basis"]:
         for k, ln in enumerate(_split(t, 118)):
