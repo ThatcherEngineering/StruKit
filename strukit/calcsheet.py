@@ -1601,6 +1601,8 @@ def _block_picture(c, top, pic):
         return _tread_picture(c, top - 6, d)
     if name == "tension":
         return _tension_picture(c, top - 6, d)
+    if name == "crane_runway":
+        return _crane_runway_picture(c, top - 6, d)
     if name == "angle_beam":
         return _angle_beam_picture(c, top - 6, d)
     if name == "base_plate_uplift":
@@ -2133,6 +2135,36 @@ def _angle_beam_picture(c, top, d):
     ys = min(yv0, yh) - 18
     _small(c, hx + Lh * sc / 2, ys, "section, to scale")
     return min(yl, ys) - 12
+
+
+def _crane_runway_picture(c, top, d):
+    """Loading diagram of the runway beam with the wheels at the position of the largest moment, the span dimensioned, and the beam section
+    with the rail and the lateral wheel load at the top of the rail."""
+    L, loads = d["L"], d["loads"]
+    x0, x1 = LM + 40, LM + 300
+    hl = _beam_loads_height(loads)
+    yb = top - 18 - hl - 8
+    memberart.steel_elevation(c, x0, yb - 10, x1 - x0, 10, d["d"], d["tf"])
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.6)
+    for xx in (x0, x1):
+        p_ = c.beginPath(); p_.moveTo(xx, yb - 10); p_.lineTo(xx - 5, yb - 18); p_.lineTo(xx + 5, yb - 18); p_.close()
+        c.drawPath(p_, fill=0, stroke=1)
+    _beam_loads(c, x0, x1, yb, L, loads)
+    memberart._dim_h(c, x0, x1, yb - 28, f"span {L:g} ft", FR, ext_from=yb - 18)
+    _small(c, (x0 + x1) / 2, yb - 46, "wheels with impact at the position of the largest moment; not to scale")
+    cx, cy = RM - 100, top - 70
+    s_ = memberart.steel_section(c, cx, cy, 70, 80, d["d"], d["bf"], d["tf"], d["tw"])
+    yt = cy + d["d"] * s_ / 2
+    c.setFillColorRGB(0.40, 0.42, 0.46); c.setStrokeColorRGB(*INK)
+    c.rect(cx - 4, yt, 8, 8, fill=1, stroke=1)                                       # rail
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow(c, cx - 40, yt + 8, cx - 5, yt + 8, head=3)
+    c.setFont(FR, 6); c.drawRightString(cx - 42, yt + 6, f"H {d['H']:.2f} kip")
+    _arrow_down(c, cx, yt + 26, yt + 9, head=3)
+    c.drawString(cx + 4, yt + 20, "wheel")
+    c.setFillColorRGB(*INK)
+    _small(c, cx, cy - d["d"] * s_ / 2 - 10, f"{d['beam']} with rail; not to scale")
+    return min(yb - 54, cy - d["d"] * s_ / 2 - 18)
 
 
 def _tension_picture(c, top, d):

@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 about 16:50. Build **0.217.0**, 585 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 about 17:00. Build **0.218.0**, 592 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -15,6 +15,7 @@ Updated 2026-11-25 about 16:50. Build **0.217.0**, 585 tests passing; `main` and
 - A scheduled session starts each weekday at 5:10 AM Denver time, reads these files and sends Zach one check-in with the Next list; it builds nothing until he says go (his change of 2026-11-25 12:43). Before the session ends it updates this section and the Project copies.
 
 **Waiting for Zach's ruling** (applied conservatively meanwhile; details in the rulings file)
+0e. Crane runway beam: lateral wheel loads taken by the top flange alone (half the section's F6 strength), Cb = 1.0, deflection limits typed by the engineer (0.218.0; Design Guide 7 not on file).
 0c. Beam coped at the bottom flange only: web shear yielding and rupture checked on the remaining depth, although Design Example K.3 says they do not apply (0.215.0).
 0b. Stiffened seat stiffener at least 2 w thick for 36 < Fy < 50 ksi (0.214.0).
 0. Compression flange plate length: larger of the bolt spacing and the face-to-first-bolt distance (0.211.0; Example II.B-1 uses the spacing).
@@ -23,7 +24,7 @@ Updated 2026-11-25 about 16:50. Build **0.217.0**, 585 tests passing; `main` and
 3. Anchor rod tensile strength: lower of AISC 360-22 Table J3.2 and Design Guide 1 Table 4-1 always?
 4. Older open items in the rulings file under "Open (not ruled)": parapet zone 3, single-row group action, wind overhang velocity pressure, which checks print at the member, his reaction to the window.
 
-**Needed from Zach (do not build without it):** AISC Design Guide 9 (torsion of W shapes and channels); ASCE 7-16 text; AISI S100; a reference or his own method for an HSS rafter on an HSS column cap plate; a readable TMS 402 for CMU walls; ASABE EP484 / EP486 for post-frame embedment; his wind drift limit and its source.
+**Needed from Zach (do not build without it):** AISC Design Guide 7 (Industrial Buildings) and, for underhung cranes and monorails, MHI MH27.1 or CMAA 74 (crane runway lateral load method, deflection limits, bottom flange bending); AISC Design Guide 9 (torsion of W shapes and channels); ASCE 7-16 text; AISI S100; a reference or his own method for an HSS rafter on an HSS column cap plate; a readable TMS 402 for CMU walls; ASABE EP484 / EP486 for post-frame embedment; his wind drift limit and its source.
 
 **Next, in order**
 1. (Done 0.211.0: beam to HSS column moment connection filled from the frame; bolted flange plates.) Still open on that joint: welded (not bolted) flange plates to the beam flange; the web shear tab filled from the same frame run.
@@ -32,7 +33,7 @@ Updated 2026-11-25 about 16:50. Build **0.217.0**, 585 tests passing; `main` and
 4. (Force transfer around several openings done 0.216.0.) Still open: deflection of force-transfer walls (the four-term equation per pier, as in the IIBEC example), openings of different heights side by side beyond taking each opening's own ha + hb.
 5. (Weak-axis loads done 0.212.0; HSS and pipe torsion done 0.213.0.) Still open: W-shape and channel torsion (Design Example H.6 relies on AISC Design Guide 9, not on file: needed from Zach); torsion with continuous spans or overhangs.
 6. (Single angles in bending done 0.217.0.) Still open: angles over more than one span or with overhangs, axial load with bending (Sect. H2), deflection of unrestrained angles, unequal angles not in Commentary Table C-F10.1, the Steel Beam screen and the 3D frame taking angles.
-7. Crane runway beams (wheel loads, impact, lateral and longitudinal forces, underhung bottom flange bending).
+7. (Top-running crane runway beam, simple span, done 0.218.0.) Still open and waiting on documents: underhung cranes and monorails (bottom flange local bending), fatigue (AISC 360-22 Appendix 3 is on file; needs the number of cycles by service class), web yielding and crippling under the wheels, continuous runway beams, cap channels; AISC Design Guide 7 would let the lateral load and deflection limits be cited.
 8. Read wood, LVL, I-joist, post and footing members from StruCalc .vtx files.
 9. Shear lugs (Design Guide 1 Example 4.7-5); anchorage on the uplift base plate and the four-rod biaxial base plate.
 10. Built-up three-plate sections as beams and columns; the column side of the extended end plate.
@@ -619,3 +620,11 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   - Sheet: loading diagram over the span, the section to scale in its orientation with legs dimensioned, shear and moment diagrams of the down loads.
 - **Validation: AISC Design Examples v16.0 Examples F.11A** (yielding 77.3, My 41.2, Mcr 107, LTB 49.2, leg 53.0 kip-in.; 3.69 / 2.46 kip-ft), **F.11B** (Cb 1.30, Mcr 176, LTB 66.3, leg 53.0 kip-in. governs; 3.98 / 2.65 kip-ft) and **F.11C** (Mw 0.286 / 0.347, Mz 1.05 / 0.691 kip-ft, Mcr 195 kip-in., Mnw 8.32, Mnz 4.59 kip-ft, Eq. H2-1 at the three points 0.292 / 0.321, 0.216 / 0.182, 0.254 / 0.251), all within rounding; L6x4x1/2 principal section moduli against the table. Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-Single-Angle-Beams.pdf`.
 - **Applied, not ruled (conservative):** with restraint at midspan only, leg local buckling still uses Sc = 0.80 S (Sect. F10.3 names 0.80 S for an angle with no lateral-torsional restraint; Example F.11B uses it with midspan restraint and calls it conservative).
+
+## 2026-11-25 about 17:00 local — 0.218.0 crane runway beam, top-running crane (592 tests)
+- Zach 16:29: "Yes" to Next item 7.
+- **New screen "Crane Runway Beam (top-running crane)"** (`crane_runway`, mark CR), `strukit/crane.py`, `ws_more.crane_runway_sheet`. ASCE/SEI 7-22 Sect. 4.9 read from the scan (pdf pp. 79-80, OCR): maximum wheel load from the crane maker (4.9.2, typed with its source); vertical impact by crane type and service class (4.9.3: powered monorail 25%, service class D to F 25%, A to C 10%, hand-geared 0%; the service class basis typed); lateral force 20% of (rated capacity + hoist and trolley) for electrically powered trolleys, at the top of the rail (4.9.4), the share to this runway typed with its basis and divided among its wheels; longitudinal force 10% of the maximum wheel loads except hand-geared bridges (4.9.5), reported for the bracing. Wheels (1 to 4, equal, at a spacing) moved across a simple span to find the largest moment under any wheel and the largest end reaction; beam and rail weight as dead load; crane loads on case L.
+- Checks: strong-axis flexure (Sect. F2, Lb = span, Cb = 1.0), strong axis with the lateral wheel moment on the top flange alone (half of the section's Sect. F6 y-axis strength) by Eq. H1-1b, shear at the support (Sect. G2), vertical deflection (wheels without impact, about midspan) and lateral deflection of the top flange (Iy / 2) against limits typed with their source. Sheet: loading diagram with the wheels where the moment is largest, the section with the rail and the lateral load, shear and moment diagrams.
+- **Validation:** no published crane runway example is on file (AISC Design Guide 7 is not on hand). Loads tested against the standard's text; the moving-load analysis against the closed-form two-wheel moment, (P / 2L)(L - a/2)^2 or P L / 4, for four span and spacing pairs; the sheet's moment, interaction, shear and deflection by hand from the steel beam functions (validated elsewhere). Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-Crane-Runway-Beam.pdf`.
+- **Applied, not ruled (conservative), and waiting on Design Guide 7:** the lateral wheel loads are taken by the top flange alone (half of the section's y-axis strength) rather than the whole section, and torsion is not computed separately; Cb = 1.0 for the moving wheels; deflection limits are not built in (typed by the engineer with their source).
+- Not built and listed on the sheet: fatigue (Appendix 3), web local yielding and crippling under the wheels, rail and stops, longitudinal force in the beam, underhung cranes (bottom flange bending), continuous runway beams, supports.
