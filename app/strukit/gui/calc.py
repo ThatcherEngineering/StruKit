@@ -50,6 +50,8 @@ FORMS = {
                                      F("x2", "To", unit="ft", required=False),
                                      F("dir", "Direction", "select", options=["down (x axis)", "sideways (y axis)"], required=False,
                                        help="blank = down; sideways loads bend the beam about its weak axis (single simple span)"),
+                                     F("e", "Off the shear center by", unit="in", required=False,
+                                       help="HSS and pipe, single simple span: the load twists the beam by load x this distance; both ends held against twisting"),
                                      F("label", "Note", "text", required=False)]),
                 T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
                                                 F("ratio", "Span /"), F("source", "Source", "text")])]),
@@ -1416,6 +1418,8 @@ def build(kind, values, project):
                 d["label"] = ld["label"]
             if str(ld.get("dir") or "").startswith("side"):
                 d["dir"] = "sideways"
+            if ld.get("e"):
+                d["e_in"] = abs(ld["e"])
             loads.append(d)
         if not loads and sw is False:
             r.miss.append("No loads are entered")

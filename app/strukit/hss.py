@@ -310,3 +310,41 @@ def pns(props, Fy, E=E_STEEL):
             r_ = math.sqrt((C2_HSS * lr / lam) ** 2)      # (Fel / Fy)^0.5
             Ae -= 2 * (w - w * (1 - C1_HSS * r_) * r_) * t
     return Fy * Ae, ("Pns = Fy Ae" if Ae < props["A"] - 1e-9 else "Pns = Fy Ag")
+
+
+def torsion(props, Fy, L_in, method="ASD", E=E_STEEL):
+    """Available torsional strength of a round or rectangular HSS or pipe: AISC 360-22 Sect. H3.1, Tn = Fcr C (Eq. H3-1), phi = 0.90,
+    Omega = 1.67. L_in: member length (round HSS, Eq. H3-2a). C from the shapes table."""
+    from .steel_beam import Line
+    from .steel_beamcol import Strength
+    C, t = props["C"], props["tdes"]
+    L = []
+    if props.get("type") in ("HSS-ROUND", "PIPE"):
+        D = props["OD"]
+        Dt = D / t
+        f1 = 1.23 * E / (math.sqrt(L_in / D) * Dt ** 1.25)
+        f2 = 0.60 * E / Dt ** 1.5
+        Fcr = min(max(f1, f2), 0.6 * Fy)
+        L += [Line("Fcr, Eq. H3-2a", f1, "ksi", "Eq. H3-2a", f"L = {L_in:g} in., D / t = {Dt:.3g}"), Line("Fcr, Eq. H3-2b", f2, "ksi", "Eq. H3-2b"),
+              Line("Fcr, the larger, not over 0.6 Fy", Fcr, "ksi", "Sect. H3.1(a)")]
+        gov = "round HSS (H3.1(a))"
+    elif props.get("type") == "HSS-RECT":
+        ht = max(props["h_t"], props["b_t"])
+        r = math.sqrt(E / Fy)
+        if ht <= 2.45 * r:
+            Fcr, eq = 0.6 * Fy, "Eq. H3-3"
+        elif ht <= 3.07 * r:
+            Fcr, eq = 0.6 * Fy * (2.45 * r) / ht, "Eq. H3-4"
+        elif ht <= 260:
+            Fcr, eq = 0.458 * math.pi ** 2 * E / ht ** 2, "Eq. H3-5"
+        else:
+            raise HSSError("h / t over 260: outside AISC 360-22 Sect. H3.1(b)")
+        L.append(Line("Fcr", Fcr, "ksi", eq, f"h / t = {ht:.3g} (the larger wall), 2.45 (E / Fy)^0.5 = {2.45 * r:.3g}"))
+        gov = "rectangular HSS (H3.1(b))"
+    else:
+        raise HSSError("torsional strength by AISC 360-22 Sect. H3.1 is for HSS and pipe")
+    Tn = Fcr * C
+    av = 0.90 * Tn if method == "LRFD" else Tn / 1.67
+    L += [Line("Tn = Fcr C", Tn, "kip-in", "Eq. H3-1", f"C = {C:g} in3"),
+          Line("phi_T Tn" if method == "LRFD" else "Tn / Omega_T", av, "kip-in", "Sect. H3.1: phi_T = 0.90, Omega_T = 1.67")]
+    return Strength(Tn, av, gov, L)
