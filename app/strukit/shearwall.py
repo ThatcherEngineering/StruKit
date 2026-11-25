@@ -400,3 +400,92 @@ def ftao(panel, spacing, panel_type, G, h, L1, Lo, L2, ho, sill, V, load, method
              Line("unit shear in the corner zones, F1 / L1 = F2 / L2", vc1, "plf", "Diekmann technique (APA T555)", "")]
     return dict(h=h, L=L, L1=L1, Lo=Lo, L2=L2, ho=ho, sill=sill, ha=ha, H=H, vh=vh, vv=vv, F=F, F1=F1, F2=F2, vc=vc1, v_cap=v_cap, piers=piers,
                 reduction=red, v_max=max(vh, vv, vc1), lines=lines, design_text=txt)
+
+
+def ftao_multi(panel, spacing, panel_type, G, h, piers, openings, V, load, method, holddown_inside=None, sides=1):
+    """Shear wall with two or more openings in one line designed for force transfer around openings (SDPWS-2021 4.3.2.2, 4.3.3.3), by the
+    rational method of APA Technical Note T555 for asymmetric piers and multiple openings, as worked in its published examples (STRUCTURE /
+    IIBEC Interface 2018, 20 ft wall with two windows; Beebe and Skaggs, SEAOC 2015). piers: lengths left to right (ft), one more than the
+    openings; openings: dicts w (width), ho (clear height), sill (sheathing below, 0 for a door), ft. V at the level of `method`.
+      H = V h / L; above and below opening j: va_j = H / (ha_j + hb_j); boundary force O_j = va_j Lo_j, shared to the corners in proportion
+      to the pier on each side; tributary length of each pier into an opening T = L_pier Lo / (L_left + L_right); pier unit shear
+      v_i = (V / L)(L_i + sum T) / L_i; corner zone of pier i: (v_i L_i - sum F at its corners) / L_i (T555), and the corner force per foot
+      of pier, sum F / L_i (the Diekmann corner shear of APA's one-opening example), both reported."""
+    key = panel_key(panel)
+    if spacing not in SPACINGS or (load, method) not in FACTORS or panel_type not in ("OSB", "plywood") or sides not in (1, 2):
+        raise ShearWallError("shear wall: check the nail spacing, the load, the method, the panel type and the number of sides")
+    if G is None or not 0.2 < G < 1.0:
+        raise ShearWallError("shear wall: the specific gravity of the framing is missing or out of range")
+    n = len(openings)
+    if n < 1 or len(piers) != n + 1:
+        raise ShearWallError("shear wall: give one pier more than the openings (a pier at each end and between each pair of openings)")
+    if h <= 0 or min(piers) <= 0 or any(o["w"] <= 0 or o["ho"] <= 0 or (o.get("sill") or 0) < 0 for o in openings):
+        raise ShearWallError("shear wall: the wall height, pier lengths and opening sizes must be positive")
+    if min(piers) < 2.0 - 1e-9:
+        raise ShearWallError(f"shear wall: a {min(piers):g} ft pier is under the 2 ft minimum for a force-transfer shear wall (SDPWS 4.3.2.2)")
+    L = sum(piers) + sum(o["w"] for o in openings)
+    if h / L > 3.5 + 1e-9:
+        raise ShearWallError("shear wall: the wall as a whole is over the 3.5 aspect ratio limit (SDPWS 4.3.3.3)")
+    ops = []
+    for j, o in enumerate(openings):
+        sill = o.get("sill") or 0.0
+        ha = h - o["ho"] - sill
+        if ha <= 0:
+            raise ShearWallError(f"shear wall: opening {j + 1} and the sheathing below it leave no sheathing above it")
+        ops.append(dict(w=o["w"], ho=o["ho"], sill=sill, ha=ha))
+    vn_t, ga_osb, ga_ply = TABLE_4_3A[key][SPACINGS.index(spacing)]
+    sg = min(1.0, 1.0 - (0.5 - G))
+    nail = 1.0
+    if key[2] == "10d":
+        if holddown_inside is None:
+            raise ShearWallError("shear wall: with 10d nails, say whether the hold-down is on the inside face of the end post (Table 4.3A note 10)")
+        nail = 0.92 if holddown_inside else 1.0
+    txt, fac = FACTORS[(load, method)]
+    v_cap = vn_t * sg * nail * sides * fac
+    H = V * h / L
+    T = [[0.0, 0.0] for _ in piers]                  # tributary length of each pier into the opening at its left and at its right
+    F = [[0.0, 0.0] for _ in piers]                  # corner force at the left and right side of each pier
+    for j, o in enumerate(ops):
+        a, b = piers[j], piers[j + 1]
+        o["va"] = H / (o["ha"] + o["sill"])
+        o["O"] = o["va"] * o["w"]
+        F[j][1], F[j + 1][0] = o["O"] * a / (a + b), o["O"] * b / (a + b)
+        T[j][1], T[j + 1][0] = a * o["w"] / (a + b), b * o["w"] / (a + b)
+        o["F_left"], o["F_right"], o["T_left"], o["T_right"] = F[j][1], F[j + 1][0], T[j][1], T[j + 1][0]
+    out_piers = []
+    for i, Li in enumerate(piers):
+        hos = [ops[k]["ho"] for k in (i - 1, i) if 0 <= k < n]
+        ho = max(hos)
+        r = ho / Li
+        if r > 3.5 + 1e-9:
+            raise ShearWallError(f"shear wall: the {Li:g} ft pier beside a {ho:g} ft high opening is over the 3.5 aspect ratio limit (SDPWS 4.3.3.3)")
+        v = (V / L) * (Li + T[i][0] + T[i][1]) / Li
+        R = v * Li
+        sF = F[i][0] + F[i][1]
+        out_piers.append(dict(L=Li, ho=ho, ratio=r, reduction=2 * Li / ho if r > 2 else 1.0, T=tuple(T[i]), v=v, R=R, F=tuple(F[i]),
+                              vc=(R - sF) / Li, vF=sF / Li))
+    checks = []                                      # T555 shear-line checks: the end lines equal H, the lines at the openings net zero
+    p0 = out_piers[0]; o0 = ops[0]
+    checks.append(p0["vc"] * (o0["ha"] + o0["sill"]) + p0["v"] * o0["ho"])
+    for j, o in enumerate(ops):
+        pl, pr = out_piers[j], out_piers[j + 1]
+        hh = o["ha"] + o["sill"]
+        checks.append(o["va"] * hh - pl["vc"] * hh - pl["v"] * o["ho"])
+        checks.append(pr["vc"] * hh + pr["v"] * o["ho"] - o["va"] * hh)
+    pn, on = out_piers[-1], ops[-1]
+    checks.append(pn["vc"] * (on["ha"] + on["sill"]) + pn["v"] * on["ho"])
+    lines = [Line("vn", vn_t, "plf", "SDPWS Table 4.3A", f"{panel}, edge nails at {spacing} in"),
+             Line("specific gravity factor, 1 - (0.5 - G)", sg, "", "Table 4.3A note 3", f"G = {G:g}"),
+             Line("design unit shear capacity", v_cap, "plf", "SDPWS 4.1.4", f"{load}, {method}: nominal {txt}" + (", both sides" if sides == 2 else "")),
+             Line("hold-down force, H = V h / L", H, "lb", "statics", f"L = {L:g} ft")]
+    for j, o in enumerate(ops):
+        lines += [Line(f"opening {j + 1}: va = vb = H / (ha + hb)", o["va"], "plf", "APA T555", f"ha = {o['ha']:g} ft, hb = {o['sill']:g} ft"),
+                  Line(f"opening {j + 1}: O = va Lo", o["O"], "lb", "APA T555", f"Lo = {o['w']:g} ft"),
+                  Line(f"opening {j + 1}: corner forces, O L_pier / (L_left + L_right)", f"{o['F_left']:,.0f} lb left, {o['F_right']:,.0f} lb right", "", "APA T555", ""),
+                  Line(f"opening {j + 1}: tributary lengths, L_pier Lo / (L_left + L_right)", f"{o['T_left']:.2f} ft left, {o['T_right']:.2f} ft right", "", "APA T555", "")]
+    for i, p in enumerate(out_piers):
+        lines += [Line(f"pier {i + 1}: v = (V / L)(L + T) / L", p["v"], "plf", "APA T555", f"L = {p['L']:g} ft, T = {p['T'][0] + p['T'][1]:.2f} ft; R = v L = {p['R']:,.0f} lb"),
+                  Line(f"pier {i + 1}: corner zone (R - F) / L", p["vc"], "plf", "APA T555", f"F = {sum(p['F']):,.0f} lb; F / L = {p['vF']:.0f} plf")]
+    lines.append(Line("shear lines: end lines equal H, lines at the openings net zero", "; ".join(f"{(0.0 if abs(c) < 0.5 else c):,.0f}" for c in checks) + " lb", "", "APA T555", ""))
+    return dict(h=h, L=L, piers=out_piers, openings=ops, H=H, v_cap=v_cap, checks=checks, lines=lines, design_text=txt,
+                v_max=max(max(p["v"] for p in out_piers), max(o["va"] for o in ops), max(max(abs(p["vc"]), p["vF"]) for p in out_piers)))

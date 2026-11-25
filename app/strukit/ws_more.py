@@ -612,8 +612,10 @@ def perforated_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, leng
 
 
 def ftao_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, L1, Lo, L2, ho, sill, V, load, method, v_source, holddown_inside=None, sides=1,
-                    above_T=0.0, above_source="", holddown=None):
-    """Wood shear wall with one opening, designed for force transfer around the opening (see shearwall.ftao)."""
+                    above_T=0.0, above_source="", holddown=None, more=None):
+    """Wood shear wall with one opening, designed for force transfer around the opening (see shearwall.ftao). more: further openings to
+    the right, each dict(w, ho, sill, pier) with the pier to its right; then L2 is the pier between the first and second openings and the
+    wall goes by shearwall.ftao_multi."""
     for nm, v in (("the source of the framing specific gravity", G_source), ("the source of the design shear", v_source)):
         if not (v or "").strip():
             raise WorksheetError(f"{mark}: {nm} is blank")
@@ -621,6 +623,10 @@ def ftao_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, L1, Lo, L2
         raise WorksheetError(f"{mark}: the design shear must be a positive number")
     if above_T and not (above_source or "").strip():
         raise WorksheetError(f"{mark}: where the chord force from the wall above comes from is blank")
+    if more:
+        return _ftao_multi_sheet(mark, panel, spacing, panel_type, G, G_source, h, [L1, L2] + [m["pier"] for m in more],
+                                 [dict(w=Lo, ho=ho, sill=sill or 0.0)] + [dict(w=m["w"], ho=m["ho"], sill=m.get("sill") or 0.0) for m in more],
+                                 V, load, method, v_source, holddown_inside, sides, above_T, above_source, holddown)
     try:
         w = shearwall.ftao(panel, spacing, panel_type, G, h, L1, Lo, L2, ho, sill or 0.0, V, load, method, holddown_inside, sides)
     except shearwall.ShearWallError as e:
@@ -664,6 +670,83 @@ def ftao_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, L1, Lo, L2
     sheet.blocks.append(dict(title="Wall Forces", head="Wall Forces", steps=[], text=text,
                              picture=("perforated_wall", dict(h=h, L=w["L"], openings=[dict(x=L1, w=Lo, h=ho, sill=w["sill"])],
                                                               segs=[dict(x=0.0, b=L1, counted=L1), dict(x=L1 + Lo, b=L2, counted=L2)], V=V, T=T))))
+    sheet.wall = w
+    sheet.wall_T = T
+    return sheet
+
+
+def _holddown_row(mark, holddown, T, G, load, method):
+    from . import holddowns
+    try:
+        hd = holddowns.check(holddown["model"], T, G, load, method, stem=holddown.get("stem"), position=holddown.get("position"),
+                             cracked=holddown.get("cracked"), sdc_high=holddown.get("sdc_high"))
+    except holddowns.HoldDownError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    return hd, Row("hold-down tension", f"{load}, {method}", T, hd["capacity"], "lb", hd["source"], hd["text"])
+
+
+def _ftao_multi_sheet(mark, panel, spacing, panel_type, G, G_source, h, piers, openings, V, load, method, v_source, holddown_inside, sides,
+                      above_T, above_source, holddown):
+    """Force-transfer shear wall with two or more openings (shearwall.ftao_multi)."""
+    try:
+        w = shearwall.ftao_multi(panel, spacing, panel_type, G, h, piers, openings, V, load, method, holddown_inside, sides)
+    except shearwall.ShearWallError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    T = w["H"] + (above_T or 0.0)
+    src = "SDPWS-2021 4.3.2.2, Table 4.3A, 4.1.4"
+    rows = []
+    for i, p in enumerate(w["piers"]):
+        rows.append(Row(f"unit shear in pier {i + 1} ({p['L']:g} ft)", f"{load}, {method}", p["v"], w["v_cap"] * p["reduction"], "plf", src + ", Table 4.3.3",
+                        "capacity x 2 b / h for a pier over 2:1" if p["reduction"] < 1 else ""))
+    for j, o in enumerate(w["openings"]):
+        rows.append(Row(f"unit shear above and below opening {j + 1}", f"{load}, {method}", o["va"], w["v_cap"], "plf", src, ""))
+    for i, p in enumerate(w["piers"]):
+        rows.append(Row(f"corner zones of pier {i + 1}", f"{load}, {method}", max(abs(p["vc"]), p["vF"]), w["v_cap"], "plf", src + "; APA T555",
+                        f"the larger of (R - F) / L = {p['vc']:.0f} plf and F / L = {p['vF']:.0f} plf"))
+    rows.append(Row("wall pier length", "", 2.0, min(piers), "ft", "SDPWS-2021 4.3.2.2 item 2", "2 ft minimum"))
+    hd = None
+    if holddown:
+        hd, row = _holddown_row(mark, holddown, T, G, load, method)
+        rows.append(row)
+    x, ops, segs = 0.0, [], []
+    for i, Li in enumerate(piers):
+        segs.append(dict(x=x, b=Li, counted=Li))
+        x += Li
+        if i < len(openings):
+            o = w["openings"][i]
+            ops.append(dict(x=x, w=o["w"], h=o["ho"], sill=o["sill"]))
+            x += o["w"]
+    lay = []
+    for i, Li in enumerate(piers):
+        lay.append(f"pier {Li:g} ft")
+        if i < len(openings):
+            o = w["openings"][i]
+            lay.append(f"opening {o['w']:g} ft wide x {o['ho']:g} ft high ({o['sill']:g} ft below, {o['ha']:g} ft above)")
+    info = [("Sheathing", f"wood structural panels, {panel}, {panel_type}, {'both sides' if sides == 2 else 'one side'}, blocked; edge nails at {spacing:g} in; "
+             "the same sheathing and nailing on all sheathed areas"),
+            ("Framing", f"specific gravity G = {G:g} ({G_source.strip()})"),
+            ("Wall", f"{h:g} ft high, {w['L']:g} ft long; left to right: " + ", ".join(lay)),
+            ("Design Shear", f"{V:,.0f} lb, {load}, {method} ({v_source.strip()})")]
+    if above_T:
+        info.append(("Wall Above", f"chord force {above_T:,.0f} lb at each end ({above_source.strip()})"))
+    if hd:
+        info.append(("Hold-Down", f"Simpson Strong-Tie {hd['model']} at each end of the wall"))
+    text = [f"Hold-down at each end of the wall: tension and compression {T:,.0f} lb" + (f" ({w['H']:,.0f} lb this story + {above_T:,.0f} lb from above)" if above_T else "")]
+    for j, o in enumerate(w["openings"]):
+        text.append(f"Opening {j + 1}: strap and blocking at each corner, along the top and bottom of the opening: {max(o['F_left'], o['F_right']):,.0f} lb "
+                    f"({o['F_left']:,.0f} lb toward the pier at its left, {o['F_right']:,.0f} lb toward the pier at its right)")
+    text.append(f"Bottom plate shear anchorage: {max(p['v'] for p in w['piers']):,.0f} plf at the piers")
+    sheet = SimpleSheet(
+        mark, "Wood Shear Wall, Force Transfer Around Openings", "Wall", f"{load}, {method}", info, [], [], "Capacity and Forces", w["lines"], rows,
+        ["Designed for force transfer around openings (SDPWS 4.3.2.2); internal forces by the method of APA Technical Note T555 for asymmetric piers "
+         "and multiple openings.",
+         "Pier aspect ratio taken on the clear height of the taller opening beside the pier.",
+         "Hold-downs at the two ends of the wall only. Chord forces are from overturning of the wall alone; dead load is not counted against uplift."],
+        ["straps, blocking and their nailing at the corners of the openings (designed for the corner forces shown)", "the hold-down anchor rod and its anchorage; the end posts" if hd else
+         "hold-downs and their connections", "anchor bolts and plate washers (SDPWS 4.3.6.4.3)", "collector over the full length of the wall and its connection to the diaphragm (SDPWS 4.3.2.2 item 5)",
+         "construction requirements of SDPWS 4.3.6 and 4.3.7.1", "deflection"])
+    sheet.blocks.append(dict(title="Wall Forces", head="Wall Forces", steps=[], text=text,
+                             picture=("perforated_wall", dict(h=h, L=w["L"], openings=ops, segs=segs, V=V, T=T))))
     sheet.wall = w
     sheet.wall_T = T
     return sheet
