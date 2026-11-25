@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 14:20. Build **0.211.0**, 561 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 14:20. Build **0.211.0**, 559 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -562,7 +562,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 ## 2026-11-25 12:50 local — 0.210.3 morning session checks in first
 - Zach 12:43 changed the daily StruKit session: weekdays only at 5:10 AM, and each morning it checks in with the Next list and builds nothing until he says go. Recorded in the rulings file, `CLAUDE.md` and the "Current state" section. No program change.
 
-## 2026-11-25 14:20 local — 0.211.0 beam to HSS moment connection: filled from the frame, bolted flange plates (561 tests)
+## 2026-11-25 14:20 local — 0.211.0 beam to HSS moment connection: filled from the frame, bolted flange plates (559 tests)
 - Zach 13:33: "keep going" on the Next list, item 1.
 - **Filled from the 3D frame.** Bar "Take the joint loads from the 3D frame [beam] [left / right end] - Fill Loads" on the Beam to HSS Column Moment Connection screen (`calc.frame_beam_hss`, `/api/frame_beam_hss`). It finds the frame column standing at that end of the beam (same level, within 3 in.), and from the same run takes the beam end moment, the column axial load and the column moment in the beam's plane at its top. It picks the runs with the largest beam moment, the largest column load and the largest column moment, and sets the face: a beam running along the column's depth frames into the B face (column strong axis), otherwise the H face. The beam and column sections fill when blank. Run in a headless browser on the eave portal carport (now stored as `tests/data/carport_eave_portals.strukit`): E3A left end, column C3A, face B, 10.1 kip-ft.
 - **Flange plates bolted to the beam flange.** New optional boxes: flange plate Fu, beam Fu, bolt diameter, type and threads, bolts in each of two rows, spacing, gage, plate end to the last bolt, beam end to the first bolt, column face to the first bolt, fillet weld of the plate to the HSS face and electrode. With them the sheet adds nine rows for the largest moment: the bolts (each the least of shear, bearing and tearout in the plate and the beam flange; flange force M / d), plate tensile yielding and rupture (M / (d + tp); Table D3.1 Case 1), plate block shear for the two outer blocks and through one row, beam flange block shear, beam flexure at the bolt holes (Eq. F13-1, when it applies), the compression plate (Sect. J4.4, K = 0.65), and the plate-to-face fillet welds (kds = 1.5). The plan now shows the bolts with the gage, the face-to-first-bolt distance and the spacing dimensioned; the elevation draws the plate to its length. `ws_more.flange_plate_bolted`.
