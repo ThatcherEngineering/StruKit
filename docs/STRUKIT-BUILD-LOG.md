@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 about 16:15. Build **0.216.1**, 580 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 about 16:50. Build **0.217.0**, 585 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -31,7 +31,7 @@ Updated 2026-11-25 about 16:15. Build **0.216.1**, 580 tests passing; `main` and
 3. (Bottom-only cope done 0.215.0.) Still open: Manual equation citations name no edition, and StruKit mixes 15th Ed. numbers (Eq. 9-2, 9-3, seats) with the Design Examples v16 / 16th Ed. numbers (coped beams, Eq. 9-8); put the edition on each, or move all to one edition when a 16th Ed. Manual is on file.
 4. (Force transfer around several openings done 0.216.0.) Still open: deflection of force-transfer walls (the four-term equation per pier, as in the IIBEC example), openings of different heights side by side beyond taking each opening's own ha + hb.
 5. (Weak-axis loads done 0.212.0; HSS and pipe torsion done 0.213.0.) Still open: W-shape and channel torsion (Design Example H.6 relies on AISC Design Guide 9, not on file: needed from Zach); torsion with continuous spans or overhangs.
-6. Single angles in bending (AISC 360-22 Sect. F10).
+6. (Single angles in bending done 0.217.0.) Still open: angles over more than one span or with overhangs, axial load with bending (Sect. H2), deflection of unrestrained angles, unequal angles not in Commentary Table C-F10.1, the Steel Beam screen and the 3D frame taking angles.
 7. Crane runway beams (wheel loads, impact, lateral and longitudinal forces, underhung bottom flange bending).
 8. Read wood, LVL, I-joist, post and footing members from StruCalc .vtx files.
 9. Shear lugs (Design Guide 1 Example 4.7-5); anchorage on the uplift base plate and the four-rod biaxial base plate.
@@ -609,3 +609,13 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - Zach 16:06: "I like the conservative way. Let's do that." The corner zones of force-transfer walls stay checked for the larger of (R - sum F) / L and sum F / L; now a ruling.
 - Zach 16:06: he puts his own cover sheet on his calculations and stamps that, so StruKit's package cover no longer has the "Engineer's seal and signature" box. The cover keeps the project, basis of design, combinations, contents and flagged checks.
 - Clock note: the 0.214.0 to 0.216.0 entries were written with times later than the real ones (0.216.0 was released before 16:06); the order is right.
+
+## 2026-11-25 about 16:50 local — 0.217.0 single angles in bending (585 tests)
+- Zach 16:13: "Yes" to Next item 6.
+- **New screen "Single-Angle Beam"** (`angle_beam`, mark LB), `strukit/anglebeam.py`, `ws_more.angle_beam_sheet`. Simple span, ends braced; loads uniform (full span) or point, each down or sideways (horizontal, positive from the toe of the horizontal leg toward the heel); orientation by which leg is vertical and whether its toe is up or down; lateral-torsional restraint none, at midspan only, or continuous; own weight as dead load on request.
+  - Geometric axis design (AISC 360-22 Sect. F10.2(2)) for an equal-leg angle with down loads only, and for any angle with continuous restraint: yielding 1.5 My (Eq. F10-1); lateral-torsional buckling by Eq. F10-5a (toe in compression) or F10-5b (toe in tension) with My = 0.80 Fy S and no restraint, or 1.25 Mcr and My = Fy S with restraint at the point of largest moment (the screen stops if the largest moment is not at midspan); Cb by Eq. F1-1 for each segment; leg local buckling (Eq. F10-6 to F10-8, Table B4.1b Case 12) with Sc = 0.80 S unless restrained continuously.
+  - Principal axis design otherwise (unequal legs without continuous restraint, or any sideways load): moments resolved on the major (w) and minor (z) axes at every station, Eq. F10-4 with Cb (not over 1.5) and beta_w from AISC 360-22 Commentary Table C-F10.1 (positive when the short-leg toe is in compression, negative otherwise), yielding and leg local buckling about both axes, no lateral-torsional buckling about z (User Note), and Eq. H2-1 at the two toes and the heel with each term + where it compresses the point and - where it puts it in tension. Principal-axis properties (Iw, wA..wC, zA..zC) added to the single-angle table from the Shapes Database (tools/parse_angles.py); their signs come from the angle's geometry.
+  - Shear of each leg by Sect. G3 (Eq. G3-1, Cv2 with kv = 1.2): the vertical leg for down loads, the horizontal leg for sideways loads.
+  - Sheet: loading diagram over the span, the section to scale in its orientation with legs dimensioned, shear and moment diagrams of the down loads.
+- **Validation: AISC Design Examples v16.0 Examples F.11A** (yielding 77.3, My 41.2, Mcr 107, LTB 49.2, leg 53.0 kip-in.; 3.69 / 2.46 kip-ft), **F.11B** (Cb 1.30, Mcr 176, LTB 66.3, leg 53.0 kip-in. governs; 3.98 / 2.65 kip-ft) and **F.11C** (Mw 0.286 / 0.347, Mz 1.05 / 0.691 kip-ft, Mcr 195 kip-in., Mnw 8.32, Mnz 4.59 kip-ft, Eq. H2-1 at the three points 0.292 / 0.321, 0.216 / 0.182, 0.254 / 0.251), all within rounding; L6x4x1/2 principal section moduli against the table. Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-Single-Angle-Beams.pdf`.
+- **Applied, not ruled (conservative):** with restraint at midspan only, leg local buckling still uses Sc = 0.80 S (Sect. F10.3 names 0.80 S for an angle with no lateral-torsional restraint; Example F.11B uses it with midspan restraint and calls it conservative).

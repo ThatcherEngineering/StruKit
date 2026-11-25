@@ -7,7 +7,9 @@ import sys
 import openpyxl
 
 COLS = [("W", "W"), ("A", "A"), ("d", "d"), ("b", "b"), ("t", "t"), ("kdes", "kdes"), ("x", "xbar"), ("y", "ybar"), ("b/t", "b_t"), ("Ix", "Ix"), ("Zx", "Zx"), ("Sx", "Sx"),
-        ("rx", "rx"), ("Iy", "Iy"), ("Zy", "Zy"), ("Sy", "Sy"), ("ry", "ry"), ("Iz", "Iz"), ("rz", "rz"), ("Sz", "Sz"), ("J", "J"), ("Cw", "Cw"), ("ro", "ro"), ("H", "H"), ("tan(α)", "tan_alpha")]
+        ("rx", "rx"), ("Iy", "Iy"), ("Zy", "Zy"), ("Sy", "Sy"), ("ry", "ry"), ("Iz", "Iz"), ("rz", "rz"), ("Sz", "Sz"), ("J", "J"), ("Cw", "Cw"), ("ro", "ro"), ("H", "H"), ("tan(α)", "tan_alpha"),
+        ("Iw", "Iw"), ("zA", "zA"), ("zB", "zB"), ("zC", "zC"), ("wA", "wA"), ("wB", "wB"), ("wC", "wC"), ("SwA", "SwA"), ("SwB", "SwB"), ("SwC", "SwC"),
+        ("SzA", "SzA"), ("SzB", "SzB"), ("SzC", "SzC")]
 
 
 def main(src, out):
@@ -17,7 +19,7 @@ def main(src, out):
     ix = {h: hdr.index(h) for h, _ in COLS}
     n = 0
     with open(out, "w", newline="") as f:
-        f.write("# Source: AISC Shapes Database v16.0 (SHAPE160.xlsx, August 2023), U.S. customary columns. Single angles; rz is about the minor principal axis.\n")
+        f.write("# Source: AISC Shapes Database v16.0 (SHAPE160.xlsx, August 2023), U.S. customary columns. Single angles; rz is about the minor principal axis; principal-axis points A (short-leg toe), B (heel), C (long-leg toe).\n")
         w = csv.writer(f)
         w.writerow(["type", "label"] + [k for _, k in COLS])
         for r in rows:
