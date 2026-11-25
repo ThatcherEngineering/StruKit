@@ -181,3 +181,9 @@ Zach: "Oh wait don't use those wayfarer calcs as gospel... it was done before I 
 Zach asked about moving this work to Claude Code and agreed to a `CLAUDE.md` in the StruKit repo so any session (this chat, a new chat or
 Claude Code) starts with the standing rules. `CLAUDE.md` carries the rules in short form; this file stays the full record of rulings.
 Copies of this file and the build log now live in the repo under `docs/` as well as in the Project; keep both in step.
+
+## 2026-11-25 12:43 — morning session: check in first, build on his go
+Zach changed the scheduled StruKit session: it runs weekdays only at 5:10 AM Denver time; each morning it sends one check-in with the Next
+list (and readings waiting, things he must supply, notes from other chats) and builds nothing until he replies with a go. Once he says go,
+it builds what he picked in stretches of about 30 minutes. If the scheduled task is edited again, keep the check-in-first rule. This
+replaces the "start building on its own" setting of 10:47 the same day.

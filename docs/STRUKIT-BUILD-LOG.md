@@ -5,14 +5,14 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 12:30. Build **0.210.2**, 555 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 12:50. Build **0.210.3**, 555 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
 - Rules for every session: `CLAUDE.md` in the repo. Rulings: `docs/STRUKIT-RULINGS.md`. This log: `docs/STRUKIT-BUILD-LOG.md`. Which reference file is which, and the pages used: `docs/REFERENCES.md`. The rulings and this log are also in the Project as `claude/STRUKIT-RULINGS.md` and `claude/STRUKIT-BUILD-LOG.md`; keep both in step.
 - Other StruKit docs in the Project: `claude/STRUKIT-PHASE1-PROPOSAL-2026-11-20.md` (first scope and roadmap), `claude/STRUKIT-JURIS-FINDINGS-2026-11-20.md` (jurisdiction criteria; its section 3 items are still open), `claude/STRUKIT-INPUT-SPEC.md` and `claude/fixtures/strukit/` (the text-file input agreed with the ProgeCAD chat; on hold until Zach restarts the ProgeCAD side), `claude/STRUKIT-TO-PROGECAD-*` and `claude/PROGECAD-TO-STRUKIT-*` (messages between the chats).
 - Reference standards: Zach's folder (see `docs/REFERENCES.md`). Past chats in this Project can be searched for anything not written down.
-- A daily scheduled session starts at 5:10 AM Denver time, reads these files, builds for about 2 hours, updates this section and the rulings, and sends one check-in.
+- A scheduled session starts each weekday at 5:10 AM Denver time, reads these files and sends Zach one check-in with the Next list; it builds nothing until he says go (his change of 2026-11-25 12:43). Before the session ends it updates this section and the Project copies.
 
 **Waiting for Zach's ruling** (applied conservatively meanwhile; details in the rulings file)
 1. Open-building column wind Cf from ASCE 7-22 Figure 29.4-1 at the column's own h/D (1.76 for an HSS8x8 about 11.8 ft tall).
@@ -557,3 +557,6 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   - New "Current state" section at the top of this log: where everything lives, readings waiting for a ruling, what is needed from Zach, the Next list in order. The daily session reads and updates it.
   - New `tools/browser_check.py`: opens a project in the window in a headless browser and reports every member's result and page errors (replaces the one-off scripts that lived in this workspace).
   - Not carried over, on purpose: the workspace's copies and text extractions of the standards (re-made from the folder when needed) and the sample PDFs sent to Zach (re-printed from the repo).
+
+## 2026-11-25 12:50 local — 0.210.3 morning session checks in first
+- Zach 12:43 changed the daily StruKit session: weekdays only at 5:10 AM, and each morning it checks in with the Next list and builds nothing until he says go. Recorded in the rulings file, `CLAUDE.md` and the "Current state" section. No program change.

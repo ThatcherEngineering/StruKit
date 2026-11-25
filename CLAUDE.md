@@ -13,8 +13,11 @@ ruled there, do not ask again. The same two files also live in the claude.ai Pro
 ## How to work with Zach
 - He is an engineer, not a software developer, and usually reads on his phone. Bottom line first, plain engineering language, short.
   Do software steps for him rather than telling him how.
-- Standing instruction: work down the "Next" list in the build log without asking. Work in stretches; check in once at the end of a
-  stretch (what StruKit can now do, what changed, what needs his ruling), not after every build.
+- Each weekday morning (5:10 AM Denver, scheduled session) starts with ONE check-in: the Next list in order with rough sizes, readings
+  waiting for him, what he needs to supply. Build nothing until he replies with a go (Zach, 2026-11-25 12:43). If the scheduled task is
+  ever edited, keep this check-in-first rule.
+- Once he says go: build what he picked, in stretches of about 30 minutes, and check in at the end of each stretch (what StruKit can now
+  do, what changed, what needs his ruling), not after every build.
 - Ask only for a real decision that is his: a reading of a code provision that could go two ways, or something only he can supply.
 
 ## Hard rules
