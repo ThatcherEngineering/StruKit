@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 14:20. Build **0.211.0**, 559 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 15:45. Build **0.212.0**, 563 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -28,7 +28,7 @@ Updated 2026-11-25 14:20. Build **0.211.0**, 559 tests passing; `main` and `rele
 2. Stiffened seated connections (AISC Manual Table 10-8 pages, read as images).
 3. Beam coped at the bottom flange only.
 4. Force transfer around several openings (APA procedure).
-5. Steel beams with weak-axis or torsional moment.
+5. (Weak-axis loads done 0.212.0.) Torsion: rectangular and round HSS by AISC 360-22 Sect. H3 (Design Examples H.5A to H.5C) next; W-shape torsion (Design Example H.6 uses AISC Design Guide 9, which is not on file).
 6. Single angles in bending (AISC 360-22 Sect. F10).
 7. Crane runway beams (wheel loads, impact, lateral and longitudinal forces, underhung bottom flange bending).
 8. Read wood, LVL, I-joist, post and footing members from StruCalc .vtx files.
@@ -569,3 +569,9 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation: AISC Design Examples v16.0 Example II.B-1, LRFD and ASD, every flange plate value** (flange forces 168 / 112 and 161 / 108 kips; bolts 194 / 130; plate 237 / 157 and 183 / 122; block shear 381 / 254, 300 / 200, beam flange 294 / 197; beam flexure 318 / 211 kip-ft; compression plate Lc / r 8.99, 237 / 157; the weld against the example's required 5.51 / 5.54 sixteenths), within 0.6 percent (`tests/test_flange_plate.py`). The 2022 Specification has no 0.85 Ag cap on Ae for connecting elements (J4.1 read); none is applied.
 - **Applied, not ruled (conservative):** the compression plate's unbraced length is the larger of the bolt spacing and the distance from the column face to the first bolt; Example II.B-1 uses the bolt spacing only.
 - Not checked and listed on the sheet: slip-critical bolts, the web connection, panel shear in the HSS side walls, the beam and column themselves.
+
+## 2026-11-25 15:45 local — 0.212.0 steel beams with sideways (weak-axis) loads (563 tests)
+- Zach 15:07: "Go" on item 4 (weak-axis and torsional moment on steel beams).
+- **Steel Beam screen, loads table: new column "Direction"**: down (x axis), the default, or sideways (y axis). Sideways loads bend the beam about its weak axis (`ws_steel_beam.run` splits them out). For every combination with a sideways load the sheet adds: flexure about the y axis (AISC 360-22 Sect. F6 for I-shapes; Sect. F7 / F8 for HSS and pipe, through `steel_beamcol.weak_axis_flexure`), shear from the sideways loads (Sect. G6, or G4 / G5), and flexure about both axes by Eq. H1-1b with Pr = 0, checked at every station with each x moment against the strength of the unbraced segment it lies in. A deflection limit whose load list includes a sideways load gets a sideways deflection row on E Iy. The loading sketch draws only the down loads and lists the sideways loads under the beam; an assumption states that sideways loads act through the shear center and that torsion is not checked.
+- Single simple span only: sideways loads on more than one span, with an overhang, with a fixed support or on a channel are refused with the reason (channels load off the shear center).
+- **Validation: AISC Design Examples v16.0 Example F.5** (W12x58, 15 ft, minor-axis bending: Mu 113 / Ma 75.1 kip-ft, phi Mn 122 / Mn/Omega 81.4 kip-ft, Iy 107 against 105 in4 required for L/240), within 0.5 percent; Eq. H1-1b at midspan by hand (W12x58 with 1 kip/ft down and 0.5 kip/ft sideways: 0.2195). Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-Steel-Beam-Sideways-Load.pdf`.

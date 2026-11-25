@@ -406,14 +406,16 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
         hb, true_scale = memberart.elev_depth(sheet.span_ft * 12, depth_in, w)
         memberart.steel_elevation(c, x0, by, w, hb, depth_in, pr["tf"] if hss_kind is None else max(pr["tdes"], depth_in * 0.06))
         c.setStrokeColorRGB(*BLUE); c.setFillColorRGB(0.91, 0.93, 0.96); c.setLineWidth(0.6)
-        if any(ld["kind"] == "uniform" for ld in sheet.loads):
+        down = [ld for ld in sheet.loads if not str(ld.get("dir") or "").startswith("side")]
+        side = [ld for ld in sheet.loads if str(ld.get("dir") or "").startswith("side")]
+        if any(ld["kind"] == "uniform" for ld in down):
             c.rect(x0, by + hb + 4, w, 10, fill=1, stroke=1)
         c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
         sup_x = [x0 + 3 + (w - 6) * v / sheet.span_ft for v in getattr(sheet, "supports", None) or (0.0, sheet.span_ft)]
         for xx in sup_x:
             t = c.beginPath(); t.moveTo(xx, by - 1); t.lineTo(xx - 6, by - 12); t.lineTo(xx + 6, by - 12); t.close()
             c.drawPath(t, fill=0, stroke=1)
-        for ld in sheet.loads:
+        for ld in down:
             if ld["kind"] == "point":
                 xx = x0 + w * ld["x_ft"] / sheet.span_ft
                 c.line(xx, by + hb + 30, xx, by + hb + 7)
@@ -431,7 +433,11 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
             c.drawCentredString(x0 + w / 2, by - 22, f"L = {sheet.span_ft:g} ft")
         if not true_scale:
             c.setFont(FR, 6); c.drawCentredString(x0 + w / 2, by - 30, "side view: depth enlarged for clarity")
-        uni = [f"{ld['case']} {ld['w']:.3f}" for ld in sheet.loads if ld["kind"] == "uniform"]
+        uni = [f"{ld['case']} {ld['w']:.3f}" for ld in down if ld["kind"] == "uniform"]
+        if side:                                         # sideways loads act in the plane of the flanges: listed under the beam, not drawn down
+            stxt = [f"{ld['case']} {ld['w']:.3f} kip/ft" if ld["kind"] == "uniform" else f"{ld['case']} {ld['P']:.2f} kip at {ld['x_ft']:g} ft" for ld in side]
+            c.setFillColorRGB(*BLUE); c.setFont(FM, 6.5)
+            c.drawCentredString(x0 + w / 2, by - 40, "sideways, y axis: " + " + ".join(stxt))
         if uni:
             c.setFillColorRGB(*BLUE); c.setFont(FM, 7.5)
             c.drawCentredString(x0 + w / 2, by + hb + 34, "w = " + " + ".join(uni) + " kip/ft")
@@ -450,7 +456,7 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     else:
         _hss_section(c, sx - 6, top - 36, 40.0, dict(kind=hss_kind, OD=pr.get("OD"), H=pr.get("Ht"), B=pr.get("B"), t=pr["tdes"]))
     c.setStrokeColorRGB(*INK)
-    p.y = min(bottom_left, by - 34) - 2
+    p.y = min(bottom_left, by - (46 if any(str(ld.get("dir") or "").startswith("side") for ld in sheet.loads) else 34)) - 2
 
     p.head("Loads")
     for ld in sheet.loads:
