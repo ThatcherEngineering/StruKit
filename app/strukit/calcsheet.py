@@ -1601,6 +1601,8 @@ def _block_picture(c, top, pic):
         return _tread_picture(c, top - 6, d)
     if name == "tension":
         return _tension_picture(c, top - 6, d)
+    if name == "angle_beam":
+        return _angle_beam_picture(c, top - 6, d)
     if name == "base_plate_uplift":
         return _base_plate_uplift_picture(c, top - 6, d)
     if name == "single_plate":
@@ -2082,6 +2084,55 @@ def _tread_picture(c, top, d):
     c.drawRightString(x0 - 8, y1 - 13, f"span {d['span']:g} ft")
     _small(c, (LM + RM) / 2, y0 - 30, "tread cross section; spans between the stringers")
     return y0 - 38
+
+
+def _angle_beam_picture(c, top, d):
+    """Loading diagram over the span (down loads; sideways loads listed) with the span dimensioned, and the cut section of the angle to
+    scale in its orientation, legs and thickness dimensioned, with the directions of the down and sideways loads."""
+    L, loads = d["L"], d["loads"]
+    x0, x1 = LM + 40, LM + 300
+    hl = _beam_loads_height(loads)
+    yb = top - 18 - hl - 8
+    c.setFillColorRGB(0.74, 0.79, 0.86); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    c.rect(x0, yb - 6, x1 - x0, 6, fill=1, stroke=1)
+    c.setLineWidth(0.6)
+    for xx in (x0, x1):
+        p_ = c.beginPath(); p_.moveTo(xx, yb - 6); p_.lineTo(xx - 5, yb - 14); p_.lineTo(xx + 5, yb - 14); p_.close()
+        c.drawPath(p_, fill=0, stroke=1)
+    _beam_loads(c, x0, x1, yb, L, loads)
+    memberart._dim_h(c, x0, x1, yb - 24, f"span {L:g} ft", FR, ext_from=yb - 14)
+    yl = yb - 44
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawString(x0, yl, d["shape"] + " (down loads drawn; plf and lb)")
+    for k, t_ in enumerate(d["side"]):
+        c.drawString(x0, yl - 9 * (k + 1), "sideways: " + t_)
+    yl -= 9 * len(d["side"])
+    Lv, Lh, t = d["Lv"], d["Lh"], d["t"]
+    sc = min(90.0 / max(Lv, Lh), 20.0)
+    hx = RM - 150                                            # heel, outside corner
+    sgn = 1 if d["toe"] == "up" else -1
+    hy = (top - 30 - Lv * sc) if sgn > 0 else (top - 30)
+    c.setFillColorRGB(0.55, 0.62, 0.72); c.setStrokeColorRGB(*INK); c.setLineWidth(0.6)
+    c.rect(hx, hy if sgn > 0 else hy - Lv * sc, t * sc, Lv * sc, fill=1, stroke=1)
+    c.rect(hx + t * sc, hy if sgn > 0 else hy - t * sc, (Lh - t) * sc, t * sc, fill=1, stroke=1)
+    yv0, yv1 = (hy, hy + Lv * sc) if sgn > 0 else (hy - Lv * sc, hy)
+    memberart._dim_v(c, yv0, yv1, hx - 12, f"{Lv:g} in", FR, ext_from=hx)
+    yh = (hy - 12) if sgn > 0 else (hy - Lv * sc - 12)
+    memberart._dim_h(c, hx, hx + Lh * sc, yh, f"{Lh:g} in", FR, ext_from=hy if sgn > 0 else hy)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6)
+    c.drawString(hx + Lh * sc + 4, (hy + t * sc / 2 - 2) if sgn > 0 else (hy - t * sc / 2 - 2), f"t {t:g} in")
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    ax = hx + Lh * sc + 46
+    _arrow_down(c, ax, yv1 + 6, yv1 - 16, head=3)
+    c.setFont(FR, 6); c.drawString(ax + 4, yv1 - 4, "down")
+    if d["side"]:
+        ay = (yv0 + yv1) / 2
+        _arrow(c, hx + Lh * sc + 40, ay - 14, hx + Lh * sc + 14, ay - 14, head=3)
+        c.drawString(hx + Lh * sc + 18, ay - 24, "sideways +")
+    c.setFillColorRGB(*INK)
+    ys = min(yv0, yh) - 18
+    _small(c, hx + Lh * sc / 2, ys, "section, to scale")
+    return min(yl, ys) - 12
 
 
 def _tension_picture(c, top, d):

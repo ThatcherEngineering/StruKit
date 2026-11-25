@@ -105,6 +105,20 @@ FORMS = {
                 F("length", "Length between the end connections", unit="ft"),
                 F("attached", "Attached leg", "select", options=["long", "short"], required=False, help="unequal-leg angles; either for an equal-leg angle")],
         tables=[T("loads", "Axial compression", [CASE, F("P", "Compression", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "angle_beam": dict(
+        title="Single-Angle Beam", code="AISC 360-22", mark="LB",
+        fields=[F("shape", "Angle", "shape_tension", help="single angle by its Manual label, for example L4x4x1/4"),
+                F("Fy", "Fy", unit="ksi"), F("steel_source", "Where Fy comes from", "text", help="for example: ASTM A36"),
+                F("span", "Span, simply supported", unit="ft"),
+                F("vertical", "Vertical leg", "select", options=["long", "short"], required=False, help="unequal-leg angles; either for an equal-leg angle"),
+                F("toe", "Toe of the vertical leg", "select", options=["up", "down"]),
+                F("restraint", "Lateral-torsional restraint", "select", options=["none between the ends", "at midspan only", "continuous along the length"],
+                  help="continuous: for example a deck or sheathing fastened along the angle"),
+                F("self_weight", "Add the angle's own weight as dead load", "select", options=["yes", "no"])],
+        tables=[T("loads", "Loads", [CASE, F("kind", "Load", "select", options=["uniform, full span", "point"]), F("value", "Value (kip/ft or kip)"),
+                                     F("x", "Point load at, from the left support", unit="ft", required=False),
+                                     F("dir", "Direction", "select", options=["down", "sideways"], help="sideways: horizontal, positive from the toe of the horizontal leg toward the heel"),
+                                     F("label", "Note", "text", required=False)])]),
     "tension_member": dict(
         title="Steel Tension Member", code="AISC 360-22", mark="TM",
         fields=[F("shape", "Section", "shape_tension", required=False, help="W, M, S, HP, C, MC, HSS, pipe or single angle (for example L3x3x3/16); blank for a threaded rod"),
@@ -1559,6 +1573,27 @@ def build(kind, values, project):
         args = (r.text("shape"), r.num("Fy"), r.text("steel_source"), r.num("length"), r.text("attached", False) or "")
         r.done()
         return ws_more.angle_strut_sheet(mark, *args, loads, cb, m), "simple", {}
+    if kind == "angle_beam":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        loads = []
+        for n_, x in enumerate(r.rows("loads"), 1):
+            uni = (x.get("kind") or "").startswith("uniform")
+            if not uni and x.get("x") is None:
+                r.miss.append(f"Loads, row {n_}: a point load needs its position")
+                continue
+            ld = dict(case=x["case"], kind="uniform" if uni else "point", dir=x.get("dir") or "down")
+            ld.update(w=x["value"]) if uni else ld.update(P=x["value"], x=x["x"])
+            if x.get("label"):
+                ld["label"] = x["label"]
+            loads.append(ld)
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        rs = r.text("restraint") or ""
+        args = (r.text("shape"), r.num("Fy"), r.text("steel_source"), r.num("span"), r.text("vertical", False) or "", r.text("toe"),
+                "midspan" if rs.startswith("at midspan") else "continuous" if rs.startswith("continuous") else "none", yes(r.text("self_weight")))
+        r.done()
+        return ws_more.angle_beam_sheet(mark, *args, loads, cb, m), "simple", {}
     if kind == "tension_member":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
