@@ -2434,18 +2434,20 @@ def _beam_hss_moment_picture(c, top, d):
     c.setFillColorRGB(0.90, 0.92, 0.95)
     c.rect(xf + g_, ym - dd / 2 * sc, Lb - g_, dd * sc, fill=1, stroke=1)
     c.line(xf + g_, ym - (dd / 2 - tf) * sc, xf + Lb, ym - (dd / 2 - tf) * sc); c.line(xf + g_, ym + (dd / 2 - tf) * sc, xf + Lb, ym + (dd / 2 - tf) * sc)
+    blv = d.get("bolts")
+    Lpl = (blv["a1"] + (blv["n"] - 1) * blv["s"] + blv["lev_p"]) if blv else 8.0
     if d["plate"]:
         c.setFillColorRGB(0.62, 0.68, 0.76)
         for sg in (1, -1):
             y0 = ym + sg * dd / 2 * sc if sg > 0 else ym - dd / 2 * sc - tb * sc
-            c.rect(xf, y0, 8 * sc, tb * sc, fill=1, stroke=1)
+            c.rect(xf, y0, Lpl * sc, tb * sc, fill=1, stroke=1)
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawString(xf + Lb + 16, ym + 6, d["beam"])
     c.drawRightString(xc - H / 2 * sc - 5, ym - hc / 2 + 4, d["column"])
     memberart._dim_v(c, ym - dd / 2 * sc, ym + dd / 2 * sc, xf + Lb + 8, f"d = {dd:g} in", FR, ext_from=xf + Lb)
     memberart._dim_h(c, xc - H / 2 * sc, xc + H / 2 * sc, ym - hc / 2 - 12, f"{H:g} in", FR, ext_from=ym - hc / 2)
     if d["plate"]:
-        c.setFont(FR, 6); c.drawString(xf + 8 * sc + 4, ym + dd / 2 * sc + tb * sc + 3, f"flange plate {Bb:g} x {tb:g} in, top and bottom")
+        c.setFont(FR, 6); c.drawString(xf + Lpl * sc + 4, ym + dd / 2 * sc + tb * sc + 3, f"flange plate {Bb:g} x {tb:g} in, top and bottom")
     _small(c, xc + 20, ym - hc / 2 - 28, "elevation, to scale")
     # plan of the connecting face, right
     xq, yq = RM - 150, top - 100
@@ -2453,14 +2455,32 @@ def _beam_hss_moment_picture(c, top, d):
     c.setLineWidth(0.8); c.setStrokeColorRGB(*INK)
     c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xq - H * s2, yq - B / 2 * s2, H * s2, B * s2, fill=1, stroke=1)
     c.setFillColorRGB(1, 1, 1); c.rect(xq - H * s2 + d["t"] * s2, yq - B / 2 * s2 + d["t"] * s2, (H - 2 * d["t"]) * s2, (B - 2 * d["t"]) * s2, fill=1, stroke=1)
+    bl = d.get("bolts")
+    Lp = (bl["a1"] + (bl["n"] - 1) * bl["s"] + bl["lev_p"]) * s2 if bl else 46
     c.setFillColorRGB(0.62, 0.68, 0.76) if d["plate"] else c.setFillColorRGB(0.90, 0.92, 0.95)
-    c.rect(xq, yq - Bb / 2 * s2, 46, Bb * s2, fill=1, stroke=1)
+    c.rect(xq, yq - Bb / 2 * s2, Lp, Bb * s2, fill=1, stroke=1)
     memberart._dim_v(c, yq - B / 2 * s2, yq + B / 2 * s2, xq - H * s2 - 10, f"B = {B:g} in", FR, ext_from=xq - H * s2)
-    memberart._dim_v(c, yq - Bb / 2 * s2, yq + Bb / 2 * s2, xq + 46 + 10, f"{Bb:g} in", FR, ext_from=xq + 46)
+    memberart._dim_v(c, yq - Bb / 2 * s2, yq + Bb / 2 * s2, xq + Lp + (46 if bl else 10), f"{Bb:g} in", FR, ext_from=xq + Lp)
+    if bl:                                                   # bolts in plan, with the gage, the distance from the face and the spacing dimensioned
+        c.setFillColorRGB(*INK)
+        xs_ = [xq + (bl["a1"] + i * bl["s"]) * s2 for i in range(bl["n"])]
+        for xb_ in xs_:
+            for sg in (1, -1):
+                c.circle(xb_, yq + sg * bl["g"] / 2 * s2, max(1.6, 0.4 * s2), fill=1, stroke=0)
+        ybot = yq - Bb / 2 * s2 - 10
+        memberart._dim_h(c, xq, xs_[0], ybot, "", FR, ext_from=yq - Bb / 2 * s2)
+        c.setFont(FR, 6); c.setFillColorRGB(*INK)
+        c.drawRightString(xq - 2, ybot - 8, f"{bl['a1']:g} in")
+        if bl["n"] > 1:
+            memberart._dim_h(c, xs_[0], xs_[-1], ybot, "", FR, ext_from=yq - Bb / 2 * s2)
+            c.drawString(xs_[0] + 2, ybot - 8, f"{bl['n'] - 1} @ {bl['s']:g} in")
+        memberart._dim_v(c, yq - bl["g"] / 2 * s2, yq + bl["g"] / 2 * s2, xq + Lp + 8, "", FR, ext_from=xs_[-1])
+        c.setFont(FR, 6); c.setFillColorRGB(*INK)
+        c.drawString(xq + Lp + 11, yq - 2, f"g = {bl['g']:g} in")
     memberart._dim_v(c, yq + Bb / 2 * s2, yq + B / 2 * s2, xq + 22, "", FR, ext_from=xq)
     c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawString(xq + 26, yq + (Bb / 2 + a_ / 2) * s2 - 2 + max(0, 6 - a_ * s2), f"a = {a_:.3g} in")
-    _small(c, xq - H * s2 / 2 + 20, yq - B / 2 * s2 - 14, "plan at a " + ("flange plate" if d["plate"] else "flange") + ", to scale")
-    return min(ym - hc / 2 - 36, yq - B / 2 * s2 - 22)
+    _small(c, xq - H * s2 / 2 + 20, yq - B / 2 * s2 - (26 if bl else 14), "plan at a " + ("flange plate" if d["plate"] else "flange") + ", to scale")
+    return min(ym - hc / 2 - 36, yq - B / 2 * s2 - (34 if bl else 22))
 
 
 def _guard_picture(c, top, d):

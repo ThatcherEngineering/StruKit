@@ -5,6 +5,7 @@ and a function that turns the typed values into the same worksheet objects the t
 exercise. Nothing typed is defaulted here: a blank required box comes back as a message
 naming the box, and all such messages come back together.
 """
+import math
 import re
 
 from .. import calcsheet, glulam, ijoist, scl, shapes, shearwall, snow, wood, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column, ws_wood
@@ -267,7 +268,16 @@ FORMS = {
                 F("face", "HSS face the beam frames into", "select", options=["B", "H"], required=False, help="for a rectangular HSS: B is the face named second in the size (HSS10x6: the 6 in. face), H the first; blank = B"),
                 F("flanges", "Flange connection", "select", options=["beam flanges welded directly to the face", "flange plates welded to the face"]),
                 F("bp", "Flange plate width", unit="in", required=False), F("tp", "Flange plate thickness", unit="in", required=False),
-                F("plate_Fy", "Flange plate Fy", unit="ksi", required=False), F("plate_source", "Source of the flange plate Fy", "text", required=False)],
+                F("plate_Fy", "Flange plate Fy", unit="ksi", required=False), F("plate_source", "Source of the flange plate Fy", "text", required=False),
+                F("plate_Fu", "Flange plate Fu", unit="ksi", required=False), F("beam_Fu", "Beam Fu", unit="ksi", required=False),
+                F("fd", "Flange plate bolts: diameter", unit="in", required=False, help="blank = the flange plate's connection to the beam flange is not checked"),
+                F("fgroup", "Flange plate bolts: type", "select", options=["A325", "A490", "F3148"], required=False),
+                F("fthreads", "Flange plate bolts: threads", "select", options=["N", "X"], required=False, help="N = in the shear plane, X = excluded"),
+                F("fn", "Bolts in each of the two rows", required=False), F("fs", "Bolt spacing along the beam", unit="in", required=False),
+                F("fg", "Gage between the two rows", unit="in", required=False), F("flev_p", "Plate end to the last bolt", unit="in", required=False),
+                F("flev_b", "Beam end to the first bolt", unit="in", required=False), F("fa1", "Column face to the first bolt", unit="in", required=False),
+                F("fweld", "Fillet weld, flange plate to the HSS face (each side of the plate)", unit="in", required=False),
+                F("fFEXX", "Electrode strength", unit="ksi", required=False)],
         tables=[T("loads", "Loads at the joint", [CASE, F("M", "Beam end moment", unit="kip-ft"), F("P", "Column axial load at the joint", unit="kip", required=False),
                                                   F("Mc", "Column moment at the joint", unit="kip-ft", required=False), F("label", "Note", "text", required=False)]),
                 T("runs", "Or: combined loads (for example from the 3D frame), used in place of the table above",
@@ -1633,6 +1643,16 @@ def build(kind, values, project):
         plated = str(values.get("flanges") or "").lower().startswith("flange plate")
         plate = dict(bp=r.num("bp", True, label="Flange plate width"), tp=r.num("tp", True, label="Flange plate thickness"), Fy=r.num("plate_Fy", True, label="Flange plate Fy"),
                      source=r.text("plate_source", False)) if plated else None
+        if plated and r.num("fd", False) is not None:
+            for key_, lab_ in (("fgroup", "Flange plate bolts: type"), ("fthreads", "Flange plate bolts: threads")):
+                if not str(values.get(key_) or "").strip():
+                    r.miss.append(f"{lab_} is blank")
+            plate.update(d=r.num("fd", False), group=str(values.get("fgroup") or "A325").strip(), threads=str(values.get("fthreads") or "N").strip(),
+                         n=r.num("fn", True, label="Bolts in each of the two rows"), s=r.num("fs", True, label="Bolt spacing along the beam"),
+                         g=r.num("fg", True, label="Gage between the two rows"), lev_p=r.num("flev_p", True, label="Plate end to the last bolt"),
+                         lev_b=r.num("flev_b", True, label="Beam end to the first bolt"), a1=r.num("fa1", True, label="Column face to the first bolt"),
+                         Fu=r.num("plate_Fu", True, label="Flange plate Fu"), beam_Fu=r.num("beam_Fu", True, label="Beam Fu"),
+                         weld=r.num("fweld", False), FEXX=r.num("fFEXX", False) or 70.0)
         r.text("flanges")
         args = (r.text("beam"), r.num("beam_Fy"), r.text("beam_source"), r.text("column"), r.num("col_Fy"), r.text("col_source"))
         r.done()
@@ -4058,6 +4078,51 @@ def frame_beam_end(project, members, mark):
                 picks.append(b)
         out[end] = [dict(name=b["run"], M=b["M"] / 12.0, T=max(b["T"], 0.0), V=b["V"]) for b in picks]
     return dict(ends=out, messages=run.get("problems") or [], method=run["method"])
+
+
+def frame_beam_hss(project, members, mark, end):
+    """Joint forces for the beam to HSS column moment connection screen, from one sway run at the project's method: the moment at one end of a
+    frame beam, with the axial load and the moment in the beam's plane at the top of the frame column the beam frames into, all from the same
+    run. Picks the runs with the largest beam end moment, the largest column load and the largest column moment.
+    dict(rows=[dict(name, M, P, Mc)], column, column_shape, face, messages, method); M and Mc in kip-ft, P in kips (compression positive)."""
+    run = model_frame_sway(project, members)
+    if not run.get("levels"):
+        return dict(rows=[], messages=run.get("problems") or ["the frame did not run"])
+    bm = next((b for b in run["beams"] if b["mark"] == mark), None)
+    if bm is None or not bm.get("ends") or end not in bm["ends"]:
+        return dict(rows=[], messages=[f"{mark} is not a beam of the placed frame"])
+    by_mark = {(x.get("values") or {}).get("mark"): x for x in members or []}
+    try:
+        bp = model_place(project, by_mark[mark])
+    except (KeyError, ValueError) as e:
+        return dict(rows=[], messages=[str(e)])
+    pt = bp["p1"] if end == "left" else bp["p2"]
+    other = bp["p2"] if end == "left" else bp["p1"]
+    along_x = abs(other[0] - pt[0]) >= abs(other[1] - pt[1])
+    col = cplace = None
+    for c in run["columns"]:
+        m_ = by_mark.get(c["mark"])
+        try:
+            cp = model_place(project, m_) if m_ else None
+        except ValueError:
+            cp = None
+        if cp and cp["level"] == bp["level"] and math.hypot(cp["p1"][0] - pt[0], cp["p1"][1] - pt[1]) <= 0.25 + 1e-9:
+            col, cplace = c, m_
+            break
+    if col is None or not col.get("top"):
+        return dict(rows=[], messages=[f"No frame column of {bp['level']} stands at the {end} end of {mark} ({pt[0]:g}, {pt[1]:g})"])
+    web_x = not str((cplace.get("values") or {}).get("at_web") or "X").strip().upper().startswith("Y")
+    face = "B" if along_x == web_x else "H"        # the beam runs along the column's depth: it frames into the B face; the column bends about its strong axis
+    key = "Ms" if face == "B" else "Mw"
+    tops = {t["run"]: t for t in col["top"]}
+    joined = [dict(name=b["run"], M=b["M"] / 12.0, P=tops[b["run"]]["P"], Mc=tops[b["run"]][key] / 12.0) for b in bm["ends"][end] if b["run"] in tops]
+    picks = []
+    for chooser in (lambda r: r["M"], lambda r: r["P"], lambda r: r["Mc"]):
+        r = max(joined, key=chooser)
+        if r not in picks:
+            picks.append(r)
+    return dict(rows=picks, column=col["mark"], column_shape=(cplace.get("values") or {}).get("shape") if cplace.get("kind") == "hss_column" else "",
+                face=face, messages=run.get("problems") or [], method=run["method"])
 
 
 def frame_base_biaxial(project, members, mark):

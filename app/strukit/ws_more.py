@@ -3739,6 +3739,68 @@ def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
     return sheet
 
 
+def flange_plate_bolted(M_bolt, M_plate, beam, beam_Fy, beam_Fu, bp, tp, Fy, Fu, d, group, threads, n, s, g, lev_p, lev_b, a1, method,
+                        weld=None, FEXX=70.0):
+    """A flange plate bolted to a wide-flange beam flange with two rows of n bolts (gage g, spacing s), in the arrangement of AISC Design
+    Examples v16.0 Example II.B-1. M_bolt and M_plate are the required moments for the bolts (lever arm d) and for the plate (lever arm d + tp),
+    kip-in. lev_p: plate end to the last bolt; lev_b: beam end to the first bolt; a1: column face to the first bolt (compression plate length).
+    Returns dict of required forces, available strengths (kips; beam flexure in kip-in.) and the step lines."""
+    from . import bolts
+    lrfd = method == "LRFD"
+    av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
+    bm = shapes.get(beam)
+    dd, bf, tf, Sx = bm["d"], bm["bf"], bm["tf"], bm["Sx"]
+    dh = bolts.standard_hole(d)
+    dn = dh + 1.0 / 16.0                                                    # hole width for net area, AISC 360-22 Sect. B4.3b
+    if g + dh > bp or g + dh > bf:
+        raise WorksheetError(f"the bolt gage {g:g} in. does not fit the flange plate ({bp:g} in.) or the beam flange ({bf:g} in.)")
+    if n < 1 or s <= 0 and n > 1:
+        raise WorksheetError("the flange plate needs at least one bolt in each row, and a spacing for more than one")
+    Pb, Pp = M_bolt / dd, M_plate / (dd + tp)
+    # bolts: each bolt the least of shear, bearing or tearout of the plate, bearing or tearout of the beam flange (J3.7, J3.11a)
+    rv = bolts.shear(d, group, threads, 1, method).R_avail
+    per = []
+    for i in range(n):                                                      # i = 0 is the bolt nearest the column
+        lc_p = (lev_p - dh / 2.0) if i == n - 1 else (s - dh)               # the plate tears out toward its free end
+        lc_b = (lev_b - dh / 2.0) if i == 0 else (s - dh)                   # the beam flange tears out toward the beam end
+        per.append(min(rv, bolts.hole(d, tp, Fu, lc_p, True, method).R_avail, bolts.hole(d, tf, beam_Fu, lc_b, True, method).R_avail))
+    R_bolts = 2 * sum(per)
+    Ag = bp * tp
+    R_ty = av(Fy * Ag, 0.90, 1.67)
+    An = (bp - 2 * dn) * tp
+    R_tr = av(Fu * An, 0.75, 2.00)                                         # Table D3.1 Case 1, U = 1.0
+    L = (n - 1) * s
+    def block(Agv, Anv, Ant, Fy_, Fu_):
+        return av(min(0.60 * Fu_ * Anv, 0.60 * Fy_ * Agv) + Fu_ * Ant, 0.75, 2.00)
+    leh_p, leh_b = (bp - g) / 2.0, (bf - g) / 2.0
+    bs1 = block(2 * (L + lev_p) * tp, 2 * (L + lev_p - (n - 0.5) * dn) * tp, 2 * (leh_p - 0.5 * dn) * tp, Fy, Fu)
+    bs3 = block((L + lev_p) * tp, (L + lev_p - (n - 0.5) * dn) * tp, (g + leh_p - 1.5 * dn) * tp, Fy, Fu)
+    bsb = block(2 * (L + lev_b) * tf, 2 * (L + lev_b - (n - 0.5) * dn) * tf, 2 * (leh_b - 0.5 * dn) * tf, beam_Fy, beam_Fu)
+    Afg, Afn = bf * tf, bf * tf - 2 * dn * tf
+    Yt = 1.0 if beam_Fy / beam_Fu <= 0.8 else 1.1
+    f13 = beam_Fu * Afn < Yt * beam_Fy * Afg
+    Mn13 = beam_Fu * Afn / Afg * Sx if f13 else None
+    Lc = 0.65 * max(s if n > 1 else 0.0, a1)                                # K = 0.65, Commentary Table C-A-7.1, as in Example II.B-1
+    r_ = tp / math.sqrt(12.0)
+    slend = Lc / r_
+    if slend <= 25:
+        Pn = Fy * Ag                                                        # Eq. J4-6
+        comp_ref = "AISC 360-22 Eq. J4-6"
+    else:
+        Fe = math.pi ** 2 * 29000.0 / slend ** 2
+        Fcr = (0.658 ** (Fy / Fe)) * Fy if Fy / Fe <= 2.25 else 0.877 * Fe
+        Pn = Fcr * Ag
+        comp_ref = "AISC 360-22 Sect. J4.4, Chapter E (Eq. E3-2, E3-3)"
+    R_c = av(Pn, 0.90, 1.67)
+    out = dict(Pb=Pb, Pp=Pp, dh=dh, per=per, R_bolts=R_bolts, Ag=Ag, An=An, R_ty=R_ty, R_tr=R_tr, bs1=bs1, bs3=bs3, bsb=bsb, Afg=Afg, Afn=Afn,
+               f13=f13, R_f13=av(Mn13, 0.90, 1.67) if f13 else None, Lc_r=slend, R_c=R_c, comp_ref=comp_ref, rv=rv)
+    if weld:
+        kds = 1.5                                                           # Eq. J2-5 at 90 degrees
+        out["R_w"] = av(0.60 * FEXX * 0.7071 * weld * kds * bp * 2, 0.75, 2.00)
+        out["kds"] = kds
+    return out
+
+
 def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_source, loads, combos, method, face="B", plate=None, runs=None, runs_from=""):
     """Wide-flange beam framing into the face of a square or rectangular HSS column with a moment connection: the flanges welded directly to
     the face, or flange plates welded to the face (plate = dict(bp, tp, Fy, source)). AISC Design Guide 24 (2nd Ed.) Sect. 6.4 as worked in
@@ -3821,11 +3883,46 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
     names = dict(fl="Local yielding of the " + what, sw="HSS side wall local yielding", yl="Plastification of the HSS face", ps="Punching shear of the HSS face", cr="HSS wall local crippling")
     refs = dict(fl="AISC 360-22 Eq. K1-1, J4-1", sw="AISC 360-22 Eq. J10-2", yl="AISC Manual Eq. 9-44; AISC 360-22 Eq. K1-4", ps="AISC Manual Eq. 9-43", cr="AISC Design Guide 24 Eq. 2-19")
     rows = [Row(names[k], gov[k]["name"], gov[k]["Ff"], gov[k]["cap"][k], "kip", refs[k], f"Qf = {gov[k]['Qf']:.3g}" if k in ("yl", "cr") else "") for k in ("fl", "sw", "yl", "ps", "cr")]
+    fp = None
+    if plate and plate.get("d"):
+        gM = max(cases, key=lambda c_: c_["M"])
+        try:
+            fp = flange_plate_bolted(gM["M"], gM["M"], beam, beam_Fy, plate["beam_Fu"], Bb, tb, Fyb, plate["Fu"], plate["d"], plate["group"], plate["threads"],
+                                     int(plate["n"]), plate["s"], plate["g"], plate["lev_p"], plate["lev_b"], plate["a1"], method, plate.get("weld"),
+                                     plate.get("FEXX") or 70.0)
+        except Exception as e:
+            raise WorksheetError(f"{mark}: {e}")
+        nm_ = gM["name"]
+        bolt_txt = f"{2 * int(plate['n'])} bolts"
+        rows += [Row("Bolts, flange plate to beam flange", nm_, fp["Pb"], fp["R_bolts"], "kip", "AISC 360-22 Sect. J3.7, Eq. J3-1, J3-6a, J3-6c", bolt_txt),
+                 Row("Flange plate tensile yielding", nm_, fp["Pp"], fp["R_ty"], "kip", "AISC 360-22 Eq. J4-1"),
+                 Row("Flange plate tensile rupture", nm_, fp["Pp"], fp["R_tr"], "kip", "AISC 360-22 Eq. J4-2; Table D3.1 Case 1"),
+                 Row("Flange plate block shear, outer blocks", nm_, fp["Pp"], fp["bs1"], "kip", "AISC 360-22 Eq. J4-5"),
+                 Row("Flange plate block shear, through one row", nm_, fp["Pp"], fp["bs3"], "kip", "AISC 360-22 Eq. J4-5"),
+                 Row("Beam flange block shear", nm_, fp["Pb"], fp["bsb"], "kip", "AISC 360-22 Eq. J4-5")]
+        if fp["f13"]:
+            rows.append(Row("Beam flexure at the flange bolt holes", nm_, gM["M"] / 12.0, fp["R_f13"] / 12.0, "kip-ft", "AISC 360-22 Eq. F13-1"))
+        rows.append(Row("Compression flange plate", nm_, fp["Pp"], fp["R_c"], "kip", fp["comp_ref"], f"Lc / r = {fp['Lc_r']:.3g}"))
+        if fp.get("R_w"):
+            rows.append(Row("Fillet welds, flange plate to the HSS face", nm_, fp["Pp"], fp["R_w"], "kip", "AISC 360-22 Eq. J2-4, J2-5",
+                            f"{plate['weld']:g} in. both sides of the plate, kds = 1.5"))
+        steps += [Ln("Flange force on the bolts, M / d", fp["Pb"], "kip", "AISC Manual Eq. 11-1", f"{nm_}; d = {dd:g} in."),
+                  Ln("Flange force in the plate, M / (d + tp)", fp["Pp"], "kip", "AISC Manual Eq. 11-1", f"d + tp = {dd + tb:.3g} in."),
+                  Ln("Each bolt: least of shear, bearing and tearout", min(fp["per"]), "kip", "AISC 360-22 Eq. J3-1, J3-6a, J3-6c",
+                     f"bolt shear alone {fp['rv']:.3g} kip; standard holes {fp['dh']:.4g} in.; deformation at service load considered"),
+                  Ln("Net area of the flange plate", fp["An"], "in2", "AISC 360-22 Sect. B4.3b", "two holes, each the hole + 1/16 in."),
+                  Ln("Compression plate slenderness, K L / r", fp["Lc_r"], "", "AISC 360-22 Sect. J4.4",
+                     f"K = 0.65; L = the larger of the bolt spacing and the face to the first bolt ({plate['a1']:g} in.); r = tp / 12^0.5")]
+
     info = [("Beam", f"{shapes.normalize(beam)}, d = {dd:g} in., bf = {bm['bf']:g} in., tf = {bm['tf']:g} in., Fy = {beam_Fy:g} ksi ({beam_source.strip()})"),
             ("Column", f"{shapes.normalize(column)}, connecting face {B:g} in. wide, side walls {H:g} in., t = {t:g} in., A = {A:g} in2, S = {S:g} in3, Fy = {col_Fy:g} ksi ({col_source.strip()})"),
             ("Flanges", (f"flange plates {plate['bp']:g} x {plate['tp']:g} in., Fy = {plate['Fy']:g} ksi ({plate['source'].strip()}), welded to the HSS face, on the outside of each beam flange"
                          if plate else "beam flanges welded directly to the HSS face")),
             ("Flat of Face", f"{flat:.3g} in. (B - 4.5 t nominal); {what} width {Bb:g} in."),]
+    if fp:
+        info.append(("Flange Bolts", f"{2 * int(plate['n'])} - {plate['d']:g} in. {plate['group']}-{plate['threads']} in each plate, two rows of {int(plate['n'])}, "
+                                     f"gage {plate['g']:g} in., spacing {plate['s']:g} in.; plate end to last bolt {plate['lev_p']:g} in., beam end to first bolt "
+                                     f"{plate['lev_b']:g} in., column face to first bolt {plate['a1']:g} in.; plate Fu = {plate['Fu']:g} ksi, beam Fu = {plate['beam_Fu']:g} ksi"))
     if runs:
         load_lines = [f"M = {abs(r_['M']):>7.2f} kip-ft   column P = {abs(r_.get('P') or 0):>7.2f} kip, M = {abs(r_.get('Mc') or 0):>6.2f} kip-ft   {r_['name']}" for r_ in runs]
         combo_lines = [(f"Combined loads at the {method} level" + (f": {runs_from.strip()}" if (runs_from or "").strip() else ""), "")]
@@ -3838,13 +3935,16 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
                          "Each flange force acts on the HSS face as a transverse plate. The " + what + " is welded to the flat of the face with a weld that develops it.",
                          "The chord-stress factor Qf is applied for every combination, with the column axial load and moment at the joint as entered.",
                          "HSS wall local crippling is taken for one wall (AISC Design Guide 24 Example 6.3)."],
-                        ["the weld of the " + what + " to the HSS face", "the web (shear) connection", "panel shear in the HSS side walls where the moments on opposite faces do not balance"]
-                        + (["the flange plate in tension and compression away from the face, and its bolts or welds to the beam flange", "the beam flange at the bolt holes"] if plate else [])
+                        ([] if (fp and fp.get("R_w")) else ["the weld of the " + what + " to the HSS face"])
+                        + ["the web (shear) connection", "panel shear in the HSS side walls where the moments on opposite faces do not balance"]
+                        + ((["the flange plate in tension and compression away from the face, and its bolts or welds to the beam flange", "the beam flange at the bolt holes"]
+                            if not fp else ["slip-critical bolts (the bolts are taken as bearing type)"]) if plate else [])
                         + ["the beam and the column themselves"])
     sheet.blocks.append(dict(title="Connection", head="Connection", picture=("beam_hss_moment", dict(B=B, H=H, t=t, Bb=Bb, tb=tb, d=dd, bf=bm["bf"], tf=bm["tf"], a=a_, plate=bool(plate),
+                                                                                                    bolts=(dict(n=int(plate["n"]), s=plate["s"], g=plate["g"], lev_p=plate["lev_p"], a1=plate["a1"]) if fp else None),
                                                                                                     beam=shapes.normalize(beam), column=shapes.normalize(column)))))
     sheet.conn = dict(Be=Be, R_fl=R_fl, R_sw=R_sw, ceff=ceff, R_ps=R_ps, a=a_, beta=beta, arm=arm, flat=flat, cases=cases, gov={k: v["name"] for k, v in gov.items()},
-                      M_avail=low * arm / 12.0, yl=g0["cap"]["yl"], cr=gov["cr"]["cap"]["cr"], Qf=g0["Qf"], U=g0["U"])
+                      M_avail=low * arm / 12.0, yl=g0["cap"]["yl"], cr=gov["cr"]["cap"]["cr"], Qf=g0["Qf"], U=g0["U"], fp=fp)
     return sheet
 
 

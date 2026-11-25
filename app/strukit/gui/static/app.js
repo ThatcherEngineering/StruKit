@@ -632,6 +632,26 @@ function fillBar(m, changed) {
     } }, "Fill Loads");
     return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the loads from the 3D frame"), pick, end, go);
   }
+  if (m.kind === "beam_hss_moment") {
+    const bms = S.members.filter(x => x.kind === "steel_beam" && x.values.at_x1 && x.values.at_level);
+    if (!bms.length) return el("div", { class: "fill small" }, "The combined loads can be filled from a beam of the 3D frame once the project has steel beams placed in the building model.");
+    const pick = el("select", {}, el("option", { value: "" }, "choose a frame beam"), bms.map(x => el("option", { value: x.values.mark }, x.values.mark || "(no mark)")));
+    const end = el("select", {}, ["left", "right"].map(a => el("option", { value: a }, a + " end")));
+    const go = el("button", { class: "btn", onclick: async () => {
+      if (!pick.value) return toast("Choose the beam first.");
+      let got;
+      try { got = await post("/api/frame_beam_hss", { project: S.project, members: S.members, mark: pick.value, end: end.value }); } catch (e) { return toast(e.message, 12000); }
+      if (!got.rows || !got.rows.length) return toast((got.messages || []).join("  ") || "The frame did not run.", 12000);
+      m.values.runs = got.rows.map(r => ({ name: r.name, M: r.M.toFixed(2), P: r.P.toFixed(2), Mc: r.Mc.toFixed(2) }));
+      m.values.loads_from = "forces at the " + end.value + " end of beam " + pick.value + " and at the top of column " + got.column + " in the 3D frame analysis, second-order analysis";
+      m.values.face = got.face;
+      if (!m.values.beam) { const b = bms.find(x => x.values.mark === pick.value); if (b) m.values.beam = b.values.shape; }
+      if (!m.values.column && got.column_shape) m.values.column = got.column_shape;
+      changed(); drawMain();
+      toast("Filled " + got.rows.length + " runs from the frame (column " + got.column + ", face " + got.face + "): largest beam moment, column load and column moment.", 10000);
+    } }, "Fill Loads");
+    return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the joint loads from the 3D frame"), pick, end, go);
+  }
   if (m.kind === "cap_plate") {
     const cols = S.members.filter(x => (x.kind === "steel_column" || x.kind === "hss_column") && x.values.at_x1 && x.values.at_level);
     if (!cols.length) return el("div", { class: "fill small" }, "The combined loads can be filled from a column of the 3D frame once the project has columns placed in the building model.");
