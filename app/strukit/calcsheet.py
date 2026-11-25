@@ -1608,6 +1608,8 @@ def _block_picture(c, top, pic):
         return _base_plate_uplift_picture(c, top - 6, d)
     if name == "single_plate":
         return _single_plate_picture(c, top - 6, d)
+    if name == "coped_end":
+        return _coped_end_picture(c, top - 6, d)
     if name == "end_plate":
         return _end_plate_picture(c, top - 6, d)
     if name == "seat":
@@ -2170,6 +2172,71 @@ def _single_plate_picture(c, top, d):
     c.drawString(xb + (a + leh) * sc + 4, y1 + 17, d["beam"])
     _small(c, (LM + RM) / 2, y0 - 62, "elevation, to scale; beam web shown behind the plate")
     return y0 - 70
+
+
+def _coped_end_picture(c, top, d):
+    """Side elevation of a coped beam end, to scale: the support face, the setback, the beam with its cope(s), the bolts in the web; cope
+    length and depth, setback, e, bolt line to the beam end, cut edge to the nearest bolt, bolt spacing and beam depth dimensioned."""
+    bd, tf, dct, dcb, cl, sb = d["bd"], d["tf"], d.get("dct") or 0.0, d.get("dcb") or 0.0, d["c"], d["setback"]
+    n, s_, lev, leh = d["n"], d["s"], d["lev"], d["leh"]
+    Lshow = cl + 0.9 * bd
+    sc = min(140.0 / bd, 290.0 / (sb + Lshow), 15.0)
+    xs = LM + 90
+    xb, xc, xe = xs + sb * sc, xs + (sb + cl) * sc, xs + (sb + Lshow) * sc
+    yt = top - 44
+    yb = yt - bd * sc
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)          # support
+    c.rect(xs - 14, yb - 12, 14, bd * sc + 24, fill=1, stroke=0)
+    c.line(xs, yb - 12, xs, yt + 12)
+    pts = [(xb, yt - dct * sc)]
+    if dct:
+        pts += [(xc, yt - dct * sc), (xc, yt)]
+    else:
+        pts += [(xb, yt)]
+    pts += [(xe, yt), (xe, yb)]
+    if dcb:
+        pts += [(xc, yb), (xc, yb + dcb * sc)]
+    else:
+        pts += [(xb, yb)]
+    pts += [(xb, yb + dcb * sc)]
+    pth = c.beginPath(); pth.moveTo(*pts[0])
+    for q in pts[1:]:
+        pth.lineTo(*q)
+    pth.close()
+    c.setFillColorRGB(0.86, 0.89, 0.93); c.drawPath(pth, fill=1, stroke=1)
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5)                                                  # flange inner lines
+    c.line(xc if dct else xb, yt - tf * sc, xe, yt - tf * sc)
+    c.line(xc if dcb else xb, yb + tf * sc, xe, yb + tf * sc)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.6); c.setDash(3, 2); c.line(xe, yb - 4, xe, yt + 4); c.setDash()
+    xbolt = xb + leh * sc
+    if dct or not dcb:
+        ys = [yt - (dct + lev + k * s_) * sc for k in range(n)]
+        ycut = yt - dct * sc
+    else:
+        ys = [yb + (dcb + lev + k * s_) * sc for k in range(n)]
+        ycut = yb + dcb * sc
+    c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    for y in ys:
+        c.circle(xbolt, y, max(1.8, d["d"] * sc / 2), fill=1, stroke=1)
+    memberart._dim_h(c, xs, xb, yt + 16, "", FR, ext_from=yt)
+    c.setFont(FR, 6); c.drawRightString(xs - 4, yt + 14, f"setback {sb:g} in")
+    memberart._dim_h(c, xb, xc, yt + 16, f"c {cl:g} in", FR, ext_from=yt)
+    memberart._dim_h(c, xs, xc, yt + 34, f"e {sb + cl:g} in", FR)
+    memberart._dim_h(c, xb, xbolt, yb - 16, f"{leh:g} in", FR, ext_from=yb)
+    if dct:
+        memberart._dim_v(c, yt - dct * sc, yt, xc - 5, f"{dct:g} in", FR, ext_from=xc)
+    if dcb:
+        memberart._dim_v(c, yb, yb + dcb * sc, xc - 5, f"{dcb:g} in", FR, ext_from=xc)
+    xr = xe + 14
+    memberart._dim_v(c, min(ycut, ys[0]), max(ycut, ys[0]), xr, f"{lev:g} in", FR, ext_from=xbolt)
+    if n > 1:
+        memberart._dim_v(c, min(ys[0], ys[1]), max(ys[0], ys[1]), xr, f"{s_:g} in" + (" typ." if n > 2 else ""), FR, ext_from=xbolt)
+    memberart._dim_v(c, yb, yt, xr + 46, f"d {bd:g} in", FR, ext_from=xe)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawRightString(xs - 20, (yt + yb) / 2 + 2, "support")
+    c.drawRightString(xe - 4, yt + 4, d["beam"])
+    _small(c, (LM + RM) / 2, yb - 40, "side elevation of the beam end, to scale; plate not shown")
+    return yb - 48
 
 
 def _end_plate_picture(c, top, d):

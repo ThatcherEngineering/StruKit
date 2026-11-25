@@ -98,3 +98,65 @@ def double_cope(d, tw, Fy, Fu, dct, dcb, c, e, holes=0, hole=0.0):
     Agv = hc * tw
     Anv = Agv - holes * hole * tw
     return dict(hc=hc, Cb=Cb, Sc=Sc, Zc=Zc, My=My, Mp=Mp, lam=lam, Mn=Mn, eq=eq, e=e, R_flex=Mn / e, Agv=Agv, Anv=Anv, R_vy=0.60 * Fy * Agv, R_vr=0.60 * Fu * Anv)
+
+
+
+def tee_flexure(Fy, Sx, Sxc, Zx, bf, tf, ltb=None):
+    """Nominal flexural strength (kip-in.) of a tee with its stem in tension, AISC 360-22 Sect. F9: yielding (Eq. F9-1 to F9-3, Mp not
+    over 1.6 My), lateral-torsional buckling (Eq. F9-6 to F9-11) when ltb = dict(d, Iy, J, ry, Lb) is given, and flange local buckling
+    (Eq. F9-14, F9-15; limits of Table B4.1b Case 10). Sx is to the tip of the stem (the smaller modulus), Sxc to the flange. Returns
+    every value, each limit state and the governing one."""
+    My = Fy * Sx
+    Mp = min(Fy * Zx, 1.6 * My)
+    out = dict(My=My, Mp=Mp, Mp_raw=Fy * Zx)
+    lims = [("yielding", Mp, "Mn = Mp = Fy Zx, not over 1.6 My (Eq. F9-1, F9-2)")]
+    if ltb and ltb.get("Lb", 0) > 0:
+        dd, Iy, J, ry, Lb = ltb["d"], ltb["Iy"], ltb["J"], ltb["ry"], ltb["Lb"]
+        Lp = 1.76 * ry * math.sqrt(E / Fy)
+        Lr = 1.95 * (E / Fy) * math.sqrt(Iy * J) / Sx * math.sqrt(2.36 * (Fy / E) * dd * Sx / J + 1)
+        B = 2.3 * (dd / Lb) * math.sqrt(Iy / J)
+        Mcr = 1.95 * E / Lb * math.sqrt(Iy * J) * (B + math.sqrt(1 + B * B))
+        out.update(Lp=Lp, Lr=Lr, B=B, Mcr=Mcr, Lb=Lb)
+        if Lb <= Lp:
+            out["ltb"] = "Lb not over Lp: lateral-torsional buckling does not apply (Sect. F9.2(a)(1))"
+        elif Lb <= Lr:
+            lims.append(("lateral-torsional buckling", Mp - (Mp - My) * (Lb - Lp) / (Lr - Lp), "Mn = Mp - (Mp - My)(Lb - Lp)/(Lr - Lp) (Eq. F9-6)"))
+        else:
+            lims.append(("lateral-torsional buckling", Mcr, "Mn = Mcr (Eq. F9-7, F9-10)"))
+    lam = bf / (2 * tf)
+    lpf, lrf = 0.38 * math.sqrt(E / Fy), 1.0 * math.sqrt(E / Fy)
+    out.update(lam_f=lam, lam_pf=lpf, lam_rf=lrf)
+    if lam > lrf:
+        lims.append(("flange local buckling", 0.7 * E * Sxc / lam ** 2, "Mn = 0.7 E Sxc / (bf / 2tf)^2 (Eq. F9-15)"))
+    elif lam > lpf:
+        lims.append(("flange local buckling", min(Fy * Zx - (Fy * Zx - 0.7 * Fy * Sxc) * (lam - lpf) / (lrf - lpf), 1.6 * My),
+                     "Mn = Mp - (Mp - 0.7 Fy Sxc)(lambda - lambda_pf)/(lambda_rf - lambda_pf), not over 1.6 My (Eq. F9-14)"))
+    gov = min(lims, key=lambda x: x[1])
+    out.update(limits=lims, Mn=gov[1], governs=gov[0], eq=gov[2])
+    return out
+
+
+def bottom_cope(d, tw, bf, tf, Fy, Fu, dc, c, e, holes=0, hole=0.0):
+    """Beam end coped at the bottom flange only, the end reaction downward (top flange in compression at the cope). AISC Manual Part 9
+    (15th Ed.) gives no local buckling procedure for this case; the remaining tee (top flange and web, fillets not counted) is checked
+    as a tee with its stem in tension by AISC 360-22 Sect. F9, with Lb = c (braced at the end of the cope), and for flexural rupture by
+    Mn = Fu Znet (Manual Eq. 9-4 in the 15th Ed., 9-8 in the numbering of Design Examples v16.0; no bolt holes at the end of the cope). Shear yielding and rupture of the remaining web (Eq. J4-3, J4-4) are
+    returned as well."""
+    if dc <= 0 or c <= 0 or e <= 0:
+        raise CopeError("cope: the cope depth, cope length and e must be positive")
+    if dc > d / 2:
+        raise CopeError("cope: a bottom cope deeper than half the beam depth is outside this check")
+    if c > 2 * d:
+        raise CopeError("cope: a cope longer than twice the beam depth is outside this check")
+    s = tee(d, tw, bf, tf, dc)
+    hc, y, I = s["hc"], s["y"], s["I"]
+    Sx, Sxc = I / max(y, hc - y), I / y
+    hw = hc - tf
+    Iy = tf * bf ** 3 / 12 + hw * tw ** 3 / 12
+    J = (bf * tf ** 3 + hw * tw ** 3) / 3
+    ry = math.sqrt(Iy / s["A"])
+    fl = tee_flexure(Fy, Sx, Sxc, s["Zc"], bf, tf, ltb=dict(d=hc, Iy=Iy, J=J, ry=ry, Lb=c))
+    Agv = hc * tw
+    Anv = Agv - holes * hole * tw
+    return dict(s, Sx=Sx, Sxc=Sxc, Iy=Iy, J=J, ry=ry, **{k: v for k, v in fl.items()}, e=e, R_flex=fl["Mn"] / e,
+                Mr=Fu * s["Zc"], R_rup=Fu * s["Zc"] / e, Agv=Agv, Anv=Anv, R_vy=0.60 * Fy * Agv, R_vr=0.60 * Fu * Anv)
