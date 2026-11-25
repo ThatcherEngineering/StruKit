@@ -667,7 +667,7 @@ FORMS = {
                 F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
         tables=[]),
     "ftao_wall": dict(
-        title="Wood Shear Wall, Force Transfer Around an Opening", code="SDPWS-2021", mark="FT",
+        title="Wood Shear Wall, Force Transfer Around Openings", code="SDPWS-2021", mark="FT",
         fields=[F("panel", "Sheathing and nails", "select", options=list(shearwall.PANELS), help="SDPWS Table 4.3A; blocked"),
                 F("spacing", "Edge nail spacing", "select", options=["6", "4", "3", "2"], unit="in"),
                 F("panel_type", "Panel", "select", options=["OSB", "plywood"]),
@@ -686,7 +686,10 @@ FORMS = {
                 F("hd_sdc", "Strap tie, seismic: Seismic Design Category", "select", options=["A or B", "C to F"], required=False),
                 F("above_T", "Stacked walls: chord force from the wall above", unit="lb", required=False),
                 F("above_source", "Stacked walls: where that force comes from", "text", required=False)],
-        tables=[]),
+        tables=[T("more", "More openings, left to right after the first (the pier at the right of the first opening is then the pier between openings 1 and 2)",
+                  [F("w", "Opening width", unit="ft"), F("ho", "Opening clear height", unit="ft"), F("sill", "Sheathing height below (0 for a door)", unit="ft", required=False),
+                   F("pier", "Pier at its right", unit="ft")],
+                  help="APA Technical Note T555 method for several openings; leave empty for one opening")]),
     "perforated_wall": dict(
         title="Perforated Wood Shear Wall", code="SDPWS-2021", mark="PSW",
         fields=[F("panel", "Sheathing and nails", "select", options=list(shearwall.PANELS), help="SDPWS Table 4.3A; blocked"),
@@ -1931,12 +1934,14 @@ def build(kind, values, project):
                 r.num("sill", False) or 0.0, r.num("V"), r.text("load"))
         vs, sd_ = r.text("v_source"), r.text("sides") or ""
         hdm = r.text("hd_model", False)
+        more = r.rows("more")
         r.done()
         return ws_more.ftao_wall_sheet(mark, args[0], int(args[1]), *args[2:], m, vs, yes(r.text("holddown", False)), 2 if sd_.startswith("both") else 1,
                                        above_T=r.num("above_T", False) or 0.0, above_source=r.text("above_source", False) or "",
                                        holddown=(dict(model=hdm, stem=r.text("hd_stem", False), position=r.text("hd_position", False),
                                                       cracked={"cracked": True, "uncracked": False}.get(r.text("hd_cracked", False)),
-                                                      sdc_high={"A or B": False, "C to F": True}.get(r.text("hd_sdc", False))) if hdm else None)), "simple", {}
+                                                      sdc_high={"A or B": False, "C to F": True}.get(r.text("hd_sdc", False))) if hdm else None),
+                                       more=more or None), "simple", {}
     if kind == "perforated_wall":
         m = method(project, r.miss)
         panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")
