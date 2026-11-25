@@ -4,6 +4,41 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
+## Current state (read this first; every session updates it before it ends)
+Updated 2026-11-25 12:30. Build **0.210.2**, 555 tests passing; `main` and `release` pushed.
+
+**Where everything lives**
+- Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
+- Rules for every session: `CLAUDE.md` in the repo. Rulings: `docs/STRUKIT-RULINGS.md`. This log: `docs/STRUKIT-BUILD-LOG.md`. Which reference file is which, and the pages used: `docs/REFERENCES.md`. The rulings and this log are also in the Project as `claude/STRUKIT-RULINGS.md` and `claude/STRUKIT-BUILD-LOG.md`; keep both in step.
+- Other StruKit docs in the Project: `claude/STRUKIT-PHASE1-PROPOSAL-2026-11-20.md` (first scope and roadmap), `claude/STRUKIT-JURIS-FINDINGS-2026-11-20.md` (jurisdiction criteria; its section 3 items are still open), `claude/STRUKIT-INPUT-SPEC.md` and `claude/fixtures/strukit/` (the text-file input agreed with the ProgeCAD chat; on hold until Zach restarts the ProgeCAD side), `claude/STRUKIT-TO-PROGECAD-*` and `claude/PROGECAD-TO-STRUKIT-*` (messages between the chats).
+- Reference standards: Zach's folder (see `docs/REFERENCES.md`). Past chats in this Project can be searched for anything not written down.
+- A daily scheduled session starts at 5:10 AM Denver time, reads these files, builds for about 2 hours, updates this section and the rulings, and sends one check-in.
+
+**Waiting for Zach's ruling** (applied conservatively meanwhile; details in the rulings file)
+1. Open-building column wind Cf from ASCE 7-22 Figure 29.4-1 at the column's own h/D (1.76 for an HSS8x8 about 11.8 ft tall).
+2. Fascia Cf 2.0 (Figure 29.4-2), both edges facing the wind counted.
+3. Anchor rod tensile strength: lower of AISC 360-22 Table J3.2 and Design Guide 1 Table 4-1 always?
+4. Older open items in the rulings file under "Open (not ruled)": parapet zone 3, single-row group action, wind overhang velocity pressure, which checks print at the member, his reaction to the window.
+
+**Needed from Zach (do not build without it):** ASCE 7-16 text; AISI S100; a reference or his own method for an HSS rafter on an HSS column cap plate; a readable TMS 402 for CMU walls; ASABE EP484 / EP486 for post-frame embedment; his wind drift limit and its source.
+
+**Next, in order**
+1. Beam to HSS column moment connection: fill from the 3D frame (beam end moment with the column's P and M at the joint); flange plate away from the face and its bolts to the beam flange (tension yielding and rupture, bolt shear, block shear).
+2. Stiffened seated connections (AISC Manual Table 10-8 pages, read as images).
+3. Beam coped at the bottom flange only.
+4. Force transfer around several openings (APA procedure).
+5. Steel beams with weak-axis or torsional moment.
+6. Single angles in bending (AISC 360-22 Sect. F10).
+7. Crane runway beams (wheel loads, impact, lateral and longitudinal forces, underhung bottom flange bending).
+8. Read wood, LVL, I-joist, post and footing members from StruCalc .vtx files.
+9. Shear lugs (Design Guide 1 Example 4.7-5); anchorage on the uplift base plate and the four-rod biaxial base plate.
+10. Built-up three-plate sections as beams and columns; the column side of the extended end plate.
+11. Through-plate and diaphragm beam-to-HSS moment connections (Design Guide 24 Examples 6.2, 6.4).
+12. Carport package: eave beams taking roof load; portal-bay knee with both directions.
+13. More guard designs (Zach, later). Print every sheet type and read it against the "factual, not a design log" rule.
+
+The older "Next" and "Not built yet" lists further down are history; this list replaces them.
+
 ## Zach's reference folder (2026-11-23 07:39)
 `C:\Users\zacht\OneDrive\Desktop\StrucutralDesign` (spelled that way; inside the connected Desktop folder, so any chat can list and stage it). Contents on 2026-11-23:
 - Already in use: `A360-22W-ewr.pdf` (AISC 360-22), `P901-23W.pdf` and `P902-23W.pdf` (AISC Design Examples v16.0, Vol. 1 and 2), `SHAPE160.xlsx`, `ACI-318-19.pdf`, `885219892-ASCE-SE-7-22.pdf` (ASCE 7-22, page images, OCR needed), `Steel-Structures2024-[www.konkur.in].pdf` (AISC Design Guide 1, 3rd Ed.).
@@ -193,7 +228,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 - **0.164.0 (2026-11-23 19:40): job 2026-011 run whole (Zach 19:33: "What if you ran it on 2026-011? And 2026-001?").** All 15 members of the sealed StruCalc package (4/21/2026) entered in one StruKit project (`tests/data/job_2026_011.strukit`, permanent test `tests/test_job_2026_011.py`); every member passes; 33 of 48 checks equal StruCalc within 0.6 percent; the other 15 differ for recorded reasons (shear deflection of LVL and I-joists, live load arrangement on the three-span Floor Beam A, footing shear and stem wall weight by Zach's rulings). Package: 29 sheets. **What the run turned up, all fixed in this build:** (1) the BCI 4500S-1.8 joist was not in the data: added from ESR-1336 (11-7/8 in. only; its weight is the one StruCalc printed); (2) bearing-length interpolation for BCI end and intermediate reactions (ESR-1336 Sect. 4.2 permits it; StruKit had used the 1-1/2 in. value: 950 lb where StruCalc and the report give 1,306 lb at 3 in.); (3) the bearing area factor Cb at interior supports under 6 in. long (NDS 3.10.4, Eq. 3.10-2) on wood, LVL and glulam beams: StruKit had Cb = 1.0 and would have flagged the sealed Floor Beam A at 756.6 against 750 psi; (4) a load typed to 27.25 ft on spans typed 3 x 9.0833 ft stopped the run ("load is not on the beam"): loads and supports within 0.05 in. past the end now snap to the end; (5) the cover sheet's contents columns ran into each other with long marks and code lines. Also confirmed: StruCalc's built-up columns use Kf = 0.6 too (identical capacities), and StruCalc's continuous beam loads every span at once (StruKit with the same loading gives its 719.1 psi exactly).
 - **0.165.0 (2026-11-23 19:47): StruCalc project reader, and job 2026-001's mezzanine.** New `strukit/strucalc.py`: reads a StruCalc Pro project file (.vtx, XML) into a StruKit project: steel floor beams of W, M, S, HP, channel and HSS shapes (spans, free ends as overhangs, uniform and point loads, top flange bracing, deflection limits, self-weight) and HSS or pipe columns (axial load, end moments, unbraced lengths as K factors), with StruCalc's own demand and strength for every check kept beside each member and a note for everything not carried across. The window's Open now takes .vtx files (opens as a new unsaved project; the StruCalc file is never written to). **Job 2026-001 mezzanine** (28 members in `2026-001-StruCalc.vtx`): 27 came across and ran (`tests/data/job_2026_001_mezzanine.strukit`, `tests/test_job_2026_001.py`); 78 of 80 comparable checks equal StruCalc within 0.8 percent (shear, flexure, compression, interaction, deflection; W6 to W18, HSS); package 56 sheets. **Turned up and fixed:** the HSS column used Cm = 1.0 always and flagged Column-A.1 at 1.175 where StruCalc has 0.978; new optional box "End moments: smaller over larger, M1 / M2" gives Cm = 0.6 - 0.4 (M1 / M2) (AISC 360-22 Eq. A-8-4), blank keeps Cm = 1.0; with the moment at the top only StruKit gives 0.9784, StruCalc's number. **Gaps the job shows, not built:** (1) steel beams with a weak-axis or torsional moment (FloorBeamD.3, FloorBeamY.5: StruCalc checks H1-1b with Moment X); (2) single angles as beams (the L8x8x3/4, AISC F10); (3) the crane runway, its bracing and splices, and the vestibule are not in the StruCalc file; their sealed sheets are drawings (images), so there are no calcs on file to run against, and StruKit has no crane load or underhung runway (bottom flange bending) check; (4) wood, footing and other StruCalc member types are not read from .vtx yet (2026-011 was typed in by hand). FloorBeamY.3 fails in both programs (a trial size in the working file). 462 tests (the two job tests add about 7 s).
 
-## Next (Zach 2026-11-23 11:32: work in stretches of about 30 minutes, then check in)
+## Next as of 2026-11-23 (history; superseded by "Current state" at the top)
 - Wood connections: nails (0.78.0) and bolts parallel to grain (0.79.0) built; net section and tear-out (0.80.0) and bolts perpendicular to grain (0.84.0) built; shear at the connection built (0.85.0); nails in withdrawal (0.89.0), lag screws lateral (0.90.0), in withdrawal (0.91.0) and combined (0.94.0), steel side plates (0.92.0) built; wood screws lateral (0.95.0) built; wood screws in withdrawal (0.96.0) built; steel side plates with the main member perpendicular (0.100.0) built; lag screw lateral section sketch (0.101.0) built; washer bearing under lag screws (0.107.0) built; next: load at other angles to grain, Ft/Fv from the species tables. Wood: flat use built (0.97.0); Southern Pine beams (0.98.0) and posts (0.99.0) built; decking built (0.118.0); Mixed Southern Pine built (0.119.0); decking sketch built (0.120.0); next: controlled random decking layups.
 - Snow: separated structures built (0.108.0); sliding snow across a gap built (0.109.0); next: intersecting drifts (7.7.3); the uniform snow load carries into beam and joist screens (0.112.0); unbalanced and drift loads still typed.
 - Wind: velocity pressure (0.53.0) and main-system pressures for gable and flat roofs (0.54.0) built; wall components and cladding (0.56.0); roof components and cladding for flat and gable roofs (0.57.0, 0.58.0); monoslope cladding (0.59.0); overhang uplift (0.60.0); parapets (0.61.0); hip roofs in the main system built (0.82.0); hip roof cladding built (0.86.0); main-system overhangs built (0.87.0); published example check done (0.120.0, Wind Design Manual 8A/8B); next: Kzt from Example 2, enclosure classification from Example 1. Seismic base shear built (0.62.0); seismic combinations built (0.63.0); Seismic Design Category (0.64.0); R, Cd and height limits by system (0.83.0); overstrength combinations (0.102.0) and collector forces (0.104.0) built; next: wall deflections carry back to the drift check (0.110.0); diaphragm forces (0.65.0) and drift (0.66.0) built. Live load reduction built (0.72.0).
@@ -211,7 +246,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 - Print every sheet type once and read it line by line against the "factual, not a design log" rule (a word search of the printed strings is clean).
 - A Weyerhaeuser beam and column guide, if Zach finds one, to check the Microllam, Parallam, TimberStrand and TJI builds independently.
 
-## Not built yet
+## Not built yet as of 2026-11-23 (history; see "Current state" at the top)
 - Footings: moment about both axes; top reinforcement where the footing lifts; bar development; dowels.
 - A criteria sheet beyond the cover's basis of design.
 - On the screens: accepted flags with reason and date; undo.
@@ -514,3 +549,11 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - `docs/STRUKIT-RULINGS.md` and `docs/STRUKIT-BUILD-LOG.md`: copies of the Project docs, kept in step from now on.
 - `tools/release.sh "subject" ["trailer lines"]`: the release script moved into the repo (runs every test, refuses to commit on a failure,
   pushes main, rebuilds the release branch). No program change.
+
+## 2026-11-25 12:30 local — 0.210.2 nothing lost between sessions (555 tests)
+- Zach 12:14: the logs kept through this chat must carry over to new chats with nothing lost. Checked what lived only in this chat's workspace:
+  - **The 2018 NDS and its Supplement were only uploaded to this chat, not in his reference folder**, so a new session could not have reached them. Both copied into `StrucutralDesign` (`NDS-2018-National-Design-Specification-for-Wood-Construction.pdf`, `NDS-2018-Supplement-Design-Values.pdf`). `CLAUDE.md` had wrongly listed them as on file there.
+  - New `docs/REFERENCES.md`: each standard, its file name in the folder (several are numbered file-sharing names) and the pages and examples StruKit reads. No copyrighted text.
+  - New "Current state" section at the top of this log: where everything lives, readings waiting for a ruling, what is needed from Zach, the Next list in order. The daily session reads and updates it.
+  - New `tools/browser_check.py`: opens a project in the window in a headless browser and reports every member's result and page errors (replaces the one-off scripts that lived in this workspace).
+  - Not carried over, on purpose: the workspace's copies and text extractions of the standards (re-made from the folder when needed) and the sample PDFs sent to Zach (re-printed from the repo).

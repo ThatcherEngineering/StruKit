@@ -4,8 +4,10 @@ StruKit is Zach Thatcher's in-house structural calculation and report program (T
 engineer of record). It works like StruCalc or RISA: member and connection screens you type into, live results, calc-package PDFs, and a
 building model with a 3D frame on top. Python package `strukit`; window in `strukit/gui`; installed on Zach's laptop from the `release` branch.
 
-The full history is in `docs/STRUKIT-BUILD-LOG.md`; every ruling Zach has made is in `docs/STRUKIT-RULINGS.md`. Read the rulings file before
-asking Zach anything: if it is ruled there, do not ask again. The same two files also live in the claude.ai Project "ProgeCAD" as
+Start every session with the **"Current state" section at the top of `docs/STRUKIT-BUILD-LOG.md`**: where everything lives, readings
+waiting for Zach, what is needed from him, and the Next list in order. Update that section before the session ends. The full history is the
+rest of the log; every ruling Zach has made is in `docs/STRUKIT-RULINGS.md`. Read the rulings file before asking Zach anything: if it is
+ruled there, do not ask again. The same two files also live in the claude.ai Project "ProgeCAD" as
 `claude/STRUKIT-BUILD-LOG.md` and `claude/STRUKIT-RULINGS.md`; keep both copies in step when either changes.
 
 ## How to work with Zach
@@ -47,7 +49,8 @@ asking Zach anything: if it is ruled there, do not ask again. The same two files
 - Bump `strukit/__init__.py` `__version__` for each build, add an entry to `docs/STRUKIT-BUILD-LOG.md`, then run
   `sh tools/release.sh "subject"`: it runs the tests, refuses to commit on any failure, commits, pushes `main`, and rebuilds the `release`
   branch (`tools_make_release.sh`), which the laptop's updater downloads. Push after every build; never keep the only copy in a session.
-- Open each new or changed screen in a browser before release (the window: `python -m strukit.gui --port N --no-browser`).
+- Open each new or changed screen in a browser before release: `python tools/browser_check.py project.strukit [--select MARK]` loads a
+  project in the window headlessly and reports every member's result and any page error.
 - A new screen type is registered in `strukit/gui/calc.py` `FORMS` and `build()`, `strukit/cli.py` `KIND_OF`, and the set assertion in
   `tests/test_gui.py`; its picture is dispatched in `strukit/calcsheet.py` `_block_picture`.
 
@@ -62,8 +65,6 @@ asking Zach anything: if it is ruled there, do not ask again. The same two files
 - `tests/data/*.strukit`: stored job projects (test material only); `jobs/`: their builders.
 
 ## References
-Zach's reference folder: `C:\Users\zacht\OneDrive\Desktop\StrucutralDesign` (spelled that way). On file: AISC 360-22, AISC Design Examples
-v16.0, AISC Shapes Database v16.0, AISC Manual 15th Ed. (low-resolution scan), AISC Design Guides 1 (3rd), 21, 24 (2nd), 34, 39, 40,
-ACI 318-19, ASCE/SEI 7-22 (page images), NDS 2018 and Supplement, SDPWS 2021, the engineered lumber code reports and guides, the Simpson
-C-C-2026 catalog, the SEAOC Wind Design Manual. Not on file: ASCE 7-16, AISI S100, ASABE EP484/EP486. A cloud session keeps text copies
-under `/home/claude/refs` (not in the repo).
+Every standard is in Zach's folder `C:\Users\zacht\OneDrive\Desktop\StrucutralDesign` (spelled that way) on his laptop. `docs/REFERENCES.md`
+says which file is which (several have numbered names) and which pages and examples StruKit reads. Stage only what the item in hand needs;
+never put the standards or their text in the repo. Not on file: ASCE 7-16, AISI S100, ASABE EP484/EP486; TMS 402 is unreadable.
