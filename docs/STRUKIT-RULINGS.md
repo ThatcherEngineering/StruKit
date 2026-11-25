@@ -190,3 +190,4 @@ replaces the "start building on its own" setting of 10:47 the same day.
 
 ## 2026-11-25 14:20, applied under the standing "more conservative value" ruling (tell Zach at the next check-in)
 - **Compression flange plate unbraced length (AISC 360-22 Sect. J4.4):** the larger of the bolt spacing and the distance from the column face to the first bolt, with K = 0.65. AISC Design Example II.B-1 uses the bolt spacing alone.
+- **Stiffened seat, stiffener thickness for 36 < Fy < 50 ksi (0.214.0):** at least 2 w (the Manual names 2 w for Fy = 36 ksi and 1.5 w for Fy = 50 ksi only).

@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 16:20. Build **0.213.0**, 568 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 about 15:40. Build **0.214.0**, 571 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -15,6 +15,7 @@ Updated 2026-11-25 16:20. Build **0.213.0**, 568 tests passing; `main` and `rele
 - A scheduled session starts each weekday at 5:10 AM Denver time, reads these files and sends Zach one check-in with the Next list; it builds nothing until he says go (his change of 2026-11-25 12:43). Before the session ends it updates this section and the Project copies.
 
 **Waiting for Zach's ruling** (applied conservatively meanwhile; details in the rulings file)
+0b. Stiffened seat stiffener at least 2 w thick for 36 < Fy < 50 ksi (0.214.0).
 0. Compression flange plate length: larger of the bolt spacing and the face-to-first-bolt distance (0.211.0; Example II.B-1 uses the spacing).
 1. Open-building column wind Cf from ASCE 7-22 Figure 29.4-1 at the column's own h/D (1.76 for an HSS8x8 about 11.8 ft tall).
 2. Fascia Cf 2.0 (Figure 29.4-2), both edges facing the wind counted.
@@ -25,7 +26,7 @@ Updated 2026-11-25 16:20. Build **0.213.0**, 568 tests passing; `main` and `rele
 
 **Next, in order**
 1. (Done 0.211.0: beam to HSS column moment connection filled from the frame; bolted flange plates.) Still open on that joint: welded (not bolted) flange plates to the beam flange; the web shear tab filled from the same frame run.
-2. Stiffened seated connections (AISC Manual Table 10-8 pages, read as images).
+2. (Stiffened seats, welded to the support, done 0.214.0.) Still open: all-bolted stiffened seats (Table 10-7), column web punching limits for seats on a web, the top angle.
 3. Beam coped at the bottom flange only.
 4. Force transfer around several openings (APA procedure).
 5. (Weak-axis loads done 0.212.0; HSS and pipe torsion done 0.213.0.) Still open: W-shape and channel torsion (Design Example H.6 relies on AISC Design Guide 9, not on file: needed from Zach); torsion with continuous spans or overhangs.
@@ -570,13 +571,20 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Applied, not ruled (conservative):** the compression plate's unbraced length is the larger of the bolt spacing and the distance from the column face to the first bolt; Example II.B-1 uses the bolt spacing only.
 - Not checked and listed on the sheet: slip-critical bolts, the web connection, panel shear in the HSS side walls, the beam and column themselves.
 
-## 2026-11-25 15:45 local — 0.212.0 steel beams with sideways (weak-axis) loads (563 tests)
+## 2026-11-25 about 15:15 local — 0.212.0 steel beams with sideways (weak-axis) loads (563 tests)
 - Zach 15:07: "Go" on item 4 (weak-axis and torsional moment on steel beams).
 - **Steel Beam screen, loads table: new column "Direction"**: down (x axis), the default, or sideways (y axis). Sideways loads bend the beam about its weak axis (`ws_steel_beam.run` splits them out). For every combination with a sideways load the sheet adds: flexure about the y axis (AISC 360-22 Sect. F6 for I-shapes; Sect. F7 / F8 for HSS and pipe, through `steel_beamcol.weak_axis_flexure`), shear from the sideways loads (Sect. G6, or G4 / G5), and flexure about both axes by Eq. H1-1b with Pr = 0, checked at every station with each x moment against the strength of the unbraced segment it lies in. A deflection limit whose load list includes a sideways load gets a sideways deflection row on E Iy. The loading sketch draws only the down loads and lists the sideways loads under the beam; an assumption states that sideways loads act through the shear center and that torsion is not checked.
 - Single simple span only: sideways loads on more than one span, with an overhang, with a fixed support or on a channel are refused with the reason (channels load off the shear center).
 - **Validation: AISC Design Examples v16.0 Example F.5** (W12x58, 15 ft, minor-axis bending: Mu 113 / Ma 75.1 kip-ft, phi Mn 122 / Mn/Omega 81.4 kip-ft, Iy 107 against 105 in4 required for L/240), within 0.5 percent; Eq. H1-1b at midspan by hand (W12x58 with 1 kip/ft down and 0.5 kip/ft sideways: 0.2195). Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-Steel-Beam-Sideways-Load.pdf`.
 
-## 2026-11-25 16:20 local — 0.213.0 torsion of HSS and pipe beams (568 tests)
+## 2026-11-25 about 15:25 local — 0.213.0 torsion of HSS and pipe beams (568 tests)
 - Item 4 continued. **Steel Beam screen, loads table: new column "Off the shear center by" (in.)**. For an HSS or pipe on a single simple span, each such load twists the beam by load x distance; both ends are held against twisting and the torque divides between them as a simple-span shear does. New `hss.torsion`: AISC 360-22 Sect. H3.1, Tn = Fcr C (Eq. H3-1), round HSS by Eq. H3-2a / H3-2b with the member length, rectangular by Eq. H3-3 to H3-5 on the larger wall slenderness, C from the shapes table; phi 0.90, Omega 1.67. Rows: torsion (largest Tr against Tc) and, where Tr is over 0.2 Tc, Eq. H3-6 with Pr = 0 scanned along the span (Mrx against the strength of its unbraced segment, Mry from sideways loads, Vr / Vc the larger of the two axes, Tr / Tc). The strength box lists Fcr and Tn; the loads list shows each load's distance from the shear center.
 - W shapes, channels, more than one span or an overhang with torsion are refused with the reason. W-shape torsion needs AISC Design Guide 9 (warping); not on file.
 - **Validation: AISC Design Examples v16.0 Examples H.5A (273 / 181 kip-in), H.5B (215 / 143 kip-in) and H.5C** (Tr 66.2 / 44.2 kip-in; Eq. H3-6 0.333 / 0.340 where Tr = 0.2 Tc: StruKit 0.335 / 0.337, at the exact point x = 0.70 / 0.71 ft where the example rounds to 0.700 / 0.725 ft). Eq. H3-4 by hand. Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-HSS-Beam-Torsion.pdf`.
+
+## 2026-11-25 about 15:40 local — 0.214.0 stiffened seated connection (571 tests)
+- Zach 15:27: "Keep going yes" (Next items 2 and 3). The two earlier entries of this afternoon carried wrong clock times (15:45 and 16:20); corrected to about 15:15 and 15:25.
+- **New screen "Stiffened Seated Connection (welded to the support, bolted to the beam)"** (`stiffened_seat`, mark SS), `ws_more.stiffened_seat_sheet`, side elevation to scale with W, L and lb dimensioned and the reaction at 0.8 W. From the AISC Manual 15th Ed. Part 10 pages on stiffened seated connections and the Table 10-7 / 10-8 discussion (pdf pp. 1167-1170 of the scan, read at 560 dpi): the stiffener carries the whole reaction at 0.8 W from the face; bearing length lb = W less a 1/2 in. setback and 1/4 in. underrun; beam web local yielding and crippling on lb with the least stiffener width for each (Manual Eq. 9-60, 9-63; Table 9-4 constants); the T-shaped weld to the support (both sides of the stiffener for its length, and the seat plate 0.2 L each side) by the elastic method; least support thickness by Manual Eq. 9-2 (doubled when seats are welded on both faces of a web), with the weld strength reduced by the ratio when the support is thinner; least stiffener thickness, the larger of tw Fy,beam / Fy,stiffener and 1.5 w (Fy 50) or 2 w; seat plate 3/8 in. minimum.
+- **Validation: AISC Design Examples v16.0 Example II.A-14** (W21x68 on a W14x90 flange, PL 5/8 x 7 x 15, 5/16 in. welds): the elastic-method weld gives 139.4 / 92.9 kips against the Manual Table 10-8 values the example quotes, 139 / 93.0; R1 64.0 / 42.6, R5 75.9 / 50.6 kips; least widths 6.93 / 6.96 and 3.59 / 3.61 in.; least stiffener thickness 0.469 in.; least support thickness 0.238 in. The Manual prints no formula for the T-shaped weld; the elastic method (centroid L / 2.4 from the top, I = 0.25 L^3, stress at the top) is the generally published one and is accepted because it reproduces the table. Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-Stiffened-Seated-Connection.pdf`.
+- **Applied, not ruled (conservative):** for stiffener Fy between 36 and 50 ksi the stiffener must be at least 2 w thick (the Manual gives 2 w at 36 ksi and 1.5 w at 50 ksi only).
+- Not checked and listed: the top angle, the bolts of the beam to the seat, column web punching (the Manual's simplified limits), the support member.
