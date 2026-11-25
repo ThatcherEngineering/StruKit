@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 about 16:15. Build **0.215.0**, 577 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 about 16:15. Build **0.215.0**, 576 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -590,7 +590,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Applied, not ruled (conservative):** for stiffener Fy between 36 and 50 ksi the stiffener must be at least 2 w thick (the Manual gives 2 w at 36 ksi and 1.5 w at 50 ksi only).
 - Not checked and listed: the top angle, the bolts of the beam to the seat, column web punching (the Manual's simplified limits), the support member.
 
-## 2026-11-25 about 16:15 local — 0.215.0 beam coped at the bottom flange only (577 tests)
+## 2026-11-25 about 16:15 local — 0.215.0 beam coped at the bottom flange only (576 tests)
 - Next item 3. **The AISC Manual (15th Ed., pp. 9-6 to 9-10, read from the scan at 140 and 400 dpi) gives the coped-beam local buckling procedure for top-flange and double copes only**; for other cases it points to Specification Sect. J4.5 and Chapter F, and gives flexural rupture as Mn = Fu Znet (15th Ed. Eq. 9-4; Eq. 9-8 in the numbering Design Examples v16.0 use). Design Example K.3 (bottom cope for erection) states that shear yielding, shear rupture and block shear of the beam web do not apply to a beam coped at the bottom flange only.
 - **Shear tab screen:** the top cope depth may be left blank with a bottom depth typed: a cope at the bottom flange only. `cope.bottom_cope` and `cope.tee_flexure`: the remaining tee (top flange and web, fillets not counted), end reaction downward so the stem is in tension, checked by AISC 360-22 Sect. F9: yielding with Mp not over 1.6 My (Eq. F9-1 to F9-3; My to the tip of the stem), lateral-torsional buckling with Lb = the cope length (Eq. F9-6 to F9-11; braced at the end of the cope as the Manual's procedure takes it), flange local buckling (Eq. F9-14, F9-15, Table B4.1b Case 10); flexural rupture Fu Znet with no bolt holes at the end of the cope; R = Mn / e. Block shear is not checked (the web above the bolts is not cut). The "cut edge to the nearest bolt" box means the bottom cut for this case.
 - **Applied, not ruled (conservative):** web shear yielding and rupture on the remaining depth hc tw are checked anyway (Design Example K.3 says they do not apply).
