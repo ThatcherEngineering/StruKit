@@ -45,3 +45,42 @@ def test_flange_plates_and_stops():
     # a rectangular column: the H face is the wider one, with the other dimension as the side walls
     r = calc.build("beam_hss_moment", dict(V, column="HSS12X8X1/2", face="H", beam="W12X26"), dict(PROJ, method="LRFD"))[0]
     assert "connecting face 12 in. wide, side walls 8 in." in dict(r.info)["Column"]
+
+
+def test_bolted_flange_plates_on_the_sheet(tmp_path):
+    """Flange plates bolted to the beam flange: the sheet carries the Example II.B-1 checks (tests/test_flange_plate.py) for the largest moment."""
+    v = dict(V, beam="W12X26", column="HSS8X8X1/2", col_Fy="46", flanges="flange plates welded to the face", bp="5.5", tp="0.5", plate_Fy="36",
+             plate_source="ASTM A36", plate_Fu="58", beam_Fu="65", fd="0.75", fgroup="A325", fthreads="N", fn="3", fs="3", fg="3", flev_p="1.5",
+             flev_b="1.5", fa1="2", fweld="0.3125", fFEXX="70", loads=[dict(case="D", M="3", P="4", Mc="6", label=""), dict(case="L", M="9", P="12", Mc="20", label="")])
+    s = calc.build("beam_hss_moment", v, dict(PROJ, method="LRFD"))[0]
+    names = [r.check for r in s.rows]
+    assert names[5:] == ["Bolts, flange plate to beam flange", "Flange plate tensile yielding", "Flange plate tensile rupture",
+                         "Flange plate block shear, outer blocks", "Flange plate block shear, through one row", "Beam flange block shear",
+                         "Beam flexure at the flange bolt holes", "Compression flange plate", "Fillet welds, flange plate to the HSS face"]
+    fp = s.conn["fp"]
+    Mu = (1.2 * 3 + 1.6 * 9) * 12
+    assert fp["Pb"] == pytest.approx(Mu / 12.2) and fp["Pp"] == pytest.approx(Mu / 12.7)
+    # by hand: 3/4 in. A325-N bolt 0.75 x 54 x 0.4418 = 17.9 kips; plate end bolt tearout 0.75 x 1.2 x (1.5 - 0.40625) x 0.5 x 58 = 28.5 kips
+    assert fp["rv"] == pytest.approx(0.75 * 54 * 0.4418, rel=0.001) and fp["R_bolts"] == pytest.approx(6 * fp["rv"], rel=0.001)
+    assert fp["R_ty"] == pytest.approx(0.9 * 36 * 5.5 * 0.5) and fp["An"] == pytest.approx((5.5 - 2 * 0.875) * 0.5)
+    assert "the weld of the flange plate to the HSS face" not in s.not_checked
+    with pytest.raises(Exception):                                      # bolts given, a required bolt dimension left blank
+        calc.build("beam_hss_moment", dict(v, fg=""), dict(PROJ, method="LRFD"))
+    from strukit import calcsheet
+    calcsheet.simple_pdf(s, str(tmp_path / "bhm_plates.pdf"), "Job", "AISC 360-22", "Nov 25, 2026")
+
+
+def test_joint_loads_from_the_frame():
+    """The eave portal carport (bent quick start, W12X26 eave beams in bays 3 and 6): the fill takes the beam end moment and the column's load
+    and moment at the joint from the same run, and finds the column at that end."""
+    import json, os
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "carport_eave_portals.strukit")))
+    g = calc.frame_beam_hss(d["project"], d["members"], "E3A", "left")
+    assert g["column"] == "C3A" and g["face"] == "B" and g["column_shape"] == "HSS8X8X1/2" and g["rows"]
+    top = max(g["rows"], key=lambda r: r["M"])
+    assert top["M"] > 5 and top["Mc"] == pytest.approx(top["M"], rel=0.05)     # a corner joint: the column moment balances the beam moment
+    assert calc.frame_beam_hss(d["project"], d["members"], "E3B", "right")["column"] == "C4B"
+    v = dict(V, beam="W12X26", column=g["column_shape"], face=g["face"], flanges="flange plates welded to the face", bp="5.5", tp="0.5",
+             plate_Fy="36", plate_source="ASTM A36", loads=[], runs=[dict(name=r["name"], M=f"{r['M']:.2f}", P=f"{r['P']:.2f}", Mc=f"{r['Mc']:.2f}") for r in g["rows"]])
+    s = calc.build("beam_hss_moment", v, d["project"])[0]
+    assert s.ok

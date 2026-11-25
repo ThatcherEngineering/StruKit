@@ -187,3 +187,6 @@ Zach changed the scheduled StruKit session: it runs weekdays only at 5:10 AM Den
 list (and readings waiting, things he must supply, notes from other chats) and builds nothing until he replies with a go. Once he says go,
 it builds what he picked in stretches of about 30 minutes. If the scheduled task is edited again, keep the check-in-first rule. This
 replaces the "start building on its own" setting of 10:47 the same day.
+
+## 2026-11-25 14:20, applied under the standing "more conservative value" ruling (tell Zach at the next check-in)
+- **Compression flange plate unbraced length (AISC 360-22 Sect. J4.4):** the larger of the bolt spacing and the distance from the column face to the first bolt, with K = 0.65. AISC Design Example II.B-1 uses the bolt spacing alone.
