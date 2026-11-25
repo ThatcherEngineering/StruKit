@@ -48,6 +48,8 @@ FORMS = {
                                      F("mag", "Load", unit="k/ft or k"),
                                      F("x1", "From / at", unit="ft", required=False),
                                      F("x2", "To", unit="ft", required=False),
+                                     F("dir", "Direction", "select", options=["down (x axis)", "sideways (y axis)"], required=False,
+                                       help="blank = down; sideways loads bend the beam about its weak axis (single simple span)"),
                                      F("label", "Note", "text", required=False)]),
                 T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L"),
                                                 F("ratio", "Span /"), F("source", "Source", "text")])]),
@@ -1412,6 +1414,8 @@ def build(kind, values, project):
                 d = dict(case=ld["case"], kind="point", P=ld["mag"], x_ft=ld["x1"])
             if ld["label"]:
                 d["label"] = ld["label"]
+            if str(ld.get("dir") or "").startswith("side"):
+                d["dir"] = "sideways"
             loads.append(d)
         if not loads and sw is False:
             r.miss.append("No loads are entered")

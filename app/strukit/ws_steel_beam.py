@@ -134,6 +134,8 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
                 return hss.beam_check(pr, Fy_, Lb_, Cb_, method_)
             except hss.HSSError as e:
                 raise WorksheetError(f"{mark}: {e}")
+    side = [ld for ld in loads if str(ld.get("dir") or "").startswith("side")]
+    loads = [ld for ld in loads if ld not in side]
     all_loads = list(loads)
     assumptions = []
     if include_self_weight:
@@ -164,6 +166,9 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
         segs = list(zip(pts[:-1], pts[1:]))
         btxt = "braced at " + ", ".join(f"{x:g}" for x in pts) + " ft"
         brace_pts = pts
+    if side and (not lay.simple or props.get("type") in ("C", "MC")):
+        raise WorksheetError(f"{mark}: sideways (weak-axis) loads are checked on a single simple span of a W, M, S or HP shape, HSS or pipe; "
+                             "this beam has more than one span, an overhang, a fixed support or is a channel")
     if not lay.simple:
         if bracing != "continuous":
             pts = sorted({0.0, float(lay.total)} | {float(x) for x in bracing} | {float(x) for x in lay.supports})
@@ -180,6 +185,15 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
                            brace_points=brace_pts)
 
     worst_m, worst_v = None, None
+    if side:
+        from . import steel_beamcol
+        wk = steel_beamcol.weak_axis_flexure(props, Fy, method)
+        wv = steel_beamcol.weak_axis_shear(props, Fy, method)
+        EIy = E * props["Iy"] / 144.0
+        worst_wm = worst_wv = worst_h = None
+        sheet.loads = list(all_loads) + [dict(ld, label=(ld.get("label") + ", " if ld.get("label") else "") + "sideways, weak axis") for ld in side]
+        sheet.assumptions.append("Sideways loads act in the plane of the flanges (bending about the y axis) through the shear center; torsion is not checked. "
+                                 "Bending about both axes is combined by AISC 360-22 Eq. H1-1b with Pr = 0.")
     for cb in combos:
         res = _solve(span_ft, EI, all_loads, cb.factors)
         sheet.reactions[cb.name] = (res.reactions[0.0], res.reactions[float(span_ft)])
@@ -203,13 +217,45 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
             worst_m = (m_row, chk, res)
         if worst_v is None or v_row.dc > worst_v.dc:
             worst_v = v_row
+        if side and any(cb.factors.get(ld["case"], 0.0) for ld in side):
+            rw = _solve(span_ft, EIy, side, cb.factors)
+            My = float(np.max(np.abs(rw.M)))
+            row_wm = Row("flexure, y axis (sideways loads)", cb.name, My, wk.available / 12, "kip-ft", "AISC 360-22 Sect. F6: " + wk.governs)
+            row_wv = Row("shear, sideways loads", cb.name, rw.V_abs_max()[0], wv.available, "kip", "AISC 360-22 Sect. G6: " + wv.governs if props.get("type") not in ("HSS-RECT", "HSS-ROUND", "PIPE") else "AISC 360-22 Sect. G4, G5")
+            # Eq. H1-1b with Pr = 0, at every station, each x moment against the strength of the segment it lies in
+            My_x = np.interp(res.x, rw.x, np.abs(rw.M))
+            best = (-1.0, 0.0, 0.0, 0.0, 0.0)
+            for Mseg_, chk_, Lb_, Cb_, seg_ in cand:
+                sel = (res.x >= seg_[0] - 1e-9) & (res.x <= seg_[1] + 1e-9)
+                if not np.any(sel):
+                    continue
+                u = np.abs(res.M[sel]) / (chk_.M_avail / 12) + My_x[sel] / (wk.available / 12)
+                i_ = int(np.argmax(u))
+                if u[i_] > best[0]:
+                    best = (float(u[i_]), float(res.x[sel][i_]), float(abs(res.M[sel][i_])), float(My_x[sel][i_]), chk_.M_avail / 12)
+            row_h = Row("flexure about both axes", cb.name, best[0], 1.0, "", "AISC 360-22 Eq. H1-1b (Pr = 0)",
+                        f"at {best[1]:.2f} ft: Mrx = {best[2]:.2f} kip-ft / Mcx = {best[4]:.2f}, Mry = {best[3]:.2f} kip-ft / Mcy = {wk.available / 12:.2f}")
+            if worst_wm is None or row_wm.dc > worst_wm.dc:
+                worst_wm = row_wm
+            if worst_wv is None or row_wv.dc > worst_wv.dc:
+                worst_wv = row_wv
+            if worst_h is None or row_h.dc > worst_h.dc:
+                worst_h = row_h
     sheet.rows += [worst_m[0], worst_v]
+    if side and worst_h is not None:
+        sheet.rows += [worst_wm, worst_wv, worst_h]
     sheet.steps = worst_m[1].lines
     sheet.governing = dict(flexure=worst_m[0].combo, shear=worst_v.combo)
     r = worst_m[2]
     sheet.diagram = dict(x=r.x.tolist(), V=r.V.tolist(), M=r.M.tolist())
 
     for dc in defl_checks:
+        if side and any(dc.factors.get(ld["case"], 0.0) for ld in side):
+            rwd = _solve(span_ft, E * props["Iy"] / 144.0, side, dc.factors)
+            sheet.rows.append(Row(f"deflection, {dc.label}, sideways", "+".join((f"{f:g}" if f != 1 else "") + c for c, f in dc.factors.items()),
+                                  rwd.defl_max()[0] * 12, span_ft * 12 / dc.ratio, "in", dc.source, f"limit L/{dc.ratio:g}; E Iy = {E:.0f} x {props['Iy']:.3g}"))
+            if not any(dc.factors.get(ld["case"], 0.0) for ld in all_loads):
+                continue
         res = _solve(span_ft, EI, all_loads, dc.factors)
         d_in = res.defl_max()[0] * 12
         sheet.rows.append(Row(f"deflection, {dc.label}", "+".join(
