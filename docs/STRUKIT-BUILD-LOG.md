@@ -34,7 +34,7 @@ Updated 2026-11-25 about 17:00. Build **0.218.0**, 592 tests passing; `main` and
 5. (Weak-axis loads done 0.212.0; HSS and pipe torsion done 0.213.0.) Still open: W-shape and channel torsion (Design Example H.6 relies on AISC Design Guide 9, not on file: needed from Zach); torsion with continuous spans or overhangs.
 6. (Single angles in bending done 0.217.0.) Still open: angles over more than one span or with overhangs, axial load with bending (Sect. H2), deflection of unrestrained angles, unequal angles not in Commentary Table C-F10.1, the Steel Beam screen and the 3D frame taking angles.
 7. (Top-running crane runway beam, simple span, done 0.218.0.) Still open and waiting on documents: underhung cranes and monorails (bottom flange local bending), fatigue (AISC 360-22 Appendix 3 is on file; needs the number of cycles by service class), web yielding and crippling under the wheels, continuous runway beams, cap channels; AISC Design Guide 7 would let the lateral load and deflection limits be cited.
-8. Read wood, LVL, I-joist, post and footing members from StruCalc .vtx files.
+8. (Dropped 2026-11-25 16:51, Zach: he no longer uses StruCalc and StruKit replaces it. No more StruCalc import work. The steel .vtx reader of 0.165.0 stays as it is.)
 9. Shear lugs (Design Guide 1 Example 4.7-5); anchorage on the uplift base plate and the four-rod biaxial base plate.
 10. Built-up three-plate sections as beams and columns; the column side of the extended end plate.
 11. Through-plate and diaphragm beam-to-HSS moment connections (Design Guide 24 Examples 6.2, 6.4).

@@ -199,3 +199,8 @@ replaces the "start building on its own" setting of 10:47 the same day.
 - **No seal box on StruKit sheets.** Zach puts his own cover sheet on his calculations and stamps that one. StruKit's package cover keeps the project, basis of design, combinations, contents and flagged checks, with no place for a seal or signature. (This replaces the 2026-11-21 note "PE stamp on the cover only".)
 - **Single-angle beam with lateral-torsional restraint at midspan only (0.217.0):** leg local buckling uses Sc = 0.80 of the geometric section modulus, as Design Example F.11B does (Sect. F10.3 names 0.80 for angles with no lateral-torsional restraint).
 - **Crane runway beam (0.218.0), AISC Design Guide 7 not on file:** the lateral wheel loads of ASCE/SEI 7-22 Sect. 4.9.4 are taken by the top flange alone (half the section's Sect. F6 y-axis strength) with Eq. H1-1b; Cb = 1.0 for moving wheels; the share of the lateral force to each runway and the deflection limits are typed by the engineer with their basis.
+
+## 2026-11-25 16:51 — no more StruCalc import work
+Zach: "I don't use StruCalc anymore and would like to move away from it. That's what StruKit is for." Item 8 of the Next list (reading wood, LVL,
+I-joist, post and footing members from StruCalc files) is dropped. Do not propose StruCalc import or StruCalc comparisons as work items. The
+existing steel .vtx reader (0.165.0) and the tests that use past StruCalc output as a comparison stay as they are.
