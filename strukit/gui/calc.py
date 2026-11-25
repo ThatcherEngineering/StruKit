@@ -105,6 +105,25 @@ FORMS = {
                 F("length", "Length between the end connections", unit="ft"),
                 F("attached", "Attached leg", "select", options=["long", "short"], required=False, help="unequal-leg angles; either for an equal-leg angle")],
         tables=[T("loads", "Axial compression", [CASE, F("P", "Compression", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "shear_lug": dict(
+        title="Shear Lug (under a column base plate)", code="AISC 360-22, ACI 318-19", mark="SL",
+        fields=[F("bsl", "Lug width (across the shear)", unit="in"), F("tsl", "Lug thickness", unit="in"),
+                F("hsl", "Lug embedment into the concrete (below the grout)", unit="in"), F("t_grout", "Grout thickness", unit="in"),
+                F("lug_Fy", "Lug Fy", unit="ksi"), F("lug_Fu", "Lug Fu", unit="ksi"), F("lug_source", "Where the lug's Fy and Fu come from", "text"),
+                F("weld", "Fillet weld, each face of the lug", unit="in"), F("FEXX", "Electrode strength FEXX", unit="ksi"),
+                F("N", "Base plate length N (along the shear)", unit="in"), F("B", "Base plate width B", unit="in"), F("tbp", "Base plate thickness", unit="in"),
+                F("bp_Fy", "Base plate Fy", unit="ksi"),
+                F("s_rod", "Anchor rod square, side", unit="in", help="four rods, the lug centred between them"), F("rod_d", "Anchor rod diameter", unit="in"),
+                F("rod_Fu", "Anchor rod Fu", unit="ksi"), F("rod_source", "Where the rod Fu comes from", "text", help="for example: ASTM F1554 Grade 36"),
+                F("hef_rod", "Anchor rod embedment", unit="in", required=False),
+                F("fc", "Concrete f'c", unit="psi"), F("A2A1", "Concrete bearing area ratio A2 / A1 (1 to 4)"),
+                F("ca1", "Lug face to the concrete edge, in the direction of the shear", unit="in"),
+                F("ca2", "Lug side to the side edges of the concrete", unit="in"), F("ha", "Concrete member depth", unit="in"),
+                F("psi_c", "Concrete cracking (psi_c,V)", "select", options=["cracked, no supplementary reinforcement (1.0)", "cracked, No. 4 or larger edge bar (1.2)",
+                                                                          "cracked, edge bar and stirrups at 4 in. or less (1.4)", "uncracked at service loads (1.4)"],
+                  help="ACI 318-19 17.7.2.5.1")],
+        tables=[T("loads", "Base shear and axial load", [CASE, F("V", "Shear", unit="kip"), F("P", "Axial compression (+)", unit="kip", required=False),
+                                                         F("label", "Note", "text", required=False)])]),
     "crane_runway": dict(
         title="Crane Runway Beam (top-running crane)", code="AISC 360-22", mark="CR",
         fields=[F("beam", "Runway beam", "shape", help="W, M, S or HP shape"), F("Fy", "Fy", unit="ksi"), F("beam_source", "Where Fy comes from", "text"),
@@ -1592,6 +1611,21 @@ def build(kind, values, project):
         args = (r.text("shape"), r.num("Fy"), r.text("steel_source"), r.num("length"), r.text("attached", False) or "")
         r.done()
         return ws_more.angle_strut_sheet(mark, *args, loads, cb, m), "simple", {}
+    if kind == "shear_lug":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        cbl = cb if m == "LRFD" else combos(project, r.miss, "LRFD")
+        loads = [dict(case=x["case"], V=x["V"], P=x.get("P") or 0.0, **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
+        if not loads:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        pc = r.text("psi_c") or ""
+        psi = 1.2 if "(1.2)" in pc else 1.4 if "(1.4)" in pc else 1.0
+        n_ = lambda k, req=True: r.num(k, req)
+        args = (n_("bsl"), n_("tsl"), n_("hsl"), n_("t_grout"), n_("lug_Fy"), n_("lug_Fu"), r.text("lug_source"), n_("weld"), n_("FEXX"), n_("N"), n_("B"), n_("tbp"),
+                n_("bp_Fy"), n_("s_rod"), n_("rod_d"), n_("rod_Fu"), r.text("rod_source"), n_("hef_rod", False), (n_("fc") or 0) / 1000.0, n_("A2A1"), n_("ca1"), n_("ca2"),
+                n_("ha"), psi)
+        r.done()
+        return ws_more.shear_lug_sheet(mark, *args, loads, cb, cbl, m), "simple", {}
     if kind == "crane_runway":
         cb, m = combos(project, r.miss), method(project, r.miss)
         args = (r.text("beam"), r.num("Fy"), r.text("beam_source"), r.num("span"), r.num("rail", False) or 0.0, r.text("rail_note", False) or "",

@@ -1601,6 +1601,8 @@ def _block_picture(c, top, pic):
         return _tread_picture(c, top - 6, d)
     if name == "tension":
         return _tension_picture(c, top - 6, d)
+    if name == "shear_lug":
+        return _shear_lug_picture(c, top - 6, d)
     if name == "crane_runway":
         return _crane_runway_picture(c, top - 6, d)
     if name == "angle_beam":
@@ -2165,6 +2167,53 @@ def _crane_runway_picture(c, top, d):
     c.setFillColorRGB(*INK)
     _small(c, cx, cy - d["d"] * s_ / 2 - 10, f"{d['beam']} with rail; not to scale")
     return min(yb - 54, cy - d["d"] * s_ / 2 - 18)
+
+
+def _shear_lug_picture(c, top, d):
+    """Section along the shear, to scale: base plate, grout, the lug down into the concrete, the concrete edge at ca1, with tbp, grout,
+    embedment, lug thickness and ca1 dimensioned; plan of the plate with the lug width and the rod square dimensioned."""
+    bsl, tsl, hsl, tg, tbp, N, ca1, s_ = d["bsl"], d["tsl"], d["hsl"], d["tg"], d["tbp"], d["N"], d["ca1"], d["s"]
+    span = N / 2 + max(ca1 + tsl / 2, N / 2) + 4
+    sc = min(230.0 / span, 110.0 / (tbp + tg + hsl + 6), 12.0)
+    xc = LM + 50 + (N / 2 + 2) * sc                                  # lug centre
+    yt = top - 26                                                    # top of the plate
+    yg = yt - tbp * sc                                               # underside of the plate = top of grout
+    yc = yg - tg * sc                                                # top of concrete
+    yb = yc - (hsl + 5) * sc
+    xe = xc + (tsl / 2 + ca1) * sc                                   # concrete edge toward the shear
+    c.setFillColorRGB(*memberart.CONC_FILL) if hasattr(memberart, "CONC_FILL") else c.setFillColorRGB(0.88, 0.88, 0.86)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.6)
+    c.rect(xc - (N / 2 + 2) * sc, yb, xe - (xc - (N / 2 + 2) * sc), yc - yb, fill=1, stroke=1)
+    c.setFillColorRGB(0.95, 0.94, 0.90); c.rect(xc - N / 2 * sc, yc, N * sc, tg * sc, fill=1, stroke=1)               # grout
+    c.setFillColorRGB(0.55, 0.62, 0.72); c.rect(xc - N / 2 * sc, yg, N * sc, tbp * sc, fill=1, stroke=1)               # plate
+    c.rect(xc - tsl / 2 * sc, yc - hsl * sc, tsl * sc, (hsl + tg) * sc, fill=1, stroke=1)                              # lug
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow(c, xc - N / 2 * sc - 20, yt + 9, xc - N / 2 * sc + 18, yt + 9, head=3)
+    c.setFont(FR, 6); c.drawRightString(xc - N / 2 * sc - 23, yt + 7, "V")
+    xr = xc - N / 2 * sc - 14
+    memberart._dim_v(c, yg, yt, xr, f"{tbp:g} in", FR, ext_from=xc - N / 2 * sc)
+    memberart._dim_v(c, yc, yg, xr - 30 if tg * sc < 8 else xr, f"grout {tg:g} in", FR, ext_from=xc - N / 2 * sc)
+    memberart._dim_v(c, yc - hsl * sc, yc, xc - tsl / 2 * sc - 10, f"{hsl:g} in", FR, ext_from=xc - tsl / 2 * sc)
+    memberart._dim_h(c, xc - tsl / 2 * sc, xc + tsl / 2 * sc, yc - hsl * sc - 10, f"{tsl:g} in", FR, ext_from=yc - hsl * sc)
+    memberart._dim_h(c, xc + tsl / 2 * sc, xe, yb + 8, f"ca1 {ca1:g} in", FR)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6)
+    c.drawString(xc + N / 2 * sc + 4, yt - 6, f"PL {tbp:g} in.")
+    c.drawString(xc + tsl / 2 * sc + 4, yc - hsl * sc / 2 - 2, f"{d['weld']:g} in. fillets both faces")
+    _small(c, (xc - N / 2 * sc + xe) / 2, yb - 10, "section along the shear, to scale")
+    # plan
+    ps = min(90.0 / N, 6.0)
+    px, py = RM - 70, top - 22 - N * ps / 2
+    c.setFillColorRGB(0.86, 0.89, 0.93); c.setStrokeColorRGB(*INK); c.setLineWidth(0.7)
+    c.rect(px - N * ps / 2, py - N * ps / 2, N * ps, N * ps, fill=1, stroke=1)
+    c.setDash(2, 2); c.rect(px - tsl * ps / 2, py - bsl * ps / 2, tsl * ps, bsl * ps, fill=0, stroke=1); c.setDash()
+    c.setFillColorRGB(1, 1, 1)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            c.circle(px + sx * s_ / 2 * ps, py + sy * s_ / 2 * ps, 1.8, fill=1, stroke=1)
+    memberart._dim_v(c, py - bsl * ps / 2, py + bsl * ps / 2, px - N * ps / 2 - 10, f"lug {bsl:g} in", FR, ext_from=px - tsl * ps / 2)
+    memberart._dim_h(c, px - s_ / 2 * ps, px + s_ / 2 * ps, py - N * ps / 2 - 10, f"{s_:g} in", FR, ext_from=py - s_ / 2 * ps)
+    _small(c, px, py - N * ps / 2 - 28, "plan; lug dashed")
+    return min(yb - 18, py - N * ps / 2 - 36)
 
 
 def _tension_picture(c, top, d):

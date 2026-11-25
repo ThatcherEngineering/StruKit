@@ -4894,3 +4894,120 @@ def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note
     sheet.diagram = dict(combo=Mxname, note="wheels at the position of the largest moment", x=dx, V=[MVx(x)[1] * 1000 for x in dx], M=[MVx(x)[0] * 1000 for x in dx])
     sheet.crane = dict(loads=cl, moving=mvL, Mx=Mx, My=My, ratio=r, Mcx=Mcx, Mcy_f=Mcy_f, V=Vmax, Vc=st.V_avail, dv=dv, dh=dh)
     return sheet
+
+
+def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, weld, FEXX, N, B, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod,
+                    fc, A2A1, ca1, ca2, ha, psi_c, loads, combos, combos_lrfd, method):
+    """Shear lug under a base plate (see shearlug). loads: dict(case, V kips, P kips compression +). Steel checks at the project's method;
+    concrete checks with the LRFD combinations (ACI 318-19 is strength design). Four anchor rods in a square of side s_rod, the lug centred."""
+    from . import shearlug as sl
+    for nm, v in (("where the lug's Fy and Fu come from", lug_source), ("where the anchor rod Fu comes from", rod_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    if not combos or not combos_lrfd:
+        raise WorksheetError(f"{mark}: the project needs its {method} and LRFD load combinations")
+    if not loads:
+        raise WorksheetError(f"{mark}: no loads given")
+    if min(bsl, tsl, hsl, N, B, tbp, s_rod, rod_d, fc, ca1, ha) <= 0 or t_grout < 0:
+        raise WorksheetError(f"{mark}: dimensions and strengths must be positive")
+    if not 1.0 <= A2A1 <= 4.0 + 1e-9:
+        raise WorksheetError(f"{mark}: A2 / A1 is between 1 and 4")
+    if s_rod >= N:
+        raise WorksheetError(f"{mark}: the anchor rods are outside the plate")
+    lrfd = method == "LRFD"
+    e = t_grout + hsl / 2
+    f = s_rod / 2
+    fp_n = min(0.85 * fc * math.sqrt(A2A1), 1.7 * fc)
+    fp = 0.65 * fp_n if lrfd else fp_n / 2.31
+    st = sl.steel(lug_Fy, lug_Fu, bsl, tsl, weld, FEXX)
+    ph = lambda phi, om: phi if lrfd else 1 / om
+    Vy_c, Vr_c, My_c, Mr_c = st["Vy"] * ph(1.0, 1.5), st["Vr"] * ph(0.75, 2.0), st["My"] * ph(0.9, 1.67), st["Mr"] * ph(0.75, 2.0)
+    rw_c = st["rw"] * ph(0.75, 2.0)
+    Ab = math.pi * rod_d ** 2 / 4
+    rod_c = 0.75 * rod_Fu * Ab * ph(0.75, 2.0)
+    Zp = bsl * tbp ** 2 / 4
+    plate_c = bp_Fy * Zp * ph(0.9, 1.67)
+    tot = lambda cb: (sum(cb.factors.get(x["case"], 0.0) * x["V"] for x in loads), sum(cb.factors.get(x["case"], 0.0) * (x.get("P") or 0.0) for x in loads))
+    res = []
+    for cb in combos:
+        V, P = tot(cb)
+        V = abs(V)
+        if P < -1e-9:
+            raise WorksheetError(f"{mark}: {cb.name} puts the base in net tension; a shear lug with net uplift is not covered")
+        try:
+            ec = sl.eccentric(V, P, e, N, B, fp, f)
+        except sl.ShearLugError as ex:
+            raise WorksheetError(f"{mark}: {ex}")
+        M = V * e
+        rv, rm = V / (2 * bsl), M / (st["a"] * bsl)
+        Mpl = max(ec["T"] * f, ec["q"] * ec["Y"] * (N / 2 - ec["Y"] / 2))
+        res.append(dict(cb=cb.name, V=V, P=P, M=M, inter=M / My_c + (V / Vy_c) ** 4, rw=math.hypot(rv, rm), rv=rv, rm=rm, T=ec["T"], Y=ec["Y"], q=ec["q"], rod=ec["T"] / 2, Mpl=Mpl))
+    Abp = N * B
+    conc = []
+    for cb in combos_lrfd:
+        V, P = tot(cb)
+        V = abs(V)
+        if P < -1e-9:
+            raise WorksheetError(f"{mark}: {cb.name} puts the base in net tension; a shear lug with net uplift is not covered")
+        c = sl.concrete(fc, V, P, bsl, tsl, hsl, ca1, ca2, ha, psi_c, Abp=Abp)
+        conc.append(dict(cb=cb.name, V=V, P=P, c=c))
+    pick = lambda lst, key: max(lst, key=lambda r: r[key])
+    rows = []
+    g = pick(res, "V")
+    rows += [Row("Lug shear yielding", g["cb"], g["V"], Vy_c, "kip", "AISC 360-22 Eq. J4-3", ""),
+             Row("Lug shear rupture", g["cb"], g["V"], Vr_c, "kip", "AISC 360-22 Eq. J4-4", "")]
+    gm = pick(res, "M")
+    rows += [Row("Lug flexural yielding", gm["cb"], gm["M"], My_c, "kip-in", "AISC 360-22 Sect. J4.5", f"M = V e, e = {e:g} in."),
+             Row("Lug flexural rupture", gm["cb"], gm["M"], Mr_c, "kip-in", "AISC 360-22 Sect. J4.5", "")]
+    gi = pick(res, "inter")
+    rows.append(Row("Lug flexure and shear (Manual Eq. 9-1)", gi["cb"], gi["inter"], 1.0, "", "AISC Manual Eq. 9-1", "Mr / Mc + (Vr / Vc)^4, Pr = 0"))
+    gw = pick(res, "rw")
+    rows.append(Row("Lug welds to the plate", gw["cb"], gw["rw"], rw_c, "kip/in", "AISC 360-22 Eq. J2-4, J2-5", f"{weld:g} in. fillets both faces, E{FEXX:g}XX, kds = 1.5"))
+    tmin = min(tsl, tbp)
+    wmin = 0.125 if tmin <= 0.25 else 0.1875 if tmin <= 0.5 else 0.25 if tmin <= 0.75 else 0.3125
+    rows.append(Row("Minimum fillet weld size", "", wmin, weld, "in", "AISC 360-22 Table J2.4", f"thinner part {tmin:g} in."))
+    gr = pick(res, "rod")
+    rows.append(Row("Anchor rod tension (two rods)", gr["cb"], gr["rod"], rod_c, "kip", "AISC 360-22 Table J3.2", f"{rod_d:g} in. rods, 0.75 Fu Ab"))
+    gp = pick(res, "Mpl")
+    rows.append(Row("Base plate bending at the lug", gp["cb"], gp["Mpl"], plate_c, "kip-in", "AISC Design Guide 1 Example 4.7-5; AISC 360-22 Sect. J4.5", f"width = lug width {bsl:g} in."))
+    rows.append(Row("Base plate thickness, at least the lug thickness", "", tsl, tbp, "in", "AISC Design Guide 1 Sect. 4.3.3", "recommended"))
+    gb = max(conc, key=lambda r: r["V"] / r["c"]["phiVbrg"] if r["c"]["phiVbrg"] else 9e9)
+    gc = max(conc, key=lambda r: r["V"] / r["c"]["phiVcb"])
+    rows += [Row("Concrete bearing on the lug", gb["cb"], gb["V"], gb["c"]["phiVbrg"], "kip", "ACI 318-19 Eq. 17.11.2.1", "phi = 0.65"),
+             Row("Concrete breakout of the lug", gc["cb"], gc["V"], gc["c"]["phiVcb"], "kip", "ACI 318-19 17.11.3, Eq. 17.7.2.1a", "phi = 0.65")]
+    hmin = max(2.5 * hsl, 2.5 * f)
+    if hef_rod:
+        rows.append(Row("Anchor rod embedment", "", hmin, hef_rod, "in", "ACI 318-19 17.11.1.1.8", f"not less than 2.5 hsl = {2.5 * hsl:g} and 2.5 csl = {2.5 * f:g} in."))
+    worst = max(rows, key=lambda r: (r.demand / r.capacity) if r.capacity else 0).combo or combos[0].name
+    Ln = footing_line
+    c0 = gc["c"]
+    steps = [Ln("Eccentricity of the shear, e = t grout + hsl / 2", e, "in", "AISC Design Guide 1 Example 4.7-5", f"grout {t_grout:g} in., lug embedment {hsl:g} in."),
+             Ln("Concrete bearing stress limit fp", fp, "ksi", "AISC 360-22 Eq. J8-2", f"0.85 f'c (A2/A1)^0.5 not over 1.7 f'c = {fp_n:.2f} ksi; " + ("phi = 0.65" if lrfd else "Omega = 2.31")),
+             Ln("qmax = fp B", gp["q"], "kip/in", "DG 1 Eq. 4-37", f"B = {B:g} in."),
+             Ln("Bearing length Y", gp["Y"], "in", "DG 1 Eq. 4-32", f"f = s / 2 = {f:g} in., N = {N:g} in.; {gp['cb']}: V = {gp['V']:.2f} kip, P = {gp['P']:.2f} kip"),
+             Ln("Total rod tension T = qmax Y - P", gp["T"], "kip", "DG 1 Sect. 4.3.6", "two rods in tension"),
+             Ln("Base plate moment at the lug", gp["Mpl"], "kip-in", "DG 1 Example 4.7-5", "the larger of T f and qmax Y (N/2 - Y/2)"),
+             Ln("Lug: Agv = bsl tsl, Z = bsl tsl^2 / 4", f"{bsl * tsl:.2f} in2, {st['Z']:.3f} in3", "", "section properties", f"lug {bsl:g} x {tsl:g} in."),
+             Ln("Weld lever arm a = tsl + 2w / 3", st["a"], "in", "DG 1 Example 4.7-5", ""),
+             Ln("Weld force per inch", gw["rw"], "kip/in", "DG 1 Example 4.7-5", f"shear {gw['rv']:.2f} and moment {gw['rm']:.2f} kip/in, combined as a resultant"),
+             Ln("Effective bearing area Aef = bsl x (hsl, not over 2 tsl)", c0["Aef"], "in2", "ACI 318-19 17.11.2.1.1", f"psi_brg = {gb['c']['psi_brg']:.2f} (Eq. 17.11.2.2.1)"),
+             Ln("Breakout: Avc, Avco = 4.5 ca1^2", f"{c0['Avc']:,.0f}, {c0['Avco']:,.0f}", "in2", "ACI 318-19 17.11.3.1.1, Eq. 17.7.2.1.3",
+                f"ca1 = {ca1:g} in., projected {c0['width']:.1f} x {c0['depth']:.1f} in. less the lug's area"),
+             Ln("Vb = 9 lambda (f'c)^0.5 ca1^1.5", c0["Vb"], "kip", "ACI 318-19 Eq. 17.7.2.2.1b", f"psi_ed,V = {c0['psi_ed']:.2f}, psi_c,V = {psi_c:g}, psi_h,V = {c0['psi_h']:.2f}"),
+             Ln("Vcb = Avc / Avco psi_ed psi_c psi_h Vb", c0["Vcb"], "kip", "ACI 318-19 Eq. 17.7.2.1a", "")]
+    info = [("Shear Lug", f"PL {tsl:g} x {bsl:g} in., {hsl:g} in. into the concrete below {t_grout:g} in. of grout; Fy {lug_Fy:g}, Fu {lug_Fu:g} ksi ({lug_source.strip()})"),
+            ("Welds", f"{weld:g} in. fillet each face, E{FEXX:g}XX"),
+            ("Base Plate", f"{N:g} x {B:g} x {tbp:g} in., Fy {bp_Fy:g} ksi; four {rod_d:g} in. anchor rods at {s_rod:g} in. square, Fu {rod_Fu:g} ksi ({rod_source.strip()})"
+             + (f", embedment {hef_rod:g} in." if hef_rod else "")),
+            ("Concrete", f"f'c = {fc * 1000:,.0f} psi; A2/A1 = {A2A1:g}; lug face to the edge in the direction of the shear ca1 = {ca1:g} in., to the side edges {ca2:g} in., member depth {ha:g} in.")]
+    load_lines = [f"{x['case']:<3} V {x['V']:>8.2f} kip" + (f"   P {x['P']:>8.2f} kip" if x.get("P") else "") + (f"   {x['label']}" if x.get("label") else "") for x in loads]
+    sheet = SimpleSheet(mark, "Shear Lug", "Connection", method, info, load_lines, [(cb.name, cb.source) for cb in combos] + [(cb.name, cb.source + " (concrete)") for cb in combos_lrfd if cb.name not in [c.name for c in combos]],
+                        f"Calculation ({worst})", steps, rows,
+                        ["The whole base shear is taken by the lug; the anchor rods take no shear. The lug is centred on the plate and the rods; shear acts along N.",
+                         "Concrete checks with the LRFD combinations (ACI 318-19 Chapter 17); the lug is loaded toward the free edge at ca1.",
+                         "The stiffening of the base plate by the column is not counted in the plate bending check."],
+                        ["concrete breakout of the anchor rods in tension and pullout (see the anchorage on the base plate screens)", "the column to base plate weld",
+                         "the 1 in. grout holes beside the lug (DG 1 Sect. 4.3.3 item 4)", "net tension at the base", "shear in both directions at once"])
+    sheet.blocks.append(dict(title="Shear Lug", head="Shear Lug", picture=("shear_lug", dict(bsl=bsl, tsl=tsl, hsl=hsl, tg=t_grout, tbp=tbp, N=N, ca1=ca1, weld=weld, s=s_rod))))
+    sheet.shear_lug = dict(steel=res, concrete=conc, e=e, fp=fp)
+    return sheet
