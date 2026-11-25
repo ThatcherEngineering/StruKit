@@ -265,6 +265,17 @@ FORMS = {
                 F("weld", "Fillet weld, cap plate to the HSS", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
         tables=[T("loads", "Loads at the joint", [CASE, F("P", "Column compression", unit="kip"), F("M", "Moment across the joint", unit="kip-ft"), F("label", "Note", "text", required=False)]),
                 T("runs", "Or: combined loads (for example from the 3D frame), used in place of the table above", [F("name", "Combination or run", "text"), F("P", "Column compression", unit="kip"), F("M", "Moment across the joint", unit="kip-ft")])]),
+    "stiffened_seat": dict(
+        title="Stiffened Seated Connection (welded to the support, bolted to the beam)", code="AISC 360-22", mark="SS",
+        fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_source", "Source of the beam Fy", "text"),
+                F("W", "Stiffener width W (along the beam)", unit="in"), F("L", "Stiffener length L (down the support)", unit="in"),
+                F("ts", "Stiffener thickness", unit="in"), F("stiff_Fy", "Stiffener Fy", unit="ksi"), F("stiff_source", "Source of the stiffener Fy", "text"),
+                F("tseat", "Seat plate thickness", unit="in"), F("weld", "Fillet weld size to the support", unit="in"), F("FEXX", "Electrode strength", unit="ksi"),
+                F("support", "Support (member and part)", "text", help="for example W14x90 flange"), F("t_sup", "Support thickness", unit="in"),
+                F("Fu_sup", "Support Fu", unit="ksi"),
+                F("both_sides", "Seats welded on both faces of the support (a column web)", "select", options=["no", "yes"], required=False)],
+        tables=[T("loads", "End reaction", [CASE, F("P", "R", unit="kip"), F("label", "Note", "text", required=False)]),
+                T("runs", "Or: combined reactions, used in place of the table above", [F("name", "Combination or run", "text"), F("R", "R", unit="kip")])]),
     "beam_hss_moment": dict(
         title="Beam to HSS Column Moment Connection (flanges or flange plates welded to the face)", code="AISC 360-22", mark="BHM",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_source", "Source of the beam Fy", "text"),
@@ -1640,6 +1651,18 @@ def build(kind, values, project):
                 r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.num("s"), r.num("g"), r.num("weld"), r.num("FEXX"))
         r.done()
         return ws_more.cap_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
+    if kind == "stiffened_seat":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        runs = [dict(name=x["name"], R=x["R"]) for x in r.rows("runs")]
+        loads = [] if runs else [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads and not runs:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        args = (r.text("beam"), r.num("beam_Fy"), r.text("beam_source"), r.num("W"), r.num("L"), r.num("ts"), r.num("stiff_Fy"), r.text("stiff_source"),
+                r.num("tseat"), r.num("weld"), r.num("FEXX"), r.text("support"), r.num("t_sup"), r.num("Fu_sup"))
+        r.done()
+        return ws_more.stiffened_seat_sheet(mark, *args, loads, cb, m, both_sides=str(values.get("both_sides") or "").startswith("y"),
+                                            runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
     if kind == "beam_hss_moment":
         cb, m = combos(project, r.miss), method(project, r.miss)
         z = lambda v: v if v is not None else 0.0

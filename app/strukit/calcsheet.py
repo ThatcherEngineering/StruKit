@@ -1614,6 +1614,8 @@ def _block_picture(c, top, pic):
         return _seat_picture(c, top - 6, d)
     if name == "cap_plate":
         return _cap_plate_picture(c, top - 6, d)
+    if name == "stiffened_seat":
+        return _stiffened_seat_picture(c, top - 6, d)
     if name == "beam_hss_moment":
         return _beam_hss_moment_picture(c, top - 6, d)
     if name == "flush_end_plate":
@@ -2490,6 +2492,46 @@ def _beam_hss_moment_picture(c, top, d):
     c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawString(xq + 26, yq + (Bb / 2 + a_ / 2) * s2 - 2 + max(0, 6 - a_ * s2), f"a = {a_:.3g} in")
     _small(c, xq - H * s2 / 2 + 20, yq - B / 2 * s2 - (26 if bl else 14), "plan at a " + ("flange plate" if d["plate"] else "flange") + ", to scale")
     return min(ym - hc / 2 - 36, yq - B / 2 * s2 - (34 if bl else 22))
+
+
+def _stiffened_seat_picture(c, top, d):
+    """Side elevation of a stiffened seat, to scale: support face, seat plate, stiffener, the beam on the seat with its 1/2 in. setback, the
+    reaction at 0.8 W, and W, L, lb and the plate thicknesses dimensioned."""
+    W, L, ts, tp, dd, tf = d["W"], d["L"], d["ts"], d["tseat"], d["d"], d["tf"]
+    sc = min(7.0, 175.0 / (dd + L + tp), 150.0 / (W + 10))
+    xf = LM + 150                                    # face of the support
+    ys = top - 10 - dd * sc                          # top of the seat plate (underside of the beam)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    c.setFillColorRGB(0.82, 0.85, 0.89)
+    c.rect(xf - 14, ys - L * sc - tp * sc - 14, 14, dd * sc + L * sc + tp * sc + 24, fill=1, stroke=1)      # support
+    c.setFillColorRGB(0.62, 0.68, 0.76)
+    c.rect(xf, ys - tp * sc, W * sc, tp * sc, fill=1, stroke=1)                                             # seat plate
+    c.setFillColorRGB(0.72, 0.77, 0.83)
+    c.rect(xf, ys - tp * sc - L * sc, W * sc, L * sc, fill=1, stroke=1)                                     # stiffener, side view
+    xb = xf + 0.5 * sc                                                                                        # beam end, 1/2 in. setback
+    c.setFillColorRGB(0.90, 0.92, 0.95)
+    c.rect(xb, ys, 9 * sc + W * sc, dd * sc, fill=1, stroke=1)
+    c.line(xb, ys + tf * sc, xb + 9 * sc + W * sc, ys + tf * sc)
+    c.line(xb, ys + (dd - tf) * sc, xb + 9 * sc + W * sc, ys + (dd - tf) * sc)
+    c.setFillColorRGB(0.62, 0.68, 0.76)
+    c.rect(xf, ys + dd * sc, 4 * sc, 0.375 * sc + 1, fill=1, stroke=1)                                       # top angle leg
+    xr = xf + 0.8 * W * sc                                                                                    # reaction at 0.8 W, the beam bearing down on the seat
+    c.setStrokeColorRGB(*FLAGC); c.setLineWidth(1.0)
+    c.line(xr, ys + 26, xr, ys + 7)
+    t_ = c.beginPath(); t_.moveTo(xr, ys + 1); t_.lineTo(xr - 3, ys + 8); t_.lineTo(xr + 3, ys + 8); t_.close()
+    c.setFillColorRGB(*FLAGC); c.drawPath(t_, fill=1, stroke=0)
+    c.setFont(FR, 6); c.drawString(xr + 4, ys + 18, "R at 0.8 W")
+    c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawString(xb + 9 * sc + W * sc + 6, ys + dd * sc / 2, d["beam"])
+    c.drawRightString(xf - 18, ys - L * sc / 2, d["support"])
+    memberart._dim_h(c, xf, xf + W * sc, ys - tp * sc - L * sc - 12, f"W = {W:g} in", FR, ext_from=ys - tp * sc - L * sc)
+    memberart._dim_v(c, ys - tp * sc - L * sc, ys - tp * sc, xf + W * sc + 12, f"L = {L:g} in", FR, ext_from=xf + W * sc)
+    memberart._dim_h(c, xb, xf + W * sc - 0.25 * sc, ys + dd * sc + 14, f"lb = {d['lb']:.3g} in", FR, ext_from=ys + dd * sc)
+    c.setFont(FR, 6); c.setFillColorRGB(*INK)
+    c.drawString(xf + W * sc + 46, ys - tp * sc - L * sc * 0.70, f"seat PL {tp:g} in, stiffener PL {ts:g} in")
+    c.drawString(xf + W * sc + 46, ys - tp * sc - L * sc * 0.70 - 8, f"{d['weld']:g} in fillets to the support")
+    _small(c, xf + 40, ys - tp * sc - L * sc - 34, "side elevation, to scale; the beam is set back 1/2 in. from the support")
+    return ys - tp * sc - L * sc - 42
 
 
 def _guard_picture(c, top, d):

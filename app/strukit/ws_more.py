@@ -3739,6 +3739,100 @@ def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
     return sheet
 
 
+def stiffened_seat_weld(W, L, D, FEXX, method):
+    """Available strength (kips) of the T-shaped weld of a stiffened seat to the support: two vertical fillets of length L, one each side of the
+    stiffener, and horizontal fillets 0.2 L long each side under the seat plate, by the elastic method with the reaction at 0.8 W from the face
+    (AISC Manual 15th Ed. Part 10, Table 10-8 basis). D: weld size in sixteenths. Returns (strength, per-inch weld capacity, stress per kip)."""
+    ybar = L / 2.4                                              # centroid of 2 L vertical and 0.4 L horizontal line, from the top
+    I = 0.25 * L ** 3                                           # 2 [L^3 / 12 + L (L/2 - ybar)^2] + 0.4 L ybar^2
+    fv = 1.0 / (2.4 * L)                                        # direct shear per kip, kip/in
+    fb = 0.8 * W * ybar / I                                     # bending at the top of the weld per kip, kip/in
+    f = math.hypot(fv, fb)
+    q = 0.60 * FEXX * 0.7071 * D / 16.0                         # nominal per inch, AISC 360-22 Eq. J2-4 (kds = 1.0: load direction varies)
+    qa = 0.75 * q if method == "LRFD" else q / 2.00
+    return qa / f, qa, f
+
+
+def stiffened_seat_sheet(mark, beam, beam_Fy, beam_source, W, L, ts, stiff_Fy, stiff_source, tseat, weld, FEXX, support, t_sup, Fu_sup,
+                         loads, combos, method, both_sides=False, runs=None, runs_from=""):
+    """Stiffened seated connection, welded to the support and bolted to the beam: AISC Manual 15th Ed. Part 10 (stiffened seated connections,
+    Table 10-8 discussion) as worked in AISC Design Examples v16.0 Examples II.A-14 and II.A-15. W: stiffener width (outstanding, along the
+    beam); L: stiffener length (down the support); ts: stiffener thickness; weld: fillet size of the stiffener and seat to the support."""
+    for nm, v in (("the source of the beam Fy", beam_source), ("the source of the stiffener Fy", stiff_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm} is blank")
+    try:
+        bm = shapes.get(beam)
+    except Exception:
+        raise WorksheetError(f"{mark}: '{beam}' is not a W, M, S or HP shape in the shapes table")
+    if runs:
+        src = [(r_["name"], abs(r_["R"])) for r_ in runs]
+    else:
+        if not combos or not loads:
+            raise WorksheetError(f"{mark}: loads and load combinations are needed")
+        src = [(cb.name, abs(sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads))) for cb in combos]
+    worst, R = max(src, key=lambda x: x[1])
+    lrfd = method == "LRFD"
+    av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
+    fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
+    E, tw, tf, dd, k = 29000.0, bm["tw"], bm["tf"], bm["d"], bm["kdes"]
+    sb, under = 0.5, 0.25
+    lb = W - sb - under
+    if lb <= 0:
+        raise WorksheetError(f"{mark}: the stiffener width W = {W:g} in. leaves no bearing after the 1/2 in. setback and 1/4 in. underrun")
+    R1, R2 = av(2.5 * k * beam_Fy * tw, 1.00, 1.50), av(beam_Fy * tw, 1.00, 1.50)
+    base = 0.40 * tw ** 2 * math.sqrt(E * beam_Fy * tf / tw)
+    if lb / dd <= 0.2:
+        R5, R6, ceq = av(base, 0.75, 2.00), av(base * 3.0 / dd * (tw / tf) ** 1.5, 0.75, 2.00), "Eq. J10-5a"
+    else:
+        R5, R6, ceq = av(base * (1 - 0.2 * (tw / tf) ** 1.5), 0.75, 2.00), av(base * 4.0 / dd * (tw / tf) ** 1.5, 0.75, 2.00), "Eq. J10-5b"
+    Ry, Rc = R1 + R2 * lb, R5 + R6 * lb
+    Wy, Wc = max(0.0, (R - R1) / R2) + sb + under, max(0.0, (R - R5) / R6) + sb + under
+    D = weld * 16.0
+    Rw0, qa, f = stiffened_seat_weld(W, L, D, FEXX, method)
+    tmin = (2.0 if both_sides else 1.0) * 3.09 * D / Fu_sup * FEXX / 70.0     # AISC Manual Eq. 9-2 (70 ksi), scaled for the electrode
+    red = min(1.0, t_sup / tmin)
+    Rw = Rw0 * red
+    ts_min = max(tw * beam_Fy / stiff_Fy, (1.5 if stiff_Fy >= 50 else 2.0) * weld)
+    Ln = footing_line
+    steps = [Ln("Required strength R", R, "kip", worst, ""),
+             Ln("Bearing length lb = W - setback - underrun", lb, "in", "AISC Manual Part 10", f"W = {W:g} in.; setback 1/2 in. and underrun 1/4 in."),
+             Ln("Web local yielding constants R1, R2", R1, "kip", "AISC Manual Table 9-4; AISC 360-22 Eq. J10-3", f"R2 = {R2:.3g} kip/in.; " + fac(1.00, 1.50)),
+             Ln("Web local crippling constants R5, R6", R5, "kip", "AISC Manual Table 9-4; AISC 360-22 " + ceq, f"R6 = {R6:.3g} kip/in.; " + fac(0.75, 2.00)),
+             Ln("Least stiffener width for web local yielding", Wy, "in", "AISC Manual Eq. 9-60", "(R - R1) / R2 + setback + underrun"),
+             Ln("Least stiffener width for web local crippling", Wc, "in", "AISC Manual Eq. 9-63", "(R - R5) / R6 + setback + underrun"),
+             Ln("Weld stress per kip, (fv^2 + fb^2)^0.5", f, "kip/in", "AISC Manual Part 10, elastic method",
+                f"fv = 1 / (2.4 L), fb = 0.8 W ybar / I with ybar = L / 2.4, I = 0.25 L^3; L = {L:g} in., load at 0.8 W = {0.8 * W:.3g} in."),
+             Ln("Weld available strength per inch", qa, "kip/in", "AISC 360-22 Eq. J2-4", f"{weld:g} in. fillet, FEXX = {FEXX:g} ksi; " + fac(0.75, 2.00)),
+             Ln("Least support thickness for the weld", tmin, "in", "AISC Manual Eq. 9-2", ("welds on both faces: twice " if both_sides else "")
+                + f"3.09 D / Fu; support {support} t = {t_sup:g} in., Fu = {Fu_sup:g} ksi" + (f"; weld strength x {red:.3f}" if red < 1 else "")),
+             Ln("Least stiffener thickness", ts_min, "in", "AISC Manual Part 10", f"larger of tw Fy,beam / Fy,stiffener and {'1.5' if stiff_Fy >= 50 else '2'} w")]
+    rows = [Row("Beam web local yielding", worst, R, Ry, "kip", "AISC 360-22 Eq. J10-3", f"lb = {lb:.3g} in."),
+            Row("Beam web local crippling", worst, R, Rc, "kip", "AISC 360-22 " + ceq, f"lb / d = {lb / dd:.3f}"),
+            Row("Stiffener-to-support welds", worst, R, Rw, "kip", "AISC Manual Part 10; AISC 360-22 Eq. J2-4", f"{weld:g} in. T-shaped weld, L = {L:g} in., W = {W:g} in."),
+            Row("Stiffener thickness", "", ts_min, ts, "in", "AISC Manual Part 10", "required against provided"),
+            Row("Seat plate thickness", "", 0.375, tseat, "in", "AISC Manual Part 10", "3/8 in. minimum")]
+    info = [("Beam", f"{shapes.normalize(beam)}, d = {dd:g} in., tw = {tw:g} in., tf = {tf:g} in., kdes = {k:g} in., Fy = {beam_Fy:g} ksi ({beam_source.strip()})"),
+            ("Stiffener", f"PL {ts:g} x {W:g} x {L:g} in., Fy = {stiff_Fy:g} ksi ({stiff_source.strip()}); seat plate {tseat:g} in. thick"),
+            ("Welds", f"{weld:g} in. fillets, FEXX = {FEXX:g} ksi: both sides of the stiffener for its length, and the seat plate 0.2 L = {0.2 * L:.3g} in. each side"),
+            ("Support", f"{support}, t = {t_sup:g} in., Fu = {Fu_sup:g} ksi" + ("; seats on both faces" if both_sides else ""))]
+    load_lines = ([f"R = {r_['R']:.2f} kip   {r_['name']}" for r_ in runs] if runs else
+                  [f"{x_['case']:<3} R = {x_['P']:>7.2f} kip" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads])
+    combo_lines = ([(f"Combined loads at the {method} level" + (f": {runs_from.strip()}" if (runs_from or '').strip() else ""), "")] if runs
+                   else [(cb.name, cb.source) for cb in combos])
+    sheet = SimpleSheet(mark, "Stiffened Seated Connection (welded to the support, bolted to the beam)", "Connection", method, info, load_lines, combo_lines,
+                        "Calculation", steps, rows,
+                        ["The stiffener carries the whole end reaction, applied at 0.8 W from the face of the support.",
+                         "The stiffener is finished to bear under the seat plate; the weld of the seat plate to the stiffener is at least as strong as the horizontal part of the T-shaped weld.",
+                         "The beam is bolted to the seat plate and is not welded to it; a top angle at the top flange holds the beam in place."],
+                        ["the top angle and its bolts or welds", "the bolts of the beam to the seat plate", "punching shear of a column web (Manual Part 10 limits)",
+                         "the support member itself"])
+    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("stiffened_seat", dict(W=W, L=L, ts=ts, tseat=tseat, weld=weld, d=dd, tf=tf, beam=shapes.normalize(beam),
+                                                                                              support=support, t_sup=t_sup, lb=lb))))
+    sheet.conn = dict(R=R, lb=lb, R1=R1, R2=R2, R5=R5, R6=R6, Wy=Wy, Wc=Wc, Ry=Ry, Rc=Rc, Rw=Rw, Rw0=Rw0, tmin=tmin, ts_min=ts_min, f=f)
+    return sheet
+
+
 def flange_plate_bolted(M_bolt, M_plate, beam, beam_Fy, beam_Fu, bp, tp, Fy, Fu, d, group, threads, n, s, g, lev_p, lev_b, a1, method,
                         weld=None, FEXX=70.0):
     """A flange plate bolted to a wide-flange beam flange with two rows of n bolts (gage g, spacing s), in the arrangement of AISC Design
