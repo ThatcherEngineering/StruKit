@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 15:45. Build **0.212.0**, 563 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 16:20. Build **0.213.0**, 568 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -21,14 +21,14 @@ Updated 2026-11-25 15:45. Build **0.212.0**, 563 tests passing; `main` and `rele
 3. Anchor rod tensile strength: lower of AISC 360-22 Table J3.2 and Design Guide 1 Table 4-1 always?
 4. Older open items in the rulings file under "Open (not ruled)": parapet zone 3, single-row group action, wind overhang velocity pressure, which checks print at the member, his reaction to the window.
 
-**Needed from Zach (do not build without it):** ASCE 7-16 text; AISI S100; a reference or his own method for an HSS rafter on an HSS column cap plate; a readable TMS 402 for CMU walls; ASABE EP484 / EP486 for post-frame embedment; his wind drift limit and its source.
+**Needed from Zach (do not build without it):** AISC Design Guide 9 (torsion of W shapes and channels); ASCE 7-16 text; AISI S100; a reference or his own method for an HSS rafter on an HSS column cap plate; a readable TMS 402 for CMU walls; ASABE EP484 / EP486 for post-frame embedment; his wind drift limit and its source.
 
 **Next, in order**
 1. (Done 0.211.0: beam to HSS column moment connection filled from the frame; bolted flange plates.) Still open on that joint: welded (not bolted) flange plates to the beam flange; the web shear tab filled from the same frame run.
 2. Stiffened seated connections (AISC Manual Table 10-8 pages, read as images).
 3. Beam coped at the bottom flange only.
 4. Force transfer around several openings (APA procedure).
-5. (Weak-axis loads done 0.212.0.) Torsion: rectangular and round HSS by AISC 360-22 Sect. H3 (Design Examples H.5A to H.5C) next; W-shape torsion (Design Example H.6 uses AISC Design Guide 9, which is not on file).
+5. (Weak-axis loads done 0.212.0; HSS and pipe torsion done 0.213.0.) Still open: W-shape and channel torsion (Design Example H.6 relies on AISC Design Guide 9, not on file: needed from Zach); torsion with continuous spans or overhangs.
 6. Single angles in bending (AISC 360-22 Sect. F10).
 7. Crane runway beams (wheel loads, impact, lateral and longitudinal forces, underhung bottom flange bending).
 8. Read wood, LVL, I-joist, post and footing members from StruCalc .vtx files.
@@ -575,3 +575,8 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Steel Beam screen, loads table: new column "Direction"**: down (x axis), the default, or sideways (y axis). Sideways loads bend the beam about its weak axis (`ws_steel_beam.run` splits them out). For every combination with a sideways load the sheet adds: flexure about the y axis (AISC 360-22 Sect. F6 for I-shapes; Sect. F7 / F8 for HSS and pipe, through `steel_beamcol.weak_axis_flexure`), shear from the sideways loads (Sect. G6, or G4 / G5), and flexure about both axes by Eq. H1-1b with Pr = 0, checked at every station with each x moment against the strength of the unbraced segment it lies in. A deflection limit whose load list includes a sideways load gets a sideways deflection row on E Iy. The loading sketch draws only the down loads and lists the sideways loads under the beam; an assumption states that sideways loads act through the shear center and that torsion is not checked.
 - Single simple span only: sideways loads on more than one span, with an overhang, with a fixed support or on a channel are refused with the reason (channels load off the shear center).
 - **Validation: AISC Design Examples v16.0 Example F.5** (W12x58, 15 ft, minor-axis bending: Mu 113 / Ma 75.1 kip-ft, phi Mn 122 / Mn/Omega 81.4 kip-ft, Iy 107 against 105 in4 required for L/240), within 0.5 percent; Eq. H1-1b at midspan by hand (W12x58 with 1 kip/ft down and 0.5 kip/ft sideways: 0.2195). Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-Steel-Beam-Sideways-Load.pdf`.
+
+## 2026-11-25 16:20 local — 0.213.0 torsion of HSS and pipe beams (568 tests)
+- Item 4 continued. **Steel Beam screen, loads table: new column "Off the shear center by" (in.)**. For an HSS or pipe on a single simple span, each such load twists the beam by load x distance; both ends are held against twisting and the torque divides between them as a simple-span shear does. New `hss.torsion`: AISC 360-22 Sect. H3.1, Tn = Fcr C (Eq. H3-1), round HSS by Eq. H3-2a / H3-2b with the member length, rectangular by Eq. H3-3 to H3-5 on the larger wall slenderness, C from the shapes table; phi 0.90, Omega 1.67. Rows: torsion (largest Tr against Tc) and, where Tr is over 0.2 Tc, Eq. H3-6 with Pr = 0 scanned along the span (Mrx against the strength of its unbraced segment, Mry from sideways loads, Vr / Vc the larger of the two axes, Tr / Tc). The strength box lists Fcr and Tn; the loads list shows each load's distance from the shear center.
+- W shapes, channels, more than one span or an overhang with torsion are refused with the reason. W-shape torsion needs AISC Design Guide 9 (warping); not on file.
+- **Validation: AISC Design Examples v16.0 Examples H.5A (273 / 181 kip-in), H.5B (215 / 143 kip-in) and H.5C** (Tr 66.2 / 44.2 kip-in; Eq. H3-6 0.333 / 0.340 where Tr = 0.2 Tc: StruKit 0.335 / 0.337, at the exact point x = 0.70 / 0.71 ft where the example rounds to 0.700 / 0.725 ft). Eq. H3-4 by hand. Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-HSS-Beam-Torsion.pdf`.

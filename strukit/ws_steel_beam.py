@@ -166,6 +166,10 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
         segs = list(zip(pts[:-1], pts[1:]))
         btxt = "braced at " + ", ".join(f"{x:g}" for x in pts) + " ft"
         brace_pts = pts
+    twist = [ld for ld in loads + side if ld.get("e_in")]
+    if twist and (not lay.simple or props.get("type") not in ("HSS-RECT", "HSS-ROUND", "PIPE")):
+        raise WorksheetError(f"{mark}: loads off the shear center (torsion) are checked on a single simple span of an HSS or pipe "
+                             "(AISC 360-22 Sect. H3); torsion of W shapes and channels is not covered")
     if side and (not lay.simple or props.get("type") in ("C", "MC")):
         raise WorksheetError(f"{mark}: sideways (weak-axis) loads are checked on a single simple span of a W, M, S or HP shape, HSS or pipe; "
                              "this beam has more than one span, an overhang, a fixed support or is a channel")
@@ -194,6 +198,18 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
         sheet.loads = list(all_loads) + [dict(ld, label=(ld.get("label") + ", " if ld.get("label") else "") + "sideways, weak axis") for ld in side]
         sheet.assumptions.append("Sideways loads act in the plane of the flanges (bending about the y axis) through the shear center; torsion is not checked. "
                                  "Bending about both axes is combined by AISC 360-22 Eq. H1-1b with Pr = 0.")
+    if twist:
+        from . import hss as _hss
+        try:
+            tc = _hss.torsion(props, Fy, span_ft * 12.0, method)
+        except _hss.HSSError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        torques = [dict(ld, w=ld["w"] * ld["e_in"]) if ld["kind"] == "uniform" else dict(ld, P=ld["P"] * ld["e_in"]) for ld in twist]
+        worst_t = worst_ti = None
+        sheet.assumptions.append("Torque is the load times its distance from the shear center; both ends are held against twisting, and the torque "
+                                 "divides between them as a simple-span shear does. Where Tr is over 0.2 Tc, AISC 360-22 Eq. H3-6 is checked at every point "
+                                 "along the span; elsewhere torsion is neglected (Sect. H3.2).")
+        sheet.torsion_lines = tc.lines
     for cb in combos:
         res = _solve(span_ft, EI, all_loads, cb.factors)
         sheet.reactions[cb.name] = (res.reactions[0.0], res.reactions[float(span_ft)])
@@ -241,9 +257,38 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
                 worst_wv = row_wv
             if worst_h is None or row_h.dc > worst_h.dc:
                 worst_h = row_h
+        if twist and any(cb.factors.get(ld["case"], 0.0) for ld in twist):
+            rt = _solve(span_ft, EI, torques, cb.factors)
+            Tmax = float(np.max(np.abs(rt.V)))
+            row_t = Row("torsion", cb.name, Tmax, tc.available, "kip-in", "AISC 360-22 Eq. H3-1: " + tc.governs)
+            if worst_t is None or row_t.dc > worst_t.dc:
+                worst_t = row_t
+            xs = np.unique(np.concatenate([np.linspace(0.0, span_ft, 1601), res.x, rt.x]))
+            T_ = np.abs(np.interp(xs, rt.x, rt.V))
+            if np.any(T_ > 0.2 * tc.available):
+                Mx_ = np.abs(np.interp(xs, res.x, res.M))
+                Vx_ = np.abs(np.interp(xs, res.x, res.V)) / chk.V_avail
+                if side and any(cb.factors.get(ld["case"], 0.0) for ld in side):
+                    My_ = np.abs(np.interp(xs, rw.x, rw.M)) / (wk.available / 12)
+                    Vy_ = np.abs(np.interp(xs, rw.x, rw.V)) / wv.available
+                else:
+                    My_ = Vy_ = np.zeros_like(xs)
+                Mc_ = np.full_like(xs, chk.M_avail / 12)
+                for Mseg_, chk_, Lb_, Cb_, seg_ in cand:
+                    sel_ = (xs >= seg_[0] - 1e-9) & (xs <= seg_[1] + 1e-9)
+                    Mc_[sel_] = chk_.M_avail / 12
+                u = Mx_ / Mc_ + My_ + (np.maximum(Vx_, Vy_) + T_ / tc.available) ** 2
+                u[T_ <= 0.2 * tc.available] = 0.0
+                k_ = int(np.argmax(u))
+                row_ti = Row("torsion with shear and flexure", cb.name, float(u[k_]), 1.0, "", "AISC 360-22 Eq. H3-6 (Pr = 0)",
+                             f"at {xs[k_]:.2f} ft: Mrx = {Mx_[k_]:.2f} kip-ft, Vr / Vc = {max(Vx_[k_], Vy_[k_]):.3f}, Tr = {T_[k_]:.1f} kip-in")
+                if worst_ti is None or row_ti.dc > worst_ti.dc:
+                    worst_ti = row_ti
     sheet.rows += [worst_m[0], worst_v]
     if side and worst_h is not None:
         sheet.rows += [worst_wm, worst_wv, worst_h]
+    if twist:
+        sheet.rows += [r_ for r_ in (worst_t, worst_ti) if r_ is not None]
     sheet.steps = worst_m[1].lines
     sheet.governing = dict(flexure=worst_m[0].combo, shear=worst_v.combo)
     r = worst_m[2]

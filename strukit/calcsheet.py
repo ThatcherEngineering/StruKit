@@ -466,6 +466,8 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
                 s += f"  from {ld['x1_ft']:g} to {ld['x2_ft']:g} ft"
         else:
             s = f"{ld['case']:<3} point    {ld['P']:.2f} kip at {ld['x_ft']:g} ft"
+        if ld.get("e_in"):
+            s += f", {ld['e_in']:g} in. off the shear center"
         if ld.get("label"):
             s += f"   ({ld['label']})"
         p.text(s, font=FM, size=8)
@@ -485,7 +487,8 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
              f"M max = {max(abs(m) for m in M):.1f} kip-ft")
     p.y = dy0 - 12
 
-    _steps(p, "Flexural and Shear Strength (AISC 360-22)", sheet.steps)
+    _steps(p, "Flexural, Shear and Torsional Strength (AISC 360-22)" if getattr(sheet, "torsion_lines", None) else "Flexural and Shear Strength (AISC 360-22)",
+           list(sheet.steps) + list(getattr(sheet, "torsion_lines", None) or []))
     _summary(p, sheet.rows)
     return _closing(p, sheet.assumptions)
 
