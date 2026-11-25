@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 about 15:40. Build **0.214.0**, 571 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 about 16:15. Build **0.215.0**, 577 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -15,6 +15,7 @@ Updated 2026-11-25 about 15:40. Build **0.214.0**, 571 tests passing; `main` and
 - A scheduled session starts each weekday at 5:10 AM Denver time, reads these files and sends Zach one check-in with the Next list; it builds nothing until he says go (his change of 2026-11-25 12:43). Before the session ends it updates this section and the Project copies.
 
 **Waiting for Zach's ruling** (applied conservatively meanwhile; details in the rulings file)
+0c. Beam coped at the bottom flange only: web shear yielding and rupture checked on the remaining depth, although Design Example K.3 says they do not apply (0.215.0).
 0b. Stiffened seat stiffener at least 2 w thick for 36 < Fy < 50 ksi (0.214.0).
 0. Compression flange plate length: larger of the bolt spacing and the face-to-first-bolt distance (0.211.0; Example II.B-1 uses the spacing).
 1. Open-building column wind Cf from ASCE 7-22 Figure 29.4-1 at the column's own h/D (1.76 for an HSS8x8 about 11.8 ft tall).
@@ -27,7 +28,7 @@ Updated 2026-11-25 about 15:40. Build **0.214.0**, 571 tests passing; `main` and
 **Next, in order**
 1. (Done 0.211.0: beam to HSS column moment connection filled from the frame; bolted flange plates.) Still open on that joint: welded (not bolted) flange plates to the beam flange; the web shear tab filled from the same frame run.
 2. (Stiffened seats, welded to the support, done 0.214.0.) Still open: all-bolted stiffened seats (Table 10-7), column web punching limits for seats on a web, the top angle.
-3. Beam coped at the bottom flange only.
+3. (Bottom-only cope done 0.215.0.) Still open: Manual equation citations name no edition, and StruKit mixes 15th Ed. numbers (Eq. 9-2, 9-3, seats) with the Design Examples v16 / 16th Ed. numbers (coped beams, Eq. 9-8); put the edition on each, or move all to one edition when a 16th Ed. Manual is on file.
 4. Force transfer around several openings (APA procedure).
 5. (Weak-axis loads done 0.212.0; HSS and pipe torsion done 0.213.0.) Still open: W-shape and channel torsion (Design Example H.6 relies on AISC Design Guide 9, not on file: needed from Zach); torsion with continuous spans or overhangs.
 6. Single angles in bending (AISC 360-22 Sect. F10).
@@ -588,3 +589,12 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation: AISC Design Examples v16.0 Example II.A-14** (W21x68 on a W14x90 flange, PL 5/8 x 7 x 15, 5/16 in. welds): the elastic-method weld gives 139.4 / 92.9 kips against the Manual Table 10-8 values the example quotes, 139 / 93.0; R1 64.0 / 42.6, R5 75.9 / 50.6 kips; least widths 6.93 / 6.96 and 3.59 / 3.61 in.; least stiffener thickness 0.469 in.; least support thickness 0.238 in. The Manual prints no formula for the T-shaped weld; the elastic method (centroid L / 2.4 from the top, I = 0.25 L^3, stress at the top) is the generally published one and is accepted because it reproduces the table. Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-Stiffened-Seated-Connection.pdf`.
 - **Applied, not ruled (conservative):** for stiffener Fy between 36 and 50 ksi the stiffener must be at least 2 w thick (the Manual gives 2 w at 36 ksi and 1.5 w at 50 ksi only).
 - Not checked and listed: the top angle, the bolts of the beam to the seat, column web punching (the Manual's simplified limits), the support member.
+
+## 2026-11-25 about 16:15 local — 0.215.0 beam coped at the bottom flange only (577 tests)
+- Next item 3. **The AISC Manual (15th Ed., pp. 9-6 to 9-10, read from the scan at 140 and 400 dpi) gives the coped-beam local buckling procedure for top-flange and double copes only**; for other cases it points to Specification Sect. J4.5 and Chapter F, and gives flexural rupture as Mn = Fu Znet (15th Ed. Eq. 9-4; Eq. 9-8 in the numbering Design Examples v16.0 use). Design Example K.3 (bottom cope for erection) states that shear yielding, shear rupture and block shear of the beam web do not apply to a beam coped at the bottom flange only.
+- **Shear tab screen:** the top cope depth may be left blank with a bottom depth typed: a cope at the bottom flange only. `cope.bottom_cope` and `cope.tee_flexure`: the remaining tee (top flange and web, fillets not counted), end reaction downward so the stem is in tension, checked by AISC 360-22 Sect. F9: yielding with Mp not over 1.6 My (Eq. F9-1 to F9-3; My to the tip of the stem), lateral-torsional buckling with Lb = the cope length (Eq. F9-6 to F9-11; braced at the end of the cope as the Manual's procedure takes it), flange local buckling (Eq. F9-14, F9-15, Table B4.1b Case 10); flexural rupture Fu Znet with no bolt holes at the end of the cope; R = Mn / e. Block shear is not checked (the web above the bolts is not cut). The "cut edge to the nearest bolt" box means the bottom cut for this case.
+- **Applied, not ruled (conservative):** web shear yielding and rupture on the remaining depth hc tw are checked anyway (Design Example K.3 says they do not apply).
+- **New picture on every coped shear tab sheet (top, bottom or both):** side elevation of the beam end to scale with the cope(s), the bolts, setback, cope length and depth, e, bolt line to the beam end, cut edge to the nearest bolt, spacing and beam depth dimensioned. The copes had not been drawn before.
+- Sheet wording: the coped-beam assumption now names which flange(s) are coped (it said "top flange" for double copes as well); "an upward end reaction at the cope" is on the not-checked list of coped sheets.
+- **Validation:** no published example of a bottom-only cope check exists in the documents on file. The tee strength is tested against **Design Example F.10** (WT5x6, stem in tension: My 61.0, Mp capped at 97.6 kip-in., lambda_pf 9.15, lambda_rf 24.1, Mn 8.13 kip-ft, 7.32 / 4.87 available, exact); the tee section of a W10x12 cut in half against the WT5x6 row of Manual Table 1-8 (Ix, y, Zx, Sx within 1 to 2 percent, fillets not counted); lateral-torsional buckling and the W21x62 bottom cope by hand. Opened in a headless browser. Sample: `StruKit-Sample-Calc-Sheet-Coped-Beam-Shear-Tabs.pdf` (bottom, top and double copes).
+- Found while reading: StruKit cites Manual equations from two numberings (15th Ed. for Eq. 9-2 / 9-3 and the seat equations; Design Examples v16.0 for the coped-beam and some other rows). Put on the Next list.

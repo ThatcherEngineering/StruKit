@@ -130,3 +130,20 @@ def test_coped_both_flanges_on_the_sheet():
     f = lambda sh: [r for r in sh.rows if r.check.startswith("Coped beam web flexure")][0]
     assert "F11" in f(two).source and "F11" not in f(one).source and f(two).capacity < f(one).capacity
     assert two.single_plate["cope"]["hc"] == pytest.approx(20.7 - 4.0)
+
+
+def test_coped_bottom_flange_only_on_the_sheet(tmp_path):
+    cb = [Combo("D + L", {"D": 1.0, "L": 1.0}, "test")]
+    a = list(ARGS); a[0] = ""; a[14] = 3
+    sup = dict(name="W21x62 girder web", t=0.4, Fu=65)
+    bot = single_plate_sheet("SP", *a, LOADS[:1], cb, "ASD", support=sup, cope=dict(dcb=2.0, c=5.0, setback=0.5, lev=1.5, leh=1.75, Fy=50))
+    names = [r.check for r in bot.rows]
+    assert "Coped beam flexure (tee at the bottom cope)" in names and "Coped beam flexural rupture" in names
+    assert not any("block shear" in n and "Coped" in n for n in names)                 # the web above the bolts is not cut
+    cp = bot.single_plate["cope"]
+    assert cp["kind"] == "bottom" and cp["hc"] == pytest.approx(20.7 - 2.0) and bot.ok
+    assert "bottom flange only" in " ".join(bot.assumptions) and "an upward end reaction at the cope" in bot.not_checked
+    assert any(b.get("picture", ("",))[0] == "coped_end" for b in bot.blocks)
+    calcsheet.simple_pdf(bot, str(tmp_path / "bot.pdf"), "Job", "AISC 360-22", "Nov 25, 2026")
+    with pytest.raises(WorksheetError):                                                 # no depth at all
+        single_plate_sheet("SP", *a, LOADS[:1], cb, "ASD", support=sup, cope=dict(c=5.0, setback=0.5, lev=1.5, leh=1.75, Fy=50))
