@@ -105,6 +105,25 @@ FORMS = {
                 F("length", "Length between the end connections", unit="ft"),
                 F("attached", "Attached leg", "select", options=["long", "short"], required=False, help="unequal-leg angles; either for an equal-leg angle")],
         tables=[T("loads", "Axial compression", [CASE, F("P", "Compression", unit="kip"), F("label", "Note", "text", required=False)])]),
+    "crane_runway": dict(
+        title="Crane Runway Beam (top-running crane)", code="AISC 360-22", mark="CR",
+        fields=[F("beam", "Runway beam", "shape", help="W, M, S or HP shape"), F("Fy", "Fy", unit="ksi"), F("beam_source", "Where Fy comes from", "text"),
+                F("span", "Span, simply supported", unit="ft"),
+                F("rail", "Rail weight", unit="plf", required=False), F("rail_note", "Rail", "text", required=False, help="for example: ASCE 40 lb rail"),
+                F("crane_type", "Crane type (vertical impact)", "select", options=["bridge crane, service class A, B or C", "bridge crane, service class D, E or F",
+                                                                                  "monorail crane (powered)", "hand-geared bridge, trolley and hoist"],
+                  help="ASCE/SEI 7-22 Sect. 4.9.3 and 4.9.3.1"),
+                F("class_basis", "How the service class or type was assigned", "text"),
+                F("capacity", "Rated capacity", unit="kip"), F("trolley", "Weight of the hoist and trolley", unit="kip"),
+                F("wheel", "Maximum static wheel load", unit="kip", help="crane maker's data: bridge weight plus rated capacity plus trolley (Sect. 4.9.2)"),
+                F("wheel_source", "Where the wheel load comes from", "text"),
+                F("n", "Wheels on this runway (one end truck)", "select", options=["1", "2", "3", "4"]), F("spacing", "Wheel spacing", unit="ft", required=False),
+                F("powered", "Electrically powered trolley", "select", options=["yes", "no"], help="lateral force of Sect. 4.9.4 applies when yes"),
+                F("share", "Share of the lateral force taken by this runway", help="for example 0.5 for two equal runway beams; Sect. 4.9.4"),
+                F("share_source", "Basis of that share", "text"),
+                F("defl_v", "Vertical deflection limit, span over", required=False), F("defl_h", "Lateral deflection limit, span over", required=False),
+                F("defl_source", "Where the deflection limits come from", "text", required=False)],
+        tables=[]),
     "angle_beam": dict(
         title="Single-Angle Beam", code="AISC 360-22", mark="LB",
         fields=[F("shape", "Angle", "shape_tension", help="single angle by its Manual label, for example L4x4x1/4"),
@@ -1573,6 +1592,16 @@ def build(kind, values, project):
         args = (r.text("shape"), r.num("Fy"), r.text("steel_source"), r.num("length"), r.text("attached", False) or "")
         r.done()
         return ws_more.angle_strut_sheet(mark, *args, loads, cb, m), "simple", {}
+    if kind == "crane_runway":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        args = (r.text("beam"), r.num("Fy"), r.text("beam_source"), r.num("span"), r.num("rail", False) or 0.0, r.text("rail_note", False) or "",
+                r.text("crane_type"), r.text("class_basis"), r.num("capacity"), r.num("trolley"), r.num("wheel"), r.text("wheel_source"),
+                int(r.num("n") or 1), r.num("spacing", False) or 0.0, yes(r.text("powered")), r.num("share"), r.text("share_source"))
+        dv, dh, ds = r.num("defl_v", False), r.num("defl_h", False), r.text("defl_source", False) or ""
+        if (dv or dh) and not ds.strip():
+            r.miss.append("Where the deflection limits come from is blank")
+        r.done()
+        return ws_more.crane_runway_sheet(mark, *args, cb, m, defl=dict(v_ratio=dv, h_ratio=dh, source=ds) if (dv or dh) else None), "simple", {}
     if kind == "angle_beam":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = []
