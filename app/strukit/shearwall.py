@@ -496,8 +496,8 @@ def ftao_multi(panel, spacing, panel_type, G, h, piers, openings, V, load, metho
 def ftao_deflection(h, piers, Ga, EA, Da):
     """Deflection of a force-transfer shear wall by its piers (APA: Beebe and Skaggs, SEAOC 2015; APA Technical Note T555): each pier by
     SDPWS-2021 Eq. 4.3-1 with its own unit shear v and length b, once for each direction of load; the wall deflection is the average of the
-    pier values. Height of a pier for the direction in which it is pushed toward an opening: from the top of the sheathing below that opening
-    to the top of the wall (h - hb); pushed away from the openings, or toward a door, the full wall height h.
+    pier values. Height of a pier: the full wall height h (Zach's ruling 2026-11-26, the more conservative reading), unless hb_left / hb_right
+    are given: then, pushed toward an opening, from the top of the sheathing below it to the top of the wall (h - hb), APA's reading.
     piers: dicts L (ft), v (plf), hb_left, hb_right (ft of sheathing below the opening at that side; None where there is no opening).
     Ga kips/in.; EA lb (E psi x A in2); Da in. Returns dict(cases=[dict(pier, dir, h, b, v, bend, shear, anch, d)], delta)."""
     if not (EA > 0 and Ga > 0 and Da >= 0):

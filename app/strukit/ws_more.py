@@ -661,10 +661,9 @@ def _ftao_deflection_block(mark, sheet, h, pier_defs, Ga, defl):
     for c_ in d["cases"]:
         steps.append(L(f"pier {c_['pier']}, load {'to the right' if c_['dir'] == '+' else 'to the left'}: deflection", c_["d"], "in", "SDPWS Eq. 4.3-1",
                        f"v = {c_['v']:.0f} plf, h = {c_['h']:g} ft, b = {c_['b']:g} ft; bending {c_['bend']:.3f} + shear {c_['shear']:.3f} + anchorage {c_['anch']:.3f} in."))
-    steps.append(L("wall deflection, the average of the pier values", d["delta"], "in", "APA Technical Note T555", f"{len(d['cases'])} values"))
+    steps.append(L("wall deflection, the average of the pier values", d["delta"], "in", "APA Technical Note T555 (pier deflection method)", f"{len(d['cases'])} values"))
     sheet.blocks.append(dict(title="Deflection", head="Deflection", steps=steps,
-                             text=["Each pier's height: from the top of the sheathing below the opening it is pushed toward to the top of the wall; "
-                                   "the full wall height when it is pushed away from the openings or toward a door."]))
+                             text=["Each pier is taken over the full wall height in both directions of load."]))
     sheet.not_checked = [x for x in sheet.not_checked if x != "deflection"]
     sheet.wall_defl = d
     return d
@@ -730,8 +729,7 @@ def ftao_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, L1, Lo, L2
                              picture=("perforated_wall", dict(h=h, L=w["L"], openings=[dict(x=L1, w=Lo, h=ho, sill=w["sill"])],
                                                               segs=[dict(x=0.0, b=L1, counted=L1), dict(x=L1 + Lo, b=L2, counted=L2)], V=V, T=T))))
     if defl:
-        _ftao_deflection_block(mark, sheet, h, [dict(L=L1, v=w["vh"], hb_left=None, hb_right=w["sill"]), dict(L=L2, v=w["vh"], hb_left=w["sill"], hb_right=None)],
-                               w["Ga"], defl)
+        _ftao_deflection_block(mark, sheet, h, [dict(L=L1, v=w["vh"]), dict(L=L2, v=w["vh"])], w["Ga"], defl)
     sheet.wall = w
     sheet.wall_T = T
     return sheet
@@ -811,8 +809,7 @@ def _ftao_multi_sheet(mark, panel, spacing, panel_type, G, G_source, h, piers, o
                              picture=("perforated_wall", dict(h=h, L=w["L"], openings=ops, segs=segs, V=V, T=T))))
     if defl:
         n_ = len(w["openings"])
-        _ftao_deflection_block(mark, sheet, h, [dict(L=p_["L"], v=p_["v"], hb_left=(w["openings"][i - 1]["sill"] if i > 0 else None),
-                                                    hb_right=(w["openings"][i]["sill"] if i < n_ else None)) for i, p_ in enumerate(w["piers"])], w["Ga"], defl)
+        _ftao_deflection_block(mark, sheet, h, [dict(L=p_["L"], v=p_["v"]) for p_ in w["piers"]], w["Ga"], defl)
     sheet.wall = w
     sheet.wall_T = T
     return sheet
