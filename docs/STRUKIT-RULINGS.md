@@ -368,3 +368,10 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 ## 2026-11-26 07:40, welded flange plates (0.248.0), applied (not ruled)
 - Plate tensile rupture: U from AISC 360-22 Table D3.1 Case 4 on the longitudinal welds alone; the transverse end weld is not counted on
   (Case 1, U = 1.0, could be read to apply when the end is welded too).
+
+## 2026-11-26 08:30, stiffened seats (0.249.0), applied (not ruled)
+- Angle stiffeners (all-bolted) take the plate rule t at least tw Fy,beam / Fy,stiffener.
+- The bolts of the angles to the support are checked for bearing and tearout in the angles and the support as well as shear (Table 10-7 counts
+  shear only).
+- An all-bolted stiffened seat on one face of a column web is refused: the Manual's simplified punching limits are for welded seats.
+- A seat width between Table 10-8's widths takes the B limit of the narrower width.

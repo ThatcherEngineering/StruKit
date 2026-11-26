@@ -26,8 +26,15 @@ def main():
     d = json.load(open(a.project))
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     env = dict(os.environ, PYTHONPATH=root)
-    srv = subprocess.Popen([sys.executable, "-m", "strukit.gui", "--port", str(a.port), "--no-browser"], env=env)
-    time.sleep(5)
+    srv = subprocess.Popen([sys.executable, "-m", "strukit.gui", "--port", str(a.port), "--serve"], env=env, stdout=subprocess.PIPE, text=True)
+    url = f"http://127.0.0.1:{a.port}/"
+    t0 = time.time()
+    while time.time() - t0 < 60:                                    # the server prints its address (it moves to a free port if this one is taken)
+        line = srv.stdout.readline()
+        if line.startswith("http://"):
+            url = line.split()[0]
+            break
+    time.sleep(1)
     bad = 0
     try:
         with sync_playwright() as p:
@@ -35,7 +42,7 @@ def main():
             pg = b.new_page(viewport=dict(width=1300, height=2400))
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
-            pg.goto(f"http://127.0.0.1:{a.port}/")
+            pg.goto(url)
             pg.wait_for_timeout(1000)
             pg.evaluate("async (d) => { load(d, null); await recalcAll(); select('project'); }", d)
             pg.wait_for_timeout(2000)

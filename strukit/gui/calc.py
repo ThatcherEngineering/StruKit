@@ -449,10 +449,21 @@ FORMS = {
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_source", "Source of the beam Fy", "text"),
                 F("W", "Stiffener width W (along the beam)", unit="in"), F("L", "Stiffener length L (down the support)", unit="in"),
                 F("ts", "Stiffener thickness", unit="in"), F("stiff_Fy", "Stiffener Fy", unit="ksi"), F("stiff_source", "Source of the stiffener Fy", "text"),
-                F("tseat", "Seat plate thickness", unit="in"), F("weld", "Fillet weld size to the support", unit="in"), F("FEXX", "Electrode strength", unit="ksi"),
+                F("tseat", "Seat plate thickness", unit="in"), F("weld", "Fillet weld size to the support", unit="in", required=False, help="welded stiffener"),
+                F("FEXX", "Electrode strength", unit="ksi", required=False, help="welded stiffener"),
                 F("support", "Support (member and part)", "text", help="for example W14x90 flange"), F("t_sup", "Support thickness", unit="in"),
                 F("Fu_sup", "Support Fu", unit="ksi"),
-                F("both_sides", "Seats welded on both faces of the support (a column web)", "select", options=["no", "yes"], required=False)],
+                F("both_sides", "Seats welded on both faces of the support (a column web)", "select", options=["no", "yes"], required=False),
+                F("attach", "Stiffener", "select", options=["plate welded to the support", "two angles bolted to the support"], required=False,
+                  help="two angles: W is the outstanding leg, the thickness the angle thickness; the weld boxes are not used"),
+                F("bd", "Bolted angles: bolt diameter", unit="in", required=False), F("bgroup", "Bolted angles: bolt type", "select", options=["A325", "A490", "F3148"], required=False),
+                F("bthreads", "Bolted angles: threads", "select", options=["N", "X"], required=False), F("bn", "Bolted angles: bolts in each of the two rows", required=False),
+                F("bs", "Bolted angles: bolt spacing", unit="in", required=False), F("blev", "Bolted angles: bottom edge to the lowest bolt", unit="in", required=False),
+                F("stiff_Fu", "Bolted angles: angle Fu", unit="ksi", required=False),
+                F("web_col", "Support is one face of a column web: column", "shape", required=False, help="checks the simplified punching limits of the Manual (welded seats)"),
+                F("B", "Column web: seat bolts from the web face, B", unit="in", required=False),
+                F("top_t", "Top angle thickness", unit="in", required=False), F("top_leg", "Top angle vertical leg", unit="in", required=False),
+                F("top_attach", "Top angle attachment", "select", options=["two bolts through each leg", "welded along the toes only"], required=False)],
         tables=[T("loads", "End reaction", [CASE, F("P", "R", unit="kip"), F("label", "Note", "text", required=False)]),
                 T("runs", "Or: combined reactions, used in place of the table above", [F("name", "Combination or run", "text"), F("R", "R", unit="kip")])]),
     "beam_hss_moment": dict(
@@ -2128,11 +2139,25 @@ def _build(kind, values, project):
         if not loads and not runs:
             r.miss.append("No load is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
+        bolted_ = str(values.get("attach") or "").startswith("two angles")
+        bo = None
+        if bolted_:
+            for key_, lab_ in (("bgroup", "Bolted angles: bolt type"), ("bthreads", "Bolted angles: threads")):
+                if not str(values.get(key_) or "").strip():
+                    r.miss.append(f"{lab_} is blank")
+            bo = dict(d=r.num("bd", True, label="Bolted angles: bolt diameter"), group=str(values.get("bgroup") or "A325").strip(), threads=str(values.get("bthreads") or "N").strip(),
+                      n=r.num("bn", True, label="Bolted angles: bolts in each row"), s=r.num("bs", True, label="Bolted angles: bolt spacing"),
+                      lev=r.num("blev", True, label="Bolted angles: bottom edge to the lowest bolt"), Fu=r.num("stiff_Fu", True, label="Bolted angles: angle Fu"))
+        top = None
+        if r.num("top_t", False) is not None:
+            top = dict(t=r.num("top_t", False), leg=r.num("top_leg", True, label="Top angle vertical leg"),
+                       attach=str(values.get("top_attach") or "two bolts through each leg"))
         args = (r.text("beam"), r.num("beam_Fy"), r.text("beam_source"), r.num("W"), r.num("L"), r.num("ts"), r.num("stiff_Fy"), r.text("stiff_source"),
-                r.num("tseat"), r.num("weld"), r.num("FEXX"), r.text("support"), r.num("t_sup"), r.num("Fu_sup"))
+                r.num("tseat"), r.num("weld", not bolted_) or 0.0, r.num("FEXX", not bolted_) or 70.0, r.text("support"), r.num("t_sup"), r.num("Fu_sup"))
         r.done()
         return ws_more.stiffened_seat_sheet(mark, *args, loads, cb, m, both_sides=str(values.get("both_sides") or "").startswith("y"),
-                                            runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
+                                            runs=runs or None, runs_from=str(values.get("loads_from") or ""), bolted=bo,
+                                            web_col=str(values.get("web_col") or "").strip() or None, B=r.num("B", False), top=top), "simple", {}
     if kind == "beam_hss_moment":
         cb, m = combos(project, r.miss), method(project, r.miss)
         z = lambda v: v if v is not None else 0.0

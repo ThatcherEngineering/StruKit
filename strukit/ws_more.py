@@ -4115,10 +4115,14 @@ def stiffened_seat_weld(W, L, D, FEXX, method):
 
 
 def stiffened_seat_sheet(mark, beam, beam_Fy, beam_source, W, L, ts, stiff_Fy, stiff_source, tseat, weld, FEXX, support, t_sup, Fu_sup,
-                         loads, combos, method, both_sides=False, runs=None, runs_from=""):
+                         loads, combos, method, both_sides=False, runs=None, runs_from="", bolted=None, web_col=None, B=None, top=None):
     """Stiffened seated connection, welded to the support and bolted to the beam: AISC Manual 15th Ed. Part 10 (stiffened seated connections,
     Table 10-8 discussion) as worked in AISC Design Examples v16.0 Examples II.A-14 and II.A-15. W: stiffener width (outstanding, along the
-    beam); L: stiffener length (down the support); ts: stiffener thickness; weld: fillet size of the stiffener and seat to the support."""
+    beam); L: stiffener length (down the support); ts: stiffener thickness; weld: fillet size of the stiffener and seat to the support.
+    bolted = dict(d, group, threads, n, s, lev, Fu): the stiffener is two angles bolted to the support with two vertical rows of n bolts (AISC Manual
+    Table 10-7 arrangement, Figure 10-10(a)); W and ts are then the outstanding leg and the angle thickness, Fu the angle Fu; weld is not used.
+    web_col, B: the support is one side of the web of this W column, with the beam's seat bolts B from the web face (Manual Part 10 simplified
+    punching limits of Sputo and Ellifritt, welded seats). top = dict(t, leg, attach): the top angle (Manual Part 10, Figure 10-10)."""
     for nm, v in (("the source of the beam Fy", beam_source), ("the source of the stiffener Fy", stiff_source)):
         if not (v or "").strip():
             raise WorksheetError(f"{mark}: {nm} is blank")
@@ -4149,11 +4153,17 @@ def stiffened_seat_sheet(mark, beam, beam_Fy, beam_source, W, L, ts, stiff_Fy, s
         R5, R6, ceq = av(base * (1 - 0.2 * (tw / tf) ** 1.5), 0.75, 2.00), av(base * 4.0 / dd * (tw / tf) ** 1.5, 0.75, 2.00), "Eq. J10-5b"
     Ry, Rc = R1 + R2 * lb, R5 + R6 * lb
     Wy, Wc = max(0.0, (R - R1) / R2) + sb + under, max(0.0, (R - R5) / R6) + sb + under
+    if bolted:
+        weld = 0.0
     D = weld * 16.0
-    Rw0, qa, f = stiffened_seat_weld(W, L, D, FEXX, method)
-    tmin = (2.0 if both_sides else 1.0) * 3.09 * D / Fu_sup * FEXX / 70.0     # AISC Manual (16th Ed.) Eq. 9-6 (70 ksi), scaled for the electrode
-    red = min(1.0, t_sup / tmin)
-    Rw = Rw0 * red
+    if not bolted:
+        Rw0, qa, f = stiffened_seat_weld(W, L, D, FEXX, method)
+        tmin = (2.0 if both_sides else 1.0) * 3.09 * D / Fu_sup * FEXX / 70.0     # AISC Manual (16th Ed.) Eq. 9-6 (70 ksi), scaled for the electrode
+        red = min(1.0, t_sup / tmin)
+        Rw = Rw0 * red
+    else:
+        Rw0 = qa = f = tmin = Rw = None
+        red = 1.0
     ts_min = max(tw * beam_Fy / stiff_Fy, (1.5 if stiff_Fy >= 50 else 2.0) * weld)
     Ln = footing_line
     steps = [Ln("Required strength R", R, "kip", worst, ""),
@@ -4162,35 +4172,104 @@ def stiffened_seat_sheet(mark, beam, beam_Fy, beam_source, W, L, ts, stiff_Fy, s
              Ln("Web local crippling constants R5, R6", R5, "kip", "AISC Manual (16th Ed.) Table 9-4; AISC 360-22 " + ceq, f"R6 = {R6:.3g} kip/in.; " + fac(0.75, 2.00)),
              Ln("Least stiffener width for web local yielding", Wy, "in", "AISC Manual (16th Ed.) Eq. 9-60" + ("a" if lrfd else "b"), "(R - R1) / R2 + setback + underrun"),
              Ln("Least stiffener width for web local crippling", Wc, "in", "AISC Manual (16th Ed.) Eq. 9-63" + ("a" if lrfd else "b"), "(R - R5) / R6 + setback + underrun"),
-             Ln("Weld stress per kip, (fv^2 + fb^2)^0.5", f, "kip/in", "AISC Manual (15th Ed.) Part 10, elastic method",
+             *([] if bolted else [Ln("Weld stress per kip, (fv^2 + fb^2)^0.5", f, "kip/in", "AISC Manual (15th Ed.) Part 10, elastic method",
                 f"fv = 1 / (2.4 L), fb = 0.8 W ybar / I with ybar = L / 2.4, I = 0.25 L^3; L = {L:g} in., load at 0.8 W = {0.8 * W:.3g} in."),
              Ln("Weld available strength per inch", qa, "kip/in", "AISC 360-22 Eq. J2-4", f"{weld:g} in. fillet, FEXX = {FEXX:g} ksi; " + fac(0.75, 2.00)),
              Ln("Least support thickness for the weld", tmin, "in", "AISC Manual (16th Ed.) Eq. 9-6", ("welds on both faces: twice " if both_sides else "")
-                + f"3.09 D / Fu; support {support} t = {t_sup:g} in., Fu = {Fu_sup:g} ksi" + (f"; weld strength x {red:.3f}" if red < 1 else "")),
-             Ln("Least stiffener thickness", ts_min, "in", "AISC Manual (15th Ed.) Part 10", f"larger of tw Fy,beam / Fy,stiffener and {'1.5' if stiff_Fy >= 50 else '2'} w")]
+                + f"3.09 D / Fu; support {support} t = {t_sup:g} in., Fu = {Fu_sup:g} ksi" + (f"; weld strength x {red:.3f}" if red < 1 else ""))]),
+             Ln("Least stiffener thickness", ts_min, "in", "AISC Manual (15th Ed.) Part 10",
+                f"tw Fy,beam / Fy,stiffener" if bolted else f"larger of tw Fy,beam / Fy,stiffener and {'1.5' if stiff_Fy >= 50 else '2'} w")]
     rows = [Row("Beam web local yielding", worst, R, Ry, "kip", "AISC 360-22 Eq. J10-3", f"lb = {lb:.3g} in."),
             Row("Beam web local crippling", worst, R, Rc, "kip", "AISC 360-22 " + ceq, f"lb / d = {lb / dd:.3f}"),
-            Row("Stiffener-to-support welds", worst, R, Rw, "kip", "AISC Manual (15th Ed.) Part 10; AISC 360-22 Eq. J2-4", f"{weld:g} in. T-shaped weld, L = {L:g} in., W = {W:g} in."),
+            *([] if bolted else [Row("Stiffener-to-support welds", worst, R, Rw, "kip", "AISC Manual (15th Ed.) Part 10; AISC 360-22 Eq. J2-4", f"{weld:g} in. T-shaped weld, L = {L:g} in., W = {W:g} in.")]),
             Row("Stiffener thickness", "", ts_min, ts, "in", "AISC Manual (15th Ed.) Part 10", "required against provided"),
             Row("Seat plate thickness", "", 0.375, tseat, "in", "AISC Manual (15th Ed.) Part 10", "3/8 in. minimum")]
+    bo = None
+    if bolted:
+        from . import bolts as _bolts
+        n_, s_, lev_, d_ = int(bolted["n"]), bolted["s"], bolted["lev"], bolted["d"]
+        if n_ < 1:
+            raise WorksheetError(f"{mark}: the stiffener angles need at least one bolt in each row")
+        dh = _bolts.standard_hole(d_)
+        Apb = 2 * lb * ts                                                   # both outstanding legs, on the bearing length W - 3/4 in.
+        Rbr = av(1.8 * stiff_Fy * Apb, 0.75, 2.00)                          # AISC 360-22 Eq. J7-1
+        rv = _bolts.shear(d_, bolted["group"], bolted["threads"], 1, method).R_avail
+        per = []
+        for k_ in range(n_):                                                # k_ = 0 is the bottom bolt: the load pushes the bolts down toward the bottom edge
+            lc = (lev_ - dh / 2.0) if k_ == 0 else (s_ - dh)
+            per.append(min(rv, _bolts.hole(d_, ts, bolted["Fu"], lc, True, method).R_avail,
+                           _bolts.hole(d_, t_sup, Fu_sup, lc, True, method).R_avail / (2.0 if both_sides else 1.0)))
+        Rbolts = 2 * sum(per)
+        bo = dict(Apb=Apb, Rbr=Rbr, rv=rv, per=per, Rbolts=Rbolts, n=n_, dh=dh)
+        rows += [Row("Stiffener outstanding legs, bearing", worst, R, Rbr, "kip", "AISC 360-22 Eq. J7-1; AISC Manual (14th Ed.) Table 10-7",
+                     f"Apb = 2 (W - 3/4) t = {Apb:.3g} in2"),
+                 Row("Bolts, stiffener angles to the support", worst, R, Rbolts, "kip", "AISC 360-22 Eq. J3-1, J3-11", f"{2 * n_} - {d_:g} in. {bolted['group']}-{bolted['threads']}, two rows")]
+        steps += [Ln("Bearing area of the outstanding legs, Apb", Apb, "in2", "AISC Manual (14th Ed.) Table 10-7", f"two legs, {ts:g} in. thick, bearing length W - 3/4 in. = {lb:.3g} in."),
+                  Ln("Each bolt: least of shear, and bearing and tearout in the angle and the support", min(per), "kip", "AISC 360-22 Eq. J3-1, J3-11",
+                     f"bolt shear alone {rv:.3g} kip; standard holes {dh:.4g} in.; bottom edge {lev_:g} in., spacing {s_:g} in."
+                     + ("; the support's bearing shared by the seats on both faces" if both_sides else ""))]
+    wl = None
+    if web_col and not both_sides:
+        cs = shapes.normalize(web_col).upper().replace(" ", "")
+        LIST = {"W14": (43, 873), "W12": (40, 336), "W10": (33, 112), "W8": (24, 67), "W6": (20, 25), "W5": (16, 19)}
+        try:
+            ser, wt = cs.split("X")[0], float(cs.split("X")[1])
+        except Exception:
+            raise WorksheetError(f"{mark}: '{web_col}' is not a W shape")
+        ok_shape = ser in LIST and LIST[ser][0] <= wt <= LIST[ser][1] and (ser not in ("W6", "W5") or wt in LIST[ser])
+        if not ok_shape:
+            raise WorksheetError(f"{mark}: punching shear of the {cs} web is not covered by the simplified limits of AISC Manual Part 10 (W14x43 to 873, "
+                                 "W12x40 to 336, W10x33 to 112, W8x24 to 67, W6x20 and 25, W5x16 and 19); it needs a detailed analysis (Sputo and Ellifritt, 1991)")
+        if B is None:
+            raise WorksheetError(f"{mark}: give the distance from the column web face to the centreline of the beam's seat bolts, B")
+        if bolted:
+            raise WorksheetError(f"{mark}: the simplified column web limits of AISC Manual Part 10 are for seats welded to the web; an all-bolted stiffened seat "
+                                 "on one side of a column web needs a detailed punching analysis")
+        if W > 9 + 1e-9:
+            raise WorksheetError(f"{mark}: the simplified column web limits cover W up to 9 in.; W = {W:g} in. needs a detailed punching analysis (Sputo and Ellifritt, 1991)")
+        Bmax = 2.625 if W < 6 - 1e-9 else (3.0 if W < 7 - 1e-9 else 3.5)    # AISC Manual (14th Ed.) Table 10-8, limitations for connections to column webs
+        Bmax = max(Bmax, 2.625)
+        if cs == "W14X43" and W >= 7 - 1e-9 and W < 8 - 1e-9:
+            Bmax = 3.0
+        if (W >= 8 - 1e-9 and 3.5 < B <= W / 2) or (cs == "W14X43" and abs(W - 7) < 1e-9 and 3.0 < B <= W / 2):
+            raise WorksheetError(f"{mark}: W = {W:g} in. with B = {B:g} in. is outside the simplified column web limits (AISC Manual Part 10, Design Checks item 3); "
+                                 "refer to Sputo and Ellifritt (1991)")
+        wl = dict(col=cs, B=B, Bmax=Bmax)
+        rows.append(Row("Column web punching: seat bolts from the web face, B", "", B, Bmax, "in", "AISC Manual (15th Ed.) Part 10; (14th Ed.) Table 10-8",
+                        f"{cs} web, seat on one face; W = {W:g} in."))
+        if cs in ("W12X40", "W14X43") and W < 5 - 1e-9 and L >= 9 - 1e-9:
+            rows.append(Row("Column web punching: weld size", "", weld, 0.25, "in", "AISC Manual (14th Ed.) Table 10-8", f"{cs}, W = {W:g} in., L = {L:g} in. (L at least 9 in.)"))
+    if top:
+        rows += [Row("Top angle thickness", "", 0.25, top["t"], "in", "AISC Manual (15th Ed.) Part 10, Figure 10-10", "1/4 in. minimum"),
+                 Row("Top angle vertical leg", "", 4.0, top["leg"], "in", "AISC Manual (15th Ed.) Part 10, Figure 10-10", "4 in. minimum; " + top["attach"])]
     info = [("Beam", f"{shapes.normalize(beam)}, d = {dd:g} in., tw = {tw:g} in., tf = {tf:g} in., kdes = {k:g} in., Fy = {beam_Fy:g} ksi ({beam_source.strip()})"),
-            ("Stiffener", f"PL {ts:g} x {W:g} x {L:g} in., Fy = {stiff_Fy:g} ksi ({stiff_source.strip()}); seat plate {tseat:g} in. thick"),
-            ("Welds", f"{weld:g} in. fillets, FEXX = {FEXX:g} ksi: both sides of the stiffener for its length, and the seat plate 0.2 L = {0.2 * L:.3g} in. each side"),
-            ("Support", f"{support}, t = {t_sup:g} in., Fu = {Fu_sup:g} ksi" + ("; seats on both faces" if both_sides else ""))]
+            ("Stiffener", (f"two angles, outstanding legs {W:g} in., {ts:g} in. thick, {L:g} in. long, Fy = {stiff_Fy:g} ksi, Fu = {bolted['Fu']:g} ksi ({stiff_source.strip()})" if bolted else
+                           f"PL {ts:g} x {W:g} x {L:g} in., Fy = {stiff_Fy:g} ksi ({stiff_source.strip()})") + f"; seat plate {tseat:g} in. thick"),
+            (("Bolts", f"two vertical rows of {int(bolted['n'])} - {bolted['d']:g} in. {bolted['group']}-{bolted['threads']} through the angle legs and the support, "
+                       f"spacing {bolted['s']:g} in., bottom edge {bolted['lev']:g} in.") if bolted else
+             ("Welds", f"{weld:g} in. fillets, FEXX = {FEXX:g} ksi: both sides of the stiffener for its length, and the seat plate 0.2 L = {0.2 * L:.3g} in. each side")),
+            ("Support", f"{support}, t = {t_sup:g} in., Fu = {Fu_sup:g} ksi" + ("; seats on both faces" if both_sides else "")
+                        + (f"; one face of the {wl['col']} web, seat bolts B = {B:g} in. from the web face" if wl else ""))]
+    if top:
+        info.append(("Top Angle", f"{top['t']:g} in. thick, vertical leg {top['leg']:g} in.; {top['attach']}"))
     load_lines = ([f"R = {r_['R']:.2f} kip   {r_['name']}" for r_ in runs] if runs else
                   [f"{x_['case']:<3} R = {x_['P']:>7.2f} kip" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads])
     combo_lines = ([(f"Combined loads at the {method} level" + (f": {runs_from.strip()}" if (runs_from or '').strip() else ""), "")] if runs
                    else [(cb.name, cb.source) for cb in combos])
-    sheet = SimpleSheet(mark, "Stiffened Seated Connection (welded to the support, bolted to the beam)", "Connection", method, info, load_lines, combo_lines,
+    sheet = SimpleSheet(mark, "Stiffened Seated Connection (all bolted, angle stiffener)" if bolted else "Stiffened Seated Connection (welded to the support, bolted to the beam)", "Connection", method, info, load_lines, combo_lines,
                         "Calculation", steps, rows,
                         ["The stiffener carries the whole end reaction, applied at 0.8 W from the face of the support.",
-                         "The stiffener is finished to bear under the seat plate; the weld of the seat plate to the stiffener is at least as strong as the horizontal part of the T-shaped weld.",
+                         ("The angle legs are finished to bear under the seat plate." if bolted else
+                          "The stiffener is finished to bear under the seat plate; the weld of the seat plate to the stiffener is at least as strong as the horizontal part of the T-shaped weld."),
                          "The beam is bolted to the seat plate and is not welded to it; a top angle at the top flange holds the beam in place."],
-                        ["the top angle and its bolts or welds", "the bolts of the beam to the seat plate", "punching shear of a column web (Manual Part 10 limits)",
-                         "the support member itself"])
+                        ([] if top else ["the top angle"]) + ["the bolts of the beam to the seat plate"]
+                        + ([] if (wl or both_sides) else ["punching shear of a column web, where the support is one face of a column web"])
+                        + (["eccentricity of the reaction on the bolts to the support"] if bolted else []) + ["the support member itself"])
     sheet.blocks.append(dict(title="Connection", head="Connection", picture=("stiffened_seat", dict(W=W, L=L, ts=ts, tseat=tseat, weld=weld, d=dd, tf=tf, beam=shapes.normalize(beam),
-                                                                                              support=support, t_sup=t_sup, lb=lb))))
-    sheet.conn = dict(R=R, lb=lb, R1=R1, R2=R2, R5=R5, R6=R6, Wy=Wy, Wc=Wc, Ry=Ry, Rc=Rc, Rw=Rw, Rw0=Rw0, tmin=tmin, ts_min=ts_min, f=f)
+                                                                                              support=support, t_sup=t_sup, lb=lb, sup=_support_shape(web_col + " web" if web_col else support),
+                                                                                              bbf=bm["bf"], tw=tw, bolted=(dict(n=int(bolted["n"]), s=bolted["s"], lev=bolted["lev"], d=bolted["d"]) if bolted else None),
+                                                                                              top=top, B=B if wl else None))))
+    sheet.conn = dict(R=R, lb=lb, R1=R1, R2=R2, R5=R5, R6=R6, Wy=Wy, Wc=Wc, Ry=Ry, Rc=Rc, Rw=Rw, Rw0=Rw0, tmin=tmin, ts_min=ts_min, f=f, bolted=bo, web=wl)
     return sheet
 
 
