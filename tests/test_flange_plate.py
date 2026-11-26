@@ -21,3 +21,23 @@ def test_design_example_ii_b_1(method, M, Pb, Pp, bolts, ty, tr, bs1, bs3, bsb, 
         assert r["R_w"] == pytest.approx(161 * 6 / 5.51, rel=0.006)
     else:
         assert r["R_w"] == pytest.approx(108 * 6 / 5.54, rel=0.006)
+
+
+@pytest.mark.parametrize("method, M, Pw, Pp, ty, w, cp, bot_w, bot_r", [
+    ("LRFD", 252.0, 168, 160, 270, 169, 295, 168, 419),
+    ("ASD", 168.0, 112, 107, 180, 113, 196, 112, 279)])
+def test_design_example_ii_b_2_welded_flange_plates(method, M, Pw, Pp, ty, w, cp, bot_w, bot_r):
+    """AISC Design Examples v16.0 Example II.B-2, W18x50 beam, A572 Gr. 50 plates, 5/16 in. fillets. Top plate PL1 x 6, welds 2 x 8.94 in.
+    plus 6 in. across the end (Rn = 225 kips by Eq. J2-6); bottom plate PL3/4 x 8-3/4 (wider than the 7.5 in. flange), 12-1/2 in. welds,
+    compression length 1.75 in. (Lc / r = 5.24), beam flange rupture at the welds (Anv = 14.3 in2). The example rounds the weld areas
+    (3.95, 1.33 in2) and r (0.217 in.), hence the 0.8 percent on the weld."""
+    from strukit.ws_more import flange_plate_welded
+    top = flange_plate_welded(M * 12, M * 12, "W18X50", 50, 65, 6.0, 1.0, 50, 65, 5 / 16, 8.94, True, 1.75, method, arm=18.875)
+    assert top["Pw"] == pytest.approx(Pw, rel=0.004) and top["Pp"] == pytest.approx(Pp, rel=0.006)
+    assert top["R_ty"] == pytest.approx(ty, rel=0.004) and top["R_w"] == pytest.approx(w, rel=0.008)
+    assert top["Rnw_b"] == pytest.approx(225, rel=0.005) and top["narrow"]
+    bot = flange_plate_welded(M * 12, M * 12, "W18X50", 50, 65, 8.75, 0.75, 50, 65, 5 / 16, 12.5, False, 1.75, method)
+    assert not bot["narrow"] and bot["Lc_r"] == pytest.approx(5.24, abs=0.02) and bot["R_c"] == pytest.approx(cp, rel=0.006)
+    assert bot["R_w"] >= bot_w and bot["bm_beam"] == pytest.approx(bot_r, rel=0.006)
+    with pytest.raises(Exception, match="transverse weld"):
+        flange_plate_welded(M * 12, M * 12, "W18X50", 50, 65, 8.75, 0.75, 50, 65, 5 / 16, 12.5, True, 1.75, method)

@@ -88,7 +88,7 @@ def test_joint_loads_from_the_frame():
 
 def test_welded_flange_plates_on_the_sheet(tmp_path):
     """Flange plates fillet welded to the beam flange (narrower than the flange, welds along both plate edges and across the end): every
-    value by hand from AISC 360-22 Eq. J2-4, J2-6a, J2-6b, J4-1 to J4-4, Table D3.1 Case 4 and Sect. J4.4."""
+    value by hand from AISC 360-22 Eq. J2-4, J2-6 (Sect. J2.4(a) and (b)), J4-1 to J4-4, Table D3.1 Case 4 and Sect. J4.4."""
     v = dict(V, beam="W12X26", column="HSS8X8X1/2", col_Fy="46", flanges="flange plates welded to the face", bp="5.5", tp="0.5", plate_Fy="36",
              plate_source="ASTM A36", plate_Fu="58", beam_Fu="65", fbw="0.25", fLw="11", fend="yes", fwa1="1", fweld="0.3125", fFEXX="70",
              loads=[dict(case="D", M="3", P="4", Mc="6", label=""), dict(case="L", M="9", P="12", Mc="20", label="")])

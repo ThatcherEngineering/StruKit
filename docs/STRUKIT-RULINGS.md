@@ -358,3 +358,13 @@ design log" rule. Unattended: no questions; conservative readings applied and re
   surfaces darker, hidden edges dashed, plan or section added where one view is not enough). New or changed pictures are rendered and looked
   at before release. The full wording is in CLAUDE.md, "Printed sheets".
 
+
+## 2026-11-26 05:58 and 07:30 — Zach: go on the Next list
+05:58: go on Next items 1 to 8 (HSS moment joint, stiffened seats, Manual editions, force-transfer walls, single angles, crane runway, end
+plate and built-up, carport). 07:30: add and build the drawing upgrade of the flush and extended end plates, stiffened seat and coped beam end
+(with the real support shape behind them), and cantilevered diaphragms and diaphragm openings (item 8(e)). Crane runway: build only web
+yielding and crippling under the wheels and continuous runway beams; the rest waits on Design Guide 7 and MHI MH27.1 / CMAA 74.
+
+## 2026-11-26 07:40, welded flange plates (0.248.0), applied (not ruled)
+- Plate tensile rupture: U from AISC 360-22 Table D3.1 Case 4 on the longitudinal welds alone; the transverse end weld is not counted on
+  (Case 1, U = 1.0, could be read to apply when the end is welded too).

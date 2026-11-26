@@ -180,8 +180,8 @@ def min_edge(d):
 
 def group_coefficient(n, spacing, e):
     """Coefficient C for one vertical row of n bolts at the given spacing carrying a vertical force at eccentricity e from the row
-    (AISC Manual Table 7-6, angle 0): available strength of the group = C x the strength of one bolt.  Instantaneous centre of rotation
-    method, AISC Manual Part 7: bolt force R = Rult (1 - exp(-10 delta))^0.55, delta = 0.34 in. at the bolt farthest from the centre.
+    (AISC Manual (16th Ed.) Table 7-6, angle 0): available strength of the group = C x the strength of one bolt.  Instantaneous centre of rotation
+    method, AISC Manual (16th Ed.) Part 7: bolt force R = Rult (1 - exp(-10 delta))^0.55, delta = 0.34 in. at the bolt farthest from the centre.
     Reproduces the tabulated values quoted in the AISC Design Examples v16 and Design Guide 24 (see the tests)."""
     import math
     if n < 1 or spacing <= 0 or e < 0:

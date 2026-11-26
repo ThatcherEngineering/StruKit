@@ -1,6 +1,6 @@
 """Shear lug under a column base plate, AISC Design Guide 1 (3rd Ed.) Sect. 4.3.3 and Example 4.7-5: concrete bearing on the lug and
 concrete breakout of the lug (ACI 318-19 Sect. 17.11.2, 17.11.3, with 17.7.2), the lug in shear and flexure (AISC 360-22 Sect. J4.2, J4.5,
-AISC Manual Eq. 9-1), the fillet welds of the lug to the plate, the anchor rod tension and the base plate bending from the eccentricity of
+AISC Manual (16th Ed.) Eq. 9-1), the fillet welds of the lug to the plate, the anchor rod tension and the base plate bending from the eccentricity of
 the shear (the large-moment base plate procedure of DG 1 Sect. 4.3.6, Eq. 4-32), and the least anchor embedment of ACI 318-19
 17.11.1.1.8. Units: kips, inches, ksi."""
 import math
