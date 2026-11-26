@@ -101,7 +101,18 @@ class _Page:
             rest = [("Job " + job["number"]) if job.get("number") else "", job.get("address", "")]
         else:
             name, rest = "", ["Job " + str(job)]
-        tail = SEP.join(x for x in rest if x)
+        avail = RM - (tx + max(c.stringWidth(FIRM, FB, 10.5), c.stringWidth(SEP.join(x for x in CONTACT if x), FR, 8.25)) + 14)
+        line2 = [_date(date), f"Sheet {self.page + self.used - 1} of {self.pages}"]
+        rest = [x for x in rest if x]
+        fit = lambda nm, rs: c.stringWidth(nm, FB, 8.25) + c.stringWidth((SEP if nm and rs else "") + SEP.join(rs), FR, 8.25) <= avail
+        while rest and not fit(name, rest):                  # a long heading: the site, then the job number, move to the second line
+            line2.insert(0, rest.pop())
+        while line2 and c.stringWidth(SEP.join(line2), FR, 8.25) > avail and len(line2) > 2:
+            line2.pop(0)
+        while name and not fit(name, rest):
+            name = name[:-2].rstrip(" ,") + "\u2026" if len(name) > 4 else ""
+            name = name.replace("\u2026\u2026", "\u2026")
+        tail = SEP.join(rest)
         if name and tail:
             tail = SEP + tail
         w_tail = c.stringWidth(tail, FR, 8.25)
@@ -109,7 +120,7 @@ class _Page:
         if name:
             c.setFillColorRGB(*INK); c.setFont(FB, 8.25); c.drawRightString(RM - w_tail, TOP - 12.5, name)
         c.setFillColorRGB(*GREY); c.setFont(FR, 8.25)
-        c.drawRightString(RM, TOP - 24.9, SEP.join([_date(date), f"Sheet {self.page + self.used - 1} of {self.pages}"]))
+        c.drawRightString(RM, TOP - 24.9, SEP.join(line2))
         c.setStrokeColorRGB(*NAVY); c.setLineWidth(2.25); c.line(LM, TOP - 38.6, RM, TOP - 38.6)
         # footer, pinned to the bottom
         c.setStrokeColorRGB(*INK); c.setLineWidth(0.75); c.line(LM, BOT + 14.6, RM, BOT + 14.6)
