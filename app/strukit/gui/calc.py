@@ -399,6 +399,27 @@ FORMS = {
                 F("weld", "Fillet weld, cap plate to the HSS", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
         tables=[T("loads", "Loads at the joint", [CASE, F("P", "Column compression", unit="kip"), F("M", "Moment across the joint", unit="kip-ft"), F("label", "Note", "text", required=False)]),
                 T("runs", "Or: combined loads (for example from the 3D frame), used in place of the table above", [F("name", "Combination or run", "text"), F("P", "Column compression", unit="kip"), F("M", "Moment across the joint", unit="kip-ft")])]),
+    "through_plate": dict(
+        title="Through-Plate Moment Connection (beams to a rectangular HSS column)", code="AISC 360-22, AISC Design Guide 24", mark="TP",
+        fields=[F("beam", "Beams (the same each side)", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"),
+                F("beam_source", "Source of the beam Fy and Fu", "text"),
+                F("column", "Column (rectangular or square HSS, cut at the joint)", "hss_shape"), F("col_Fu", "Column Fu", unit="ksi"),
+                F("col_source", "Source of the column Fu", "text"),
+                F("along", "HSS side along the beams", "select", options=["depth H (the first dimension)", "width B (the second dimension)"]),
+                F("bp", "Through-plate width", unit="in"), F("tp", "Through-plate thickness", unit="in"),
+                F("plate_Fy", "Plate Fy", unit="ksi"), F("plate_Fu", "Plate Fu", unit="ksi"), F("plate_source", "Source of the plate Fy and Fu", "text"),
+                F("d", "Bolt diameter", unit="in"), F("group", "Bolt type", "select", options=["A325", "A490", "F3148"]), F("threads", "Threads", "select", options=["N", "X"]),
+                F("n", "Bolts in each line (two lines each side)"), F("s", "Bolt spacing", unit="in"), F("g", "Gage across the flange", unit="in"),
+                F("L1", "HSS face to the first bolt", unit="in"), F("le_p", "Last bolt to the plate end", unit="in"),
+                F("le_f", "First bolt to the beam end", unit="in", help="the beam is held back from the HSS face"),
+                F("weld", "Fillet weld, plates to the HSS (all round)", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
+        tables=[T("loads", "Loads at the faces of the column", [CASE, F("ML", "Left beam moment", unit="kip-ft"), F("VL", "Left beam shear", unit="kip", required=False),
+                                                                F("MR", "Right beam moment", unit="kip-ft"), F("VR", "Right beam shear", unit="kip", required=False),
+                                                                F("P", "Column compression from above", unit="kip", required=False), F("label", "Note", "text", required=False)],
+                  help="beam moments + when the top flange is in tension (hogging at the column)"),
+                T("runs", "Or: combined loads, used in place of the table above", [F("name", "Combination or run", "text"), F("ML", "Left beam moment", unit="kip-ft"),
+                                                                                     F("VL", "Left beam shear", unit="kip", required=False), F("MR", "Right beam moment", unit="kip-ft"),
+                                                                                     F("VR", "Right beam shear", unit="kip", required=False), F("P", "Column compression from above", unit="kip", required=False)])]),
     "stiffened_seat": dict(
         title="Stiffened Seated Connection (welded to the support, bolted to the beam)", code="AISC 360-22", mark="SS",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_source", "Source of the beam Fy", "text"),
@@ -2015,6 +2036,20 @@ def _build(kind, values, project):
                 r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.num("s"), r.num("g"), r.num("weld"), r.num("FEXX"))
         r.done()
         return ws_more.cap_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
+    if kind == "through_plate":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        runs = [dict(name=x["name"], ML=x["ML"], VL=x["VL"] or 0.0, MR=x["MR"], VR=x["VR"] or 0.0, P=x["P"] or 0.0) for x in r.rows("runs")]
+        loads = [] if runs else [dict(case=x["case"], ML=x["ML"], VL=x["VL"] or 0.0, MR=x["MR"], VR=x["VR"] or 0.0, P=x["P"] or 0.0, **({"label": x["label"]} if x["label"] else {}))
+                                 for x in r.rows("loads")]
+        if not loads and not runs:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        along = "B" if str(r.text("along") or "").startswith("width") else "H"
+        args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), r.text("beam_source"), r.text("column"), r.num("col_Fu"), r.text("col_source"), along,
+                r.num("bp"), r.num("tp"), r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"),
+                r.num("n"), r.num("s"), r.num("g"), r.num("L1"), r.num("le_p"), r.num("le_f"), r.num("weld"), r.num("FEXX"))
+        r.done()
+        return ws_more.through_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
     if kind == "stiffened_seat":
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], R=x["R"]) for x in r.rows("runs")]
