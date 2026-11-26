@@ -2686,6 +2686,8 @@ def link_tag(lk):
     n = float(lk.get("count") or 1)
     if lk.get("mode") == "line":
         return f"reaction of {lk['src']}, {lk['support']}, as a line at {float(lk.get('spacing_in') or 0):g} in. o.c."
+    if lk.get("spread"):
+        return f"reaction of {lk['src']}, {lk['support']}, spread over {float(lk.get('per_ft') or 0):g} ft of footing"
     if lk.get("mode") == "wall":
         return f"load down wall {lk['src']}, spread over its {float(lk.get('length_ft') or 0):g} ft"
     return f"reaction of {lk['src']}, {lk['support']}" + (f" x {n:g}" if n != 1 else "")
@@ -3081,7 +3083,18 @@ def model_links(project, members):
             if tgt["kind"] in TAKEDOWN_FOOTINGS and tgt["kind"] == "footing_cont" and cs[0][1].get("p2") is not None:
                 sp = num("spacing") if kind in TAKEDOWN_BEAMS else 0
                 if sp <= 0:
-                    problems.append(f"{mark}, {sup['name']}: a point load on continuous footing {tv.get('mark')} is not spread along it; check it as an isolated footing or link it by hand")
+                    try:
+                        spread = float(str(tv.get("at_spread") or "").replace(",", ""))
+                    except ValueError:
+                        spread = 0.0
+                    if spread <= 0 or not str(tv.get("at_spread_source") or "").strip():
+                        problems.append(f"{mark}, {sup['name']}: a point load on continuous footing {tv.get('mark')} is not spread along it; type the length a point load "
+                                        "spreads over (and its source) on that footing's placement card, check it as an isolated footing, or link it by hand")
+                        continue
+                    lk["per_ft"] = round(spread, 4)          # a point load spread evenly over the typed length of footing
+                    lk["spread"] = True
+                    tv.setdefault("links", []).append(lk)
+                    made += 1
                     continue
                 lk["per_ft"] = round(sp / 12.0, 4)           # a row of joists straight onto a footing line: per foot = per joist x 12 / spacing
                 tv.setdefault("links", []).append(lk)

@@ -117,3 +117,23 @@ def test_wall_weight_reaches_the_footing_line():
     w = next(m for m in ms if m["values"].get("mark") == "Line 1, lower level")["values"]
     w["at_wall_psf_source"] = ""
     assert "source" in calc._wall_weight(d["project"], w)
+
+
+def test_post_on_footing_line_spread_over_typed_length():
+    """A post on a continuous footing line is reported until the footing has a spread length with its source; then the post's load by case
+    divided by that length is put on the footing per foot (statics: twice the length, half the load per foot)."""
+    import copy
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+    ms = copy.deepcopy(d["members"])
+    out = calc.model_links(d["project"], ms)
+    assert any("Column A, base" in p and "not spread" in p for p in out["problems"])
+    fv = next(m for m in ms if m["values"].get("mark") == "Footing Line A")["values"]
+    got = []
+    for L in ("4", "8"):
+        fv.update(at_spread=L, at_spread_source="test value")
+        out = calc.model_links(d["project"], ms)
+        assert not any("Footing Line A" in p for p in out["problems"])
+        f = next(m for m in out["members"] if m["values"].get("mark") == "Footing Line A")["values"]
+        assert "spread over " + L + " ft of footing" in f["loads_from"]
+        got.append(float(f["P_service"]))
+    assert got[1] == pytest.approx(got[0] / 2, abs=1.0)
