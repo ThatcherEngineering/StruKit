@@ -69,7 +69,7 @@ Dated entries. Each is Zach's own decision; open questions live in the proposal 
 - **Toe-nail penetration (14:03):** "I agree with your toe nail reading." Penetration into the main member = L cos 30 - L/3 (geometry of NDS Figure 12A). Do not ask again.
 
 ## Brief rules in force
-Every number cites its source; nothing assumed silently; each module validated against an independent reference before use; flags hard or accepted with reason and date; jurisdiction data in a table; same run contract as HydroKit; calc-package-quality reports; private GitHub repo from day one; StruKit chat writes no LISP and never writes to drawings; ambiguous provisions shown both ways for Zach to rule (shown to Zach in chat, not on the sheet; see 2026-11-23).
+Every number cites its source; nothing assumed silently; each module validated against an independent reference before use; flags hard or accepted with reason and date; jurisdiction data in a table; same run contract as HydroKit; calc-package-quality reports; private GitHub repo from day one; StruKit chat writes no LISP and never writes to drawings; ambiguous provisions shown both ways for Zach to rule (shown to Zach in chat, not on the sheet; see 2026-11-23). Every picture is drawn to a high visual detail standard: members and connections look like the real thing (see 2026-11-26 02:26).
 
 ## Open (not ruled)
 - Proposal section 8, items 2-3 (ASD as default; which schedules first). On the StruKit screens the design method is a required choice per project; nothing defaults.
@@ -348,4 +348,13 @@ design log" rule. Unattended: no questions; conservative readings applied and re
 - The default stays "evenly over the building width"; "by the weight in the building model" is the engineer's choice per seismic sheet.
 - By weight, the story force is shared by the placed seismic weight between the half-way lines (flexible diaphragm, as the even spread);
   accidental torsion and the weight not placed in the model (typed on the seismic sheet only) are not distributed differently.
+
+## 2026-11-26 02:13 and 02:26 — high visual detail standard (Zach's direction; do not ask again)
+- 02:13: "make sure the connections are actually drawn to look like the connections. If it's an HSS make sure it looks like an HSS."
+- 02:26: "You then need to put that into the standards and logs for this StruKit design process. Every single chat needs to know that we
+  design this application to a high visual detail standard."
+- In force for every StruKit chat and every picture: members and connections are drawn as a detailer would draw them (HSS with its wall and
+  rounded corners, W shapes with flanges, plates at thickness, bolts and welds shown, every connected member drawn and broken off, cut
+  surfaces darker, hidden edges dashed, plan or section added where one view is not enough). New or changed pictures are rendered and looked
+  at before release. The full wording is in CLAUDE.md, "Printed sheets".
 

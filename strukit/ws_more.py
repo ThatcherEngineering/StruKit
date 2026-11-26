@@ -464,7 +464,8 @@ def _anchorage(mark, p, N, B, support, fc_psi, rod_d, rod_Fu, n_rods, rod_edge, 
                 block=dict(title="Rod Anchorage in the Concrete (ACI 318-19 Chapter 17)", steps=steps, info=info,
                            picture=("anchorage", dict(N=N, B=B, sup_N=sup[0], sup_B=sup[1], n=n_rods, edge=rod_edge,
                                                       side=rod_side, rod_d=rod_d, hef=a["hef"], ha=a["ha"],
-                                                      c_end=c_end, c_side=c_side, s_row=s_row, s_rows=s_rows))))
+                                                      c_end=c_end, c_side=c_side, s_row=s_row, s_rows=s_rows,
+                                                      col=dict(d=p["d"], bf=p["bf"], tf=p["tf"], tw=p["tw"], kind=p.get("kind", "I"))))))
 
 
 def snow_sheet(mark, pg, pg_source, risk, roughness, exposure, thermal, roof_type, rise_on_12, slippery, W_ft,
@@ -3034,6 +3035,21 @@ def wind_free_hip_sheet(mark, V, V_source, exposure, exposure_basis, h, theta, t
     return sheet
 
 
+def _support_shape(name):
+    """The W shape named at the start of an "other support" description ("W14x90 column flange", "W24x55 girder web"), for the picture:
+    dict(d, bf, tf, tw, web=True for a girder web), or None when the description names no shape in the table."""
+    tok = (name or "").strip().split()
+    if not tok:
+        return None
+    try:
+        p = shapes.get(tok[0])
+    except Exception:
+        return None
+    if not p or not p.get("d") or not p.get("bf"):
+        return None
+    return dict(d=p["d"], bf=p["bf"], tf=p["tf"], tw=p["tw"], web="web" in name.lower())
+
+
 def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, beam_source, tp, plate_Fy, plate_Fu, plate_source,
                        d, group, threads, n, spacing, lev, leh, a, holes, weld, FEXX, loads, combos, method, support=None, cope=None, through=None):
     """Single-plate (shear tab) connection of a wide-flange beam to an HSS column: conventional configuration of AISC Manual Part 10 as worked
@@ -3277,7 +3293,11 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
                         ([] if (Tdim or cope) else ["plate length against the beam T dimension (half of T to T, AISC Manual Part 10)"]) + ["axial force or torsion in the beam"] + ([] if not cope else ["an upward end reaction at the cope"]) + (["coped beams"] if not cope else []) + [
                          "the column as a member" if hss_col else "the support member, and its web or flange for the beam reaction", "erection and fit-up"])
     sheet.blocks.append(dict(title="Connection Elevation", head="Connection Elevation",
-                             picture=("single_plate", dict(n=n, s=spacing, lev=lev, leh=leh, a=a, L=L, tp=tp, weld=weld, column=shapes.normalize(column) if hss_col else support["name"].strip(), beam=shapes.normalize(beam), d=d))))
+                             picture=("single_plate", dict(n=n, s=spacing, lev=lev, leh=leh, a=a, L=L, tp=tp, weld=weld, column=shapes.normalize(column) if hss_col else support["name"].strip(), beam=shapes.normalize(beam), d=d,
+                                                                 hss=hss_col, rnd=rnd, t=t, H=(col.get("OD") or col.get("Ht")) if hss_col else None, B=(col.get("OD") or col.get("B")) if hss_col else None,
+                                                                 through=through if (through and hss_col) else None, bd=bm["d"], btf=bm["tf"], btw=bm["tw"], bbf=bm["bf"],
+                                                                 sup=None if hss_col else _support_shape(support["name"]),
+                                                                 cope=dict(dc=cope.get("dc") or 0.0, dcb=cope.get("dcb") or 0.0, c=cope["c"]) if cope else None))))
     if cope:
         sheet.blocks.append(dict(title="Coped Beam End", head="Coped Beam End",
                                  picture=("coped_end", dict(bd=bm["d"], tf=bm["tf"], dct=cope.get("dc") or 0.0, dcb=cope.get("dcb") or 0.0, c=cope["c"], setback=cope["setback"],
@@ -3483,7 +3503,7 @@ def seat_sheet(mark, beam, beam_Fy, beam_source, t, length, osl, vleg, angle_Fy,
                         ["the top angle and its fasteners", "bolts between the beam flange and the seat", ("bearing and tearout at the bolts; " if attach == "bolted" else "") + "the support member",
                          "horizontal force at the seat"])
     sheet.blocks.append(dict(title="Seat", head="Seat", picture=("seat", dict(osl=osl, vleg=vleg, t=t, setback=sb, N=N, length=length, beam=shapes.normalize(beam), attach=att,
-                                                                               R=f"{R:.1f} kip"))))
+                                                                               R=f"{R:.1f} kip", tf=tf, bd=dd, kind=attach, weld=weld, db=(d if attach == "bolted" else None)))))
     sheet.seat = dict(R=R, N=N, N_y=N_y, N_c=N_c, e=e, Rf=Rf, Rv=Rv, Ry=Ry, Rc=Rc, weld=(Rw if attach == "welded" else None), bolts=(Rb if attach == "bolted" else None))
     return sheet
 
@@ -3596,7 +3616,7 @@ def base_plate_biaxial_sheet(mark, shape, N, B, tp, Fy_plate, fc_psi, area_ratio
                          "Shear is carried to the foundation by friction or a shear lug, not by the anchor rods (the condition for Eq. 4-69).",
                          "Mx bends the column about its strong axis; the plate dimension N runs along the column depth."],
                         ["anchorage of the rods in the concrete (ACI 318-19 Chapter 17)", "shear at the base", "welds of the column to the plate", "axial tension with bending"])
-    sheet.blocks.append(dict(title="Base Plate", head="Base Plate", picture=("base_biaxial", dict(N=N, B=B, d=dcol, b=bcol, tf=tfl, tw=p.get("tw") or tfl, kind=col_kind, edge_N=edge_N,
+    sheet.blocks.append(dict(title="Base Plate", head="Base Plate", picture=("base_biaxial", dict(N=N, B=B, d=dcol, b=bcol, tf=tfl, tw=p.get("tw") or tfl, k=p.get("kdes"), kind=col_kind, edge_N=edge_N,
                                                                                                 edge_B=edge_B, rod_d=rod_d))))
     sheet.biax = dict(fp=fp, m=m, n=n, rt=rt, t_bear=t_bear, cases=out, worst=w)
     if anchorage:
@@ -4065,7 +4085,7 @@ def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
                          "The force spreads at 2.5 to 1 through the flange and the cap plate (AISC 360-22 Commentary Figure C-K2.2). The chord-stress factor Qf is 1.0: the force is parallel to the stress in the HSS wall."],
                         ["bolts in shear and bearing at the bolt holes", "beam web compression buckling (AISC 360-22 Sect. J10.5) where load is applied at the top flange over the column",
                          "the beam and the column themselves", "moment about the other axis of the column"])
-    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("cap_plate", dict(B=B, s=s, g=g, bp=bp, tp=tp, d=d, tf=tf, beam=shapes.normalize(beam), column=shapes.normalize(column)))))
+    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("cap_plate", dict(B=B, t=t, s=s, g=g, bp=bp, tp=tp, d=d, tf=tf, beam=shapes.normalize(beam), column=shapes.normalize(column)))))
     sheet.cap = dict(T=T, C=C, t_f=t_f, t_c=t_c, bf=bf_, bf1=bf1, pf=pf, bc=bc_, bc1=bc1, pc=pc, le=le, lb=lb, Ry=Ry, Rc=Rc, N=N, width=wdt, Rwy=Rwy, Rwc=Rwc, per_in=per_in, Rw=Rw, rt=rt)
     return sheet
 
@@ -4690,7 +4710,7 @@ def base_plate_uplift_sheet(mark, shape, col_Fy, N, B, t, Fy_plate, rod_d, rod_F
                          "Rod strength is the steel strength only."],
                         ["anchorage of the rods in the concrete: breakout, pullout, side blowout (ACI 318-19 Chapter 17)", "flange welds", "base shear", "moment with uplift"],
                         picture=None)
-    sheet.blocks.append(dict(title="Base Plate Plan", head="Base Plate Plan", picture=("base_plate_uplift", dict(d=d, bf=bf, tf=tf, tw=tw, N=N, B=B, g=gauge, s=pitch, rod_d=rod_d, shape=shapes.normalize(shape)))))
+    sheet.blocks.append(dict(title="Base Plate Plan", head="Base Plate Plan", picture=("base_plate_uplift", dict(d=d, bf=bf, tf=tf, tw=tw, k=p.get("kdes"), N=N, B=B, g=gauge, s=pitch, rod_d=rod_d, shape=shapes.normalize(shape)))))
     sheet.uplift = dict(r=r, rod=rod, a=a, beff=beff, M=M, Mc=Mc, t_req=t_req, rw=rw, weld=wr.R_avail, fweb=fweb, Fweb=Fweb)
     if anchorage:
         fact = cases if method == "LRFD" else (cases_factored or [])
@@ -5125,8 +5145,26 @@ def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note
     return sheet
 
 
+def _column_outline(mark, column):
+    """The column named on a base plate screen, for its picture only: dict(d along N, bf, tf, tw, kind "I", "rect" or "round"), or None when blank."""
+    if not (column or "").strip():
+        return None
+    try:
+        p = shapes.get(column)
+        return dict(d=p["d"], bf=p["bf"], tf=p["tf"], tw=p["tw"], kind="I", name=shapes.normalize(column))
+    except Exception:
+        pass
+    try:
+        h = shapes.hss(column)
+    except Exception:
+        raise WorksheetError(f"{mark}: column '{column}' is not in the {shapes.SOURCE} I-shape or HSS tables")
+    if h["type"] == "HSS-RECT":
+        return dict(d=h["Ht"], bf=h["B"], tf=h["tdes"], tw=h["tdes"], kind="rect", name=shapes.normalize(column))
+    return dict(d=h["OD"], bf=h["OD"], tf=h["tdes"], tw=h["tdes"], kind="round", name=shapes.normalize(column))
+
+
 def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, weld, FEXX, N, B, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod,
-                    fc, A2A1, ca1, ca2, ha, psi_c, loads, combos, combos_lrfd, method, anchorage=None, rod_back=None):
+                    fc, A2A1, ca1, ca2, ha, psi_c, loads, combos, combos_lrfd, method, anchorage=None, rod_back=None, column=None):
     """Shear lug under a base plate (see shearlug). anchorage (as for _anchorage_grid, hef = hef_rod): the two rods behind the lug in
     tension from the moment V e (Design Guide 1 large-moment procedure at the factored bearing stress) checked in the concrete, ACI 318-19
     17.6; rod_back: from those rods to the concrete edge behind (None = 1.5 hef or more). loads: dict(case, V kips, P kips compression +). Steel checks at the project's method;
@@ -5278,7 +5316,8 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
                 sheet.assumptions.append("Anchorage: the rods behind the lug are at least 1.5 hef from the concrete edge behind them.")
         else:
             sheet.assumptions.append("Anchorage: no factored combination puts the anchor rods in tension; their tension checks in the concrete do not govern.")
-    sheet.blocks.append(dict(title="Shear Lug", head="Shear Lug", picture=("shear_lug", dict(bsl=bsl, tsl=tsl, hsl=hsl, tg=t_grout, tbp=tbp, N=N, ca1=ca1, weld=weld, s=s_rod))))
+    sheet.blocks.append(dict(title="Shear Lug", head="Shear Lug", picture=("shear_lug", dict(bsl=bsl, tsl=tsl, hsl=hsl, tg=t_grout, tbp=tbp, N=N, ca1=ca1, weld=weld, s=s_rod,
+                                                                                               rod_d=rod_d, hef=hef_rod, col=_column_outline(mark, column)))))
     if anc_res:
         sheet.blocks += anc_res[0].blocks
     sheet.shear_lug = dict(steel=res, concrete=conc, e=e, fp=fp, anchor=anc_res[1] if anc_res else None)
@@ -5488,7 +5527,7 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
 
 def shear_lug_cruciform_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, weld, FEXX, N, B, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod,
                               fc, A2A1, ca1, ca2, ha, psi_c, loads, combos, combos_lrfd, method, anchorage=None, rod_back=None,
-                              ca1_t=None, ca2_t=None, rod_back_t=None):
+                              ca1_t=None, ca2_t=None, rod_back_t=None, column=None):
     """Cruciform shear lug: two plates bsl x tsl crossing at the centre of the base plate, each bearing against the concrete for the shear
     across its face. loads: dict(case, V along N, Vt along B, P). Each direction is checked as the single plate lug (shear_lug_sheet) with the
     geometry turned for the B direction (ca1_t, ca2_t its edge distances); the concrete bearing and breakout ratios of the two directions under
@@ -5503,6 +5542,9 @@ def shear_lug_cruciform_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_
     sx = shear_lug_sheet(mark, *args, N, B, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod, fc, A2A1, ca1, ca2, ha, psi_c, lx, combos, combos_lrfd, method)
     sy = shear_lug_sheet(mark, *args, B, N, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod, fc, A2A1, ca1_t, ca2_t, ha, psi_c, ly, combos, combos_lrfd, method)
     sh = sx
+    for b in sh.blocks:                                       # the picture shows both plates of the cross and the column
+        if b.get("picture") and b["picture"][0] == "shear_lug":
+            b["picture"] = ("shear_lug", dict(b["picture"][1], cruci=True, col=_column_outline(mark, column)))
     sh.title = "Shear Lug, Cruciform"
     sh.rows = [replace(r, check="Along N: " + r.check) for r in sx.rows] + [replace(r, check="Along B: " + r.check) for r in sy.rows if r.combo]
     sh.steps = [replace(l, label="Along N: " + l.label) for l in sx.steps] + [replace(l, label="Along B: " + l.label) for l in sy.steps if not l.label.startswith(("Eccentricity", "Concrete bearing stress limit", "Lug:", "Weld lever"))]

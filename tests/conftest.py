@@ -25,6 +25,17 @@ def _recording_init(self, *a, **k):
 
 _ws_more.SimpleSheet.__init__ = _recording_init
 
+if os.environ.get("STRUKIT_PIC_LOG"):                             # where each picture lands: file, page, name, top and bottom (for looking at them)
+    def _logged(fn):
+        def w(c, top, pic):
+            y = fn(c, top, pic)
+            with open(os.environ["STRUKIT_PIC_LOG"], "a") as fh:
+                fh.write(f"{getattr(c, '_filename', '')}|{c.getPageNumber()}|{pic[0]}|{top:.1f}|{y:.1f}\n")
+            return y
+        return w
+    _calcsheet._block_picture = _logged(_calcsheet._block_picture)
+    _calcsheet._picture = _logged(_calcsheet._picture)
+
 
 @pytest.fixture(autouse=True)
 def _printed_sheets_are_clean(request, tmp_path):
@@ -44,6 +55,13 @@ def _printed_sheets_are_clean(request, tmp_path):
             found += [(os.path.basename(f),) + tuple(x) for x in _audit.audit(f)]
         except Exception:
             pass
+    keep = os.environ.get("STRUKIT_PDF_KEEP")                  # a copy of every printed sheet, for looking at the pictures
+    if keep:
+        import shutil
+        os.makedirs(keep, exist_ok=True)
+        tag = request.node.nodeid.replace("/", "_").replace("::", "__").replace(".py", "")
+        for i, f in enumerate(glob.glob(os.path.join(str(tmp_path), "**", "*.pdf"), recursive=True)):
+            shutil.copy(f, os.path.join(keep, f"{tag}__{i}_{os.path.basename(f)}"))
     dump = os.environ.get("STRUKIT_TEXT_DUMP")                 # the text of every printed sheet, for reading the wording across all sheet types
     if dump:
         try:

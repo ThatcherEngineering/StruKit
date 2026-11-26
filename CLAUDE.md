@@ -43,6 +43,19 @@ ruled there, do not ask again. The same two files also live in the claude.ai Pro
   validated, or anything about StruKit's history. Stated assumptions and a "not checked on this sheet" list are fine.
 - "Thatcher Engineering standard" appears on a sheet only where Zach has actually ruled. Never his name.
 - No seal or signature box anywhere: Zach stamps his own cover sheet, which goes in front of StruKit's package.
+- **High visual detail standard (Zach, 2026-11-26 02:13 and 02:26; applies to every StruKit chat, every picture, forever).** StruKit is
+  designed to a high visual detail standard: every picture must look like the real member or connection, the way a detailer would draw it,
+  not a diagram of boxes. In particular:
+  - HSS look like HSS: in plan or section the wall at its thickness with rounded corners and the hollow inside
+    (`memberart.hss_plan`); in elevation the corner lines (`memberart.hss_elevation`); cut lengthwise, two hatched walls
+    (`memberart.hss_cut_side`). Pipe and round HSS are round.
+  - W shapes show their flanges and web in every view (`memberart.steel_section`, `memberart.w_side`); channels, angles and tees by
+    their own shape. Plates show their thickness; bolts show heads and nuts in section; welds are drawn where they are.
+  - Wood shows grain; sawn, LVL and glulam look distinct. Concrete is stippled; grout and soil read as what they are.
+  - Every member that is part of the connection is drawn (the column on a base plate, the beam on a seat), cut short with break lines
+    rather than left out. Cut surfaces are darker than surfaces seen beyond the cut; hidden edges are dashed.
+  - Connections get the views that show how they go together: an elevation plus a plan or section when one view is not enough.
+  - Before releasing any new or changed picture, render it and look at it; a picture that reads as boxes or lines is not finished.
 - Members are drawn as what they are (steel as steel shapes, wood with grain; sawn, LVL and glulam look distinct). Beams and columns carry
   loading diagrams; beams also shear and moment diagrams. Every connection sketch is dimensioned (plan and section where one view is not enough).
 - No text may overlap other text or run past the margin. `tests/conftest.py` audits every sheet the suite builds with

@@ -157,3 +157,19 @@ def test_cruciform_lug():
     foot = dict(kind="footing_iso", values=dict(mark="F1", B="6", L="5", h="30", fc="4000"))
     lv = calc.link_foundations([foot, dict(kind="shear_lug", values=dict(v, on_footing="F1", on_footing_N="x"))])[1]["values"]
     assert (lv["ca1"], lv["ca2"], lv["ca1_t"], lv["ca2_t"]) == ("35.5", "26", "29.5", "32")
+
+
+def test_column_drawn_over_the_lug():
+    """The column named on the lug screen is drawn on the plate (plan and section); a cruciform lug shows both plates. Picture only."""
+    v = dict(mark="SL1", bsl="8", tsl="1", hsl="2", t_grout="2", lug_Fy="50", lug_Fu="65", lug_source="ASTM A572 Gr. 50", weld="0.3125", FEXX="70", N="15", B="15", tbp="1",
+             bp_Fy="50", s_rod="8.5", rod_d="0.75", rod_Fu="58", rod_source="ASTM F1554 Gr. 36", fc="4000", A2A1="4", ca1="30", ca2="99", ha="99",
+             psi_c="cracked, no supplementary reinforcement (1.0)", column="W8x31", loads=[dict(case="W", V="20", P="", label="")])
+    proj = dict(name="T", number="1", address="", method="LRFD", date="2026-11-26", combos_lrfd=[dict(expr="1.2D + 1.0W", source="ASCE/SEI 7-22 Sect. 2.3.1")])
+    s, _, _ = calc.build("shear_lug", v, proj)
+    pic = next(b["picture"][1] for b in s.blocks if b.get("picture"))
+    assert pic["col"]["kind"] == "I" and pic["col"]["d"] == pytest.approx(8.0) and not pic.get("cruci")
+    s, _, _ = calc.build("shear_lug", dict(v, column="HSS8x8x1/2", lug_shape="cruciform (two plates crossing, shear in both directions)", ca1_t="30", ca2_t="99",
+                                           loads=[dict(case="W", V="20", Vt="12", P="", label="")]), proj)
+    pic = next(b["picture"][1] for b in s.blocks if b.get("picture"))
+    assert pic["col"]["kind"] == "rect" and pic["cruci"]
+    assert calc.results("shear_lug", dict(v, column="W99x1"), proj)["state"] != "done"

@@ -172,6 +172,7 @@ FORMS = {
                 F("hsl", "Lug embedment into the concrete (below the grout)", unit="in"), F("t_grout", "Grout thickness", unit="in"),
                 F("lug_Fy", "Lug Fy", unit="ksi"), F("lug_Fu", "Lug Fu", unit="ksi"), F("lug_source", "Where the lug's Fy and Fu come from", "text"),
                 F("weld", "Fillet weld, each face of the lug", unit="in"), F("FEXX", "Electrode strength FEXX", unit="ksi"),
+                F("column", "Column on the plate", "shape_col", required=False, help="drawn on the sheet over the plate and lug; its depth is taken along N"),
                 F("N", "Base plate length N (along the shear)", unit="in"), F("B", "Base plate width B", unit="in"), F("tbp", "Base plate thickness", unit="in"),
                 F("bp_Fy", "Base plate Fy", unit="ksi"),
                 F("s_rod", "Anchor rod square, side", unit="in", help="four rods, the lug centred between them"), F("rod_d", "Anchor rod diameter", unit="in"),
@@ -1932,8 +1933,8 @@ def _build(kind, values, project):
         r.done()
         if cruci:
             return ws_more.shear_lug_cruciform_sheet(mark, *args, loads, cb, cbl, m, anchorage=anc, rod_back=r.num("rod_back", False),
-                                                     ca1_t=ct[0], ca2_t=ct[1], rod_back_t=r.num("rod_back_t", False)), "simple", {}
-        return ws_more.shear_lug_sheet(mark, *args, loads, cb, cbl, m, anchorage=anc, rod_back=r.num("rod_back", False)), "simple", {}
+                                                     ca1_t=ct[0], ca2_t=ct[1], rod_back_t=r.num("rod_back_t", False), column=r.text("column", False)), "simple", {}
+        return ws_more.shear_lug_sheet(mark, *args, loads, cb, cbl, m, anchorage=anc, rod_back=r.num("rod_back", False), column=r.text("column", False)), "simple", {}
     if kind == "crane_runway":
         cb, m = combos(project, r.miss), method(project, r.miss)
         args = (r.text("beam"), r.num("Fy"), r.text("beam_source"), r.num("span"), r.num("rail", False) or 0.0, r.text("rail_note", False) or "",
