@@ -5255,12 +5255,16 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
 
 
 def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fu, col_source, along, bp, tp, plate_Fy, plate_Fu, plate_source,
-                        d, group, threads, n, s, g, L1, le_p, le_f, weld, FEXX, loads, combos, method, runs=None, runs_from=""):
+                        d, group, threads, n, s, g, L1, le_p, le_f, weld, FEXX, loads, combos, method, runs=None, runs_from="", ws=None):
     """Through-plate flange-plated moment connection: wide-flange beams each side of a rectangular HSS column, the column cut at the joint and
     the top and bottom flange plates run through it, bolted to the beam flanges (AISC Design Guide 24, 2nd Ed., Sect. 6.5, as worked in
     Example 6.4). loads: dict(case, ML, VL, MR, VR kip-ft / kips at the faces of the column, beam moments + when the top flange is in tension,
     P kips of column compression from above). along: "H" or "B", the HSS dimension along the beams. n bolts in each of two lines (gage g) each
-    side, spacing s, L1 from the HSS face to the first bolt, le_p from the last bolt to the plate end, le_f from the first bolt to the beam end."""
+    side, spacing s, L1 from the HSS face to the first bolt, le_p from the last bolt to the plate end, le_f from the first bolt to the beam end.
+    ws given: the external diaphragm (cut-out) plate of Design Guide 24 Sect. 6.2 and Example 6.2 instead: the HSS runs through, the plates
+    wrap round it with ws beyond each side wall (plate width B + 2 ws; bp is not used), and the column takes no load through the plate welds
+    except the unbalanced flange force, which goes to the side walls."""
+    cut = ws is not None
     from . import bolts
     from .steel_beam import SteelInputError
     for nm_, v in (("the source of the beam Fy and Fu", beam_source), ("the source of the column Fu", col_source), ("the source of the plate Fy and Fu", plate_source)):
@@ -5275,9 +5279,14 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
         raise WorksheetError(f"{mark}: {e}")
     if col.get("type") != "HSS-RECT":
         raise WorksheetError(f"{mark}: the column is a square or rectangular HSS")
-    if min(bp, tp, d, s, g, L1, le_p, le_f, weld, FEXX) <= 0 or n < 2:
+    if cut:
+        if ws <= 0:
+            raise WorksheetError(f"{mark}: the plate width beyond each HSS side wall must be positive")
+    if min(bp if not cut else 1.0, tp, d, s, g, L1, le_p, le_f, weld, FEXX) <= 0 or n < 2:
         raise WorksheetError(f"{mark}: sizes must be positive, with at least two bolts in each line")
     H, Bx = (col["Ht"], col["B"]) if along == "H" else (col["B"], col["Ht"])
+    if cut:
+        bp = Bx + 2 * ws
     tw_hss = col["tdes"]
     db_, tbf, bbf = bm["d"], bm["tf"], bm["bf"]
     if g > bbf - 2 * 1.0:
@@ -5307,19 +5316,28 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
     wq = max(cases, key=lambda c_: c_["q"])
     R = wR["R"]
     # plate
-    Ag = bp * tp
-    An = Ag - 2 * dn * tp
+    lw = 2 * (n - 1) * s * math.tan(math.radians(30)) + g            # Whitmore width at the first bolts (Example 6.2)
+    if cut:
+        Ag = tp * min(2 * ws, lw)
+        An = min(2 * ws * tp, (lw - 2 * dn) * tp)
+    else:
+        Ag = bp * tp
+        An = Ag - 2 * dn * tp
     Ry = av(plate_Fy * Ag, 0.90, 1.67)
     Rr = av(plate_Fu * An, 0.75, 2.00)
     r_ = tp / math.sqrt(12)
     KLr = 1.0 * L1 / r_
-    if KLr <= 25:
+    if cut:
+        lam3 = 0.45 * math.sqrt(E / plate_Fy)
+        Pc_n, csrc = plate_Fy * tp * ws, "AISC 360-22 Eq. J4-6 (the projections beside the HSS)"
+    elif KLr <= 25:
         Pc_n, csrc = plate_Fy * Ag, "AISC 360-22 Sect. J4.4(a), KL/r not over 25"
     else:
         Fe = math.pi ** 2 * E / KLr ** 2
         Fn = 0.658 ** (plate_Fy / Fe) * plate_Fy if plate_Fy / Fe <= 2.25 else 0.877 * Fe
         Pc_n, csrc = Fn * Ag, "AISC 360-22 Sect. J4.4(b), Chapter E"
     Rc = av(Pc_n, 0.90, 1.67)
+    Rc_dem = R / 2 if cut else R
     # bolts, bolt by bolt (bolt 1 nearest the HSS)
     rv = Fnv * Ab
     per = []
@@ -5337,11 +5355,31 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
     Anv = Agv - 2 * (n - 0.5) * dn * tp
     Ant = (g - dn) * tp
     Rbs_p = min(0.60 * plate_Fu * Anv, 0.60 * plate_Fy * Agv) + plate_Fu * Ant
+    bs_cases = {}
+    if cut:                                                          # Example 6.2 Fig. 6-9: three block shear cases
+        leh = (bp - g) / 2
+        bs = lambda Agv_, Anv_, Ant_: min(0.60 * plate_Fu * Anv_, 0.60 * plate_Fy * Agv_) + plate_Fu * Ant_
+        bs_cases["1, tension to both plate edges"] = bs(Agv, Anv, 2 * (leh - 0.5 * dn) * tp)
+        bs_cases["2, tension between the bolt lines"] = Rbs_p
+        Agv3 = (le_p + (n - 1) * s) * tp
+        bs_cases["3, one line, tension to the far edge"] = bs(Agv3, Agv3 - (n - 0.5) * dn * tp, (g + leh - 1.5 * dn) * tp)
+        Rbs_p = min(bs_cases.values())
     # block shear, beam flange: two lines, tension from the bolts to the flange tips
     Agv_f = 2 * (le_f + (n - 1) * s) * tbf
     Anv_f = Agv_f - 2 * (n - 0.5) * dn * tbf
     Ant_f = (bbf - g - dn) * tbf
     Rbs_f = min(0.60 * beam_Fu * Anv_f, 0.60 * beam_Fy * Agv_f) + beam_Fu * Ant_f
+    # beam flexure at the bolt holes, AISC 360-22 Sect. F13.1
+    Afg, Afn = bbf * tbf, (bbf - 2 * dn) * tbf
+    Yt = 1.0 if beam_Fy / beam_Fu <= 0.8 else 1.1
+    Mn_b = beam_Fy * bm["Zx"]
+    f13 = beam_Fu * Afn < Yt * beam_Fy * Afg
+    if f13:
+        Mn_b = min(Mn_b, beam_Fu * Afn / Afg * bm["Sx"])
+    Mb = av(Mn_b, 0.90, 1.67) / 12
+    Mdem = max(max(abs(c_["ML"]), abs(c_["MR"])) for c_ in cases)
+    # cut-out plate: the unbalanced flange force goes to the HSS side walls through the plate welds
+    Runb = max(abs(abs(c_["MR"]) - abs(c_["ML"])) * 12 / (db_ + tp) for c_ in cases) if cut else 0.0
     # plate to HSS fillet weld (both HSS pieces), Manual Part 8 with the elastic weld group
     rw = av(0.60 * FEXX * weld / math.sqrt(2), 0.75, 2.00)
     tmin = FEXX * weld / math.sqrt(2) / col_Fu                          # AISC Manual Eq. 9-6 form: 3.09 D / Fu for E70
@@ -5351,7 +5389,11 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
     nm, nq = wR["name"], wq["name"]
     steps = [Ln("Plate force, R = M / (d + tp)", R, "kip", f"{G24} Example 6.4", f"{nm}: the larger beam moment {max(abs(wR['ML']), abs(wR['MR'])):.1f} kip-ft; d = {db_:g} in."),
              Ln("Plate: Ag = bp tp, An = Ag - 2 (dh + 1/16) tp", f"{Ag:.3g}, {An:.3g}", "in2", "AISC 360-22 Sect. B4.3, D3", f"standard holes dh = {dh:.4g} in. (Table J3.3); U = 1.0 (Table D3.1)"),
-             Ln("Plate in compression, KL / r", KLr, "", csrc, f"L = {L1:g} in. from the HSS face to the first bolt, K = 1.0, r = tp / 12^0.5 = {r_:.3f} in."),
+             (Ln("Plate projections beside the HSS, ws / tp", ws / tp, "", "AISC 360-22 Table B4.1a Case 3", f"nonslender limit 0.45 (E / Fy)^0.5 = {lam3:.2f}; Pn = Fy tp ws = {Pc_n:.1f} kip each side, half the plate force each") if cut else
+              Ln("Plate in compression, KL / r", KLr, "", csrc, f"L = {L1:g} in. from the HSS face to the first bolt, K = 1.0, r = tp / 12^0.5 = {r_:.3f} in.")),
+             *([Ln("Whitmore width at the first bolts, lw = 2 (n - 1) s tan 30 + g", lw, "in", f"{G24} Example 6.2", f"plate width {bp:g} in. = B + 2 ws; at the cut-out 2 ws = {2 * ws:g} in.")] if cut else []),
+             Ln("Beam flange at the holes: Fu Afn against Yt Fy Afg", f"{beam_Fu * Afn:.1f}, {Yt * beam_Fy * Afg:.1f}", "kip", "AISC 360-22 Sect. F13.1",
+                f"Afn = {Afn:.3g}, Afg = {Afg:.3g} in2; " + (f"Mn = Fu Afn Sx / Afg = {Mn_b:,.0f} kip-in. (Eq. F13-1)" if f13 else f"tension rupture does not apply; Mn = Fy Zx = {Mn_b:,.0f} kip-in.")),
              Ln("Bolt shear, Fnv Ab", rv, "kip", "AISC 360-22 Eq. J3-1", f"{d:g} in. {group}-{threads}, Fnv = {Fnv:g} ksi")]
     for i, val, k_, cand in per:
         steps.append(Ln(f"Bolt {i} from the HSS, nominal", val, "kip", "AISC 360-22 Sect. J3.7, J3.11", f"governs: {k_.replace('_', ' ')}; " +
@@ -5359,28 +5401,35 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
     steps += [Ln("Bolt group, 2 lines", Rb, "kip", "AISC 360-22 Sect. J3.7, J3.11", f"sum of the bolts' strengths, {2 * n:g} bolts each side; " + fac(0.75, 2.00)),
               Ln("Block shear, plate: Agv, Anv, Ant", f"{Agv:.3g}, {Anv:.3g}, {Ant:.3g}", "in2", "AISC 360-22 Eq. J4-5", f"Rn = {Rbs_p:.1f} kip, Ubs = 1.0"),
               Ln("Block shear, beam flange: Agv, Anv, Ant", f"{Agv_f:.3g}, {Anv_f:.3g}, {Ant_f:.3g}", "in2", "AISC 360-22 Eq. J4-5", f"Rn = {Rbs_f:.1f} kip, Ubs = 1.0; tension to both flange tips"),
-              Ln("Joint: P conn = VL + VR + P, M conn", f"{wq['Pc']:.1f} kip, {wq['Mc']:.1f} kip-ft", "", f"{G24} Example 6.4",
-                 f"{nq}: M conn = [MR - ML + (VR - VL) H / 2] / 2, H = {H:g} in. along the beams"),
-              Ln("Weld force per inch, P / (2 (B + H)) + M (H / 2) / I", wq["q"], "kip/in", f"{G24} Example 6.4; AISC Manual Part 8",
-                 f"I per unit throat = 2 H^3 / 12 + 2 B (H / 2)^2 = {2 * H ** 3 / 12 + 2 * Bx * (H / 2) ** 2:,.0f} in3"),
+              *([Ln("Unbalanced flange force to the HSS side walls", Runb, "kip", f"{G24} Sect. 6.2", f"(|MR| - |ML|) / (d + tp); welds on the two side walls, {2 * H:g} in. in all, "
+                     f"{av(0.60 * FEXX * weld / math.sqrt(2), 0.75, 2.00) * 2 * H:.1f} kip")] if cut else
+                [Ln("Joint: P conn = VL + VR + P, M conn", f"{wq['Pc']:.1f} kip, {wq['Mc']:.1f} kip-ft", "", f"{G24} Example 6.4",
+                    f"{nq}: M conn = [MR - ML + (VR - VL) H / 2] / 2, H = {H:g} in. along the beams"),
+                 Ln("Weld force per inch, P / (2 (B + H)) + M (H / 2) / I", wq["q"], "kip/in", f"{G24} Example 6.4; AISC Manual Part 8",
+                    f"I per unit throat = 2 H^3 / 12 + 2 B (H / 2)^2 = {2 * H ** 3 / 12 + 2 * Bx * (H / 2) ** 2:,.0f} in3")]),
+              *([Ln(f"Block shear, plate, case {k_}", v_, "kip", "AISC 360-22 Eq. J4-5", "nominal") for k_, v_ in bs_cases.items()]),
               Ln("Fillet weld strength per inch", rw, "kip/in", "AISC 360-22 Eq. J2-4", f"{weld:g} in., E{FEXX:g}XX, 0.60 FEXX (w / 2^0.5); " + fac(0.75, 2.00))]
-    rows = [Row("Plate tensile yielding", nm, R, Ry, "kip", "AISC 360-22 Eq. J4-1", ""),
-            Row("Plate tensile rupture", nm, R, Rr, "kip", "AISC 360-22 Eq. J4-2", "net of two holes"),
-            Row("Plate in compression", nm, R, Rc, "kip", csrc.split(",")[0], f"KL/r = {KLr:.1f}"),
+    rows = [Row("Beam flexure at the bolt holes", nm, Mdem, Mb, "kip-ft", "AISC 360-22 Sect. F13.1" if f13 else "AISC 360-22 Eq. F2-1", "the larger beam moment"),
+            Row("Plate tensile yielding", nm, R, Ry, "kip", "AISC 360-22 Eq. J4-1", "at the cut-out or the Whitmore section, the smaller" if cut else ""),
+            Row("Plate tensile rupture", nm, R, Rr, "kip", "AISC 360-22 Eq. J4-2", "at the cut-out or the Whitmore section less two holes" if cut else "net of two holes"),
+            Row("Plate in compression" + (" beside the HSS" if cut else ""), nm, Rc_dem, Rc, "kip", csrc.split(",")[0].split(" (")[0], (f"each side, ws/tp = {ws / tp:.2f}" if cut else f"KL/r = {KLr:.1f}")),
+            *([Row("Plate projection, ws / tp", "", ws / tp, lam3, "", "AISC 360-22 Table B4.1a Case 3", "nonslender")] if cut else []),
             Row("Bolts (each side)", nm, R, Rb, "kip", "AISC 360-22 Sect. J3.7, J3.11", f"({2 * n:g}) {d:g} in. {group}-{threads}"),
             Row("Block shear, plate", nm, R, av(Rbs_p, 0.75, 2.00), "kip", "AISC 360-22 Eq. J4-5", ""),
             Row("Block shear, beam flange", nm, R, av(Rbs_f, 0.75, 2.00), "kip", "AISC 360-22 Eq. J4-5", ""),
-            Row("Plate to HSS weld", nq, wq["q"], rw, "kip/in", "AISC 360-22 Eq. J2-4", "compression side, axial and moment added"),
+            (Row("Plate to HSS side wall welds", nm, Runb, rw * 2 * H, "kip", "AISC 360-22 Eq. J2-4", "the unbalanced flange force") if cut else
+             Row("Plate to HSS weld", nq, wq["q"], rw, "kip/in", "AISC 360-22 Eq. J2-4", "compression side, axial and moment added")),
             Row("Minimum fillet weld size", "", wmin, weld, "in", "AISC 360-22 Table J2.4", f"thinner part {min(tp, tw_hss):g} in."),
             Row("HSS wall at the weld (shear rupture)", "", tmin, tw_hss, "in", "AISC Manual Eq. 9-6", "least wall thickness to develop the weld"),
-            Row("Plate width for the fillet weld", "", Bx + 2 * weld, bp, "in", f"{G24} Example 6.4", "plate wider than the HSS by the weld each side"),
+            *([] if cut else [Row("Plate width for the fillet weld", "", Bx + 2 * weld, bp, "in", f"{G24} Example 6.4", "plate wider than the HSS by the weld each side")]),
             Row("Bolt spacing, at least 3 d", "", 3 * d, s, "in", "AISC 360-22 Sect. J3.3", "")]
     for nm_e, le_ in (("plate end", le_p), ("beam end", le_f)):
         rows.append(Row(f"Edge distance, {nm_e}", "", bolts.min_edge(d), le_, "in", "AISC 360-22 Table J3.4", ""))
     info = [("Beams", f"{shapes.normalize(beam)} each side, d = {db_:g} in., bf = {bbf:g} in., tf = {tbf:g} in., Fy = {beam_Fy:g} ksi, Fu = {beam_Fu:g} ksi ({beam_source.strip()})"),
             ("Column", f"{shapes.normalize(column)}, {H:g} in. along the beams, {Bx:g} in. across; design wall {tw_hss:g} in., Fu = {col_Fu:g} ksi ({col_source.strip()}); "
-                       "cut at the joint, the stub between the plates"),
-            ("Through Plates", f"PL {tp:g} x {bp:g} in. at each beam flange, Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()})"),
+                       + ("continuous through the joint" if cut else "cut at the joint, the stub between the plates")),
+            (("Cut-Out Plates", f"PL {tp:g} x {bp:g} in. wrapping the HSS at each beam flange, {ws:g} in. beyond each side wall, Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()})")
+             if cut else ("Through Plates", f"PL {tp:g} x {bp:g} in. at each beam flange, Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()})")),
             ("Bolts", f"each side of the HSS: two lines at {g:g} in. gage, {n:g} bolts in each at {s:g} in.; {L1:g} in. from the HSS face to the first bolt, "
                       f"{le_p:g} in. to the plate end, {le_f:g} in. to the beam end; {d:g} in. {group}-{threads} in standard holes"),
             ("Welds", f"{weld:g} in. fillet all round the HSS to each plate, above and below, E{FEXX:g}XX")]
@@ -5391,16 +5440,16 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
         load_lines = [f"{x_['case']:<3} ML = {x_.get('ML') or 0:>7.2f}  VL = {x_.get('VL') or 0:>6.2f}  MR = {x_.get('MR') or 0:>7.2f}  VR = {x_.get('VR') or 0:>6.2f}  P = {x_.get('P') or 0:>7.2f}"
                       + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
         combo_lines = [(cb.name, cb.source) for cb in combos]
-    sheet = SimpleSheet(mark, "Through-Plate Moment Connection to an HSS Column", "Connection", method, info,
+    sheet = SimpleSheet(mark, "External Diaphragm (Cut-Out) Plate Moment Connection to an HSS Column" if cut else "Through-Plate Moment Connection to an HSS Column", "Connection", method, info,
                         ["moments in kip-ft (+ top flange in tension), shears and P in kips (P = column compression from above)"] + load_lines, combo_lines,
                         "Calculation", steps, rows,
                         ["The plate force is the larger beam moment over (d + tp); the same plate size and bolts are used at both flanges and both sides.",
                          "Bolt strengths are summed bolt by bolt (AISC 360-22 Sect. J3.11); deformation at the bolt holes at service load is a design consideration (Eq. J3-6a, J3-6c).",
-                         "The plate-to-HSS welds take the column axial force and the joint moment as an elastic weld group on the compression side, where they add."],
-                        ["the beam web shear connection", "the HSS column stub between the plates and the column above and below", "orthogonal framing at the plates",
-                         "beam flange rupture at the bolt holes (AISC 360-22 Sect. F13.1)"])
-    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("through_plate", dict(H=H, B=Bx, t=tw_hss, bp=bp, tp=tp, n=int(n), s=s, g=g, L1=L1, le_p=le_p, le_f=le_f, d=d,
+                         ("The flange forces pass round the HSS through the plate; only the unbalanced force between the two beams goes into the HSS side walls, through the plate welds on them."
+                          if cut else "The plate-to-HSS welds take the column axial force and the joint moment as an elastic weld group on the compression side, where they add.")],
+                        ["the beam web shear connection", ("the HSS column" if cut else "the HSS column stub between the plates and the column above and below"), "orthogonal framing at the plates"])
+    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("through_plate", dict(cut=cut, ws=ws, H=H, B=Bx, t=tw_hss, bp=bp, tp=tp, n=int(n), s=s, g=g, L1=L1, le_p=le_p, le_f=le_f, d=d,
                                                                                                     bf=bbf, db=db_, tf=tbf, beam=shapes.normalize(beam), column=shapes.normalize(column)))))
     sheet.tp = dict(R=R, Ag=Ag, An=An, Ry=Ry, Rr=Rr, KLr=KLr, Rc=Rc, rv=rv, per=per, Rb=Rb, Rbs_p=Rbs_p, Rbs_f=Rbs_f, Agv=Agv, Anv=Anv, Ant=Ant, Agv_f=Agv_f, Anv_f=Anv_f,
-                    Ant_f=Ant_f, q=wq["q"], Pc=wq["Pc"], Mc=wq["Mc"], rw=rw, tmin=tmin)
+                    Ant_f=Ant_f, q=wq["q"], Pc=wq["Pc"], Mc=wq["Mc"], rw=rw, tmin=tmin, lw=lw, bs_cases=bs_cases, Mn_b=Mn_b, Mb=Mb, Afn=Afn, Runb=Runb, Rc_n=Pc_n)
     return sheet

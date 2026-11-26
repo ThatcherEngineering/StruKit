@@ -316,3 +316,15 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - The plate-to-HSS weld takes the joint's axial force and moment together on the compression side (elastic weld group, throat neglected in
   (H/2)^2, as the example).
 
+
+## 2026-11-26 01:11 — Zach: go on a two-hour run
+"Perfect go ahead" to: (1) external diaphragm (cut-out plate) moment connection, Design Guide 24 Example 6.2; (2) four-bolt extended end
+plate at a column top (Design Guide 39 Table A-2(d), (e)); (3) cruciform shear lug; (4) directly welded and welded-tee beam-to-HSS moment
+connections (Design Guide 24 Examples 6.3, 6.5); (5) story forces spread by mass; (6) every sheet type re-read against the "factual, not a
+design log" rule. Unattended: no questions; conservative readings applied and recorded here.
+
+## 2026-11-26 01:35, cut-out plate (0.242.0), applied (not ruled)
+- The unbalanced flange force between the two beams goes to the HSS side walls through the plate welds on those two walls only (the
+  example has balanced moments and checks no weld); the weld on the HSS face toward the beams is not counted on.
+- Beam flexure at the holes uses the larger beam moment and Mn = Fy Zx where F13.1 does not apply (no lateral-torsional buckling at the joint).
+

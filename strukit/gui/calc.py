@@ -1422,6 +1422,13 @@ FORMS = {
                    F("wt_factor", "Dead-load factor", help="applied to the footing and soil weight")])]),
 }
 
+FORMS["cutout_plate"] = dict(
+    FORMS["through_plate"], title="External Diaphragm (Cut-Out) Plate Moment Connection (beams to a rectangular HSS column)", mark="CO",
+    fields=[({**f, "label": "Column (rectangular or square HSS, continuous through the joint)"} if f["key"] == "column" else
+             F("ws", "Plate width beyond each HSS side wall", unit="in", help="the plate wraps the HSS; its width is the HSS width plus twice this") if f["key"] == "bp" else
+             ({**f, "label": "Fillet weld, plates to the HSS side walls"} if f["key"] == "weld" else f))
+            for f in FORMS["through_plate"]["fields"]])
+
 
 # ------------------------------------------------------------------ reading what was typed
 def parse_expr(text):
@@ -2036,7 +2043,7 @@ def _build(kind, values, project):
                 r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.num("s"), r.num("g"), r.num("weld"), r.num("FEXX"))
         r.done()
         return ws_more.cap_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
-    if kind == "through_plate":
+    if kind in ("through_plate", "cutout_plate"):
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], ML=x["ML"], VL=x["VL"] or 0.0, MR=x["MR"], VR=x["VR"] or 0.0, P=x["P"] or 0.0) for x in r.rows("runs")]
         loads = [] if runs else [dict(case=x["case"], ML=x["ML"], VL=x["VL"] or 0.0, MR=x["MR"], VR=x["VR"] or 0.0, P=x["P"] or 0.0, **({"label": x["label"]} if x["label"] else {}))
@@ -2046,10 +2053,11 @@ def _build(kind, values, project):
         cases_used([x["case"] for x in loads], cb, r.miss)
         along = "B" if str(r.text("along") or "").startswith("width") else "H"
         args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), r.text("beam_source"), r.text("column"), r.num("col_Fu"), r.text("col_source"), along,
-                r.num("bp"), r.num("tp"), r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"),
+                r.num("bp") if kind == "through_plate" else 0.0, r.num("tp"), r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"),
                 r.num("n"), r.num("s"), r.num("g"), r.num("L1"), r.num("le_p"), r.num("le_f"), r.num("weld"), r.num("FEXX"))
+        ws_ = r.num("ws") if kind == "cutout_plate" else None
         r.done()
-        return ws_more.through_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
+        return ws_more.through_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or ""), ws=ws_), "simple", {}
     if kind == "stiffened_seat":
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], R=x["R"]) for x in r.rows("runs")]

@@ -34,3 +34,20 @@ def test_screen_and_tearout():
     # a thin plate with a short end distance: plate tearout governs the end bolt
     s = through_plate_sheet("TP", *GEOM[:9], 0.25, *GEOM[10:20], 1.25, *GEOM[21:], [], [], "LRFD", runs=[dict(name="x", ML=72, VL=9.6, MR=360, VR=48, P=288)])
     assert s.tp["per"][-1][2] == "plate_tearout" and s.tp["per"][-1][1] == pytest.approx(1.2 * (1.25 - 1.125 / 2) * 0.25 * 65)
+
+
+def test_cut_out_plate_example_6_2():
+    """External diaphragm (cut-out) plate, Design Guide 24 Example 6.2: W18x35 beams, HSS10x10x1/2, PL 3/4 with ws = 4 in. each side,
+    (10) 3/4 in. Group 120-N bolts each side, s 3, g 3-1/2, plate end 1-1/4, beam end 3-1/2 in. The example designs for the beam's
+    nominal strength at the holes, Mn = 2,660 kip-in. (F13.1), as the required moment."""
+    G = ("W18X35", 50, 65, "ASTM A992", "HSS10X10X1/2", 62, "ASTM A500 Gr. C", "H", 0, 0.75, 50, 65, "ASTM A572 Gr. 50", 0.75, "A325", "N", 5, 3, 3.5, 5.5, 1.25, 3.5, 0.3125, 70)
+    t = through_plate_sheet("CO", *G, [], [], "LRFD", runs=[dict(name="LRFD", ML=2660 / 12, VL=0, MR=2660 / 12, VR=0, P=0)], ws=4.0).tp
+    assert t["Mn_b"] == pytest.approx(2660, rel=0.004) and t["Mb"] == pytest.approx(199, rel=0.004)      # Eq. F13-1, phi Mn 2,390 kip-in.
+    assert t["R"] == pytest.approx(144, abs=0.5) and t["Rc"] == pytest.approx(135) and t["Rb"] == pytest.approx(179, rel=0.002)
+    assert t["lw"] == pytest.approx(17.4, abs=0.05) and t["Ry"] == pytest.approx(270) and t["Rr"] == pytest.approx(293, rel=0.003)
+    bs = t["bs_cases"]
+    assert bs["2, tension between the bolt lines"] == pytest.approx(674, rel=0.003) and bs["3, one line, tension to the far edge"] == pytest.approx(733, rel=0.002)
+    assert t["Rbs_f"] == pytest.approx(429, rel=0.003) and t["Runb"] == 0
+    a = through_plate_sheet("CO", *G, [], [], "ASD", runs=[dict(name="ASD", ML=1590 / 12, VL=0, MR=1590 / 12, VR=0, P=0)], ws=4.0).tp
+    assert a["R"] == pytest.approx(86.2, abs=0.1) and a["Rc"] == pytest.approx(89.8, abs=0.1) and a["Rb"] == pytest.approx(119, rel=0.003)
+    assert a["Mb"] == pytest.approx(133, rel=0.005)
