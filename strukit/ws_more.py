@@ -649,8 +649,29 @@ def perforated_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, leng
     return sheet
 
 
+def _ftao_deflection_block(mark, sheet, h, pier_defs, Ga, defl):
+    """Adds the deflection of a force-transfer wall to its sheet (shearwall.ftao_deflection) and drops "deflection" from the checks not made."""
+    try:
+        d = shearwall.ftao_deflection(h, pier_defs, Ga, defl["E"] * defl["A"], defl["Da"])
+    except shearwall.ShearWallError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    L = shearwall.Line
+    steps = [L("Ga", Ga, "kips/in", "SDPWS Table 4.3A", "apparent shear stiffness of the sheathing and nailing"),
+             L("end posts, E A", defl["E"] * defl["A"], "lb", "entered", f"E = {defl['E']:,.0f} psi, A = {defl['A']:g} in2; anchorage slip {defl['Da']:g} in.")]
+    for c_ in d["cases"]:
+        steps.append(L(f"pier {c_['pier']}, load {'to the right' if c_['dir'] == '+' else 'to the left'}: deflection", c_["d"], "in", "SDPWS Eq. 4.3-1",
+                       f"v = {c_['v']:.0f} plf, h = {c_['h']:g} ft, b = {c_['b']:g} ft; bending {c_['bend']:.3f} + shear {c_['shear']:.3f} + anchorage {c_['anch']:.3f} in."))
+    steps.append(L("wall deflection, the average of the pier values", d["delta"], "in", "APA Technical Note T555", f"{len(d['cases'])} values"))
+    sheet.blocks.append(dict(title="Deflection", head="Deflection", steps=steps,
+                             text=["Each pier's height: from the top of the sheathing below the opening it is pushed toward to the top of the wall; "
+                                   "the full wall height when it is pushed away from the openings or toward a door."]))
+    sheet.not_checked = [x for x in sheet.not_checked if x != "deflection"]
+    sheet.wall_defl = d
+    return d
+
+
 def ftao_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, L1, Lo, L2, ho, sill, V, load, method, v_source, holddown_inside=None, sides=1,
-                    above_T=0.0, above_source="", holddown=None, more=None):
+                    above_T=0.0, above_source="", holddown=None, more=None, defl=None):
     """Wood shear wall with one opening, designed for force transfer around the opening (see shearwall.ftao). more: further openings to
     the right, each dict(w, ho, sill, pier) with the pier to its right; then L2 is the pier between the first and second openings and the
     wall goes by shearwall.ftao_multi."""
@@ -664,7 +685,7 @@ def ftao_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, L1, Lo, L2
     if more:
         return _ftao_multi_sheet(mark, panel, spacing, panel_type, G, G_source, h, [L1, L2] + [m["pier"] for m in more],
                                  [dict(w=Lo, ho=ho, sill=sill or 0.0)] + [dict(w=m["w"], ho=m["ho"], sill=m.get("sill") or 0.0) for m in more],
-                                 V, load, method, v_source, holddown_inside, sides, above_T, above_source, holddown)
+                                 V, load, method, v_source, holddown_inside, sides, above_T, above_source, holddown, defl=defl)
     try:
         w = shearwall.ftao(panel, spacing, panel_type, G, h, L1, Lo, L2, ho, sill or 0.0, V, load, method, holddown_inside, sides)
     except shearwall.ShearWallError as e:
@@ -708,6 +729,9 @@ def ftao_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, L1, Lo, L2
     sheet.blocks.append(dict(title="Wall Forces", head="Wall Forces", steps=[], text=text,
                              picture=("perforated_wall", dict(h=h, L=w["L"], openings=[dict(x=L1, w=Lo, h=ho, sill=w["sill"])],
                                                               segs=[dict(x=0.0, b=L1, counted=L1), dict(x=L1 + Lo, b=L2, counted=L2)], V=V, T=T))))
+    if defl:
+        _ftao_deflection_block(mark, sheet, h, [dict(L=L1, v=w["vh"], hb_left=None, hb_right=w["sill"]), dict(L=L2, v=w["vh"], hb_left=w["sill"], hb_right=None)],
+                               w["Ga"], defl)
     sheet.wall = w
     sheet.wall_T = T
     return sheet
@@ -724,7 +748,7 @@ def _holddown_row(mark, holddown, T, G, load, method):
 
 
 def _ftao_multi_sheet(mark, panel, spacing, panel_type, G, G_source, h, piers, openings, V, load, method, v_source, holddown_inside, sides,
-                      above_T, above_source, holddown):
+                      above_T, above_source, holddown, defl=None):
     """Force-transfer shear wall with two or more openings (shearwall.ftao_multi)."""
     try:
         w = shearwall.ftao_multi(panel, spacing, panel_type, G, h, piers, openings, V, load, method, holddown_inside, sides)
@@ -785,6 +809,10 @@ def _ftao_multi_sheet(mark, panel, spacing, panel_type, G, G_source, h, piers, o
          "construction requirements of SDPWS 4.3.6 and 4.3.7.1", "deflection"])
     sheet.blocks.append(dict(title="Wall Forces", head="Wall Forces", steps=[], text=text,
                              picture=("perforated_wall", dict(h=h, L=w["L"], openings=ops, segs=segs, V=V, T=T))))
+    if defl:
+        n_ = len(w["openings"])
+        _ftao_deflection_block(mark, sheet, h, [dict(L=p_["L"], v=p_["v"], hb_left=(w["openings"][i - 1]["sill"] if i > 0 else None),
+                                                    hb_right=(w["openings"][i]["sill"] if i < n_ else None)) for i, p_ in enumerate(w["piers"])], w["Ga"], defl)
     sheet.wall = w
     sheet.wall_T = T
     return sheet

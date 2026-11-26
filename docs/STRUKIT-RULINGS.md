@@ -375,3 +375,9 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
   shear only).
 - An all-bolted stiffened seat on one face of a column web is refused: the Manual's simplified punching limits are for welded seats.
 - A seat width between Table 10-8's widths takes the B limit of the narrower width.
+
+## 2026-11-26 09:05, force-transfer wall deflection (0.250.0), for Zach's ruling
+- The sheet's deflection follows APA's pier method (SEAOC 2015): a pier pushed toward an opening is taken from the top of the sheathing below
+  it to the top of the wall; away from the openings, the full height; the average of the pier values. The 3D frame stiffness (0.232.0) still
+  takes every pier at the full height (softer). 20 ft two-window test wall: 0.47 in. (APA) against 0.60 in. (full height). Not the more
+  conservative of the two on the sheet: asked.

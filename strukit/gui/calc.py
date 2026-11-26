@@ -883,9 +883,9 @@ FORMS = {
                 F("hd_sdc", "Strap tie, seismic: Seismic Design Category", "select", options=["A or B", "C to F"], required=False),
                 F("above_T", "Stacked walls: chord force from the wall above", unit="lb", required=False),
                 F("above_source", "Stacked walls: where that force comes from", "text", required=False),
-                F("chord_A", "3D frame stiffness: end post area", unit="in2", required=False, help="with E and slip, the piers' SDPWS Eq. 4.3-1 deflection gives the wall's stiffness in the 3D frame"),
-                F("chord_E", "3D frame stiffness: end post E", unit="psi", required=False),
-                F("slip", "3D frame stiffness: anchorage slip at the design load", unit="in", required=False)],
+                F("chord_A", "Deflection: end post area", unit="in2", required=False, help="with E and slip: the wall's deflection on the sheet (APA T555, the piers by SDPWS Eq. 4.3-1) and its stiffness in the 3D frame"),
+                F("chord_E", "Deflection: end post E", unit="psi", required=False),
+                F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
         tables=[T("more", "More openings, left to right after the first (the pier at the right of the first opening is then the pier between openings 1 and 2)",
                   [F("w", "Opening width", unit="ft"), F("ho", "Opening clear height", unit="ft"), F("sill", "Sheathing height below (0 for a door)", unit="ft", required=False),
                    F("pier", "Pier at its right", unit="ft")],
@@ -2441,7 +2441,10 @@ def _build(kind, values, project):
                                        holddown=(dict(model=hdm, stem=r.text("hd_stem", False), position=r.text("hd_position", False),
                                                       cracked={"cracked": True, "uncracked": False}.get(r.text("hd_cracked", False)),
                                                       sdc_high={"A or B": False, "C to F": True}.get(r.text("hd_sdc", False))) if hdm else None),
-                                       more=more or None), "simple", {}
+                                       more=more or None,
+                                       defl=(dict(A=float(str(values.get("chord_A")).replace(",", "")), E=float(str(values.get("chord_E")).replace(",", "")),
+                                                  Da=float(str(values.get("slip")).replace(",", "")))
+                                             if all(str(values.get(k_) or "").strip() for k_ in ("chord_A", "chord_E", "slip")) else None)), "simple", {}
     if kind == "perforated_wall":
         m = method(project, r.miss)
         panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")
