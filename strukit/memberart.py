@@ -325,7 +325,7 @@ def _hatch_rect(c, x, y, w, h, step=2.6):
 
 def hss_plan(c, cx, cy, W, H, t, rnd=False, dashed=False, inside=(1, 1, 1), cut=True):
     """An HSS or pipe seen end-on or cut, to scale (W, H, t in points): the wall at its thickness with the corners rounded (outside radius
-    2t, ASTM A500 / AISC Manual Part 1 practice for drawing) and the hollow inside. cut: the wall is cut by the plane (darker); dashed: hidden
+    2t, ASTM A500 / AISC Manual (16th Ed.) Part 1 practice for drawing) and the hollow inside. cut: the wall is cut by the plane (darker); dashed: hidden
     (outline only). inside: the colour seen inside the tube (white for an open tube, the plate colour where a plate runs through it)."""
     t = max(t, 1.0)
     c.setStrokeColorRGB(*STEEL_LINE); c.setLineWidth(0.6)
