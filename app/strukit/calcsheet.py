@@ -1918,9 +1918,21 @@ def _wind_mwfrs_picture(c, top, d):
     return ybase - 36
 
 
+def _hex(c, x, y, F):
+    """A hex nut or head seen along its axis: across flats F (points), the flats horizontal."""
+    import math
+    r = F / math.sqrt(3)
+    p_ = c.beginPath()
+    for k in range(6):
+        a = math.radians(60 * k)
+        (p_.moveTo if k == 0 else p_.lineTo)(x + r * math.cos(a), y + r * math.sin(a))
+    p_.close(); c.drawPath(p_, fill=1, stroke=1)
+
+
 def _bolted_picture(c, top, d):
-    """Face of the main member at its end, to scale: the bolts, the end distance, the spacing
-    in a row, the spacing between rows and the edge distance dimensioned; the load arrow."""
+    """Face of the connection at the member end, to scale: the member with its grain, broken off beyond the bolts, each bolt with its washer
+    and nut (a lag screw head); end distance, spacing in a row, spacing between rows and edge distance dimensioned; the load arrow. Below it a
+    section through one row of bolts: the members cut (end grain), the bolt with its head, washers and nut through them."""
     D, R, n, sp, g, end, edge, w = d["D"], d["rows"], d["n"], d["s"], d["g"], d["end"], d["edge"], d["w"]
     Lshow = end + (n - 1) * (sp or 0) + max(3 * D, 3.0)
     sc = min(230.0 / Lshow, 70.0 / w)
@@ -1928,15 +1940,19 @@ def _bolted_picture(c, top, d):
     y0 = top - 26 - w * sc
     y1 = y0 + w * sc
     x_far = x_end + Lshow * sc
-    c.setFillColorRGB(0.93, 0.87, 0.74); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    pth = c.beginPath(); pth.moveTo(x_far, y1); pth.lineTo(x_end, y1); pth.lineTo(x_end, y0); pth.lineTo(x_far, y0); c.drawPath(pth, fill=1, stroke=1)
-    c.setDash(2, 2); c.line(x_far, y0, x_far, y1); c.setDash()
-    group = (R - 1) * g
+    memberart.wood_elevation(c, x_end, y0, x_far - x_end, y1 - y0, seed=3)
+    _break_v(c, x_far, y0 - 2, y1 + 2)
     yb = [y1 - (edge + k * g) * sc for k in range(R)]       # the first row at the entered edge distance from the top edge
-    c.setFillColorRGB(1, 1, 1)
+    Fw = max(2.2 * D * sc, 5.0)                             # washer about 2.2 D across (NDS 12.1.3 calls for washers; size not checked here)
     for y in yb:
         for k in range(n):
-            c.circle(x_end + (end + k * (sp or 0)) * sc, y, max(1.6, D * sc / 2), fill=1, stroke=1)
+            xb = x_end + (end + k * (sp or 0)) * sc
+            c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+            if not d.get("steel"):
+                c.setFillColorRGB(0.80, 0.83, 0.87); c.circle(xb, y, Fw / 2, fill=1, stroke=1)
+            c.setFillColorRGB(0.55, 0.60, 0.66); _hex(c, xb, y, max(1.5 * D * sc, 3.6))
+            if not d.get("lag"):
+                c.setFillColorRGB(0.30, 0.33, 0.37); c.circle(xb, y, max(D * sc / 2, 1.2), fill=1, stroke=0)     # the bolt end through the nut
     memberart._dim_h(c, x_end, x_end + end * sc, y0 - 9, f"{end:g} in", FR, ext_from=y0)
     if n > 1:
         memberart._dim_h(c, x_end + end * sc, x_end + (end + sp) * sc, y0 - 9, f"{sp:g} in", FR, ext_from=y0)
@@ -1952,8 +1968,38 @@ def _bolted_picture(c, top, d):
         _arrow(c, xa + 26, (y0 + y1) / 2, xa, (y0 + y1) / 2, head=4)
     c.setFont(FR, 6.5); c.drawString(xa, (y0 + y1) / 2 + 5, d["sense"])
     c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawRightString(x_end - 4, (y0 + y1) / 2 - 2, "member end")
-    _small(c, (LM + RM) / 2, y0 - 28, "face of the main member at the connection, to scale")
-    return y0 - 34
+    _small(c, (LM + RM) / 2, y0 - 28, "face at the connection, to scale; washers and nuts shown" if not d.get("lag") else "face at the connection, to scale")
+    low = y0 - 34
+    if d.get("side_t") and d.get("main_t") and not d.get("lag") and not d.get("perp"):
+        # section through one row of bolts: the members cut across their length (end grain), stacked along the bolt
+        ts, tm, dbl = d["side_t"], d["main_t"], d.get("double")
+        layers = ([("side", ts)] + [("main", tm)] + ([("side", ts)] if dbl else [])) if not d.get("lag") else [("side", ts), ("main", tm)]
+        tot = sum(t_ for _, t_ in layers)
+        s2 = min(sc, 150.0 / tot, 60.0 / w)
+        ytop = low - 14
+        h2 = w * s2
+        xc0 = (LM + RM) / 2 - tot * s2 / 2
+        x_ = xc0
+        for nm, t_ in layers:
+            if nm == "side" and d.get("steel"):
+                c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+                c.rect(x_, ytop - h2, t_ * s2, h2, fill=1, stroke=1); memberart._hatch_rect(c, x_, ytop - h2, t_ * s2, h2)
+            else:
+                memberart.wood_section(c, x_ + t_ * s2 / 2, ytop - h2 / 2, t_ * s2, h2, t_, w)
+            x_ += t_ * s2
+        for k in range(R):
+            yy = ytop - (edge + k * g) * s2
+            if d.get("lag"):
+                L_ = ts + tm * 0.85
+                memberart.bolt_side(c, xc0, yy, xc0 + L_ * s2, yy, max(D * s2, 2.0), head_end=1)
+            else:
+                memberart.bolt_side(c, xc0, yy, xc0 + tot * s2, yy, max(D * s2, 2.0), head_end=1)
+        memberart._dim_h(c, xc0, xc0 + ts * s2, ytop - h2 - 9, f"{ts:g} in", FR, ext_from=ytop - h2)
+        memberart._dim_h(c, xc0 + ts * s2, xc0 + (ts + tm) * s2, ytop - h2 - 9, f"{tm:g} in", FR, ext_from=ytop - h2)
+        memberart._dim_v(c, ytop - h2, ytop, xc0 + tot * s2 + 22, f"{w:g} in", FR, ext_from=xc0 + tot * s2 + 8)
+        _small(c, (LM + RM) / 2, ytop - h2 - 26, "section through a row of fasteners, members cut across their length, to scale")
+        low = ytop - h2 - 32
+    return low
 
 
 def _bolted_perp_picture(c, top, d):
@@ -1969,15 +2015,17 @@ def _bolted_perp_picture(c, top, d):
     y0 = top - 26 - w * sc
     y1 = y0 + w * sc
     x_far = x_end + Lshow * sc
-    c.setFillColorRGB(0.93, 0.87, 0.74); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    pth = c.beginPath(); pth.moveTo(x_far, y1); pth.lineTo(x_end, y1); pth.lineTo(x_end, y0); pth.lineTo(x_far, y0); c.drawPath(pth, fill=1, stroke=1)
-    c.setDash(2, 2); c.line(x_far, y0, x_far, y1); c.setDash()
+    memberart.wood_elevation(c, x_end, y0, x_far - x_end, y1 - y0, seed=6)          # grain left to right
+    _break_v(c, x_far, y0 - 2, y1 + 2)
     xs = [x_end + (end_show + k * g) * sc for k in range(R)]
     ys = [y0 + (le + k * sp) * sc for k in range(n)]
-    c.setFillColorRGB(1, 1, 1)
     for x in xs:
         for y in ys:
-            c.circle(x, y, max(1.6, D * sc / 2), fill=1, stroke=1)
+            c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+            c.setFillColorRGB(0.80, 0.83, 0.87); c.circle(x, y, max(2.2 * D * sc, 5.0) / 2, fill=1, stroke=1)
+            c.setFillColorRGB(0.55, 0.60, 0.66); _hex(c, x, y, max(1.5 * D * sc, 3.6))
+            c.setFillColorRGB(0.30, 0.33, 0.37); c.circle(x, y, max(D * sc / 2, 1.2), fill=1, stroke=0)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     xr = x_far + 10
     memberart._dim_v(c, y0, ys[0], xr, f"{le:g} in loaded edge", FR, ext_from=x_far)
     if n > 1:
@@ -2006,11 +2054,14 @@ def _nailed_picture(c, top, d):
     y_top = top - 26
     y_mid = y_top - ts * sc
     y_bot = y_mid - tm * sc
-    for (xa, ya, w_, h_, kind) in ((x0 - 22, y_mid, wd, ts * sc, "side"), (x0 + 22, y_bot, wd, tm * sc, "main")):
-        c.setFillColorRGB(0.93, 0.87, 0.74); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8); c.rect(xa, ya, w_, h_, fill=1, stroke=1)
+    for (xa, ya, w_, h_, kind, sd) in ((x0 - 22, y_mid, wd, ts * sc, "side", 5), (x0 + 22, y_bot, wd, tm * sc, "main", 9)):
+        memberart.wood_elevation(c, xa, ya, w_, h_, seed=sd)
+        _break_v(c, xa if kind == "side" else xa + w_, ya - 2, ya + h_ + 2)               # each member continues beyond the joint
     xn = (LM + RM) / 2
     c.setStrokeColorRGB(0.25, 0.27, 0.3); c.setLineWidth(max(1.0, D * sc)); c.line(xn, y_top, xn, y_top - Lg * sc + D * sc)
-    c.setLineWidth(0.8); c.line(xn - 3.5, y_top + 0.8, xn + 3.5, y_top + 0.8)
+    hd = max(2.6 * D * sc, 5.0)                                                            # the nail head, about 2.6 D across
+    c.setFillColorRGB(0.35, 0.38, 0.42); c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(0.4)
+    c.rect(xn - hd / 2, y_top, hd, max(0.12 * D * sc * 2, 1.4), fill=1, stroke=1)
     t = c.beginPath(); t.moveTo(xn - D * sc / 2, y_top - Lg * sc + D * sc); t.lineTo(xn + D * sc / 2, y_top - Lg * sc + D * sc); t.lineTo(xn, y_top - Lg * sc); t.close()
     c.setFillColorRGB(0.25, 0.27, 0.3); c.drawPath(t, fill=1, stroke=0)
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
@@ -2048,15 +2099,16 @@ def _lag_picture(c, top, d):
     y_bot = y_mid - tmd * sc
     x0 = xc - wd / 2
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    if d.get("steel_side"):
-        c.setFillColorRGB(0.72, 0.75, 0.80)
+    if d.get("steel_side"):                                  # steel side plate, cut
+        c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE)
+        c.rect(x0, y_mid, wd, max(ts * sc, 1.2), fill=1, stroke=1); memberart._hatch_rect(c, x0, y_mid, wd, max(ts * sc, 1.2))
     else:
-        c.setFillColorRGB(0.93, 0.87, 0.74)
-    c.rect(x0, y_mid, wd, max(ts * sc, 1.2), fill=1, stroke=1)
-    c.setFillColorRGB(0.93, 0.87, 0.74)
-    c.rect(x0, y_bot, wd, tmd * sc, fill=1, stroke=(0 if tmd < tm else 1))
+        memberart.wood_elevation(c, x0, y_mid, wd, max(ts * sc, 1.2), seed=4)
+    memberart.wood_elevation(c, x0, y_bot, wd, tmd * sc, seed=8)
+    _break_v(c, x0, y_bot - 2, y_mid + max(ts * sc, 1.2) + 2); _break_v(c, x0 + wd, y_bot - 2, y_mid + max(ts * sc, 1.2) + 2)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     if tmd < tm:
-        c.line(x0, y_mid, x0 + wd, y_mid); c.line(x0, y_mid, x0, y_bot); c.line(x0 + wd, y_mid, x0 + wd, y_bot)
+        _break_h(c, x0, x0 + wd, y_bot)
     steel = (0.25, 0.27, 0.3)
     y_head = y_top + wash * sc
     y_tip = y_head - L * sc
@@ -2113,12 +2165,14 @@ def _toe_nail_picture(c, top, d):
     y_bot = y_mid - tmd * sc
     xs0, xs1 = xc - ts * sc / 2, xc + ts * sc / 2
     xm0, xm1 = xs0 - 60, xs1 + 60
-    c.setFillColorRGB(0.93, 0.87, 0.74); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    c.rect(xm0, y_bot, xm1 - xm0, tmd * sc, fill=1, stroke=(0 if tmd < tm else 1))
-    if tmd < tm:                                          # main member deeper than shown: open at the bottom
-        c.line(xm0, y_mid, xm1, y_mid); c.line(xm0, y_mid, xm0, y_bot); c.line(xm1, y_mid, xm1, y_bot)
-    c.rect(xs0, y_mid, ts * sc, hs * sc, fill=1, stroke=0)
-    c.line(xs0, y_mid, xs0, y_top); c.line(xs1, y_mid, xs1, y_top); c.line(xs0, y_mid, xs1, y_mid)
+    memberart.wood_elevation(c, xm0, y_bot, xm1 - xm0, tmd * sc, seed=8)                   # the main member, grain along it, broken off each end
+    _break_v(c, xm0, y_bot - 2, y_mid + 2); _break_v(c, xm1, y_bot - 2, y_mid + 2)
+    if tmd < tm:                                          # main member deeper than shown
+        _break_h(c, xm0, xm1, y_bot)
+    c.saveState(); c.translate(xs0 + ts * sc, y_mid); c.rotate(90)                            # the side member standing on it, grain vertical
+    memberart.wood_elevation(c, 0, 0, hs * sc, ts * sc, seed=5)
+    c.restoreState()
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     yh = y_mid + Lg / 3.0 * sc                            # nail head, on the face of the side member
     xt, yt = xs1 - Lg * 0.5 * sc, yh - Lg * 0.8660254 * sc
     c.setStrokeColorRGB(0.25, 0.27, 0.3); c.setLineWidth(max(1.0, D * sc)); c.line(xs1, yh, xt, yt)
@@ -2222,8 +2276,12 @@ def _angle_beam_picture(c, top, d):
     x0, x1 = LM + 40, LM + 300
     hl = _beam_loads_height(loads)
     yb = top - 18 - hl - 8
-    c.setFillColorRGB(0.74, 0.79, 0.86); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    c.rect(x0, yb - 6, x1 - x0, 6, fill=1, stroke=1)
+    c.setFillColorRGB(*memberart.STEEL_FILL); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+    c.rect(x0, yb - 6, x1 - x0, 6, fill=1, stroke=1)                                   # the vertical leg, seen on its face
+    band = 1.6                                                                          # the horizontal leg seen edge-on at the heel
+    c.setFillColorRGB(*memberart.STEEL_LINE)
+    c.rect(x0, (yb - 6) if d.get("toe", "up") == "up" else (yb - band), x1 - x0, band, fill=1, stroke=0)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     c.setLineWidth(0.6)
     sups = d.get("supports")
     for xx in ([x0 + (x1 - x0) * s_ / L for s_ in sups] if sups else (x0, x1)):
@@ -3617,34 +3675,54 @@ def _hss_section(c, cx, cy, box, d):
 
 
 def _hss_column_picture(c, top, d):
-    """Elevation of the column with its axial loads (and a moment mark where moments are
-    entered) and height dimension, beside the cut section to scale."""
-    hh = 96.0
+    """Elevation of the column as a tube (corner lines, or shading for a round section; width exaggerated), pinned at its base and held
+    sideways at both ends, with the axial loads, the moments entered and the height dimensioned, beside the cut section to scale."""
+    hh = 104.0
     cx = (LM + RM) / 2 - 90
-    yb = top - 34 - hh
-    wdt = 9.0
-    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(*memberart.STEEL_FILL); c.setLineWidth(0.6)
-    c.rect(cx - wdt / 2, yb, wdt, hh, fill=1, stroke=1)
-    c.setStrokeColorRGB(0.55, 0.60, 0.66); c.setLineWidth(0.3)
-    c.line(cx - wdt / 2 + 1.6, yb, cx - wdt / 2 + 1.6, yb + hh); c.line(cx + wdt / 2 - 1.6, yb, cx + wdt / 2 - 1.6, yb + hh)
-    c.setStrokeColorRGB(*INK); c.setLineWidth(0.9); c.line(cx - 16, yb, cx + 16, yb)
-    c.setFillColorRGB(0.20, 0.22, 0.25)
-    for yy in (yb + hh, yb):                              # held sideways at both ends
-        p_ = c.beginPath(); p_.moveTo(cx - wdt / 2 - 1, yy - (0 if yy > yb else -0)); p_.lineTo(cx - wdt / 2 - 8, yy + 3.5); p_.lineTo(cx - wdt / 2 - 8, yy - 3.5); p_.close()
-        c.drawPath(p_, fill=1, stroke=0)
+    yb = top - 44 - hh
+    wdt = 14.0
+    rnd = d.get("kind") == "round"
+    memberart.hss_elevation(c, cx - wdt / 2, yb, wdt, hh, 1.4, rnd=rnd)
+    # base: a hinge on its support, the ground hatched
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8); c.setFillColorRGB(1, 1, 1)
+    p_ = c.beginPath(); p_.moveTo(cx, yb); p_.lineTo(cx - 7, yb - 10); p_.lineTo(cx + 7, yb - 10); p_.close(); c.drawPath(p_, fill=1, stroke=1)
+    c.circle(cx, yb, 1.6, fill=1, stroke=1)
+    c.line(cx - 12, yb - 10, cx + 12, yb - 10)
+    c.setLineWidth(0.4)
+    for k in range(7):
+        x_ = cx - 12 + k * 4
+        c.line(x_, yb - 10, x_ - 3, yb - 14)
+    # top: held sideways (a roller against a wall line) with the hinge
+    c.setLineWidth(0.8); c.circle(cx, yb + hh, 1.6, fill=1, stroke=1)
+    c.line(cx - wdt / 2 - 10, yb + hh - 8, cx - wdt / 2 - 10, yb + hh + 8)
+    c.setLineWidth(0.4)
+    for k in range(5):
+        y_ = yb + hh - 8 + k * 4
+        c.line(cx - wdt / 2 - 10, y_, cx - wdt / 2 - 14, y_ - 3)
+    c.setLineWidth(0.8)
+    for yy in (yb + hh - 3, yb + hh + 3):
+        c.circle(cx - wdt / 2 - 7.5, yy, 1.4, fill=0, stroke=1)
+    # loads
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
-    _arrow_down(c, cx, yb + hh + 20, yb + hh + 2, head=3.2)
+    ax_ = d.get("axial") or []
+    y0_ = yb + hh + 8                                     # lowest label line, clear of the hinge
+    _arrow_down(c, cx, y0_ + 7.5 * max(len(ax_) - 1, 0) + 8, yb + hh + 3, head=3.2)
     c.setFont(FR, 6.5)
-    for k, txt in enumerate(d.get("axial") or []):
-        c.drawString(cx + 6, yb + hh + 15 - 7.5 * k, txt)
+    for k, txt in enumerate(ax_):
+        c.drawString(cx + 6, y0_ + 7.5 * (len(ax_) - 1 - k), txt)
     if d.get("moment"):
-        c.setLineWidth(0.7); c.arc(cx + 10, yb + hh - 34, cx + 26, yb + hh - 18, startAng=-70, extent=250)
-        c.drawString(cx + 30, yb + hh - 29, "M")
-    memberart._dim_v(c, yb, yb + hh, cx - 34, f"{d['height']:g} ft", FR)
-    _sketch_title(c, cx + 120, top - 4, "SECTION")
-    _hss_section(c, cx + 150, yb + hh / 2 + 4, 62.0, d)
-    _small(c, (LM + RM) / 2, yb - 24, f"{d['shape']}; elevation schematic, section to scale, dimensions in inches")
-    return yb - 30
+        c.setLineWidth(0.7); c.arc(cx + 12, yb + hh - 36, cx + 28, yb + hh - 20, startAng=-70, extent=250)
+        mt = d.get("moments") or ["M"]
+        for k, txt in enumerate(mt):
+            c.drawString(cx + 32, yb + hh - 26 - 7.5 * k, txt)
+    memberart._dim_v(c, yb, yb + hh, cx - 36, f"{d['height']:g} ft", FR)
+    if d.get("Kx") is not None:
+        c.setFillColorRGB(*GREY); c.setFont(FR, 6)
+        c.drawString(cx + 12, yb + 6, f"Kx = {d['Kx']:g}, Ky = {d['Ky']:g}")
+    _sketch_title(c, cx + 150, top - 4, "SECTION")
+    _hss_section(c, cx + 180, yb + hh / 2 + 4, 62.0, d)
+    _small(c, (LM + RM) / 2, yb - 26, f"{d['shape']}; elevation with the width exaggerated, ends held against sidesway; section to scale, dimensions in inches")
+    return yb - 32
 
 
 def _stair_sketch(c, x0, top, w, sheet, st):

@@ -2349,7 +2349,8 @@ def bolted_connection_sheet(mark, D, rows_n, n_row, spacing, row_spacing, end, e
     if not steel_perp:
       sheet.blocks.append(dict(title="Layout" if grain == "parallel" else "Layout, Member Loaded Parallel to Grain",
                              picture=("bolted", dict(D=D, rows=rows_n, n=n_row, s=spacing, g=row_spacing or 0.0, end=end, edge=edge,
-                                                     w=(side_w if grain == "main" else main_w), sense=sense))))
+                                                     w=(side_w if grain == "main" else main_w), sense=sense, side_t=side_t, main_t=main_t, double=double,
+                                                     steel=bool(steel), lag=bool(lag), perp=(grain != "parallel")))))
     if grain != "parallel":
         sheet.blocks.append(dict(title="Layout, Member Loaded Perpendicular to Grain",
                                  picture=("bolted_perp", dict(D=D, rows=rows_n, n=n_row, s=spacing, g=row_spacing or 0.0, w=(side_w if grain == "side" else main_w),
@@ -2773,7 +2774,9 @@ def hss_column_sheet(mark, shape, Fy, Fy_source, height_ft, Kx, Ky, k_source, lo
     sheet.blocks.append(dict(title="Column and Section", head="Column and Section",
                              picture=("hss_column", dict(kind=st["kind"], OD=pr.get("OD"), H=pr.get("Ht"), B=pr.get("B"), t=pr["tdes"], height=height_ft,
                                                          shape=shapes.normalize(shape), axial=[f"{x['case']} {x['P']:.1f} kip" for x in loads],
-                                                         moment=has_m))))
+                                                         moment=has_m, moments=[f"{x['case']} " + ", ".join(f"{k_} {abs(x.get(k_) or 0):.1f}" for k_ in ("Mx", "My") if x.get(k_))
+                                                                                + " kip-ft" for x in (moments or []) if (x.get("Mx") or x.get("My"))],
+                                                         Kx=Kx, Ky=Ky))))
     sheet.hss = dict(Pc=Pc, Mcx=Mcx, Mcy=Mcy, res=res, strength=st)
     return sheet
 
