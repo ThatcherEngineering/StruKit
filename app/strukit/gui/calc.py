@@ -5141,7 +5141,7 @@ def model_frame_sway(project, members):
                     "notional load 0.003 of the gravity load at each level with tau_b = 1.0" + (", loads x 1.6 and results / 1.6 (ASD)" if alpha != 1 else "") + ".")
     if worst_ratio > 1.5:
         problems.append(f"Second-order drift is {worst_ratio:.2f} times first-order drift (at the reduced stiffness). The frame is flexible; stiffen it.")
-    return dict(levels=[drift[k_] for k_ in sorted(drift, key=lambda t: (elev[t[0]], t[1]))], columns=list(col_res.values()), beams=list(beam_res.values()), braces=list(brace_res.values()),
+    return dict(walls=B.get("walls") or [], levels=[drift[k_] for k_ in sorted(drift, key=lambda t: (elev[t[0]], t[1]))], columns=list(col_res.values()), beams=list(beam_res.values()), braces=list(brace_res.values()),
                 notes=notes, problems=problems, ratio=worst_ratio, runs=runs, method=method_, elastic=elastic, members=out_members, audit=audit, drift_checks=drift_checks,
                 units="drift in.; column P kips (compression at the base), moments kip-in. about the column's strong and weak axes; beam M kip-in., V and axial kips")
 
@@ -5668,12 +5668,17 @@ def frame_sheet(project, members):
     blocks.append(dict(title=f"Column Base Forces, Largest of Each over Every Run ({m_} level)", lines=[
         f"{'Column':<9}{'Compression':>13}{'Uplift':>10}{'M strong':>13}{'M weak':>13}"] + [
         f"{c['mark']:<9}{c['P']:>9.1f} kip{c['T']:>6.1f} kip{c['Ms'] / 12:>7.1f} kip-ft{c['Mw'] / 12:>7.1f} kip-ft" for c in out["columns"]]))
+    if out.get("walls"):
+        blocks.append(dict(title="Shear Walls in the Frame (X-braced panels)", lines=[f"{'Wall':<28}{'Level':<12}{'Stiffness':>14}"] + [
+            f"{w_['mark'][:27]:<28}{str(w_['level'])[:11]:<12}{w_['k']:>9,.0f} lb/in" for w_ in out["walls"]],
+            after=["Stiffness: " + w_["mark"] + ", " + w_["how"] for w_ in out["walls"]]))
     blocks.append(dict(title=f"Sum of the Base Reactions in Each Run ({m_} level)", lines=[f"{'Rx':>9}{'Ry':>9}{'Rz':>9}   Run"] + [
         f"{a['Rx']:>9.2f}{a['Ry']:>9.2f}{a['Rz']:>9.2f}   {a['run']}" for a in out["audit"]], after=["kips; Rz is upward on the structure."]))
     cbs = combos(project or {}, [], m_)
     n = lambda k, w: f"{len(out[k])} {w}" + ("" if len(out[k]) == 1 else "s")
     sh = SimpleSheet("FR", "3D Frame Analysis", "Frame", m_,
-                     [("Members", ", ".join([n("columns", "column"), n("beams", "beam")] + ([n("braces", "brace")] if out.get("braces") else []))),
+                     [("Members", ", ".join([n("columns", "column"), n("beams", "beam")] + ([n("braces", "brace")] if out.get("braces") else [])
+                                            + ([n("walls", "shear wall")] if out.get("walls") else []))),
                       ("Method", "Second-order elastic analysis, direct analysis method (AISC 360-22 Chapter C)"), ("Runs", str(out["runs"]))],
                      ["Member loads, self-weight and positions are those on each member's own sheet."], [(cb.name, cb.source) for cb in cbs], "Analysis", [], rows,
                      list(out["notes"]), ["Connections, base plates and foundations (their own sheets)", "Column shear and torsion", "Serviceability limits on drift (the designer's)"])
