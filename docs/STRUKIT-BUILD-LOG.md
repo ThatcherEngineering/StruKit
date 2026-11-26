@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 18:35. Build **0.225.0**, 606 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 18:22. Build **0.225.0**, 606 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -651,7 +651,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **What StruKit could not represent (gaps, not job findings):** the existing house (Line 2): the lower floor joists and the roof joists end on it, so their loads stop there, and wind across the house has one new wall line, so Line 1 takes all of it; posts sitting on the continuous footings (Column A, Column B, the post under Floor Beam B); wall self-weight and openings in bearing walls; seismic weights from the model; diaphragm sheets from the model; wood members in the 3D frame. Roof Beam A, the deck column and the two headers were left as stand-alone checks (not placed). Added to the Next list as item 8.
 - Tests: walls and footing lines by statics (roof row to the wall, wall on wall, floor row, footing per foot), two posts on one footing summed by case before the governing combination, joists end to end, and the 2026-011 model linking and distributing.
 
-## 2026-11-25 17:50 local — 0.221.0 existing walls in the building model (601 tests)
+## 2026-11-25 17:42 local — 0.221.0 existing walls in the building model (601 tests)
 - Same hour of work (Zach 17:10). Next item 8(a).
 - **Existing walls** (Project page, Building Model card, new table "Existing walls (by others, not designed here)": name, level at its top, two end points by feet or grid). A joist row, beam or post that lands on an existing wall stops there: its load by case is listed under the plan after "Link members by position" and is not carried further. In the wind and seismic distribution an existing wall is a wall line like any other, so tributary widths are split with it; its shear is listed, not written to any member, and nothing is designed for it.
 - Plan view draws existing walls dashed grey; the 3D view as grey panels.
@@ -659,17 +659,17 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - 2026-011 model: the existing house wall added for both stories; the lower floor joists and roof joists now end on it, and the wind across the house is shared by Line 1 and the house wall. Package rebuilt (62 sheets).
 - Validation: statics by hand (the load per foot on the existing wall equals the joist row's end reaction x 12 / spacing; equal tributary widths give equal shears); test in `tests/test_model_walls.py`. Opened in a headless browser.
 
-## 2026-11-25 17:55 local — 0.222.0 wall weight in the gravity load path (602 tests)
+## 2026-11-25 17:48 local — 0.222.0 wall weight in the gravity load path (602 tests)
 - Same hour. Next item 8(c), first part.
 - Placement card of the shear wall, perforated wall and force-transfer wall screens: "Wall weight (gravity load path)" in psf of wall face, and where it comes from (required with a weight). The wall then passes down, as dead load, psf x the story height (level at its top less the level below, from the model's elevations) x its placed length, together with what bears on it; the note on the load path states the product and the source. A wall with a weight and nothing bearing on it now passes its weight down too. Blank = not included, as before. Refused with a plain message: no source, no elevations, not placed.
 - Validation by statics: 10 psf on a 9.5 ft story adds 95 lb/ft to the continuous footing under each wall so weighted (test on the 2026-011 model). Opened in a headless browser.
 
-## 2026-11-25 18:05 local — 0.223.0 posts on continuous footing lines (603 tests)
+## 2026-11-25 17:58 local — 0.223.0 posts on continuous footing lines (603 tests)
 - Same hour. Next item 8(b).
 - Continuous footing placement card: "Footing line: a point load (post, column) spreads over" (ft) and where that length comes from. With both, a post or column whose base lands on that footing line is linked to it and its load by case divided by that length is added per foot, with the other loads on the footing, before the governing combinations are picked; the load path line reads "reaction of Column A, base, spread over 4 ft of footing". Without them the post is reported as before (now naming the box). The length is the engineer's, typed with its source; StruKit picks none.
 - Validation by statics (twice the length gives half the load per foot); the report without the length. Test on the 2026-011 model. Opened in a headless browser.
 
-## 2026-11-25 18:25 local — 0.224.0 headers in bearing walls (605 tests)
+## 2026-11-25 18:12 local — 0.224.0 headers in bearing walls (605 tests)
 - Zach 18:01: work through the model-gap list (Next item 8) before returning to the main list.
 - **A beam placed in a wall line at the wall's top level is a header** (any beam screen: wood, LVL, glulam, Weyerhaeuser, I-joist, steel). In the load path:
   - a row of joists or rafters landing on that wall line is split along the line: the length over each header goes onto the header as a load per foot over the overlap (header's own coordinates), and the wall keeps the rest of the row's length;
@@ -681,7 +681,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Applied, not ruled (conservative; in the rulings file):** point loads on a footing line are all added to its per-foot load as if at one place; wall weight is over the whole length with openings not deducted; existing walls list both wind and seismic shear.
 - Not yet: king studs and jack studs as checked members; openings in the wall weight; headers in the plan drawn differently from beams.
 
-## 2026-11-25 18:35 local — 0.225.0 headers at wall corners; Roof Beam A placed (606 tests)
+## 2026-11-25 18:20 local — 0.225.0 headers at wall corners; Roof Beam A placed (606 tests)
 - Zach 18:08: "Did you run the roof rafters also?" The roof joists were in the model (one row, Line 1 wall to the existing house wall, level as entered); Roof Beam A was not placed.
 - **Roof Beam A placed** in the 2026-011 model as the LVL header in the Line 1 wall at the roof, from the Line A corner, 11.25 ft (sheet S3 by scale; the length equals the span on its own sheet). Its typed loads were dropped except self-weight: it now takes the roof joist row over 0.5 to 11.25 ft from the load path, and the Line 1 wall keeps the rest.
 - **A header end at a wall corner:** where two walls are under a header's jack studs, the one on the header's own wall line takes it (it was reported as "more than one member under it").
