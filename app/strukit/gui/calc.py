@@ -239,9 +239,10 @@ FORMS = {
                 F("restraint", "Lateral-torsional restraint", "select", options=["none between the ends", "at midspan only", "continuous along the length"],
                   help="continuous: for example a deck or sheathing fastened along the angle"),
                 F("self_weight", "Add the angle's own weight as dead load", "select", options=["yes", "no"])],
-        tables=[T("loads", "Loads", [CASE, F("kind", "Load", "select", options=["uniform, full span", "point"]), F("value", "Value (kip/ft or kip)"),
+        tables=[T("loads", "Loads", [CASE, F("kind", "Load", "select", options=["uniform, full span", "point", "axial, through the centroid"]),
+                                     F("value", "Value (kip/ft or kip)", help="axial: compression positive, tension negative"),
                                      F("x", "Point load at, from the left support", unit="ft", required=False),
-                                     F("dir", "Direction", "select", options=["down", "sideways"], help="sideways: horizontal, positive from the toe of the horizontal leg toward the heel"),
+                                     F("dir", "Direction", "select", options=["down", "sideways"], required=False, help="blank = down; sideways: horizontal, positive from the toe of the horizontal leg toward the heel; not used for axial"),
                                      F("label", "Note", "text", required=False)]),
                 T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L (service)"),
                                                 F("ratio", "Span /"), F("source", "Source", "text")])]),
@@ -2007,6 +2008,9 @@ def _build(kind, values, project):
         loads = []
         for n_, x in enumerate(r.rows("loads"), 1):
             uni = (x.get("kind") or "").startswith("uniform")
+            if (x.get("kind") or "").startswith("axial"):
+                loads.append(dict(case=x["case"], kind="axial", P=x["value"], **({"label": x["label"]} if x.get("label") else {})))
+                continue
             if not uni and x.get("x") is None:
                 r.miss.append(f"Loads, row {n_}: a point load needs its position")
                 continue
