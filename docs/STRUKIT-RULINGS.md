@@ -220,14 +220,14 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - Larger pads go up in 3 in. steps; their thickness starts at the line's (kept if the engineer changes it), bars at the line's transverse
   bar size and spacing both ways; the pad's own sheet checks bearing, shear, flexure and minimum steel.
 
-## 2026-11-25 19:30, header studs (0.230.0), applied (not ruled; tell Zach at the check-in)
+## 2026-11-25 19:28, header studs (0.230.0), applied (not ruled; tell Zach at the check-in)
 - Jack studs carry the whole end reaction of the header; king studs carry no part of it.
 - Jack and king studs: Ke = 1.0 both ways (pinned top and bottom, NDS Appendix G); unbraced out of the wall plane over their full height;
   along the wall at the bracing typed (blank = full height).
 - King studs take the wind on the wall (strength-level pressure typed with its source) over half the opening plus half a stud space, shared
   equally among the king studs at that side, as a uniform load over their height; no axial load.
 
-## 2026-11-25 19:55, wood members in the 3D frame (0.231.0), applied (not ruled; tell Zach at the check-in)
+## 2026-11-25 19:40, wood members in the 3D frame (0.231.0), applied (not ruled; tell Zach at the check-in)
 - Stiffness of a wood member in the frame: the reference E of its grade (NDS Supplement Tables 4A-4D, 5A; ESR-1040 / ESR-1387), not adjusted;
   glulam columns take Emin (StruKit's Table 5B file has no E). Gross section b x d. Torsion: J of the rectangle, G = E / 16 (approximate).
 - In the sway run the frame's 0.8 stiffness reduction (AISC direct analysis method) applies to wood members too.

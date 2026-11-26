@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 19:55. Build **0.231.0**, 612 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 19:40. Build **0.231.0**, 612 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -725,7 +725,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - Validation: the jack loads equal the header's end reactions by case (statics); the king load by hand (25 psf, 11.25 ft opening, 16 in. studs, two kings: 78.6 plf); both sheets run; a second run makes no duplicates. "Link members by position" pressed twice in a headless browser with jacks on Roof Beam A: two jack columns, OK, no page errors.
 - Not yet: the studs carrying down to what is under the wall separately from the header end (the header end already goes down the jacks' line in the load path), trimmers under sills, cripples.
 
-## 2026-11-25 19:55 local — 0.231.0 wood beams and posts in the 3D frame (612 tests)
+## 2026-11-25 19:40 local — 0.231.0 wood beams and posts in the 3D frame (612 tests)
 - Zach 19:16, second item.
 - **The gravity frame check and the sway run take placed wood beams (sawn, LVL, glulam, Weyerhaeuser) and wood columns (sawn posts, built-up columns, LVL, Weyerhaeuser and glulam columns)** beside steel: section b x d from the screen (dressed sizes, laminations side by side), E of the grade (glulam columns Emin), J of the rectangle, G = E / 16 (`_wood_frame_section`). Their loads in lb and plf are converted to kips; a wood unit weight on the screen adds self-weight. Members with a spacing (rows of joists or rafters) and I-joists stay out of the frame (their loads come through the load path), and the run says so. Wood members are not checked from the frame forces (the sway table shows "wood: on its own sheet"); steel members are checked as before. The frame needs at least one placed beam and one placed column of either material.
 - 2026-011 model as one frame (LVL floor beams, built-up posts, pipe columns, Roof Beam A): column base loads by case within 3 percent of the takedown (continuity of the three-span Floor Beam A moves a little load between supports). With pinned bases and pinned beam ends the sway run reports that nothing holds the building against sway (the house's lateral system is its shear walls, which are not frame members).
