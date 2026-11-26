@@ -1066,3 +1066,15 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation: AISC Design Examples v16.0 Example F.14**, LRFD and ASD on the Steel Beam screen with the example's loads (V 281 / 207 kips, q
   3.74 / 2.76 kip/in., 3/16 in. welds 8.35 / 5.57 kip/in., web rupture 14.6 / 9.75 kip/in., 6 in. at 12 in. intermittent) (`tests/test_builtup.py`);
   the concentrated load term by hand.
+
+## 2026-11-26 16:20 MST — 0.266.0 pictures to the visual standard: HSS column, wood connections, single-angle elevation (Next 2)
+- **HSS or Pipe Column:** the elevation is a tube (corner lines, or shading for a pipe; width exaggerated and said so), a hinge on a hatched
+  support at the base, the top held sideways (rollers against a hatched line), the axial loads stacked clear of the hinge, the moments entered
+  listed by case, Kx and Ky; the section to scale as before.
+- **Bolted and lag screw connections:** the member face with its grain, broken off beyond the fasteners, each bolt with its washer, hex nut and
+  bolt end (lag screws: the hex head); new section through a row of bolts (members cut across their length showing end grain, steel side
+  plates cut and hatched, the bolts with head, washer and nut). Loaded perpendicular to grain: the member face with grain and the bolts the same.
+- **Nailed, toe-nailed and lag screw sections:** the members with grain, broken off where they continue, the nail head drawn; the toe-nailed
+  side member standing with its grain vertical; a steel side plate cut and hatched.
+- **Single-Angle Beam:** the elevation shows the horizontal leg edge-on at the heel (bottom with the toe up, top with the toe down).
+- Every changed picture rendered and looked at; the overlap audit passes. The I-joist web stays the plain OSB colour (it is OSB).
