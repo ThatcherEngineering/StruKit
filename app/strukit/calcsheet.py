@@ -1389,11 +1389,8 @@ def _picture(c, top, pic):
             c.saveState(); c.translate(cx, cy); c.rotate(90)
             memberart.steel_section(c, 0, 0, d["bf"] * s, d["d"] * s, d["d"], d["bf"], d["tf"], d["tw"])
             c.restoreState()
-        else:                                             # rectangular HSS, depth along the moment (page width)
-            wall = max(d["tf"] * s, 1.2)
-            c.setFillColorRGB(*memberart.STEEL_FILL); c.rect(cx - d["d"] * s / 2, cy - d["bf"] * s / 2, d["d"] * s, d["bf"] * s, fill=1, stroke=1)
-            c.setFillColorRGB(0.87, 0.90, 0.93)
-            c.rect(cx - d["d"] * s / 2 + wall, cy - d["bf"] * s / 2 + wall, d["d"] * s - 2 * wall, d["bf"] * s - 2 * wall, fill=1, stroke=1)
+        else:                                             # HSS cut above the plate, depth along the moment (page width)
+            memberart.hss_plan(c, cx, cy, d["d"] * s, d["bf"] * s, max(d["tf"] * s, 1.2), rnd=d.get("kind") == "round", inside=(0.87, 0.90, 0.93))
         r = max(d["rod_d"] * s / 2, 1.3)
         for sx in (-1, 1):
             for k in range(d["n"]):
@@ -1413,14 +1410,15 @@ def _picture(c, top, pic):
         c.setLineWidth(0.6); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(*memberart.STEEL_FILL)
         c.rect(px, py, N * s2, tp, fill=1, stroke=1)
         cw = d["d"] * s2
-        c.rect(px + N * s2 / 2 - cw / 2, py + tp, cw, 22, fill=1, stroke=1)
-        c.setFillColorRGB(*memberart.STEEL_LINE)
-        tfp = max(d["tf"] * s2, 1.2)
-        c.rect(px + N * s2 / 2 - cw / 2, py + tp, tfp, 22, fill=1, stroke=0)
-        c.rect(px + N * s2 / 2 + cw / 2 - tfp, py + tp, tfp, 22, fill=1, stroke=0)
-        for sx in (0, 1):                                   # rods
+        if d.get("kind", "I") == "I":                       # W column cut through the web: the flanges at each side
+            memberart.w_side(c, px + N * s2 / 2 - cw / 2, py + tp, cw, 22, d["tf"] * s2)
+        else:                                               # HSS cut through its middle: the two walls
+            memberart.hss_cut_side(c, px + N * s2 / 2 - cw / 2, py + tp, cw, 22, d["tf"] * s2)
+        _break_h(c, px + N * s2 / 2 - cw / 2, px + N * s2 / 2 + cw / 2, py + tp + 22, amp=2.0)
+        for sx in (0, 1):                                   # rods, with a nut and washer on the plate
             rx = px + (d["edge"] if sx == 0 else N - d["edge"]) * s2
             c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(1.1); c.line(rx, py - 16, rx, py + tp + 5)
+            c.setFillColorRGB(0.20, 0.22, 0.25); c.rect(rx - 2.6, py + tp, 5.2, 2.2, fill=1, stroke=0)
         Y = d["Y"] * s2                                     # bearing block at the right (compression) edge
         c.setFillColorRGB(0.86, 0.90, 0.95); c.setStrokeColorRGB(*BLUE); c.setLineWidth(0.6)
         c.rect(px + N * s2 - Y, py - 9, Y, 9, fill=1, stroke=1)
@@ -1431,7 +1429,7 @@ def _picture(c, top, pic):
             c.line(rx, py + tp + 6, rx, py + tp + 18)
             t = c.beginPath(); t.moveTo(rx, py + tp + 21); t.lineTo(rx - 2.5, py + tp + 16); t.lineTo(rx + 2.5, py + tp + 16); t.close()
             c.drawPath(t, fill=1, stroke=0)
-            c.setFont(FM, 6); c.drawString(px - 2, py + tp + 24, f"T = {d['T']:.1f} k")
+            c.setFont(FM, 6); c.drawString(px - 2, py + tp + 26, f"T = {d['T']:.1f} k")
         _small(c, 476, top - 104, f"dimensions in inches; section shows the bearing block and rod tension for {d['case']}")
         return top - 124
     if name == "footing_moment":
@@ -1510,8 +1508,8 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         _steps(p, sheet.steps_title, sheet.steps)
     for b in sheet.blocks:
         if b.get("picture"):
-            p.room(515 if b["picture"][0] == "model3d" else 316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
-                   230 if b["picture"][0] in ("anchorage", "perforated_wall", "base_biaxial", "frame3d") else 250 if b["picture"][0] == "flush_end_plate" else 215 if b["picture"][0] == "lag" else 175)
+            n_info = sum(len(_split(v, 104)) for _, v in b.get("info", ())) + len(b.get("text", ()))
+            p.room(min(_picture_height(b["picture"]) + 22 + 10 * n_info, 700))
             if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "collector", "nailed", "toe_nail", "lag", "bolted", "bolted_perp", "model3d"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
                 continue
@@ -1614,6 +1612,17 @@ def _beam_loads(c, x0, x1, y, span, loads):
     c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK)
 
 
+def _picture_height(pic):
+    """Height a block picture takes, found by drawing it on a scratch canvas, so the page breaks before it rather than through it."""
+    import io
+    from reportlab.pdfgen import canvas as _cv
+    try:
+        c = _cv.Canvas(io.BytesIO(), pagesize=(612, 792))
+        return 760.0 - _block_picture(c, 760.0, pic)
+    except Exception:
+        return 230.0
+
+
 def _block_picture(c, top, pic):
     """Full-width pictures for the further blocks of a SimpleSheet. Returns the y below."""
     name, d = pic
@@ -1698,6 +1707,7 @@ def _block_picture(c, top, pic):
     if name != "anchorage":
         return top
     SN, SB, N, B = d["sup_N"], d["sup_B"], d["N"], d["B"]
+    col = d.get("col")
     g = lambda v: f"{v:.2f}".rstrip("0").rstrip(".")
     # ---- plan: the moment and the shear act along the page width
     _sketch_title(c, LM + 6, top - 4, "PLAN")
@@ -1707,6 +1717,13 @@ def _block_picture(c, top, pic):
     px, py = x0 + (SN - N) * s / 2, y0 + (SB - B) * s / 2
     c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(0.87, 0.90, 0.93)
     c.rect(px, py, N * s, B * s, fill=1, stroke=1)
+    if col:
+        if col.get("kind", "I") == "I":
+            c.saveState(); c.translate(px + N * s / 2, py + B * s / 2); c.rotate(90)
+            memberart.steel_section(c, 0, 0, col["bf"] * s, col["d"] * s, col["d"], col["bf"], col["tf"], col["tw"])
+            c.restoreState()
+        else:
+            memberart.hss_plan(c, px + N * s / 2, py + B * s / 2, col["d"] * s, col["bf"] * s, col["tf"] * s, inside=(0.87, 0.90, 0.93))
     r = max(d["rod_d"] * s / 2, 1.4)
     ys = [y0 + (d["c_side"] + k * d["s_row"]) * s for k in range(d["n"])] if d["n"] > 1 else [y0 + SB * s / 2]
     xs = [x0 + d["c_end"] * s, x0 + (d["c_end"] + d["s_rows"]) * s]
@@ -1737,6 +1754,14 @@ def _block_picture(c, top, pic):
     memberart._concrete(c, cx0, ctop - d["ha"] * s2, SN * s2, d["ha"] * s2, seed=9)
     c.setLineWidth(0.6); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(*memberart.STEEL_FILL)
     c.rect(cx0 + (SN - N) * s2 / 2, ctop, N * s2, tp, fill=1, stroke=1)
+    col = d.get("col")
+    if col:                                                 # the column on the plate, cut through its middle and broken off
+        cw, xm = col["d"] * s2, cx0 + SN * s2 / 2
+        if col.get("kind", "I") == "I":
+            memberart.w_side(c, xm - cw / 2, ctop + tp, cw, 16, col["tf"] * s2)
+        else:
+            memberart.hss_cut_side(c, xm - cw / 2, ctop + tp, cw, 16, col["tf"] * s2)
+        _break_h(c, xm - cw / 2, xm + cw / 2, ctop + tp + 16, amp=2.0)
     for k in (0, 1):
         rx = cx0 + (d["c_end"] + k * d["s_rows"]) * s2
         c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(1.1)
@@ -2229,20 +2254,47 @@ def _shear_lug_picture(c, top, d):
     """Section along the shear, to scale: base plate, grout, the lug down into the concrete, the concrete edge at ca1, with tbp, grout,
     embedment, lug thickness and ca1 dimensioned; plan of the plate with the lug width and the rod square dimensioned."""
     bsl, tsl, hsl, tg, tbp, N, ca1, s_ = d["bsl"], d["tsl"], d["hsl"], d["tg"], d["tbp"], d["N"], d["ca1"], d["s"]
+    col, cru = d.get("col"), d.get("cruci")
     span = N / 2 + max(ca1 + tsl / 2, N / 2) + 4
     sc = min(230.0 / span, 110.0 / (tbp + tg + hsl + 6), 12.0)
     xc = LM + 50 + (N / 2 + 2) * sc                                  # lug centre
-    yt = top - 26                                                    # top of the plate
+    hcol = 22.0 if col else 0.0                                      # the column drawn above the plate, broken off
+    yt = top - 26 - hcol                                             # top of the plate
     yg = yt - tbp * sc                                               # underside of the plate = top of grout
     yc = yg - tg * sc                                                # top of concrete
     yb = yc - (hsl + 5) * sc
     xe = xc + (tsl / 2 + ca1) * sc                                   # concrete edge toward the shear
-    c.setFillColorRGB(*memberart.CONC_FILL) if hasattr(memberart, "CONC_FILL") else c.setFillColorRGB(0.88, 0.88, 0.86)
+    memberart._concrete(c, xc - (N / 2 + 2) * sc, yb, xe - (xc - (N / 2 + 2) * sc), yc - yb, seed=4)                    # concrete
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.6)
-    c.rect(xc - (N / 2 + 2) * sc, yb, xe - (xc - (N / 2 + 2) * sc), yc - yb, fill=1, stroke=1)
-    c.setFillColorRGB(0.95, 0.94, 0.90); c.rect(xc - N / 2 * sc, yc, N * sc, tg * sc, fill=1, stroke=1)               # grout
-    c.setFillColorRGB(0.55, 0.62, 0.72); c.rect(xc - N / 2 * sc, yg, N * sc, tbp * sc, fill=1, stroke=1)               # plate
-    c.rect(xc - tsl / 2 * sc, yc - hsl * sc, tsl * sc, (hsl + tg) * sc, fill=1, stroke=1)                              # lug
+    c.setFillColorRGB(0.93, 0.92, 0.88); c.rect(xc - N / 2 * sc, yc, N * sc, tg * sc, fill=1, stroke=1)               # grout
+    c.saveState(); gp = c.beginPath(); gp.rect(xc - N / 2 * sc, yc, N * sc, tg * sc); c.clipPath(gp, stroke=0, fill=0)
+    c.setFillColorRGB(0.62, 0.60, 0.55)
+    for k in range(int(N * tg * 1.5)):
+        c.circle(xc - N / 2 * sc + ((k * 37) % 100) / 100 * N * sc, yc + ((k * 61) % 100) / 100 * tg * sc, 0.25, fill=1, stroke=0)
+    c.restoreState()
+    if cru:                                                          # the plate of the cross lying in this section, cut
+        c.setFillColorRGB(*memberart.STEEL_FILL); c.setStrokeColorRGB(*memberart.STEEL_LINE)
+        c.rect(xc - bsl / 2 * sc, yc - hsl * sc, bsl * sc, (hsl + tg) * sc, fill=1, stroke=1)
+    c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE)
+    c.rect(xc - N / 2 * sc, yg, N * sc, tbp * sc, fill=1, stroke=1)                                                      # plate, cut
+    memberart._hatch_rect(c, xc - N / 2 * sc, yg, N * sc, tbp * sc)
+    c.rect(xc - tsl / 2 * sc, yc - hsl * sc, tsl * sc, (hsl + tg) * sc, fill=1, stroke=1)                              # lug, cut
+    memberart._hatch_rect(c, xc - tsl / 2 * sc, yc - hsl * sc, tsl * sc, (hsl + tg) * sc)
+    if col:                                                          # the column on the plate, cut through its middle
+        cw = col["d"] * sc
+        if col["kind"] == "I":
+            memberart.w_side(c, xc - cw / 2, yt, cw, hcol, col["tf"] * sc)
+        else:
+            memberart.hss_cut_side(c, xc - cw / 2, yt, cw, hcol, col["tf"] * sc)
+        _break_h(c, xc - cw / 2, xc + cw / 2, yt + hcol, amp=2.0)
+    rd = d.get("rod_d") or 0.75                                      # the rods each side, nut and washer on the plate
+    for sg in (-1, 1):
+        rx = xc + sg * s_ / 2 * sc
+        hb_ = min((d.get("hef") or hsl + 4) * sc, yc - yb - 4)
+        c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(max(rd * sc * 0.5, 1.0)); c.line(rx, yc - hb_, rx, yt + 4)
+        c.setFillColorRGB(0.20, 0.22, 0.25)
+        c.rect(rx - rd * sc * 0.9, yt, rd * sc * 1.8, max(rd * sc * 0.6, 2.0), fill=1, stroke=0)
+        c.rect(rx - rd * sc * 0.9, yc - hb_ - 2, rd * sc * 1.8, 2, fill=1, stroke=0)
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
     _arrow(c, xc - N / 2 * sc - 20, yt + 9, xc - N / 2 * sc + 18, yt + 9, head=3)
     c.setFont(FR, 6); c.drawRightString(xc - N / 2 * sc - 23, yt + 7, "V")
@@ -2251,25 +2303,38 @@ def _shear_lug_picture(c, top, d):
     memberart._dim_v(c, yc, yg, xr - 30 if tg * sc < 8 else xr, f"grout {tg:g} in", FR, ext_from=xc - N / 2 * sc)
     memberart._dim_v(c, yc - hsl * sc, yc, xc - tsl / 2 * sc - 10, f"{hsl:g} in", FR, ext_from=xc - tsl / 2 * sc)
     memberart._dim_h(c, xc - tsl / 2 * sc, xc + tsl / 2 * sc, yc - hsl * sc - 10, f"{tsl:g} in", FR, ext_from=yc - hsl * sc)
-    memberart._dim_h(c, xc + tsl / 2 * sc, xe, yb + 8, f"ca1 {ca1:g} in", FR)
+    memberart._dim_h(c, xc + tsl / 2 * sc, xe, yb - 8, f"ca1 {ca1:g} in", FR, ext_from=yb)
     c.setFillColorRGB(*INK); c.setFont(FR, 6)
     c.drawString(xc + N / 2 * sc + 4, yt - 6, f"PL {tbp:g} in.")
-    c.drawString(xc + tsl / 2 * sc + 4, yc - hsl * sc / 2 - 2, f"{d['weld']:g} in. fillets both faces")
-    _small(c, (xc - N / 2 * sc + xe) / 2, yb - 10, "section along the shear, to scale")
+    if col:
+        c.drawString(xc + col["d"] * sc / 2 + 4, yt + hcol - 6, col.get("name", ""))
+    c.drawString(xc + N / 2 * sc + 4, yt - 14, f"lug {tsl:g} in., {d['weld']:g} in. fillets both faces")
+    _small(c, (xc - N / 2 * sc + xe) / 2, yb - 26, "section along the shear, to scale")
     # plan
     ps = min(90.0 / N, 6.0)
     px, py = RM - 70, top - 22 - N * ps / 2
     c.setFillColorRGB(0.86, 0.89, 0.93); c.setStrokeColorRGB(*INK); c.setLineWidth(0.7)
     c.rect(px - N * ps / 2, py - N * ps / 2, N * ps, N * ps, fill=1, stroke=1)
-    c.setDash(2, 2); c.rect(px - tsl * ps / 2, py - bsl * ps / 2, tsl * ps, bsl * ps, fill=0, stroke=1); c.setDash()
+    if col:                                                          # the column on the plate, cut above it
+        if col["kind"] == "I":
+            c.saveState(); c.translate(px, py); c.rotate(90)
+            memberart.steel_section(c, 0, 0, col["bf"] * ps, col["d"] * ps, col["d"], col["bf"], col["tf"], col["tw"])
+            c.restoreState()
+        else:
+            memberart.hss_plan(c, px, py, col["d"] * ps, col["bf"] * ps, col["tf"] * ps, rnd=col["kind"] == "round", inside=(0.86, 0.89, 0.93))
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.7)
+    c.setDash(2, 2); c.rect(px - tsl * ps / 2, py - bsl * ps / 2, tsl * ps, bsl * ps, fill=0, stroke=1)
+    if cru:
+        c.rect(px - bsl * ps / 2, py - tsl * ps / 2, bsl * ps, tsl * ps, fill=0, stroke=1)
+    c.setDash()
     c.setFillColorRGB(1, 1, 1)
     for sx in (-1, 1):
         for sy in (-1, 1):
             c.circle(px + sx * s_ / 2 * ps, py + sy * s_ / 2 * ps, 1.8, fill=1, stroke=1)
     memberart._dim_v(c, py - bsl * ps / 2, py + bsl * ps / 2, px - N * ps / 2 - 10, f"lug {bsl:g} in", FR, ext_from=px - tsl * ps / 2)
     memberart._dim_h(c, px - s_ / 2 * ps, px + s_ / 2 * ps, py - N * ps / 2 - 10, f"{s_:g} in", FR, ext_from=py - s_ / 2 * ps)
-    _small(c, px, py - N * ps / 2 - 28, "plan; lug dashed")
-    return min(yb - 18, py - N * ps / 2 - 36)
+    _small(c, px, py - N * ps / 2 - 28, "plan; lug below the plate dashed" if not cru else "plan; cruciform lug below the plate dashed")
+    return min(yb - 34, py - N * ps / 2 - 36)
 
 
 def _tension_picture(c, top, d):
@@ -2300,10 +2365,7 @@ def _base_plate_uplift_picture(c, top, d):
     cx, cy = (LM + RM) / 2, top - 22 - N * sc / 2
     c.setFillColorRGB(0.90, 0.92, 0.95); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
     c.rect(cx - B * sc / 2, cy - N * sc / 2, B * sc, N * sc, fill=1, stroke=1)
-    c.setFillColorRGB(0.55, 0.62, 0.72); c.setLineWidth(0.5)
-    for sy in (1, -1):
-        c.rect(cx - bf * sc / 2, cy + sy * (dd / 2 - tf / 2) * sc - tf * sc / 2, bf * sc, max(tf * sc, 1.2), fill=1, stroke=1)
-    c.rect(cx - max(tw * sc, 1.0) / 2, cy - (dd / 2 - tf) * sc, max(tw * sc, 1.0), (dd - 2 * tf) * sc, fill=1, stroke=1)
+    memberart.steel_section(c, cx, cy, bf * sc, dd * sc, dd, bf, tf, tw, k=d.get("k"))       # the column cut above the plate
     c.setFillColorRGB(1, 1, 1); c.setLineWidth(0.8)
     for sx in (1, -1):
         for sy in (1, -1):
@@ -2320,43 +2382,126 @@ def _base_plate_uplift_picture(c, top, d):
 
 
 def _single_plate_picture(c, top, d):
-    """Elevation of the shear tab, to scale: the column wall at the left, the plate, the bolts and the beam end; a, the horizontal edge
-    distance, the vertical edge distances, the bolt spacing and the plate length dimensioned; weld and plate called out."""
+    """Elevation of the shear tab and a plan section through the beam web, to scale: the column (HSS drawn as a tube, or the support
+    plate), the plate welded to it, the bolts and the beam with its flanges; a, the horizontal edge distance, the vertical edge distances,
+    the bolt spacing and the plate length dimensioned; plate and weld called out on the plan."""
     n, s_, lev, leh, a, L = d["n"], d["s"], d["lev"], d["leh"], d["a"], d["L"]
-    sc = min(130.0 / L, 15.0)
-    xw = (LM + RM) / 2 - 60                                   # face of the column wall
-    yc = top - 22 - L * sc / 2 - 8
+    bd, btf, btw, bbf = d.get("bd") or L + 4, d.get("btf") or 0.5, d.get("btw") or 0.35, d.get("bbf") or 6.0
+    hss, t, sup = d.get("hss"), d.get("t") or 0.5, d.get("sup")
+    sc = min(130.0 / max(L, bd, sup["d"] if sup and sup["web"] else 0), 15.0)
+    xw = LM + 130                                             # face of the column wall
+    yc = top - 26 - max(L, bd) * sc / 2
     y0, y1 = yc - L * sc / 2, yc + L * sc / 2
-    colw = 26
-    c.setFillColorRGB(0.82, 0.85, 0.89); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
-    c.rect(xw - colw, y0 - 20, colw, L * sc + 40, fill=1, stroke=0)
-    c.line(xw, y0 - 20, xw, y1 + 20); c.line(xw - colw, y0 - 20, xw - colw, y1 + 20)
+    yb0, yb1 = yc - bd * sc / 2, yc + bd * sc / 2
+    ylo, yhi = min(y0, yb0) - 10, max(y1, yb1) + 10
+    if hss:
+        colw = min(d["H"] * sc, 70.0)
+        memberart.hss_elevation(c, xw - colw, ylo, colw, yhi - ylo, t * sc, rnd=d.get("rnd"))
+    elif sup and sup["web"]:                                  # girder web: the girder cut, web at the face
+        ylo, yhi = min(ylo, yc - sup["d"] * sc / 2 - 6), max(yhi, yc + sup["d"] * sc / 2 + 6)
+        colw = sup["bf"] * sc / 2
+        memberart.steel_section(c, xw - sup["tw"] * sc / 2, yc, sup["bf"] * sc, sup["d"] * sc, sup["d"], sup["bf"], sup["tf"], sup["tw"])
+    elif sup:                                                 # column flange: the column seen from the side, flange at the face
+        colw = min(sup["d"] * sc, 80.0)
+        memberart.w_side(c, xw - colw, ylo, colw, yhi - ylo, sup["tf"] * sc)
+    else:
+        colw = max(t * sc, 3.0)
+        c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.setFillColorRGB(*memberart.STEEL_CUT)
+        c.rect(xw - colw, ylo, colw, yhi - ylo, fill=1, stroke=1)
+    if not (sup and sup["web"]):
+        _break_h(c, xw - colw, xw, ylo); _break_h(c, xw - colw, xw, yhi)
     xb = xw + 0.5 * sc                                        # beam end, 1/2 in. clear of the column
-    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.6)
-    c.line(xb, y0 - 14, xb, y1 + 14)
-    for yy in (y0 - 14, y1 + 14):
-        c.line(xb, yy, xb + (a + leh) * sc + 46, yy)
-    c.setDash(2, 2); c.line(xb + (a + leh) * sc + 46, y0 - 14, xb + (a + leh) * sc + 46, y1 + 14); c.setDash()
-    c.setFillColorRGB(0.74, 0.79, 0.86); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
+    xe = xb + (a + leh) * sc + 46
+    cp = d.get("cope")
+    if cp:                                                    # the coped beam end, cut to its outline
+        xc_ = xb + cp["c"] * sc
+        yt, ybm = yb1 - cp["dc"] * sc, yb0 + cp["dcb"] * sc
+        c.saveState()
+        pth = c.beginPath(); pth.moveTo(xb, ybm); pth.lineTo(xc_, ybm); pth.lineTo(xc_, yb0); pth.lineTo(xe, yb0); pth.lineTo(xe, yb1)
+        pth.lineTo(xc_, yb1); pth.lineTo(xc_, yt); pth.lineTo(xb, yt); pth.close()
+        c.clipPath(pth, stroke=0, fill=0)
+        memberart.w_side(c, xb, yb0, xe - xb, bd * sc, btf * sc, vertical=False)
+        c.restoreState()
+        c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.drawPath(pth, fill=0, stroke=1)
+    else:
+        memberart.w_side(c, xb, yb0, xe - xb, bd * sc, btf * sc, vertical=False)
+    _break_v(c, xe, yb0, yb1)
+    c.setFillColorRGB(0.66, 0.72, 0.80); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
     c.rect(xw, y0, (a + leh) * sc, L * sc, fill=1, stroke=1)
     c.setFillColorRGB(1, 1, 1)
     ys = [y1 - (lev + k * s_) * sc for k in range(n)]
     for y in ys:
         c.circle(xw + a * sc, y, max(1.8, d["d"] * sc / 2), fill=1, stroke=1)
-    memberart._dim_h(c, xw, xw + a * sc, y0 - 26, f"a {a:g} in", FR, ext_from=y0)
-    memberart._dim_h(c, xw + a * sc, xw + (a + leh) * sc, y0 - 42, f"{leh:g} in", FR, ext_from=y0)
-    xr = xw + (a + leh) * sc + 56
+    yd = ylo - 6
+    memberart._dim_h(c, xw, xw + a * sc, yd, f"a {a:g} in", FR, ext_from=y0)
+    memberart._dim_h(c, xw + a * sc, xw + (a + leh) * sc, yd - 16, f"{leh:g} in", FR, ext_from=y0)
+    xr = xe + 10
     memberart._dim_v(c, ys[0], y1, xr, f"{lev:g} in", FR, ext_from=xw + (a + leh) * sc)
-    memberart._dim_v(c, ys[1], ys[0], xr, f"{s_:g} in" + (" typ." if n > 2 else ""), FR, ext_from=xw + (a + leh) * sc)
+    if n > 1:
+        memberart._dim_v(c, ys[1], ys[0], xr, f"{s_:g} in" + (" typ." if n > 2 else ""), FR, ext_from=xw + (a + leh) * sc)
     memberart._dim_v(c, y0, ys[-1], xr, f"{lev:g} in", FR, ext_from=xw + (a + leh) * sc)
-    memberart._dim_v(c, y0, y1, xr + 44, f"l {L:g} in", FR)
+    memberart._dim_v(c, y0, y1, xr + 40, f"l {L:g} in", FR)
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
-    c.drawRightString(xw - colw - 6, yc + 8, d["column"])
-    c.drawRightString(xw - colw - 6, yc - 1, f"PL {d['tp']:g} in.")
-    c.drawRightString(xw - colw - 6, yc - 10, f"{d['weld']:g} in. fillet each side")
-    c.drawString(xb + (a + leh) * sc + 4, y1 + 17, d["beam"])
-    _small(c, (LM + RM) / 2, y0 - 62, "elevation, to scale; beam web shown behind the plate")
-    return y0 - 70
+    c.drawRightString(xw - colw - 6, yc - 2, d["column"])
+    c.drawString(xb + 4, yhi + 4, d["beam"])
+    _small(c, xw + 40, yd - 34, "elevation, to scale")
+    # ---- plan section through the beam web, looking down
+    H_ = d["H"] if hss else (sup["d"] if sup and not sup["web"] else max(t, 0.5))
+    B_ = d["B"] if hss else (sup["bf"] if sup else 10.0)
+    s2 = min(11.0, 185.0 / (H_ + a + leh + 5), 96.0 / max(B_, bbf + 2))
+    xq = RM - 20 - (a + leh + 5) * s2                         # face of the column in plan
+    cq = (top - 30 + ylo) / 2 + 6
+    tpp = max(d["tp"] * s2, 1.6)
+    yw = cq + tpp                                             # the beam web beside the plate
+    tww = max(btw * s2, 1.4)
+    xbe = xq + 0.5 * s2
+    xpe = RM - 20
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4); c.setFillColorRGB(0.95, 0.96, 0.97)
+    c.rect(xbe, yw + tww / 2 - bbf * s2 / 2, xpe - xbe, bbf * s2, fill=1, stroke=1)          # bottom flange below the cut
+    _break_v(c, xpe, yw + tww / 2 - bbf * s2 / 2, yw + tww / 2 + bbf * s2 / 2)
+    if hss:
+        memberart.hss_plan(c, xq - H_ * s2 / 2, cq, H_ * s2, B_ * s2, t * s2, rnd=d.get("rnd"))
+        if d.get("rnd"):
+            xq = xq - (H_ / 2 - math.sqrt(max((H_ / 2) ** 2 - (tpp / s2) ** 2, 0))) * s2 * 0
+    elif sup and not sup["web"]:                              # the column cut, its flange at the face
+        c.saveState(); c.translate(xq - sup["d"] * s2 / 2, cq); c.rotate(90)
+        memberart.steel_section(c, 0, 0, sup["bf"] * s2, sup["d"] * s2, sup["d"], sup["bf"], sup["tf"], sup["tw"])
+        c.restoreState()
+    else:                                                     # a girder web (its bottom flange seen below the cut) or a plain support
+        tw_ = max(t * s2, 2.5)
+        if sup:
+            c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4); c.setFillColorRGB(0.95, 0.96, 0.97)
+            c.rect(xq - tw_ / 2 - sup["bf"] * s2 / 2, cq - 40, sup["bf"] * s2, 80, fill=1, stroke=1)
+        c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+        c.rect(xq - tw_, cq - 40, tw_, 80, fill=1, stroke=1)
+        memberart._hatch_rect(c, xq - tw_, cq - 40, tw_, 80)
+        _break_h(c, xq - tw_ - (sup["bf"] * s2 / 2 if sup else 0), xq + (sup["bf"] * s2 / 2 - tw_ / 2 if sup else 0), cq - 40)
+        _break_h(c, xq - tw_ - (sup["bf"] * s2 / 2 if sup else 0), xq + (sup["bf"] * s2 / 2 - tw_ / 2 if sup else 0), cq + 40)
+    xp0 = xq - ((H_ - t) * s2 if d.get("through") else 0.0)  # a through plate runs to the far wall
+    c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+    c.rect(xp0, cq, xq + (a + leh) * s2 - xp0, tpp, fill=1, stroke=1)                       # the plate, cut
+    c.rect(xbe, yw, xpe - xbe, tww, fill=1, stroke=1)                                       # the beam web, cut
+    w = max(d["weld"] * s2, 2.0)
+    c.setFillColorRGB(*INK)
+    for xx in ([xq, xp0 + t * s2] if d.get("through") else [xq]):
+        sgn = 1 if xx == xq else -1
+        for yy, up in ((cq + tpp, 1), (cq, -1)):
+            pth = c.beginPath(); pth.moveTo(xx, yy); pth.lineTo(xx + sgn * w, yy); pth.lineTo(xx, yy + up * w); pth.close(); c.drawPath(pth, fill=1, stroke=0)
+    xbolt = xq + a * s2
+    c.setFillColorRGB(*INK); c.setStrokeColorRGB(*INK); c.setLineWidth(max(d["d"] * s2 * 0.6, 1.0))
+    c.line(xbolt, cq - 3, xbolt, yw + tww + 3)
+    c.setLineWidth(0.5)
+    hw = max(d["d"] * s2 * 0.85, 2.0)
+    c.rect(xbolt - hw, cq - 3 - 2, 2 * hw, 2, fill=1, stroke=0); c.rect(xbolt - hw, yw + tww + 3, 2 * hw, 2, fill=1, stroke=0)
+    ypl = cq - (B_ * s2 / 2 if (hss or (sup and not sup["web"])) else 40) - 12
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    xt = xq + 6
+    c.drawString(xt, ypl, f"PL {d['tp']:g} in.")
+    c.drawString(xt, ypl - 8, f"{d['weld']:g} in. fillet each side")
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4)
+    c.line(xt - 1, ypl + 2, xq + 1.5, cq - 0.5)
+    _small(c, xq + 10, ypl - 22, "plan section through the beam web, to scale")
+    return min(yd - 42, ypl - 30)
 
 
 def _coped_end_picture(c, top, d):
@@ -2428,39 +2573,48 @@ def _end_plate_picture(c, top, d):
     """Face view of the end plate, to scale: the plate, the beam section behind it, two vertical rows of bolts; gage, edge distances,
     bolt spacing, plate width and length dimensioned; weld and plate called out."""
     n, s_, lev, leh, g, L, W = d["n"], d["s"], d["lev"], d["leh"], d["gage"], d["L"], d["W"]
-    sc = min(130.0 / L, 110.0 / W, 15.0)
+    bd, bf, tf, tw = d["bd"], d["bf"], d["tf"], d["tw"]             # the beam section behind the plate
+    sc = min(150.0 / max(L, bd), 110.0 / max(W, bf), 15.0)
     xc = (LM + RM) / 2 - 20
-    yc = top - 26 - L * sc / 2
+    yc = top - 26 - max(L, bd) * sc / 2
     x0, x1, y0, y1 = xc - W * sc / 2, xc + W * sc / 2, yc - L * sc / 2, yc + L * sc / 2
+    yb0, yb1 = yc - bd * sc / 2, yc + bd * sc / 2
+    memberart.steel_section(c, xc, yc, bf * sc, bd * sc, bd, bf, tf, tw)
     c.setFillColorRGB(0.86, 0.89, 0.93); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
     c.rect(x0, y0, W * sc, L * sc, fill=1, stroke=1)
-    bd, bf, tf, tw = d["bd"], d["bf"], d["tf"], d["tw"]             # the beam section, centred on the plate
-    c.setFillColorRGB(0.62, 0.68, 0.76); c.setLineWidth(0.5)
-    yb0, yb1 = yc - bd * sc / 2, yc + bd * sc / 2
-    c.rect(xc - bf * sc / 2, yb1 - tf * sc, bf * sc, tf * sc, fill=1, stroke=1)
-    c.rect(xc - bf * sc / 2, yb0, bf * sc, tf * sc, fill=1, stroke=1)
-    c.rect(xc - max(tw * sc, 1.2) / 2, yb0 + tf * sc, max(tw * sc, 1.2), (bd - 2 * tf) * sc, fill=1, stroke=1)
-    c.setFillColorRGB(1, 1, 1); c.setLineWidth(0.9)
+    c.saveState()                                                                                    # the beam behind the plate, hidden
+    clp = c.beginPath(); clp.rect(x0, y0, W * sc, L * sc); c.clipPath(clp, stroke=0, fill=0)
+    c.setDash(2.5, 1.8); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+    for yy in (yb0, yb0 + tf * sc, yb1 - tf * sc, yb1):
+        c.line(xc - bf * sc / 2, yy, xc + bf * sc / 2, yy)
+    for xx in (xc - bf * sc / 2, xc + bf * sc / 2):
+        c.line(xx, yb0, xx, yb0 + tf * sc); c.line(xx, yb1 - tf * sc, xx, yb1)
+    for xx in (xc - tw * sc / 2, xc + tw * sc / 2):
+        c.line(xx, yb0 + tf * sc, xx, yb1 - tf * sc)
+    c.restoreState()
+    c.setStrokeColorRGB(*INK); c.setFillColorRGB(1, 1, 1); c.setLineWidth(0.9)
     ys = [y1 - (lev + k * s_) * sc for k in range(n)]
     for y in ys:
         for x in (xc - g * sc / 2, xc + g * sc / 2):
             c.circle(x, y, max(1.8, d["d"] * sc / 2), fill=1, stroke=1)
-    memberart._dim_h(c, x0, xc - g * sc / 2, y0 - 14, f"{leh:g} in", FR, ext_from=y0)
-    memberart._dim_h(c, xc - g * sc / 2, xc + g * sc / 2, y0 - 14, f"gage {g:g} in", FR, ext_from=y0)
-    memberart._dim_h(c, xc + g * sc / 2, x1, y0 - 14, f"{leh:g} in", FR, ext_from=y0)
-    memberart._dim_h(c, x0, x1, y0 - 32, f"{W:g} in", FR)
-    xr = x1 + 14
+    yd = min(y0, yb0) - 14
+    memberart._dim_h(c, x0, xc - g * sc / 2, yd, f"{leh:g} in", FR, ext_from=y0)
+    memberart._dim_h(c, xc - g * sc / 2, xc + g * sc / 2, yd - 14, f"gage {g:g} in", FR, ext_from=y0)
+    memberart._dim_h(c, xc + g * sc / 2, x1, yd, f"{leh:g} in", FR, ext_from=y0)
+    memberart._dim_h(c, x0, x1, yd - 30, f"{W:g} in", FR)
+    xr = max(x1, xc + bf * sc / 2) + 14
     memberart._dim_v(c, ys[0], y1, xr, f"{lev:g} in", FR, ext_from=x1)
     if n > 1:
         memberart._dim_v(c, ys[1], ys[0], xr, f"{s_:g} in" + (" typ." if n > 2 else ""), FR, ext_from=x1)
     memberart._dim_v(c, y0, ys[-1], xr, f"{(L - lev - (n - 1) * s_):g} in", FR, ext_from=x1)
     memberart._dim_v(c, y0, y1, xr + 44, f"l {L:g} in", FR)
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
-    c.drawRightString(x0 - 8, yc + 8, d["beam"])
-    c.drawRightString(x0 - 8, yc - 1, f"PL {d['tp']:g} in.")
-    c.drawRightString(x0 - 8, yc - 10, f"{d['weld']:g} in. fillet, both sides of the web")
-    _small(c, (LM + RM) / 2, y0 - 46, "face of the end plate, to scale; beam section shown behind the plate")
-    return y0 - 54
+    xl = min(x0, xc - bf * sc / 2) - 8
+    c.drawRightString(xl, yb1 - 6, d["beam"])
+    c.drawRightString(x0 - 8, yc + 4, f"PL {d['tp']:g} in.")
+    c.drawRightString(x0 - 8, yc - 5, f"{d['weld']:g} in. fillet, both sides of the web")
+    _small(c, (LM + RM) / 2, yd - 46, "face of the end plate, to scale; the beam behind the plate dashed")
+    return yd - 54
 
 
 def _frame3d_picture(c, top, d):
@@ -2628,32 +2782,54 @@ def _seat_picture(c, top, d):
     osl, vl, t, sb, N = d["osl"], d["vleg"], d["t"], d["setback"], d["N"]
     sc = min(110.0 / max(vl + 4, 8), 16.0)
     xs = (LM + RM) / 2 - 40                       # face of the support
-    ys = top - 26 - 4 * sc                        # top of the seat
-    c.setFillColorRGB(0.82, 0.85, 0.89); c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
-    c.rect(xs - 14, ys - vl * sc - 12, 14, (vl + 4) * sc + 24, fill=1, stroke=0)
-    c.line(xs, ys - vl * sc - 12, xs, ys + 4 * sc + 12)
-    c.setFillColorRGB(0.62, 0.68, 0.76)
-    c.rect(xs, ys - vl * sc, t * sc, vl * sc, fill=1, stroke=1)                 # vertical leg
-    c.rect(xs, ys - t * sc, osl * sc, t * sc, fill=1, stroke=1)                 # outstanding leg
-    c.setFillColorRGB(0.90, 0.92, 0.95); c.setLineWidth(0.6)
+    ys = top - 30 - min(d.get("bd", 6.0), 5.0) * sc  # top of the seat
+    hb = min(d.get("bd", 6.0), 5.0) * sc                    # the beam drawn to this height, then broken
+    ysup0, ysup1 = ys - vl * sc - 12, ys + hb + 12
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.setFillColorRGB(*memberart.STEEL_FILL)
+    c.rect(xs - 14, ysup0, 14, ysup1 - ysup0, fill=1, stroke=1)                  # the support
+    _break_h(c, xs - 14, xs, ysup0); _break_h(c, xs - 14, xs, ysup1)
+    T, r = t * sc, min(t * sc, 0.4 * (osl - t) * sc)
+    pth = c.beginPath()                                                          # the seat angle, cut: heel at the support, fillet inside the heel
+    pth.moveTo(xs, ys - vl * sc); pth.lineTo(xs + T, ys - vl * sc); pth.lineTo(xs + T, ys - T - r)
+    pth.curveTo(xs + T, ys - T - r / 2, xs + T + r / 2, ys - T, xs + T + r, ys - T)
+    pth.lineTo(xs + osl * sc, ys - T); pth.lineTo(xs + osl * sc, ys); pth.lineTo(xs, ys); pth.close()
+    c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.7)
+    c.drawPath(pth, fill=1, stroke=1)
+    c.saveState(); c.clipPath(pth, stroke=0, fill=0); memberart._hatch_rect(c, xs, ys - vl * sc, osl * sc, vl * sc); c.restoreState()
+    if d.get("kind") == "bolted" and d.get("db"):                                # a bolt through the vertical leg and the support
+        yb_ = ys - T - max(1.5, (vl - t) * 0.55) * sc
+        c.setFillColorRGB(*INK); c.setStrokeColorRGB(*INK); c.setLineWidth(max(d["db"] * sc * 0.7, 1.0))
+        c.line(xs - 14 - 3, yb_, xs + T + 3, yb_)
+        hh = d["db"] * sc * 0.85
+        c.rect(xs + T + 1, yb_ - hh, 2.5, 2 * hh, fill=1, stroke=0); c.rect(xs - 14 - 3.5, yb_ - hh, 2.5, 2 * hh, fill=1, stroke=0)
+    elif d.get("weld"):                                                          # fillet at the angle ends, seen against the leg
+        w_ = max(d["weld"] * sc, 1.5)
+        c.setFillColorRGB(*INK); c.rect(xs + T, ys - vl * sc, min(w_, 4.0) * 0 + 0, 0, fill=0, stroke=0)
+        pw = c.beginPath(); pw.moveTo(xs, ys - vl * sc); pw.lineTo(xs - w_ * 0, ys - vl * sc - w_); pw.lineTo(xs + w_, ys - vl * sc); pw.close()
+        c.drawPath(pw, fill=1, stroke=0)
     xb = xs + sb * sc
-    c.rect(xb, ys, osl * sc + 40, 4 * sc, fill=1, stroke=1)                     # beam end (part)
+    xbe = xs + osl * sc + 40
+    memberart.w_side(c, xb, ys, xbe - xb, hb, d.get("tf", 0.5) * sc, vertical=False)
+    c.setFillColorRGB(*memberart.STEEL_FILL); c.setStrokeColorRGB(*memberart.STEEL_FILL)
+    c.rect(xb + 0.3, ys + hb - d.get("tf", 0.5) * sc - 0.3, xbe - xb - 0.6, d.get("tf", 0.5) * sc + 1, fill=1, stroke=0)   # only the bottom flange is in view
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.line(xb, ys, xb, ys + hb); c.line(xbe, ys, xbe, ys + hb)
+    _break_h(c, xb, xbe, ys + hb)
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
-    _arrow_down(c, xb + N * sc / 2, ys + 4 * sc + 20, ys + 4 * sc + 2, head=3)
-    c.setFont(FR, 6.5); c.drawString(xb + N * sc + 6, ys + 4 * sc + 9, d["R"])     # beside the arrow, clear of the dimension lines
+    _arrow_down(c, xb + N * sc / 2, ys + hb + 20, ys + hb + 2, head=3)
+    c.setFont(FR, 6.5); c.drawString(xb + N * sc + 6, ys + hb + 9, d["R"])     # beside the arrow, clear of the dimension lines
     # two short dimensions side by side: each text sits outside its own end, so the texts and the load label stay clear of each other
-    memberart._dim_h(c, xs, xb, ys + 4 * sc + 34, "", FR, ext_from=ys + 4 * sc)
-    memberart._dim_h(c, xb, xb + N * sc, ys + 4 * sc + 34, "", FR, ext_from=ys + 4 * sc)
+    memberart._dim_h(c, xs, xb, ys + hb + 34, "", FR, ext_from=ys + hb)
+    memberart._dim_h(c, xb, xb + N * sc, ys + hb + 34, "", FR, ext_from=ys + hb)
     c.setFont(FR, 6)
-    c.drawRightString(xs - 5, ys + 4 * sc + 32, f"setback {sb:g} in")
-    c.drawString(xb + N * sc + 5, ys + 4 * sc + 32, f"bearing {N:.2f} in")
+    c.drawRightString(xs - 5, ys + hb + 32, f"setback {sb:g} in")
+    c.drawString(xb + N * sc + 5, ys + hb + 32, f"bearing {N:.2f} in")
     memberart._dim_h(c, xs, xs + osl * sc, ys - vl * sc - 16, f"leg {osl:g} in", FR, ext_from=ys - t * sc)
     memberart._dim_v(c, ys - vl * sc, ys, xs - 26, f"leg {vl:g} in", FR, ext_from=xs)
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawString(xs + osl * sc + 8, ys - t * sc - 2, f"seat angle, t = {t:g} in., {d['length']:g} in. long")
-    c.drawString(xb + osl * sc + 46, ys + 2 * sc - 2, d["beam"])
+    c.drawString(xb + osl * sc + 46, ys + hb / 2 - 2, d["beam"])
     c.drawString(xs + osl * sc + 8, ys - t * sc - 11, d["attach"])
-    _small(c, (LM + RM) / 2, ys - vl * sc - 34, "side view, to scale; top angle not shown")
+    _small(c, (LM + RM) / 2, ys - vl * sc - 34, "side view, to scale; the seat angle cut; top angle not shown")
     return ys - vl * sc - 42
 
 
@@ -2665,13 +2841,12 @@ def _base_biaxial_picture(c, top, d):
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.9)
     c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xc - N / 2 * sc, yc - B / 2 * sc, N * sc, B * sc, fill=1, stroke=1)
     c.setFillColorRGB(0.62, 0.68, 0.76)
-    if d["kind"] == "I":
-        tf, tw = d["tf"], d["tw"]
-        c.rect(xc - dc / 2 * sc, yc - bc / 2 * sc, tf * sc, bc * sc, fill=1, stroke=1); c.rect(xc + (dc / 2 - tf) * sc, yc - bc / 2 * sc, tf * sc, bc * sc, fill=1, stroke=1)
-        c.rect(xc - (dc / 2 - tf) * sc, yc - tw / 2 * sc, (dc - 2 * tf) * sc, tw * sc, fill=1, stroke=1)
-    else:
-        c.rect(xc - dc / 2 * sc, yc - bc / 2 * sc, dc * sc, bc * sc, fill=1, stroke=1)
-        c.setFillColorRGB(0.82, 0.85, 0.89); t_ = d["tf"]; c.rect(xc - (dc / 2 - t_) * sc, yc - (bc / 2 - t_) * sc, (dc - 2 * t_) * sc, (bc - 2 * t_) * sc, fill=1, stroke=1)
+    if d["kind"] == "I":                                  # the column cut above the plate: W with its fillets, depth along N
+        c.saveState(); c.translate(xc, yc); c.rotate(90)
+        memberart.steel_section(c, 0, 0, bc * sc, dc * sc, dc, bc, d["tf"], d["tw"], k=d.get("k"))
+        c.restoreState()
+    else:                                                 # HSS cut above the plate: wall at its thickness, rounded corners
+        memberart.hss_plan(c, xc, yc, dc * sc, bc * sc, d["tf"] * sc, rnd=d["kind"] == "round", inside=(0.82, 0.85, 0.89))
     c.setFillColorRGB(*INK)
     for sx in (-1, 1):
         for sy in (-1, 1):
@@ -2756,7 +2931,8 @@ def _wt_flange_picture(c, top, d):
     x0 = LM + 60
     yc = top - 26 - max(L, Bw) / 2 * sc
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(x0, yc - Bw / 2 * sc, Hc * sc, Bw * sc, fill=1, stroke=1)                          # HSS
+    memberart.hss_plan(c, x0 + Hc * sc / 2, yc, Hc * sc, Bw * sc, d["t"] * sc)                                                     # HSS, cut
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     xf = x0 + Hc * sc
     c.setFillColorRGB(0.62, 0.68, 0.76)
     c.rect(xf, yc - L / 2 * sc, tf * sc, L * sc, fill=1, stroke=1)                                                                  # WT flange
@@ -2780,7 +2956,7 @@ def _wt_flange_picture(c, top, d):
     c.setFont(FR, 6.5); c.setFillColorRGB(*INK)
     c.drawCentredString(x0 + Hc * sc / 2, yc - 3, d["column"])
     yb = ylow - 34
-    _small(c, (LM + RM) / 2, yb, f"plan of the {d['wt']} at a beam flange: the WT flange flare-bevel welded at the HSS corners (dots), the stem bolted to the beam flange; to scale; dimensions in inches")
+    _small(c, (LM + RM) / 2, yb, f"plan of the {d['wt']} at a beam flange: the HSS cut above the WT, the WT flange flare-bevel welded at the HSS corners (dots), the stem bolted to the beam flange; to scale; dimensions in inches")
     return yb - 10
 
 
@@ -2800,10 +2976,12 @@ def _through_plate_picture(c, top, d):
         x1 = xc + sg * (Lp / 2 + 18 / sc) * sc
         c.rect(min(x0, x1), yc - bf / 2 * sc, abs(x1 - x0), bf * sc, fill=1, stroke=1)
     if d.get("cut"):                                                                                                                     # HSS runs through the cut-out
-        c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xc - H / 2 * sc, yc - B / 2 * sc, H * sc, B * sc, fill=1, stroke=1)
+        memberart.hss_plan(c, xc, yc, H * sc, B * sc, d["t"] * sc)
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
         memberart._dim_v(c, yc + B / 2 * sc, yc + bp / 2 * sc, xc + H / 2 * sc - 10, f"ws = {d['ws']:g}", FR, ext_from=xc + H / 2 * sc)
     else:
-        c.setDash(3, 2); c.rect(xc - H / 2 * sc, yc - B / 2 * sc, H * sc, B * sc, fill=0, stroke=1); c.setDash()                         # HSS, dashed
+        memberart.hss_plan(c, xc, yc, H * sc, B * sc, d["t"] * sc, inside=(0.62, 0.68, 0.76))                                          # HSS cut above the plate
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     c.setFillColorRGB(*INK)
     for sg in (-1, 1):
         for i in range(n):
@@ -2825,8 +3003,8 @@ def _through_plate_picture(c, top, d):
     else:                                                                # too wide for the HSS: below it, clear of the flanges
         c.drawCentredString(xc, yc - B / 2 * sc - 9, d["column"])
     yb = yc - max(bp, B, bf) / 2 * sc - 44
-    _small(c, xc, yb, (f"plan of a cut-out plate {d['tp']:g} x {bp:g} in. wrapping the HSS, {d['beam']} flanges bolted each side; to scale; dimensions in inches" if d.get("cut") else
-                       f"plan of a through plate {d['tp']:g} x {bp:g} in. on the HSS (dashed), {d['beam']} flanges bolted each side; to scale; dimensions in inches"))
+    _small(c, xc, yb, (f"plan of a cut-out plate {d['tp']:g} x {bp:g} in. wrapping the HSS (cut above the plate), {d['beam']} flanges bolted each side; to scale; dimensions in inches" if d.get("cut") else
+                       f"plan of a through plate {d['tp']:g} x {bp:g} in. passing through the HSS (cut above the plate), {d['beam']} flanges bolted each side; to scale; dimensions in inches"))
     return yb - 10
 
 
@@ -2840,11 +3018,16 @@ def _cap_plate_picture(c, top, d):
     xc = LM + 150
     yp = top - 70                                  # underside of the cap plate
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xc - B / 2 * sc, yp - 60, B * sc, 60, fill=1, stroke=1)                     # column
+    memberart.hss_elevation(c, xc - B / 2 * sc, yp - 60, B * sc, 60, d.get("t", 0.25) * sc)                                      # HSS column
+    _break_h(c, xc - B / 2 * sc, xc + B / 2 * sc, yp - 60)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xc - Lp / 2 * sc, yp, Lp * sc, tp * sc, fill=1, stroke=1)                   # cap plate
-    c.setFillColorRGB(0.90, 0.92, 0.95); c.rect(xc - Lp / 2 * sc - 30, yp + tp * sc, Lp * sc + 60, tf * sc, fill=1, stroke=1)  # beam bottom flange
-    c.rect(xc - Lp / 2 * sc - 30, yp + (tp + tf) * sc, Lp * sc + 60, 26, fill=1, stroke=0)
-    c.line(xc - Lp / 2 * sc - 30, yp + (tp + tf) * sc + 26, xc + Lp / 2 * sc + 30, yp + (tp + tf) * sc + 26)
+    xb0, wb = xc - Lp / 2 * sc - 30, Lp * sc + 60                                                                            # the beam: bottom flange and web, broken
+    c.setFillColorRGB(*memberart.STEEL_FILL); c.rect(xb0, yp + (tp + tf) * sc, wb, 26, fill=1, stroke=0)
+    c.setFillColorRGB(*memberart.STEEL_CUT); c.rect(xb0, yp + tp * sc, wb, tf * sc, fill=1, stroke=1)
+    c.line(xb0, yp + (tp + tf) * sc, xb0, yp + (tp + tf) * sc + 26); c.line(xb0 + wb, yp + (tp + tf) * sc, xb0 + wb, yp + (tp + tf) * sc + 26)
+    _break_h(c, xb0, xb0 + wb, yp + (tp + tf) * sc + 26)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8); c.setFillColorRGB(0.90, 0.92, 0.95)
     c.setLineWidth(1.4)
     for sx in (-1, 1):
         xb = xc + sx * s_ / 2 * sc
@@ -2854,14 +3037,15 @@ def _cap_plate_picture(c, top, d):
     memberart._dim_h(c, xc - s_ / 2 * sc, xc + s_ / 2 * sc, yp + (tp + tf) * sc + 44, f"s = {s_:g} in", FR, ext_from=yp + (tp + tf) * sc + 10)
     memberart._dim_h(c, xc - B / 2 * sc, xc + B / 2 * sc, yp - 74, f"B = {B:g} in", FR, ext_from=yp - 60)
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
-    c.drawString(xc + Lp / 2 * sc + 6, yp + tp * sc / 2 - 2, f"cap plate {tp:g} in")
+    c.drawString(xc + max(Lp / 2, s_ / 2 + db * 0.8) * sc + 8, yp + tp * sc / 2 - 2, f"cap plate {tp:g} in")
     c.drawString(xc + B / 2 * sc + 5, yp - 34, d["column"])
     c.drawString(xc + Lp / 2 * sc + 36, yp + (tp + tf) * sc + 10, d["beam"])
     _small(c, xc, yp - 90, "elevation along the beam, to scale")
     # plan, right
     xq, yq = RM - 135, top - 70 - 12
     c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xq - Lp / 2 * sc, yq - bp / 2 * sc, Lp * sc, bp * sc, fill=1, stroke=1)
-    c.setFillColorRGB(0.82, 0.85, 0.89); c.setDash(3, 2); c.rect(xq - B / 2 * sc, yq - B / 2 * sc, B * sc, B * sc, fill=0, stroke=1); c.setDash()
+    memberart.hss_plan(c, xq, yq, B * sc, B * sc, d.get("t", 0.25) * sc, dashed=True)                                             # the column below, hidden
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     c.setFillColorRGB(*INK)
     for sx in (-1, 1):
         for sy in (-1, 1):
@@ -2869,8 +3053,24 @@ def _cap_plate_picture(c, top, d):
     memberart._dim_v(c, yq - g / 2 * sc, yq + g / 2 * sc, xq + Lp / 2 * sc + 14, f"g = {g:g} in", FR, ext_from=xq + s_ / 2 * sc)
     memberart._dim_v(c, yq - bp / 2 * sc, yq + bp / 2 * sc, xq - Lp / 2 * sc - 14, f"{bp:g} in", FR, ext_from=xq - Lp / 2 * sc)
     memberart._dim_h(c, xq - s_ / 2 * sc, xq + s_ / 2 * sc, yq + max(bp, B) / 2 * sc + 16, f"s = {s_:g} in", FR, ext_from=yq + g / 2 * sc)
-    _small(c, xq, yq - max(bp, B) / 2 * sc - 16, "plan of the cap plate, to scale; the column is dashed")
+    _small(c, xq, yq - max(bp, B) / 2 * sc - 16, "plan of the cap plate, to scale; the HSS below is dashed")
     return min(yp - 98, yq - max(bp, B) / 2 * sc - 24)
+
+
+def _break_h(c, x1, x2, y, amp=3.0):
+    """A break line across a member cut short (horizontal, from x1 to x2 at y): a straight line with one zigzag at the middle."""
+    xm = (x1 + x2) / 2
+    c.saveState(); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+    p = c.beginPath(); p.moveTo(x1 - 1, y); p.lineTo(xm - amp, y); p.lineTo(xm - amp / 2, y + amp); p.lineTo(xm + amp / 2, y - amp)
+    p.lineTo(xm + amp, y); p.lineTo(x2 + 1, y); c.drawPath(p, fill=0, stroke=1); c.restoreState()
+
+
+def _break_v(c, x, y1, y2, amp=3.0):
+    """A break line across a member cut short (vertical, at x from y1 to y2)."""
+    ym = (y1 + y2) / 2
+    c.saveState(); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+    p = c.beginPath(); p.moveTo(x, y1 - 1); p.lineTo(x, ym - amp); p.lineTo(x + amp, ym - amp / 2); p.lineTo(x - amp, ym + amp / 2)
+    p.lineTo(x, ym + amp); p.lineTo(x, y2 + 1); c.drawPath(p, fill=0, stroke=1); c.restoreState()
 
 
 def _beam_hss_moment_picture(c, top, d):
@@ -2882,12 +3082,13 @@ def _beam_hss_moment_picture(c, top, d):
     xc, ym = LM + 120, top - 100                    # centre of the column, mid-depth of the beam
     hc = (dd + 14) * sc
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xc - H / 2 * sc, ym - hc / 2, H * sc, hc, fill=1, stroke=1)          # column
+    memberart.hss_elevation(c, xc - H / 2 * sc, ym - hc / 2, H * sc, hc, d["t"] * sc)                                 # HSS column
+    _break_h(c, xc - H / 2 * sc, xc + H / 2 * sc, ym - hc / 2); _break_h(c, xc - H / 2 * sc, xc + H / 2 * sc, ym + hc / 2)
     xf, Lb = xc + H / 2 * sc, 12 * sc                # face of the column, beam length drawn
     g_ = 0.5 * sc if d["plate"] else 0.0             # beam held back from the face where flange plates are used
-    c.setFillColorRGB(0.90, 0.92, 0.95)
-    c.rect(xf + g_, ym - dd / 2 * sc, Lb - g_, dd * sc, fill=1, stroke=1)
-    c.line(xf + g_, ym - (dd / 2 - tf) * sc, xf + Lb, ym - (dd / 2 - tf) * sc); c.line(xf + g_, ym + (dd / 2 - tf) * sc, xf + Lb, ym + (dd / 2 - tf) * sc)
+    memberart.w_side(c, xf + g_, ym - dd / 2 * sc, Lb - g_, dd * sc, tf * sc, vertical=False)
+    _break_v(c, xf + Lb, ym - dd / 2 * sc, ym + dd / 2 * sc)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     blv = d.get("bolts")
     Lpl = (blv["a1"] + (blv["n"] - 1) * blv["s"] + blv["lev_p"]) if blv else 8.0
     if d["plate"]:
@@ -2907,8 +3108,8 @@ def _beam_hss_moment_picture(c, top, d):
     xq, yq = RM - 150, top - 100
     s2 = min(7.5, 95.0 / B, 95.0 / H)
     c.setLineWidth(0.8); c.setStrokeColorRGB(*INK)
-    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xq - H * s2, yq - B / 2 * s2, H * s2, B * s2, fill=1, stroke=1)
-    c.setFillColorRGB(1, 1, 1); c.rect(xq - H * s2 + d["t"] * s2, yq - B / 2 * s2 + d["t"] * s2, (H - 2 * d["t"]) * s2, (B - 2 * d["t"]) * s2, fill=1, stroke=1)
+    memberart.hss_plan(c, xq - H * s2 / 2, yq, H * s2, B * s2, d["t"] * s2)                                         # HSS cut at the flange
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     bl = d.get("bolts")
     Lp = (bl["a1"] + (bl["n"] - 1) * bl["s"] + bl["lev_p"]) * s2 if bl else 46
     c.setFillColorRGB(0.62, 0.68, 0.76) if d["plate"] else c.setFillColorRGB(0.90, 0.92, 0.95)

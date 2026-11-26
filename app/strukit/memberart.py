@@ -309,6 +309,103 @@ def steel_column_elevation(c, cx, y, h, d_in, tf_in, height_in, braces=()):
     return w
 
 
+STEEL_CUT = (0.52, 0.58, 0.66)                              # steel cut by the section plane
+
+
+def _hatch_rect(c, x, y, w, h, step=2.6):
+    """45-degree section lines inside a rectangle (cut steel)."""
+    c.saveState()
+    p = c.beginPath(); p.rect(x, y, w, h); c.clipPath(p, stroke=0, fill=0)
+    c.setStrokeColorRGB(*STEEL_LINE); c.setLineWidth(0.25)
+    k = -h
+    while k < w:
+        c.line(x + k, y, x + k + h, y + h); k += step
+    c.restoreState()
+
+
+def hss_plan(c, cx, cy, W, H, t, rnd=False, dashed=False, inside=(1, 1, 1), cut=True):
+    """An HSS or pipe seen end-on or cut, to scale (W, H, t in points): the wall at its thickness with the corners rounded (outside radius
+    2t, ASTM A500 / AISC Manual Part 1 practice for drawing) and the hollow inside. cut: the wall is cut by the plane (darker); dashed: hidden
+    (outline only). inside: the colour seen inside the tube (white for an open tube, the plate colour where a plate runs through it)."""
+    t = max(t, 1.0)
+    c.setStrokeColorRGB(*STEEL_LINE); c.setLineWidth(0.6)
+    if dashed:
+        c.setDash(3, 2)
+        if rnd:
+            c.circle(cx, cy, W / 2, fill=0, stroke=1); c.circle(cx, cy, W / 2 - t, fill=0, stroke=1)
+        else:
+            ro = min(2 * t, W / 3, H / 3)
+            c.roundRect(cx - W / 2, cy - H / 2, W, H, ro, fill=0, stroke=1)
+            c.roundRect(cx - W / 2 + t, cy - H / 2 + t, W - 2 * t, H - 2 * t, max(ro - t, 0.4), fill=0, stroke=1)
+        c.setDash()
+        return
+    c.setFillColorRGB(*(STEEL_CUT if cut else STEEL_FILL))
+    if rnd:
+        c.circle(cx, cy, W / 2, fill=1, stroke=1)
+        if inside is not None:
+            c.setFillColorRGB(*inside)
+        c.circle(cx, cy, W / 2 - t, fill=inside is not None, stroke=1)
+    else:
+        ro = min(2 * t, W / 3, H / 3)
+        c.roundRect(cx - W / 2, cy - H / 2, W, H, ro, fill=1, stroke=1)
+        if inside is not None:
+            c.setFillColorRGB(*inside)
+        c.roundRect(cx - W / 2 + t, cy - H / 2 + t, W - 2 * t, H - 2 * t, max(ro - t, 0.4), fill=inside is not None, stroke=1)
+
+
+def hss_elevation(c, x, y, w, h, t, rnd=False, vertical=True):
+    """Side view of an HSS or pipe (x, y bottom left, w x h in points; t the wall in points): the outline with the corner lines where the
+    rounded corners meet the flat faces (rectangular), or shading lines toward the edges (round), so it reads as a tube, not a bar."""
+    c.setStrokeColorRGB(*STEEL_LINE); c.setLineWidth(0.6); c.setFillColorRGB(*STEEL_FILL)
+    c.rect(x, y, w, h, fill=1, stroke=1)
+    c.setLineWidth(0.35)
+    span = w if vertical else h
+    if rnd:
+        R = span / 2
+        offs = [R * (1 - math.cos(math.radians(a))) for a in (25, 45, 62)]
+        c.setStrokeColorRGB(0.45, 0.50, 0.57)
+    else:
+        offs = [min(2 * max(t, 1.0), span / 6)]
+    for o in offs:
+        if vertical:
+            c.line(x + o, y, x + o, y + h); c.line(x + w - o, y, x + w - o, y + h)
+        else:
+            c.line(x, y + o, x + w, y + o); c.line(x, y + h - o, x + w, y + h - o)
+    c.setStrokeColorRGB(*STEEL_LINE); c.setLineWidth(0.6)
+
+
+def hss_cut_side(c, x, y, w, h, t, vertical=True):
+    """An HSS cut lengthwise through its middle (x, y bottom left, w x h in points; t the wall in points): the two walls cut and hatched, the
+    far wall seen inside the tube."""
+    t = max(t, 1.2)
+    c.setStrokeColorRGB(*STEEL_LINE); c.setLineWidth(0.6)
+    c.setFillColorRGB(0.93, 0.94, 0.96); c.rect(x, y, w, h, fill=1, stroke=1)
+    c.setFillColorRGB(*STEEL_CUT)
+    walls = ((x, y, t, h), (x + w - t, y, t, h)) if vertical else ((x, y, w, t), (x, y + h - t, w, t))
+    for r in walls:
+        c.rect(*r, fill=1, stroke=1); _hatch_rect(c, *r)
+
+
+def w_side(c, x, y, w, h, tf, vertical=True, web=None):
+    """Side view of a W shape looking at its web (x, y bottom left, w x h in points; tf the flange in points): the two flanges as bands along
+    the length, the web between. vertical: a column (flanges at the sides). web: a web thickness in points draws the web as a strip seen
+    on edge instead (looking at a flange)."""
+    tf = max(tf, 1.2)
+    c.setStrokeColorRGB(*STEEL_LINE); c.setLineWidth(0.6); c.setFillColorRGB(*STEEL_FILL)
+    c.rect(x, y, w, h, fill=1, stroke=1)
+    c.setFillColorRGB(*STEEL_CUT)
+    if web is not None:
+        if vertical:
+            c.rect(x + w / 2 - web / 2, y, web, h, fill=1, stroke=0)
+        else:
+            c.rect(x, y + h / 2 - web / 2, w, web, fill=1, stroke=0)
+        return
+    if vertical:
+        c.rect(x, y, tf, h, fill=1, stroke=1); c.rect(x + w - tf, y, tf, h, fill=1, stroke=1)
+    else:
+        c.rect(x, y, w, tf, fill=1, stroke=1); c.rect(x, y + h - tf, w, tf, fill=1, stroke=1)
+
+
 def _dim_h(c, x1, x2, y, text, font, ext_from=None):
     """Horizontal dimension line from x1 to x2 at height y, with ticks and centred text
     below it. ext_from: y of the object, for extension lines."""
