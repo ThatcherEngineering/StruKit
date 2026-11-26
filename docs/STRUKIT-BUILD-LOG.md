@@ -5,7 +5,9 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 21:58. Build **0.236.0**, 628 tests passing; `main` and `release` pushed.
+Updated 2026-11-26 01:50. Build **0.241.0**, 639 tests passing; `main` and `release` pushed.
+
+**Overnight run 2026-11-25 22:20 to 2026-11-26 01:50 (Zach: "do 1-5 even if you run past the 4 hour time frame"), all five done:** 0.237.0 shear lug with net uplift (shear across a plate lug refused with the reason); 0.238.0 wall weight less the openings, on request; 0.239.0 welded built-up three-plate I-shapes (beams, columns, 3D frame; AISC Design Examples F.14, E.2, E.3, E.12); 0.240.0 column side of the four-bolt extended end plate on a continuous column, with or without stiffeners (Design Guide 39 Example 5.3-2); 0.241.0 through-plate moment connection to an HSS column (Design Guide 24 Example 6.4). The readings applied overnight are in the rulings file under 22:45, 23:55, 00:55 and 01:40; list them at the morning check-in.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -15,6 +17,7 @@ Updated 2026-11-25 21:58. Build **0.236.0**, 628 tests passing; `main` and `rele
 - A scheduled session starts each weekday at 5:10 AM Denver time, reads these files and sends Zach one check-in with the Next list; it builds nothing until he says go (his change of 2026-11-25 12:43). Before the session ends it updates this section and the Project copies.
 
 **Waiting for Zach's ruling** (applied conservatively meanwhile; details in the rulings file)
+0f. Overnight readings (rulings file, 2026-11-25 22:45 to 2026-11-26 01:40): lug net uplift by statics or the bearing block, Eq. 17.11.2.2.1a with the rods in tension; single plate lugs carry no cross shear; singly symmetric built-up members take the lower flexural strength where the moment sign is unknown, webs without stiffeners only; end-plate column side: lb with 2w at the tension flange, panel zone adds T/2, stiffener welds sized for the stiffener yield strength, both stiffener slenderness limits; through plate: one design for both flanges and sides, K = 1.0 for the plate in compression, weld for axial and moment together.
 0e. Crane runway beam: lateral wheel loads taken by the top flange alone (half the section's F6 strength), Cb = 1.0, deflection limits typed by the engineer (0.218.0; Design Guide 7 not on file).
 0c. Beam coped at the bottom flange only: web shear yielding and rupture checked on the remaining depth, although Design Example K.3 says they do not apply (0.215.0).
 0b. Stiffened seat stiffener at least 2 w thick for 36 < Fy < 50 ksi (0.214.0).
