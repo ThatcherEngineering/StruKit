@@ -256,7 +256,7 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - **3D model on the calcs:** "I wish you would include that 3D model on the calcs. It would be really cool if it was near the beginning of
   the report, multiple angles of the model." Built 0.233.0: a Building Model sheet right after the cover with four views.
 
-## 2026-11-25 21:25, rod anchorage on the uplift and biaxial base plates (0.234.0), applied (not ruled; tell Zach at the check-in)
+## 2026-11-25 21:16, rod anchorage on the uplift and biaxial base plates (0.234.0), applied (not ruled; tell Zach at the check-in)
 - Biaxial base plate: each corner rod takes half the rod tension from each direction (Tx/2 + Ty/2), the two directions added at the corner
   (the larger, not a square-root combination).
 - Biaxial rod tensions for the anchorage come from the bearing block at 0.65 x fp(max) (LRFD) under the factored loads.
@@ -269,7 +269,7 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - **Anchor rod calcs link to the foundation or stand alone:** "The anchor rod calcs need to be able to link to a foundation system or be
   independent." Built 0.235.0: each base plate screen can name its footing (live link both ways) or stay stand-alone.
 
-## 2026-11-25 21:58, rods of the shear lug in the concrete (0.236.0), applied (not ruled; tell Zach at the check-in)
+## 2026-11-25 21:46, rods of the shear lug in the concrete (0.236.0), applied (not ruled; tell Zach at the check-in)
 - The two rods behind the lug share the bearing-block tension T equally; the rods toward the edge the shear faces take none.
 - That T is from Design Guide 1's large-moment procedure at 0.65 fp under the LRFD combinations (the same procedure the lug's steel checks use).
 - The rods take no shear (the lug takes it all), so no tension-shear interaction for the rods.
@@ -282,7 +282,7 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
   weight less the openings, (3) built-up three-plate beams and columns, (4) the column side of the extended end plate, (5) the through-plate
   beam-to-HSS moment connection (Design Guide 24 Example 6.2). Unattended: no questions; conservative readings applied and recorded here.
 
-## 2026-11-25 22:45, shear lug with net uplift (0.237.0), applied (not ruled; tell Zach in the morning)
+## 2026-11-25 22:28, shear lug with net uplift (0.237.0), applied (not ruled; tell Zach in the morning)
 - Net uplift with the lug moment V e not over uplift x f: no bearing; the two rod rows take Tu/2 +/- V e/(2f) (rigid plate, statics).
   Above that, the Design Guide 1 bearing block with the axial load negative.
 - Eq. 17.11.2.2.1a: n = the rods in tension under that combination; Nsa = Ase futa per rod, futa not over 1.9 fya or 125 ksi (fya from the
@@ -291,14 +291,14 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - (0.238.0, applied) Deducting openings from the wall weight is the engineer's choice per wall (default: not deducted); when deducted, the
   window and door weight is not added back.
 
-## 2026-11-25 23:55, built-up three-plate sections (0.239.0), applied (not ruled; tell Zach in the morning)
+## 2026-11-25 22:54, built-up three-plate sections (0.239.0), applied (not ruled; tell Zach in the morning)
 - Where the sign of the moment is not known (columns with moments, the frame's column checks), a singly symmetric section takes the lower of its
   two flexural strengths (either flange in compression).
 - Webs without transverse stiffeners only: h/tw not over 0.40 E/Fy (Eq. F13-4, a/h over 1.5), kv = 5.34, no tension field action.
 - J and Cw from AISC Design Guide 9 (J = sum b t^3 / 3 with the web's clear height; Cw = ho^2 Iyc Iyt / (Iyc + Iyt)).
 - Weight 490 pcf (steel), no allowance for welds.
 
-## 2026-11-26 00:55, column side of the four-bolt extended end plate (0.240.0), applied (not ruled; tell Zach in the morning)
+## 2026-11-25 23:07, column side of the four-bolt extended end plate (0.240.0), applied (not ruled; tell Zach in the morning)
 - Column web local yielding at the tension flange uses Eq. 3-47 as written, lb = tbf + 2w + 2tp (Example 5.3-2 leaves out 2w; its flange
   welds are not fillets).
 - Panel zone shear adds half the beam axial tension (Example 5.3-1 adds it; Example 5.3-2 subtracts it for its load direction) and takes off
@@ -307,7 +307,7 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - Stiffener-to-flange welds are sized for the stiffener yield strength (the Design Guide's recommendation), more than J10.8's difference force.
 - pso and psi are taken as pfo and pfi (stiffeners centred on the beam flanges, as Example 5.3-2), not over s.
 
-## 2026-11-26 01:40, through-plate moment connection (0.241.0), applied (not ruled; tell Zach in the morning)
+## 2026-11-25 23:23, through-plate moment connection (0.241.0), applied (not ruled; tell Zach in the morning)
 - One plate size, bolt pattern and weld for both flanges and both sides, designed for the larger beam moment (as Example 6.4, whose loads can
   reverse).
 - Plate in compression between the HSS face and the first bolt with K = 1.0 (the example's value; no end fixity counted on).
