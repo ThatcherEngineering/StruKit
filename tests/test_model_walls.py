@@ -96,3 +96,24 @@ def test_existing_walls_take_gravity_and_lateral():
     x_lines = {l["wall"]: l["V"] for l in g["lines"] if l.get("governs") and l["wind"] == "X"}
     assert x_lines["Line 1, lower level"] == pytest.approx(x_lines["Existing house wall, lower level (existing)"])
     assert not any("only one wall line" in p for p in g["problems"])
+
+
+def test_wall_weight_reaches_the_footing_line():
+    """A typed wall weight (psf x story height from the level elevations x wall length) goes down the wall stack as dead load: 10 psf on a
+    9.5 ft story adds 95 lb/ft to the continuous footing under it for each wall so weighted. A weight with no source is refused."""
+    import copy
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+
+    def foot(ms):
+        out = calc.model_links(d["project"], ms)
+        return float(next(m for m in out["members"] if m["values"].get("mark") == "Footing Line 1")["values"]["P_service"]), out
+
+    ms = copy.deepcopy(d["members"])
+    p0, _ = foot(ms)
+    for mk in ("Line 1, lower level", "Line 1, main level"):
+        next(m for m in ms if m["values"].get("mark") == mk)["values"].update(at_wall_psf="10", at_wall_psf_source="test value")
+    p2, _ = foot(ms)
+    assert p2 - p0 == pytest.approx(2 * 10 * 9.5, abs=1.0)
+    w = next(m for m in ms if m["values"].get("mark") == "Line 1, lower level")["values"]
+    w["at_wall_psf_source"] = ""
+    assert "source" in calc._wall_weight(d["project"], w)

@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 17:50. Build **0.221.0**, 601 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 17:55. Build **0.222.0**, 602 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -35,7 +35,7 @@ Updated 2026-11-25 17:50. Build **0.221.0**, 601 tests passing; `main` and `rele
 6. (Single angles in bending done 0.217.0.) Still open: angles over more than one span or with overhangs, axial load with bending (Sect. H2), deflection of unrestrained angles, unequal angles not in Commentary Table C-F10.1, the Steel Beam screen and the 3D frame taking angles.
 7. (Top-running crane runway beam, simple span, done 0.218.0.) Still open and waiting on documents: underhung cranes and monorails (bottom flange local bending), fatigue (AISC 360-22 Appendix 3 is on file; needs the number of cycles by service class), web yielding and crippling under the wheels, continuous runway beams, cap channels; AISC Design Guide 7 would let the lateral load and deflection limits be cited.
 8. (Dropped 2026-11-25 16:51, Zach: he no longer uses StruCalc and StruKit replaces it. No more StruCalc import work. The steel .vtx reader of 0.165.0 stays as it is.)
-8. **From the 2026-011 whole-house model run (0.220.0), in order:** (a) (existing walls done 0.221.0; still open: existing beams, posts and footings as carriers); (b) a post on a continuous footing (point load spread along the footing, or the footing checked as isolated under it); (c) wall self-weight and openings in bearing walls (headers taking the loads over an opening, jack studs to the footing); (d) seismic weights and story forces from the model (today the seismic sheet's weights are typed); (e) diaphragm sheets filled from the model; (f) wood beams, posts and shear walls in the 3D frame.
+8. **From the 2026-011 whole-house model run (0.220.0), in order:** (a) (existing walls done 0.221.0; still open: existing beams, posts and footings as carriers); (b) a post on a continuous footing (point load spread along the footing, or the footing checked as isolated under it); (c) (wall weight done 0.222.0; still open: openings in bearing walls, headers taking the loads over an opening, jack studs to the footing); (d) seismic weights and story forces from the model (today the seismic sheet's weights are typed); (e) diaphragm sheets filled from the model; (f) wood beams, posts and shear walls in the 3D frame.
 9. (Shear lugs done 0.219.0.) Still open: anchorage in the concrete on the uplift base plate and the four-rod biaxial base plate; concrete breakout of the rods on the shear lug screen; shear lugs with net uplift or two-way shear.
 10. Built-up three-plate sections as beams and columns; the column side of the extended end plate.
 11. Through-plate and diaphragm beam-to-HSS moment connections (Design Guide 24 Examples 6.2, 6.4).
@@ -658,4 +658,9 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **New package sheet "EX - Loads on Existing Construction"** whenever the model lists existing walls: gravity loads per foot by load case and source, and the lateral shear on each existing wall line for both wind and seismic (both are listed because the 1.4 seismic rule used to pick the governing load on new wood walls does not apply to construction StruKit has not checked). Not checked on the sheet: the existing walls, foundations and connections.
 - 2026-011 model: the existing house wall added for both stories; the lower floor joists and roof joists now end on it, and the wind across the house is shared by Line 1 and the house wall. Package rebuilt (62 sheets).
 - Validation: statics by hand (the load per foot on the existing wall equals the joist row's end reaction x 12 / spacing; equal tributary widths give equal shears); test in `tests/test_model_walls.py`. Opened in a headless browser.
+
+## 2026-11-25 17:55 local — 0.222.0 wall weight in the gravity load path (602 tests)
+- Same hour. Next item 8(c), first part.
+- Placement card of the shear wall, perforated wall and force-transfer wall screens: "Wall weight (gravity load path)" in psf of wall face, and where it comes from (required with a weight). The wall then passes down, as dead load, psf x the story height (level at its top less the level below, from the model's elevations) x its placed length, together with what bears on it; the note on the load path states the product and the source. A wall with a weight and nothing bearing on it now passes its weight down too. Blank = not included, as before. Refused with a plain message: no source, no elevations, not placed.
+- Validation by statics: 10 psf on a 9.5 ft story adds 95 lb/ft to the continuous footing under each wall so weighted (test on the 2026-011 model). Opened in a headless browser.
 

@@ -747,6 +747,8 @@ function placementCard(m, changed) {
   if (beam) fs.push({ key: "at_x2", label: brace ? "Upper end, X" : "Right end, X", type: "text", required: false, help: pos }, { key: "at_y2", label: brace ? "Upper end, Y" : "Right end, Y", type: "text", required: false, help: pos });
   if (m.kind === "footing_cont") fs.push({ key: "at_x2", label: "Other end of the footing, X", type: "text", required: false, help: "blank = a point; with both ends the footing is a line that walls and joist rows bear on" },
     { key: "at_y2", label: "Other end of the footing, Y", type: "text", required: false, help: pos });
+  if (wall) fs.push({ key: "at_wall_psf", label: "Wall weight (gravity load path)", unit: "psf", type: "text", required: false, help: "of wall face; carried down as dead load x the story height (from the level elevations) x the wall length; blank = not included" },
+    { key: "at_wall_psf_source", label: "Where the wall weight comes from", type: "text", required: false });
   if (brace) fs.push({ key: "at_brace", label: "In the 3D frame this brace takes", type: "select", options: ["tension only", "tension and compression"], required: false, help: m.kind === "tension_member" ? "blank = tension only" : "blank = tension and compression" });
   if (TD_BEAMS.includes(m.kind)) fs.push({ key: "at_dz1", label: "Left end above the level (sloped member)", unit: "ft", type: "text", required: false, help: "blank = at the level, or following the sloped beam it sits on" },
     { key: "at_dz2", label: "Right end above the level", unit: "ft", type: "text", required: false });

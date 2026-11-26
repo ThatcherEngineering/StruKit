@@ -2605,10 +2605,18 @@ def case_reactions(kind, values, project):
             c = str(row.get("case") or "").strip()
             if c:
                 tot[c] = tot.get(c, 0.0) + P
+        notes = ["a wall passes down what bears on it"]
+        ww = _wall_weight(project, v)
+        if isinstance(ww, str):
+            return dict(error=ww)
+        if ww:
+            tot["D"] = tot.get("D", 0.0) + ww[0]
+            notes.append(ww[1])
+        else:
+            notes.append("its own weight is not included")
         if not tot:
             return dict(error="Nothing in the building model bears on that wall.")
-        return _governing(dict(supports=[dict(name="base", x_ft=0.0, cases=tot)],
-                               notes=["a wall passes down what bears on it; its own weight is not included"]), project)
+        return _governing(dict(supports=[dict(name="base", x_ft=0.0, cases=tot)], notes=notes), project)
     if kind not in TAKEDOWN_BEAMS:
         return dict(error="Reactions can be taken from a beam, a joist, a post or a column.")
     cases = []
@@ -2827,6 +2835,35 @@ def _coord(text, grids):
     return None
 
 
+def _wall_weight(project, v):
+    """A placed wall's own weight for the load path: (lb, note) from its typed psf x story height x placed length; None when no weight is
+    typed; a message when the weight is typed but cannot be used (no source, no elevations, not placed)."""
+    t = str(v.get("at_wall_psf") or "").replace(",", "").strip()
+    if not t:
+        return None
+    try:
+        psf = float(t)
+    except ValueError:
+        return "the wall weight is not a number"
+    src = str(v.get("at_wall_psf_source") or "").strip()
+    if not src:
+        return "the wall weight needs a source (where it comes from)"
+    pl = model_place(project, dict(kind="shear_wall", values=v))
+    if not pl:
+        return "the wall weight needs the wall placed in the building model"
+    el = {}
+    for l in ((project or {}).get("model") or {}).get("levels") or []:
+        try:
+            el[str(l.get("name") or "").strip()] = float(str(l.get("elev")).replace(",", ""))
+        except (TypeError, ValueError):
+            pass
+    if pl["level"] not in el or pl["base"] not in el or pl["base"] == pl["level"]:
+        return "the wall weight needs elevations for the level at the top of the wall and the level below"
+    h = el[pl["level"]] - el[pl["base"]]
+    L = math.hypot(pl["p2"][0] - pl["p1"][0], pl["p2"][1] - pl["p1"][1])
+    return psf * h * L, f"its own weight {psf:g} psf x {h:g} ft x {L:.2f} ft = {psf * h * L:,.0f} lb dead ({src})"
+
+
 def model_existing(project):
     """Existing walls of the model (by others, not designed): [(name, dict(level, base, p1, p2))]; unreadable rows are skipped."""
     mdl = (project or {}).get("model") or {}
@@ -2976,8 +3013,8 @@ def model_links(project, members):
         if kind in TAKEDOWN_FOOTINGS:
             continue
         if kind in MODEL_WALLS:
-            if not any(isinstance(r, dict) and isinstance(r.get("link"), dict) for r in (v.get("loads") or [])):
-                continue                                         # nothing bears on this wall: it passes nothing down
+            if not any(isinstance(r, dict) and isinstance(r.get("link"), dict) for r in (v.get("loads") or [])) and not str(v.get("at_wall_psf") or "").strip():
+                continue                                         # nothing bears on this wall and no weight typed: it passes nothing down
             (wx1, wy1), (wx2, wy2) = pl["p1"], pl["p2"]
             wl = math.hypot(wx2 - wx1, wy2 - wy1)
             under = []
