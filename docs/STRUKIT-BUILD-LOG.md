@@ -1007,3 +1007,20 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation:** the same plate top and bottom reproduces the single-plate sheet; the bottom plate's face checks equal a single-plate run with
   that plate at the same lever arm; flange forces by hand (`tests/test_beam_hss_moment.py`). The single-plate checks stay validated by Design
   Guide 24 Example 6.3 and Design Examples II.B-1 / II.B-2.
+
+## 2026-11-26 15:00 MST — 0.262.0 stiffened girders: end-panel tension field action, continuous girders, bearing under loads (Next 2, done)
+- **End panel with tension field action, AISC 360-22 Sect. G2.3 (Eq. G2-12 to G2-15)**, when tension field action is asked and bearing
+  stiffeners are given (they are the end post): de, Mpf (the smaller flange with de of web, Commentary G2.3), Mpst (the bearing stiffener pair
+  with de plus the end distance of web, the end distance not over 0.84 tw (E / Fy)^0.5; new box "girder end to the inside face of the bearing
+  stiffeners", blank = the stiffener thickness), beta_v, Vn; used for the end panel where larger than Sect. G2.1; the tension flange stress
+  alpha Mr / Sxt in the end panel checked against 0.35 Fy (`builtup.end_panel_tfa`).
+- **Continuous built-up girders** now take the stiffener and bearing checks: panels are measured from every support into each span (to half
+  the span, or the whole overhang), the end panels at every support without tension field action (G2.3 only at the girder ends); interior
+  supports by Eq. J10-2 / J10-4, or bearing stiffeners with a 25 tw web strip; reactions from the continuous solution with the live load
+  arrangements.
+- **Concentrated loads** (new boxes: bearing length of the point loads; bearing stiffeners under them yes / no): web local yielding and crippling
+  under each point load (Eq. J10-2 / J10-4, or J10-3 / J10-5 within d of an end), or bearing stiffeners (Eq. J7-1, column with a 25 tw strip,
+  12 tw within d of the end). The side view draws the stiffeners at every support and point load.
+- **Validation: by hand** (no published example of G2.3 or of these bearing checks is on file): G2.3 on the G.8A girder (Cv2 0.635, de 0.297
+  in., Mpf 454, Mpst 103 kip-in., beta_v 1.0, Vn 280.5 kips), the two-span girder (reactions 375 / 127.5 kips with patterned live load, panel
+  shear 161.25 kips), point loads (242.2 / 164.4 / 582.4 kips) (`tests/test_builtup.py`).

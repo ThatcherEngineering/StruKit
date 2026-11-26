@@ -450,3 +450,9 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 
 ## 2026-11-26 13:40, different top and bottom flange plates (0.261.0), applied (not ruled)
 - Lever arm d + (tp top + tp bottom) / 2 (the plate centroids), the same flange force in both plates.
+
+## 2026-11-26 15:00, girders (0.262.0), applied (not ruled)
+- End-panel tension field action (G2.3) only at the girder ends with bearing stiffeners given; panels beside interior supports of a continuous
+  girder are checked as end panels without tension field action (Sect. G2.1).
+- Unequal flanges: Mpf from the smaller flange (the Commentary's approach to G2.3(b)).
+- The tension flange stress check of G2.3 uses the smaller of Sx top and bottom and the largest moment within a of the support.
