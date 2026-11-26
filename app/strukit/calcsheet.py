@@ -3815,12 +3815,13 @@ def _diaphragm_picture(c, top, d):
     return _opening_enlarged(c, y0 - 46, op, d)
 
 
-def _opening_in_plan(c, op, x0, y0, s, small=False):
+def _opening_in_plan(c, op, x0, y0, s, small=False, sy=None):
     """The opening, its framing (members across the depth at its ends, along its sides) extended into the diaphragm, and the region of the
     force-transfer analysis dashed. (x0, y0): the plan's corner at the support / line of resistance and the chord the opening is measured from."""
-    ox, oy, ow, oh = x0 + op["x0"] * s, y0 + op["y0"] * s, op["a"] * s, op["b"] * s
+    sy = sy or s
+    ox, oy, ow, oh = x0 + op["x0"] * s, y0 + op["y0"] * sy, op["a"] * s, op["b"] * sy
     rx0, rx1 = x0 + op["xs"] * s, x0 + op["xe"] * s
-    yt = y0 + (op["d1"] + op["b"] + op["d2"]) * s
+    yt = y0 + (op["d1"] + op["b"] + op["d2"]) * sy
     tw = 1.6 if small else 3.2                                          # drawn width of the framing members
     c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5); c.setDash(2.5, 2); c.rect(rx0, y0, rx1 - rx0, yt - y0, fill=0, stroke=1); c.setDash()
     for yy in (oy, oy + oh):                                            # along the opening sides, over the region
@@ -3839,13 +3840,21 @@ def _opening_enlarged(c, top, op, d):
     the framing at the opening drawn as wood members with their forces, and every length dimensioned."""
     W, Lr = op["d1"] + op["b"] + op["d2"], op["Lr"]
     _sketch_title(c, LM + 6, top, "REGION AROUND THE OPENING, ENLARGED")
-    s = min(300.0 / Lr, 120.0 / W)
-    wr, hr = Lr * s, W * s
+    s = sy = min(300.0 / Lr, 120.0 / W)
+    to_scale = True
+    if min(op["e1"], op["a"], op["e2"]) * s < 30 or min(op["d1"], op["b"], op["d2"]) * sy < 14:     # too small to label: lengths not to scale
+        s, sy, to_scale = 1.0, 1.0, False
+        xs_ = [max(44.0, min(110.0, v_ * 300.0 / Lr)) for v_ in (op["e1"], op["a"], op["e2"])]
+        ys_ = [max(16.0, min(60.0, v_ * 120.0 / W)) for v_ in (op["d1"], op["b"], op["d2"])]
+    else:
+        xs_ = [v_ * s for v_ in (op["e1"], op["a"], op["e2"])]
+        ys_ = [v_ * sy for v_ in (op["d1"], op["b"], op["d2"])]
+    wr, hr = sum(xs_), sum(ys_)
     x0 = (LM + RM) / 2 - wr / 2 + 10
     y1 = top - 30
     y0 = y1 - hr
-    xs = [x0, x0 + op["e1"] * s, x0 + (op["e1"] + op["a"]) * s, x0 + wr]
-    ys = [y0, y0 + op["d1"] * s, y0 + (op["d1"] + op["b"]) * s, y1]
+    xs = [x0, x0 + xs_[0], x0 + xs_[0] + xs_[1], x0 + wr]
+    ys = [y0, y0 + ys_[0], y0 + ys_[0] + ys_[1], y1]
     s1, s2 = op["strips"]
     zone = {(0, 0): s1["vc"], (2, 0): s1["vc"], (1, 0): s1["v"], (0, 2): s2["vc"], (2, 2): s2["vc"], (1, 2): s2["v"], (0, 1): op["va"], (2, 1): op["va"]}
     for (i, j), v in zone.items():                                      # sheathing zones, shaded by unit shear
@@ -3853,7 +3862,7 @@ def _opening_enlarged(c, top, op, d):
         c.setFillColorRGB(f, f + 0.01, f + 0.03); c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4)
         c.rect(xs[i], ys[j], xs[i + 1] - xs[i], ys[j + 1] - ys[j], fill=1, stroke=1)
     c.setStrokeColorRGB(*INK); c.setLineWidth(1.8); c.line(x0, y0, x0 + wr, y0); c.line(x0, y1, x0 + wr, y1)        # the chords
-    _opening_in_plan(c, dict(op, x0=op["e1"], xs=0.0, xe=Lr), x0, y0, s)
+    _opening_in_plan(c, dict(op, x0=xs_[0], xs=0.0, xe=wr, y0=ys_[0], b=ys_[1], d1=ys_[0], d2=ys_[2], a=xs_[1]), x0, y0, 1.0)
     c.setFillColorRGB(*INK); c.setFont(FR, 6)
     for (i, j), v in zone.items():
         cx, cy = (xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2
@@ -3893,7 +3902,7 @@ def _opening_enlarged(c, top, op, d):
     memberart._dim_v(c, ys[0], ys[1], xl, f"d1 = {g(op['d1'])}", FR, ext_from=x0)
     memberart._dim_v(c, ys[1], ys[2], xl, f"b = {g(op['b'])}", FR, ext_from=x0)
     memberart._dim_v(c, ys[2], ys[3], xl, f"d2 = {g(op['d2'])}", FR, ext_from=x0)
-    _small(c, (LM + RM) / 2, yb - 30, "enlarged plan to scale, lengths in ft; unit shear in each zone of sheathing; framing at the opening drawn as wood with the largest "
+    _small(c, (LM + RM) / 2, yb - 30, ("enlarged plan to scale" if to_scale else "enlarged plan, not to scale") + ", lengths in ft; unit shear in each zone of sheathing; framing at the opening drawn as wood with the largest "
            "axial force of the members along the opening sides (right) and across the depth (top), tension or compression as the load reverses; chords at top and bottom")
     return yb - 44
 
