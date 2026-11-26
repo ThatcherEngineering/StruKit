@@ -950,7 +950,7 @@ function modelCard(changed) {
     select("project");
     toast(out.levels.length ? "The frame was run free to sway by the direct analysis method: " + out.runs + " second-order runs." : "The sway frame was not run. See the notes under the plan.", 12000);
   } }, "Run the 3D frame free to sway (direct analysis method)");
-  const ratioCell = (c) => el("td", { class: c.ratio > 1 ? "st FLAG" : "", title: c.ratio_combo || "" }, c.ratio == null ? "not checked" : c.ratio.toFixed(2) + (c.ratio > 1 ? " FLAG" : " OK") + " (Eq. " + c.eq + ")");
+  const ratioCell = (c) => el("td", { class: c.ratio > 1 ? "st FLAG" : "", title: c.ratio_combo || "" }, c.ratio == null ? (c.wood ? "wood: on its own sheet" : "not checked") : c.ratio.toFixed(2) + (c.ratio > 1 ? " FLAG" : " OK") + " (Eq. " + c.eq + ")");
   const n1 = (v, d = 1) => (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toLocaleString();
   const bentFields = [["n", "Number of bents"], ["spacing", "Bent spacing, ft (one number, or a list)"], ["end_start", "Roof past the first bent, ft"], ["end_end", "Roof past the last bent, ft"],
     ["col_spacing", "Column spacing across the bent, ft"], ["cant_low", "Rafter cantilever past line A, ft"], ["cant_high", "Rafter cantilever past line B, ft"], ["height", "Height to the top of the line A columns, ft"], ["slope", "Roof rise in 12, up toward line B (blank = level)"],
