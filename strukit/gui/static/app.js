@@ -592,6 +592,28 @@ function fillWindBar(m, changed) {
   return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the wind load from"), pick, dir, go);
 }
 
+function fillShearTabBar(m, changed) {
+    const bms = S.members.filter(x => x.kind === "steel_beam" && x.values.at_x1 && x.values.at_level);
+    if (!bms.length) return el("div", { class: "fill small" }, "The end shears can be filled from a beam of the 3D frame once the project has steel beams placed in the building model.");
+    const pick = el("select", {}, el("option", { value: "" }, "choose a frame beam"), bms.map(x => el("option", { value: x.values.mark }, x.values.mark || "(no mark)")));
+    const end = el("select", {}, ["left", "right"].map(a => el("option", { value: a }, a + " end")));
+    const go = el("button", { class: "btn", onclick: async () => {
+      if (!pick.value) return toast("Choose the beam first.");
+      let got;
+      try { got = await post("/api/frame_beam_end", { project: S.project, members: S.members, mark: pick.value }); } catch (e) { return toast(e.message, 12000); }
+      const rows = (got.ends || {})[end.value];
+      if (!rows || !rows.length) return toast((got.messages || []).join("  ") || "The frame did not run.", 12000);
+      m.values.runs = rows.map(r => ({ name: r.name, R: r.V.toFixed(2) }));
+      m.values.loads_from = "end shear at the " + end.value + " end of beam " + pick.value + " in the 3D frame analysis, second-order analysis";
+      if (!m.values.beam) { const b = bms.find(x => x.values.mark === pick.value); if (b) m.values.beam = b.values.shape; }
+      changed(); drawMain();
+      const tt = Math.max(...rows.map(r => r.T));
+      toast("Filled " + rows.length + " runs from the frame: the end shear of the runs with the largest moment, shear and axial tension at that end." +
+            (tt > 0.05 ? " The beam also carries up to " + tt.toFixed(1) + " kip axial tension there; this sheet does not check axial force." : ""), 12000);
+    } }, "Fill Loads");
+    return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the end shears from the 3D frame"), pick, end, go);
+  }
+
 function fillBar(m, changed) {
   if (m.kind === "shear_wall" || m.kind === "perforated_wall" || m.kind === "ftao_wall") { const a = fillWallBar(m, changed), b = fillAboveBar(m, changed); return b ? el("div", {}, a, b) : a; }
   if (m.kind === "diaphragm") return fillDiaphragmBar(m, changed);
@@ -603,6 +625,7 @@ function fillBar(m, changed) {
   }
   if (m.kind.startsWith("wind_") && m.kind !== "wind_kzt" && m.kind !== "wind_enclosure") return fillKztBar(m, changed);
   if (["wood_beam", "lvl_beam", "glulam_beam", "wey_beam", "ijoist"].includes(m.kind)) { const a = fillLoadsBar(m, changed), b = fillTakedownBar(m, changed); return (a || b) ? el("div", {}, a, b) : null; }
+  if (m.kind === "single_plate") { const a = fillShearTabBar(m, changed), b = fillTakedownBar(m, changed); return b ? el("div", {}, a, b) : a; }
   if (TD_BEAMS.includes(m.kind) || TD_TARGET_P.includes(m.kind)) { const b = fillTakedownBar(m, changed); if (b) return b; }
   if (m.kind === "footing_cont") return fillFootingTakedownBar(m, changed);
   if (m.kind === "base_plate_biaxial") {

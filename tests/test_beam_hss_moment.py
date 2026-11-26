@@ -84,3 +84,38 @@ def test_joint_loads_from_the_frame():
              plate_Fy="36", plate_source="ASTM A36", loads=[], runs=[dict(name=r["name"], M=f"{r['M']:.2f}", P=f"{r['P']:.2f}", Mc=f"{r['Mc']:.2f}") for r in g["rows"]])
     s = calc.build("beam_hss_moment", v, d["project"])[0]
     assert s.ok
+
+
+def test_welded_flange_plates_on_the_sheet(tmp_path):
+    """Flange plates fillet welded to the beam flange (narrower than the flange, welds along both plate edges and across the end): every
+    value by hand from AISC 360-22 Eq. J2-4, J2-6a, J2-6b, J4-1 to J4-4, Table D3.1 Case 4 and Sect. J4.4."""
+    v = dict(V, beam="W12X26", column="HSS8X8X1/2", col_Fy="46", flanges="flange plates welded to the face", bp="5.5", tp="0.5", plate_Fy="36",
+             plate_source="ASTM A36", plate_Fu="58", beam_Fu="65", fbw="0.25", fLw="11", fend="yes", fwa1="1", fweld="0.3125", fFEXX="70",
+             loads=[dict(case="D", M="3", P="4", Mc="6", label=""), dict(case="L", M="9", P="12", Mc="20", label="")])
+    s = calc.build("beam_hss_moment", v, dict(PROJ, method="LRFD"))[0]
+    fw = s.conn["fw"]
+    Mu = (1.2 * 3 + 1.6 * 9) * 12
+    assert fw["Pw"] == pytest.approx(Mu / 12.2) and fw["Pp"] == pytest.approx(Mu / 12.7)
+    q = 0.6 * 70 * 0.7071 * 0.25                                         # 7.42 kip/in nominal
+    Rl, Rt = q * 22, q * 5.5
+    assert fw["Rnwl"] == pytest.approx(Rl) and fw["Rnwt"] == pytest.approx(Rt)
+    assert fw["R_w"] == pytest.approx(0.75 * max(Rl + Rt, 0.85 * Rl + 1.5 * Rt))
+    assert fw["bm_plate"] == pytest.approx(min(1.0 * 0.6 * 36 * 22 * 0.5, 0.75 * 0.6 * 58 * 22 * 0.5))
+    assert fw["bm_beam"] == pytest.approx(min(0.6 * 50 * 22 * 0.38, 0.75 * 0.6 * 65 * 22 * 0.38))
+    assert fw["U"] == 1.0 and fw["R_tr"] == pytest.approx(0.75 * 58 * 2.75) and fw["R_ty"] == pytest.approx(0.9 * 36 * 2.75)
+    assert fw["Lc_r"] == pytest.approx(0.65 * 1 / (0.5 / 12 ** 0.5)) and fw["R_c"] == pytest.approx(0.9 * 36 * 2.75)   # K L / r under 25: Eq. J4-6
+    assert fw["narrow"] and fw["wmax"] == pytest.approx(0.4375) and fw["wmin"] == pytest.approx(0.1875)
+    names = [r.check for r in s.rows]
+    assert "Fillet welds, flange plate to beam flange" in names and "Fillet welds, flange plate to the HSS face" in names
+    assert "Flange Welds" in dict(s.info) and not any("bolts or welds to the beam flange" in t for t in s.not_checked)
+    # shorter welds lower U (Case 4): l = 9 in., w = 5.5 in., 1.5 w <= l < 2 w gives U = 0.87; no transverse weld
+    s2 = calc.build("beam_hss_moment", dict(v, fLw="9", fend="no"), dict(PROJ, method="LRFD"))[0]
+    assert s2.conn["fw"]["U"] == 0.87 and s2.conn["fw"]["R_w"] == pytest.approx(0.75 * q * 18)
+    with pytest.raises(Exception, match="shorter than the distance"):
+        calc.build("beam_hss_moment", dict(v, fLw="5"), dict(PROJ, method="LRFD"))
+    with pytest.raises(Exception, match="bolted or welded"):
+        calc.build("beam_hss_moment", dict(v, fd="0.75", fgroup="A325", fthreads="N", fn="3", fs="3", fg="3", flev_p="1.5", flev_b="1.5", fa1="2"),
+                   dict(PROJ, method="LRFD"))
+    from strukit import calcsheet
+    calcsheet.simple_pdf(s, str(tmp_path / "bhm_welded.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")
+    calcsheet.simple_pdf(s2, str(tmp_path / "bhm_welded2.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")

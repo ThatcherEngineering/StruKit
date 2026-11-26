@@ -147,3 +147,26 @@ def test_coped_bottom_flange_only_on_the_sheet(tmp_path):
     calcsheet.simple_pdf(bot, str(tmp_path / "bot.pdf"), "Job", "AISC 360-22", "Nov 25, 2026")
     with pytest.raises(WorksheetError):                                                 # no depth at all
         single_plate_sheet("SP", *a, LOADS[:1], cb, "ASD", support=sup, cope=dict(c=5.0, setback=0.5, lev=1.5, leh=1.75, Fy=50))
+
+
+def test_end_shears_as_runs_match_the_combination():
+    """Combined end shears typed as runs give the same checks as the loads and combination they come from (Design Guide 24 Ex. 5.1, LRFD)."""
+    a = _run("LRFD")
+    b = single_plate_sheet("SP1", *ARGS, [], [], "LRFD", runs=[dict(name="run 3", R=75.0), dict(name="run 1", R=-40.0)], runs_from="frame")
+    assert b.single_plate["R"] == a.single_plate["R"] == 75.0
+    assert [(r.check, round(r.capacity, 6)) for r in a.rows] == [(r.check, round(r.capacity, 6)) for r in b.rows]
+
+
+def test_shear_tab_end_shears_from_the_frame():
+    """The eave portal carport: the frame beam's end shears fill the shear tab screen (the web connection of the moment joint) and it builds."""
+    import json, os
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "carport_eave_portals.strukit")))
+    got = calc.frame_beam_end(d["project"], d["members"], "E3A")
+    rows = got["ends"]["left"]
+    assert rows and max(r["V"] for r in rows) > 0
+    v = dict(mark="SP9", column="HSS8X8X1/2", col_Fy="50", col_Fu="62", col_source="A500 Gr. C", beam="W12X26", beam_Fu="65", beam_source="A992", tp="0.25",
+             plate_Fy="36", plate_Fu="58", plate_source="ASTM A36", d="0.75", group="A325", threads="N", n="3", spacing="3", lev="1.25", leh="1.5",
+             a="2", holes="SSLT", weld="0.1875", FEXX="70", loads=[], runs=[dict(name=r["name"], R=f"{r['V']:.2f}") for r in rows],
+             loads_from="end shear at the left end of beam E3A in the 3D frame analysis")
+    s = calc.build("single_plate", v, d["project"])[0]
+    assert s.single_plate["R"] == pytest.approx(max(r["V"] for r in rows), abs=0.006)

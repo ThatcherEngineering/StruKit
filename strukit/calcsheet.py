@@ -3089,20 +3089,26 @@ def _beam_hss_moment_picture(c, top, d):
     memberart.w_side(c, xf + g_, ym - dd / 2 * sc, Lb - g_, dd * sc, tf * sc, vertical=False)
     _break_v(c, xf + Lb, ym - dd / 2 * sc, ym + dd / 2 * sc)
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    blv = d.get("bolts")
-    Lpl = (blv["a1"] + (blv["n"] - 1) * blv["s"] + blv["lev_p"]) if blv else 8.0
+    blv, wlv = d.get("bolts"), d.get("welds")
+    Lpl = (blv["a1"] + (blv["n"] - 1) * blv["s"] + blv["lev_p"]) if blv else ((wlv["a1"] + wlv["Lw"]) if wlv else 8.0)
     if d["plate"]:
         c.setFillColorRGB(0.62, 0.68, 0.76)
         for sg in (1, -1):
             y0 = ym + sg * dd / 2 * sc if sg > 0 else ym - dd / 2 * sc - tb * sc
             c.rect(xf, y0, Lpl * sc, tb * sc, fill=1, stroke=1)
+        if wlv:                                      # the fillets to the beam flange, seen along the plate edges
+            c.setFillColorRGB(0.35, 0.38, 0.42)
+            wb = max(1.2, wlv["w"] * sc)
+            for yy in (ym + dd / 2 * sc - wb * 0.5, ym - dd / 2 * sc - wb * 0.5):
+                c.rect(xf + wlv["a1"] * sc, yy, wlv["Lw"] * sc, wb, fill=1, stroke=0)
+            c.setFillColorRGB(0.62, 0.68, 0.76)
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawString(xf + Lb + 16, ym + 6, d["beam"])
     c.drawRightString(xc - H / 2 * sc - 5, ym - hc / 2 + 4, d["column"])
     memberart._dim_v(c, ym - dd / 2 * sc, ym + dd / 2 * sc, xf + Lb + 8, f"d = {dd:g} in", FR, ext_from=xf + Lb)
     memberart._dim_h(c, xc - H / 2 * sc, xc + H / 2 * sc, ym - hc / 2 - 12, f"{H:g} in", FR, ext_from=ym - hc / 2)
     if d["plate"]:
-        c.setFont(FR, 6); c.drawString(xf + Lpl * sc + 4, ym + dd / 2 * sc + tb * sc + 3, f"flange plate {Bb:g} x {tb:g} in, top and bottom")
+        c.setFont(FR, 6); c.drawString(xf + 2, ym - dd / 2 * sc - tb * sc - 9, f"flange plate {Bb:g} x {tb:g} in, top and bottom")
     _small(c, xc + 20, ym - hc / 2 - 28, "elevation, to scale")
     # plan of the connecting face, right
     xq, yq = RM - 150, top - 100
@@ -3110,12 +3116,48 @@ def _beam_hss_moment_picture(c, top, d):
     c.setLineWidth(0.8); c.setStrokeColorRGB(*INK)
     memberart.hss_plan(c, xq - H * s2 / 2, yq, H * s2, B * s2, d["t"] * s2)                                         # HSS cut at the flange
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    bl = d.get("bolts")
-    Lp = (bl["a1"] + (bl["n"] - 1) * bl["s"] + bl["lev_p"]) * s2 if bl else 46
+    bl, wl_ = d.get("bolts"), d.get("welds")
+    Lp = (bl["a1"] + (bl["n"] - 1) * bl["s"] + bl["lev_p"]) * s2 if bl else ((wl_["a1"] + wl_["Lw"]) * s2 if wl_ else 46)
+    bf_ = d.get("bf") or Bb
+    flange_rect = lambda: None
+    if wl_:                                                  # the beam flange, held 1/2 in. off the face, broken beyond the plate
+        xb0, xb1 = xq + 0.5 * s2, xq + Lp + 16
+        def flange_rect():
+            c.setFillColorRGB(0.90, 0.92, 0.95); c.setStrokeColorRGB(*INK); c.setLineWidth(0.6)
+            c.rect(xb0, yq - bf_ / 2 * s2, xb1 - xb0, bf_ * s2, fill=1, stroke=1)
+            c.setLineWidth(0.4); c.setDash(2.5, 1.8)
+            c.line(xb0, yq - bm_tw / 2 * s2, xb1, yq - bm_tw / 2 * s2); c.line(xb0, yq + bm_tw / 2 * s2, xb1, yq + bm_tw / 2 * s2)   # web beyond, hidden
+            c.setDash()
+            _break_v(c, xb1, yq - bf_ / 2 * s2 - 2, yq + bf_ / 2 * s2 + 2)
+        bm_tw = d.get("tw") or 0.3
+        if bf_ > Bb:
+            flange_rect()                                    # looking down: the flange under a narrower plate
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     c.setFillColorRGB(0.62, 0.68, 0.76) if d["plate"] else c.setFillColorRGB(0.90, 0.92, 0.95)
     c.rect(xq, yq - Bb / 2 * s2, Lp, Bb * s2, fill=1, stroke=1)
+    if wl_:
+        if bf_ <= Bb:
+            flange_rect()                                    # looking up at a wider plate: the flange is nearer the viewer
+        wlw = min(bf_, Bb)                                   # the weld lines lie along the edges of the narrower part
+        band = max(2.0, min(3.4, wl_["w"] * s2 * 0.9))
+        xw0, xw1 = xq + wl_["a1"] * s2, xq + (wl_["a1"] + wl_["Lw"]) * s2
+        c.setFillColorRGB(0.35, 0.38, 0.42); c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(0.3)
+        strips = [(xw0, yq + wlw / 2 * s2, xw1 - xw0, band), (xw0, yq - wlw / 2 * s2 - band, xw1 - xw0, band)]
+        if wl_["end"]:
+            strips.append((xw1, yq - wlw / 2 * s2 - band, band, wlw * s2 + 2 * band))
+        for (sx, sy, sw, sh) in strips:
+            c.rect(sx, sy, sw, sh, fill=1, stroke=0)
+            if sw > sh:
+                k = sx
+                while k < sx + sw - 1:
+                    c.line(k, sy, min(k + sh * 0.7, sx + sw), sy + sh); k += 3.0
+            else:
+                k = sy
+                while k < sy + sh - 1:
+                    c.line(sx, k, sx + sw, min(k + sw * 0.7, sy + sh)); k += 3.0
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     memberart._dim_v(c, yq - B / 2 * s2, yq + B / 2 * s2, xq - H * s2 - 10, f"B = {B:g} in", FR, ext_from=xq - H * s2)
-    memberart._dim_v(c, yq - Bb / 2 * s2, yq + Bb / 2 * s2, xq + Lp + (46 if bl else 10), f"{Bb:g} in", FR, ext_from=xq + Lp)
+    memberart._dim_v(c, yq - Bb / 2 * s2, yq + Bb / 2 * s2, xq + Lp + (46 if bl else 26 if wl_ else 10), f"{Bb:g} in", FR, ext_from=xq + Lp)
     if bl:                                                   # bolts in plan, with the gage, the distance from the face and the spacing dimensioned
         c.setFillColorRGB(*INK)
         xs_ = [xq + (bl["a1"] + i * bl["s"]) * s2 for i in range(bl["n"])]
@@ -3132,10 +3174,24 @@ def _beam_hss_moment_picture(c, top, d):
         memberart._dim_v(c, yq - bl["g"] / 2 * s2, yq + bl["g"] / 2 * s2, xq + Lp + 8, "", FR, ext_from=xs_[-1])
         c.setFont(FR, 6); c.setFillColorRGB(*INK)
         c.drawString(xq + Lp + 11, yq - 2, f"g = {bl['g']:g} in")
+    if wl_:                                                  # weld start from the face and weld length dimensioned
+        ybot = yq - max(Bb, bf_) / 2 * s2 - 10
+        memberart._dim_h(c, xq, xw0, ybot, "", FR, ext_from=yq - wlw / 2 * s2 - band)
+        memberart._dim_h(c, xw0, xw1, ybot, "", FR, ext_from=yq - wlw / 2 * s2 - band)
+        c.setFont(FR, 6); c.setFillColorRGB(*INK)
+        c.drawRightString(xq - 2, ybot - 8, f"{wl_['a1']:g} in")
+        c.drawCentredString((xw0 + xw1) / 2, ybot - 8, f"{wl_['Lw']:g} in")
+        c.drawString(xq, ybot - 17, f"fillet {wl_['w']:g} in, both edges" + (" and across the end" if wl_["end"] else ""))
     memberart._dim_v(c, yq + Bb / 2 * s2, yq + B / 2 * s2, xq + 22, "", FR, ext_from=xq)
-    c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawString(xq + 26, yq + (Bb / 2 + a_ / 2) * s2 - 2 + max(0, 6 - a_ * s2), f"a = {a_:.3g} in")
-    _small(c, xq - H * s2 / 2 + 20, yq - B / 2 * s2 - (26 if bl else 14), "plan at a " + ("flange plate" if d["plate"] else "flange") + ", to scale")
-    return min(ym - hc / 2 - 36, yq - B / 2 * s2 - (34 if bl else 22))
+    c.setFillColorRGB(*INK); c.setFont(FR, 6)
+    if wl_:
+        c.drawString(xq + 26, yq + B / 2 * s2 + 3, f"a = {a_:.3g} in")
+    else:
+        c.drawString(xq + 26, yq + (Bb / 2 + a_ / 2) * s2 - 2 + max(0, 6 - a_ * s2), f"a = {a_:.3g} in")
+    lo = yq - max(B, Bb, bf_ if wl_ else 0) / 2 * s2
+    _small(c, xq - H * s2 / 2 + 20, lo - (34 if wl_ else 26 if bl else 14),
+           ("plan looking up at the bottom flange plate, to scale" if (wl_ and bf_ <= Bb) else "plan at a " + ("flange plate" if d["plate"] else "flange") + ", to scale"))
+    return min(ym - hc / 2 - 36, lo - (42 if wl_ else 34 if bl else 22))
 
 
 def _stiffened_seat_picture(c, top, d):

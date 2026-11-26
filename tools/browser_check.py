@@ -31,7 +31,7 @@ def main():
     bad = 0
     try:
         with sync_playwright() as p:
-            b = p.chromium.launch(executable_path=os.environ.get("STRUKIT_CHROME", "/usr/bin/google-chrome"), args=["--no-sandbox"])
+            b = p.chromium.launch(executable_path=os.environ.get("STRUKIT_CHROME", "/usr/bin/google-chrome"), args=["--no-sandbox", "--no-proxy-server"])
             pg = b.new_page(viewport=dict(width=1300, height=2400))
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
