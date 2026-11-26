@@ -3336,7 +3336,11 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     if cope:
         sheet.blocks.append(dict(title="Coped Beam End", head="Coped Beam End",
                                  picture=("coped_end", dict(bd=bm["d"], tf=bm["tf"], dct=cope.get("dc") or 0.0, dcb=cope.get("dcb") or 0.0, c=cope["c"], setback=cope["setback"],
-                                                            n=n, s=spacing, lev=cope["lev"], leh=cope["leh"], d=d, beam=shapes.normalize(beam)))))
+                                                            n=n, s=spacing, lev=cope["lev"], leh=cope["leh"], d=d, beam=shapes.normalize(beam),
+                                                            hss=hss_col, rnd=rnd, t=t, H=(col.get("OD") or col.get("Ht")) if hss_col else None,
+                                                            sup=None if hss_col else _support_shape(support["name"]),
+                                                            column=shapes.normalize(column) if hss_col else support["name"].strip(),
+                                                            plate=dict(a=a, leh=leh, L=L, lev=lev)))))
     sheet.single_plate = dict(through=thr, cope=cp, R=R, C=C, rn=rn, e=e, brg_p=brg_p, brg_w=brg_w, Vy=Vy, Vr=Vr, Rbs=Rbs, punch=punch, t_min=t_min, L=L, lam=lam, lam_r=lam_r)
     return sheet
 
@@ -4007,7 +4011,7 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
                           if col_side else "Beam side only: the support the end plate bolts to (its flange bending, web and bearing at the bolt holes) is checked separately.")],
                         ["bolt pretension and snug-tight requirements"] + ([] if (cont and col_cfg in ("stiffened", "top_stiff")) else ["column web stiffeners where a web row fails"])
                         + (["web compression buckling (a moment connection on the opposite flange)", "the doubler plate welds"] if cont else []) + ["the beam and the column themselves", "moment that puts the bottom flange in tension (reverse the connection or use bolts at both flanges for that moment)"])
-    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("flush_end_plate", dict(d=db_, bf=bbf, tf=tbf, bp=bp, tp=tp, g=g, pfi=pfi, db=d, dc=dc, tcf=tcf if col_side else 0.0, tcap=tcap or 0.0, pb=pb if n_rows == 2 else None, pfo=pfo if extended else None,
+    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("flush_end_plate", dict(d=db_, bf=bbf, tf=tbf, tw=tbw, wf=w_flange, bcf=bcf if col_side else 0.0, bp=bp, tp=tp, g=g, pfi=pfi, db=d, dc=dc, tcf=tcf if col_side else 0.0, tcap=tcap or 0.0, pb=pb if n_rows == 2 else None, pfo=pfo if extended else None,
                                                                                                    beam=beam_name, column=shapes.normalize(column) if col_side else "",
                                                                                                    cont=cont and not top4, nocap=col_cfg in ("top", "top_stiff"), stiff=stiff if (cont and col_cfg in ("stiffened", "top_stiff")) else None))))
     sheet.ep = dict(Vp=Vp, Rpy=Rpy, Rpr=Rpr, Tw=Tw, h2=h2, Meq=Meq, h1=h1, d_req=d_req, s=s_, Yp=Yp, t_req=t_req, Rbt=Rbt, Rbrg=Rbrg, Vn=Vn, Tcalc=Tcalc, Tyf=Tyf, Tf=Tf, lwf=lwf, Rwf=Rwf, lwt=lwt, Tyw=Tyw, Twd=Twd, Rwt=Rwt,
