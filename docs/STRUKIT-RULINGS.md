@@ -386,3 +386,8 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 - Web local yielding and crippling under a wheel: the wheel taken at the beam end (Eq. J10-3, J10-5a / b); no bearing length unless typed with
   its source.
 - Continuous runway beam: Mcx with Lb = the longest span and Cb = 1.0 for positive and negative moment; deflection limit over the shortest span.
+
+## 2026-11-26 10:35 — Zach's ruling (do not ask again)
+- **Force-transfer wall deflection: the more conservative way** ("Whichever is more conservative is what I would like to use, and yes the 3D
+  frame should match it"). Every pier over the full wall height in both directions, each at its own unit shear, averaged (APA's pier method
+  otherwise). The 3D frame takes the wall's stiffness as V over that deflection. Built 0.252.1. This replaces the 09:05 entry.

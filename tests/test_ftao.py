@@ -80,8 +80,8 @@ def test_several_openings_on_the_sheet(tmp_path):
 
 
 def test_deflection_one_and_two_openings(tmp_path):
-    """Deflection by the APA pier method (SEAOC 2015; T555): each pier by SDPWS Eq. 4.3-1 at its own v and b, once each way, h - hb toward an
-    opening and the full h away from the openings; the average. By hand for APA Example 3 and the 20 ft two-window wall."""
+    """Deflection by the APA pier method (SEAOC 2015; T555): each pier by SDPWS Eq. 4.3-1 at its own v and b, once each way, the average; every
+    pier over the full wall height (Zach's ruling 2026-11-26, the more conservative reading). By hand for APA Example 3 and the 20 ft wall."""
     from strukit import calcsheet
     defl = dict(E=1.6e6, A=10.5, Da=0.1)
     s = ws_more.ftao_wall_sheet("FT", A[0], A[1], A[2], A[3], "x", *A[4:], "x", defl=defl)
@@ -90,13 +90,15 @@ def test_deflection_one_and_two_openings(tmp_path):
     EA = 1.6e6 * 10.5
     f = lambda v, h, b: 8 * v * h ** 3 / (EA * b) + v * h / (1000 * Ga) + h * 0.1 / b
     v = w["vh"]
-    hand = [f(v, 6.0, 2.3), f(v, 8.0, 2.3), f(v, 8.0, 4.0), f(v, 6.0, 4.0)]       # 2 ft of sheathing below the opening: 8 - 2 = 6 ft toward it
+    hand = [f(v, 8.0, 2.3), f(v, 8.0, 2.3), f(v, 8.0, 4.0), f(v, 8.0, 4.0)]       # every pier over the full wall height (Zach 2026-11-26)
     assert s.wall_defl["delta"] == pytest.approx(sum(hand) / 4, rel=1e-9) and Ga == pytest.approx(shearwall.TABLE_4_3A[shearwall.panel_key(A[0])][0][1])
     assert "deflection" not in s.not_checked and any(b["title"] == "Deflection" for b in s.blocks)
     assert "deflection" in ws_more.ftao_wall_sheet("FT", A[0], A[1], A[2], A[3], "x", *A[4:], "x").not_checked
     m = ws_more.ftao_wall_sheet("FT", "Sheathing, 15/32 in, 8d common", 4, "OSB", 0.5, "DF-L", 10.0, 2.0, 4.0, 4.5, 5.0, 3.0, 4000.0, "wind", "ASD", "test",
                                 more=[dict(w=6.0, ho=5.0, sill=2.0, pier=3.5)], defl=defl)
     c = m.wall_defl["cases"]
-    assert [x["h"] for x in c] == [7.0, 10.0, 8.0, 7.0, 10.0, 8.0]                # pier 2 toward opening 2 (2 ft below) and toward opening 1 (3 ft below)
+    assert [x["h"] for x in c] == [10.0] * 6
+    apa = shearwall.ftao_deflection(10.0, [dict(L=2.0, v=1, hb_right=3.0), dict(L=4.5, v=1, hb_left=3.0, hb_right=2.0), dict(L=3.5, v=1, hb_left=2.0)], 10.0, EA, 0.1)
+    assert [x["h"] for x in apa["cases"]] == [7.0, 10.0, 8.0, 7.0, 10.0, 8.0]      # APA's heights, kept in the function, not used on the sheet
     assert m.wall_defl["delta"] == pytest.approx(sum(x["d"] for x in c) / 6)
     calcsheet.simple_pdf(m, str(tmp_path / "ftd.pdf"), "Job", "SDPWS-2021", "Nov 26, 2026")

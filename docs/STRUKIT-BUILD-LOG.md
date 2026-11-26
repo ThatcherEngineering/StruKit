@@ -904,3 +904,6 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - Opened in a headless browser (three-span runway): no page errors.
 - **Applied, not ruled (conservative):** the wheel is taken at the beam end for both web checks (the end equations are the lower); on a continuous beam Mcx uses Lb = the longest span and Cb = 1.0 for positive and negative moment; the deflection limit is taken over the shortest span.
 - Not built (waits on Design Guide 7 and MHI MH27.1 / CMAA 74): underhung cranes and monorails, the lateral load method and deflection limits by the Guide, fatigue, cap channels.
+
+## 2026-11-26 10:40 local — 0.252.1 force-transfer wall deflection over the full height, and the 3D frame from the same deflection (Zach's ruling) (661 tests)
+- Zach 10:35: "Whichever is more conservative is what I would like to use, and yes the 3D frame should match it." The sheet now takes every pier over the full wall height in both directions (0.60 in. against APA's 0.47 in. on the test wall). The 3D frame's stiffness of a force-transfer wall is now V over that same sheet deflection (each pier at its own unit shear; before, every pier at V / sum of the pier lengths). `shearwall.ftao_deflection` keeps APA's heights only when hb is passed (tested, not used on the sheet).

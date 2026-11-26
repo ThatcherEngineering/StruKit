@@ -4476,8 +4476,8 @@ def _wood_frame_ratio(W, P, M1, M2, V, CD, le1, le2, lu):
 
 def _wall_stiffness(project, m):
     """Lateral stiffness of a placed shear wall for the 3D frame, lb/in.: the design shear over the SDPWS Eq. 4.3-1 deflection of its sheet
-    (segments in parallel: the sum of V/delta of each); a force-transfer wall by its piers as full-height segments (the sheathing above and
-    below the openings not counted). Returns (k, text) or a message."""
+    (segments in parallel: the sum of V/delta of each); a force-transfer wall by V over the deflection on its sheet (its piers over the full
+    wall height, Zach's ruling 2026-11-26). Returns (k, text) or a message."""
     v = m.get("values") or {}
     kind, mark = m.get("kind"), v.get("mark") or "?"
     need = "type the end post area, its E and the anchorage slip on the wall screen to put it in the 3D frame"
@@ -4486,22 +4486,12 @@ def _wall_stiffness(project, m):
             sh, _, _ = build("ftao_wall", v, project)
             if not all(str(v.get(k_) or "").strip() for k_ in ("chord_A", "chord_E", "slip")):
                 return f"{mark}: {need}"
-            piers = [p_[0] for p_ in sh.wall["piers"]]
-            sv = dict(mark=mark, panel=v.get("panel"), spacing=v.get("spacing"), panel_type=v.get("panel_type"), sides=v.get("sides"), blocking="blocked", G=v.get("G"),
-                      G_source=v.get("G_source"), h=v.get("h"), lengths=", ".join(f"{b:g}" for b in piers), load=v.get("load"), V=v.get("V"), v_source="t",
-                      holddown=v.get("holddown") or "no", chord_A=v.get("chord_A"), chord_E=v.get("chord_E"), slip=v.get("slip"))
-            sv["lengths"] = f"{max(sum(piers), float(v.get('h')) / 2):g}"          # a wall of one segment, only to read Ga of the panel and nailing
-            sh2, _, _ = build("shear_wall", sv, project)
-            Ga = sh2.wall.Ga
-            h_, V_ = float(v.get("h")), float(v.get("V"))
-            EA, Da = float(v.get("chord_E")) * float(v.get("chord_A")), float(v.get("slip"))
-            vv = V_ / sum(piers)
-            k = 0.0
-            for b in piers:                                  # SDPWS Eq. 4.3-1 for each pier over the full wall height, v the same in every pier
-                dl = 8 * vv * h_ ** 3 / (EA * b) + vv * h_ / (1000.0 * Ga) + h_ * Da / b     # SDPWS units: plf, ft, psi, in2, kips/in.
-                k += vv * b / dl
-            return k, ("SDPWS Eq. 4.3-1 for each pier, " + " + ".join(f"{b:g}" for b in piers) + f" ft, over the full {h_:g} ft height "
-                       "(the sheathing above and below the openings not counted)")
+            d_ = getattr(sh, "wall_defl", None)
+            if not d_ or d_["delta"] <= 0:
+                return f"{mark}: {need}"
+            V_ = float(v.get("V"))
+            return V_ / d_["delta"], (f"V / delta = {V_:,.0f} / {d_['delta']:.3f} in.: the wall's deflection on its sheet (APA T555 pier method, SDPWS Eq. 4.3-1 "
+                                      "for each pier at its own unit shear over the full wall height, averaged)")
         elif kind == "perforated_wall":
             sh, _, _ = build(kind, v, project)
             if sh.wall.defl is None:
