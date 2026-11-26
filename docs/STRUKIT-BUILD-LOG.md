@@ -5,11 +5,11 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-26 11:55 MST. Build **0.258.0**, 673 tests passing; `main` and `release` pushed.
+Updated 2026-11-26 14:00 MST. Build **0.261.0**, 678 tests passing; `main` and `release` pushed.
 
 **StruKit is designed to a high visual detail standard (Zach, 2026-11-26 02:26; every chat must follow it).** Every picture looks like the real member or connection, drawn as a detailer would: HSS with its wall and rounded corners, W shapes with flanges, plates at thickness, bolts with heads and nuts (`memberart.bolt_side`), welds where they are, every connected member drawn and broken off. Render and look at every new or changed picture before release. Full wording in `CLAUDE.md`, "Printed sheets". **After builds, send Zach the PDFs of what was built (sample inputs).**
 
-**2026-11-26 run:** 0.248.0 to 0.256.0 in the morning (see the closing check-in entries below). After Zach's reply (all conservative readings ruled; diaphragm openings by option (a); keep a missing references log; continue the list): 0.257.0 diaphragm openings (force transfer turned flat, by hand), anchor rod strength the lower of 0.75 Fu Ab and Fu Ase everywhere, beta_w by the Commentary formula, missing references log in `docs/REFERENCES.md`; 0.257.1 opening picture for narrow regions; 0.258.0 single-angle beam deflection about the principal axes (Commentary F10.2).
+**2026-11-26 run:** 0.248.0 to 0.256.0 in the morning (see the closing check-in entries below). After Zach's reply (all conservative readings ruled; diaphragm openings by option (a); keep a missing references log; continue the list): 0.257.0 diaphragm openings (force transfer turned flat, by hand), anchor rod strength the lower of 0.75 Fu Ab and Fu Ase everywhere, beta_w by the Commentary formula, missing references log in `docs/REFERENCES.md`; 0.257.1 opening picture for narrow regions; 0.258.0 single-angle beam deflection about the principal axes (Commentary F10.2); 0.259.0 single angles with axial plus transverse load (H2); 0.260.0 stiffened girders panel by panel (G.8A / G.8B) and bearing at the supports with bearing stiffeners; 0.261.0 different top and bottom flange plates on the beam to HSS moment joint.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -22,23 +22,25 @@ Updated 2026-11-26 11:55 MST. Build **0.258.0**, 673 tests passing; `main` and `
 **Waiting for Zach's ruling** (applied conservatively meanwhile; details in the rulings file)
 - Diaphragm opening (0.257.0): V the larger shear at the region's ends; corner zones the larger of (v d - F)/d and F/d; e1, e2 typed; deflection shear term raised over the region.
 - Single-angle deflection (0.258.0): midspan restraint taken as unrestrained; limit against the resultant.
+- Single angle axial plus bending (0.259.0): Cm = 1.0, K = 1.0 over the span, no B1 in tension, equal legs on the principal axes.
+- Stiffened girders (0.260.0): web beyond the last listed stiffener unstiffened; Ist at the smallest spacing and largest rho_w; k = tf at the ends; with bearing stiffeners the web not counted on.
+- Two flange plates (0.261.0): lever arm d + (tp top + tp bottom) / 2.
 - Older items still in the rulings file under "Open (not ruled)". Everything listed before 2026-11-26 noon is ruled (Zach: "I agree with your conservative rulings").
 
 **Needed from Zach (do not build without it):** the missing references log in `docs/REFERENCES.md` (DG7, MHI/CMAA, DG9, a published diaphragm-opening example, 16th Ed. Manual, ASCE 7-16, AISI S100, the HSS rafter-on-cap method, a readable TMS 402, ASABE EP484/486, his wind drift limit).
 
 **Next, in order**
-1. Single angles, still open: angles over more than one span or with overhangs, angles on the Steel Beam screen and in the 3D frame, transverse plus axial load.
-2. Stiffened girders: panel-by-panel spacing, bearing stiffeners at the supports, end-panel tension field (Eq. G2-12), tension field on continuous built-up girders.
-3. Beam to HSS moment joint: different top and bottom flange plates on the sheet.
-4. Seats: stiffener angle leg local buckling; stiffened seat on an HSS.
-5. Crane runway (waits on Design Guide 7 / MHI / CMAA): underhung cranes, fatigue, cap channels.
-6. Force-transfer walls: openings of different heights beyond T555's own treatment (no published method found).
-7. Built-up beams: the flange-to-web welds checked (now a stated shear flow).
-8. Manual citations: when a 16th Ed. Manual is on file, confirm Table 10-9 and the Part 10 seat provisions (now cited from the 15th Ed.).
-9. HSS column screen and wood connection pictures to the visual standard.
-10. Quick-start columns arrive without a Fy source: consider filling it from the quick start's Fy box with its source.
-11. Diaphragms: more than one opening; validate the opening method when a published example is supplied.
-12. More guard designs (Zach, later).
+1. Single angles, still open: angles over more than one span or with overhangs; angles on the Steel Beam screen and in the 3D frame.
+2. Stiffened girders, still open: tension field action in the end panel (Sect. G2.2 permits it; G.8 does not use it), stiffeners on continuous built-up girders, bearing stiffeners under interior concentrated loads (25 tw strip).
+3. Seats: stiffener angle leg local buckling; stiffened seat on an HSS.
+4. Built-up beams: the flange-to-web welds checked (now a stated shear flow).
+5. HSS column screen and wood connection pictures to the visual standard.
+6. Quick-start columns arrive without a Fy source: consider filling it from the quick start's Fy box with its source.
+7. Diaphragms: more than one opening; validate the opening method when a published example is supplied.
+8. Force-transfer walls: openings of different heights beyond T555's own treatment (no published method found).
+9. Crane runway (waits on Design Guide 7 / MHI / CMAA): underhung cranes, fatigue, cap channels.
+10. Manual citations: when a 16th Ed. Manual is on file, confirm Table 10-9 and the Part 10 seat provisions.
+11. More guard designs (Zach, later).
 
 The older "Next" and "Not built yet" lists further down are history; this list replaces them.
 
