@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 18:22. Build **0.225.0**, 606 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 18:45. Build **0.226.0**, 606 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -35,7 +35,7 @@ Updated 2026-11-25 18:22. Build **0.225.0**, 606 tests passing; `main` and `rele
 6. (Single angles in bending done 0.217.0.) Still open: angles over more than one span or with overhangs, axial load with bending (Sect. H2), deflection of unrestrained angles, unequal angles not in Commentary Table C-F10.1, the Steel Beam screen and the 3D frame taking angles.
 7. (Top-running crane runway beam, simple span, done 0.218.0.) Still open and waiting on documents: underhung cranes and monorails (bottom flange local bending), fatigue (AISC 360-22 Appendix 3 is on file; needs the number of cycles by service class), web yielding and crippling under the wheels, continuous runway beams, cap channels; AISC Design Guide 7 would let the lateral load and deflection limits be cited.
 8. (Dropped 2026-11-25 16:51, Zach: he no longer uses StruCalc and StruKit replaces it. No more StruCalc import work. The steel .vtx reader of 0.165.0 stays as it is.)
-8. **From the 2026-011 whole-house model run (0.220.0), in order:** (a) (existing walls done 0.221.0; still open: existing beams, posts and footings as carriers); (b) (post on a footing line spread over a typed length done 0.223.0; still open: the footing checked as an isolated pad under the post); (c) (wall weight 0.222.0, headers in wall lines 0.224.0; still open: wall weight less the openings, king and jack studs checked); (d) seismic weights and story forces from the model (today the seismic sheet's weights are typed); (e) diaphragm sheets filled from the model; (f) wood beams, posts and shear walls in the 3D frame.
+8. **From the 2026-011 whole-house model run (0.220.0), in order:** (a) (existing walls done 0.221.0; still open: existing beams, posts and footings as carriers); (b) (done 0.226.0: every point load on a footing line is checked as a pad, larger pads sized where needed); (c) (wall weight 0.222.0, headers in wall lines 0.224.0; still open: wall weight less the openings, king and jack studs checked); (d) seismic weights and story forces from the model (today the seismic sheet's weights are typed); (e) diaphragm sheets filled from the model; (f) wood beams, posts and shear walls in the 3D frame.
 9. (Shear lugs done 0.219.0.) Still open: anchorage in the concrete on the uplift base plate and the four-rod biaxial base plate; concrete breakout of the rods on the shear lug screen; shear lugs with net uplift or two-way shear.
 10. Built-up three-plate sections as beams and columns; the column side of the extended end plate.
 11. Through-plate and diaphragm beam-to-HSS moment connections (Design Guide 24 Examples 6.2, 6.4).
@@ -686,4 +686,16 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Roof Beam A placed** in the 2026-011 model as the LVL header in the Line 1 wall at the roof, from the Line A corner, 11.25 ft (sheet S3 by scale; the length equals the span on its own sheet). Its typed loads were dropped except self-weight: it now takes the roof joist row over 0.5 to 11.25 ft from the load path, and the Line 1 wall keeps the rest.
 - **A header end at a wall corner:** where two walls are under a header's jack studs, the one on the header's own wall line takes it (it was reported as "more than one member under it").
 - Tests: the corner case and Roof Beam A's row on the model; the earlier header test moved to 14 to 18 ft (the main wall keeps 26.75 - 10.75 - 4 = 12 ft of row). Opened in a headless browser.
+
+## 2026-11-25 18:45 local — 0.226.0 point loads on continuous footings: pads (606 tests)
+- Zach 18:22: "Yes continue with that list" and: beams and headers generate point loads; where a point load exceeds the bearing capacity of the continuous footing, size a larger square or rectangular footing at that point.
+- **Every point load that lands on a continuous footing line** (a post, a column, a header end down its jack studs) is no longer added to the line's per-foot load. It becomes an **Isolated Footing member of its own, "<footing line> at <member>"**, placed at the point:
+  - first the continuous footing itself is tried: its width x a length Le along the line (the length typed on the footing for point loads with its source, else the footing width), carrying the point load by case plus the line's own load by case (walls and joist rows on it) and the stem wall over Le, governing ASD and LRFD combinations picked on the total; soil bearing with footing and soil weight as the Isolated Footing sheet counts them;
+  - where that bearing pressure is over the allowable, a larger pad is sized in 3 in. steps: square, or, with "Larger pads: width across the footing line" typed, that width and lengthened along the line;
+  - the pad's own sheet checks soil bearing, one- and two-way shear, flexure, minimum steel and bearing on the footing (the load arrives through a block the stem wall thickness square); thickness from the line (kept if changed), bars at the line's transverse size and spacing both ways.
+- Pads are made again on every "Link members by position" (no duplicates; a changed thickness or bar size is kept). The notes under the plan list each pad: carried by the continuous footing (with the pressure) or sized larger.
+- The 0.223.0 "spread over a typed length" link is replaced by this (that length is now Le). The conservative reading of 0.223.0 to 0.225.0 (all point loads added to the line as if at one place) is gone.
+- `tools/browser_check.py --click "button text"` presses a Project page button before reporting (repeatable).
+- Validation: soil bearing by hand (2026-011 model: the post under Floor Beam B needs 2.25 ft square; 2.0 ft fails, by the same formula as the Isolated Footing sheet); Column A and Column B carried by the footing over its 2 ft width; rectangular and typed-length cases; a second run makes no duplicates. "Link members by position" pressed twice in a headless browser: 3 pads, all OK, no page errors.
+- Not yet: pads when "Recalculate the load path" is pressed alone (pads come from the position link), two point loads close enough to share one pad, the continuous footing's own sheet showing the pad locations.
 

@@ -21,6 +21,7 @@ def main():
     ap.add_argument("project")
     ap.add_argument("--port", type=int, default=8899)
     ap.add_argument("--select", default="")
+    ap.add_argument("--click", action="append", default=[], help="press a button on the Project page with this text first (repeatable)")
     a = ap.parse_args()
     d = json.load(open(a.project))
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -38,6 +39,12 @@ def main():
             pg.wait_for_timeout(1000)
             pg.evaluate("async (d) => { load(d, null); await recalcAll(); select('project'); }", d)
             pg.wait_for_timeout(2000)
+            for t in a.click:
+                pg.evaluate("() => select('project')")
+                pg.wait_for_timeout(500)
+                pg.locator("button", has_text=t).first.evaluate("e => e.click()")
+                pg.wait_for_timeout(6000)
+                print(f"pressed '{t}': {len(pg.evaluate('() => S.members'))} members")
             rows = pg.evaluate("() => S.members.map(m => { const r = R.get(m); return [m.values.mark || '', m.kind, "
                                "r ? (r.state !== 'done' ? (r.state || 'no result') : ((r.rows || []).some(x => x.status === 'FLAG') ? 'FLAG' : 'OK')) : 'no result', "
                                "r && r.state !== 'done' ? String(r.message || r.missing || '').slice(0, 120) : '']; })")

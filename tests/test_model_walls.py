@@ -56,7 +56,8 @@ def test_several_on_one_footing_and_point_on_a_line():
            dict(kind="footing_cont", values=dict(CF, mark="CF", at_x1="0", at_y1="0", at_x2="0", at_y2="20"))]
     out = calc.model_links(PROJ, mem)
     v = _by(out)
-    assert any("P3" in p and "not spread" in p for p in out["problems"])
+    pad = next(p for p in out["pads"] if p["src"] == "P3")             # P3 on the footing line: a pad check of that line
+    assert pad["foot"] == "CF" and pad["q"] <= pad["q_allow"]
     assert float(v["F1"]["P_service"]) == pytest.approx(4000) and v["F1"]["service_combo"] == "D + L"     # 1000 + 3000 beats 1000 + 2000 (Lr of P2)
 
 
@@ -119,25 +120,41 @@ def test_wall_weight_reaches_the_footing_line():
     assert "source" in calc._wall_weight(d["project"], w)
 
 
-def test_post_on_footing_line_spread_over_typed_length():
-    """A post on a continuous footing line is reported until the footing has a spread length with its source; then the post's load by case
-    divided by that length is put on the footing per foot (statics: twice the length, half the load per foot)."""
+def test_point_loads_on_footing_lines_get_pads():
+    """Posts on continuous footing lines are checked as pads: the continuous footing over its width (or the typed length) with the point load,
+    its own line load and stem wall; where the soil bearing is exceeded a larger pad is sized in 3 in. steps (square, or lengthened along the
+    line when a width across is typed). Each pad is an Isolated Footing member whose own sheet checks bearing, shear and flexure."""
     import copy
     d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
     ms = copy.deepcopy(d["members"])
     out = calc.model_links(d["project"], ms)
-    assert any("Column A, base" in p and "not spread" in p for p in out["problems"])
-    fv = next(m for m in ms if m["values"].get("mark") == "Footing Line A")["values"]
-    got = []
-    for L in ("4", "8"):
-        fv.update(at_spread=L, at_spread_source="test value")
-        out = calc.model_links(d["project"], ms)
-        assert not any("Footing Line A" in p for p in out["problems"])
-        f = next(m for m in out["members"] if m["values"].get("mark") == "Footing Line A")["values"]
-        assert "spread over " + L + " ft of footing" in f["loads_from"]
-        got.append(float(f["P_service"]))
-    assert got[1] == pytest.approx(got[0] / 2, abs=1.0)
-
+    pads = {p["src"]: p for p in out["pads"]}
+    assert set(pads) == {"Column A", "Column B", "Post under Beam B"}
+    assert not pads["Column A"]["enlarged"] and (pads["Column A"]["B"], pads["Column A"]["L"]) == (2.0, 2.0)
+    pb = pads["Post under Beam B"]
+    assert pb["enlarged"] and pb["B"] == pb["L"] == 2.25 and pb["q"] <= pb["q_allow"]
+    # by hand: a 2 ft square fails, 2.25 ft passes (no line load on Footing Line A; stem wall, footing and soil weights as typed on it)
+    fv = next(m for m in ms if m["values"]["mark"] == "Footing Line A")["values"]
+    W, h, conc = float(fv["W"]), float(fv["h"]), float(fv["conc_pcf"])
+    stem = float(fv["wall"]) / 12 * float(fv.get("stem_h") or 0) / 12 * float(fv.get("stem_pcf") or 0)
+    sd, sp = float(fv.get("soil_depth") or 0), float(fv.get("soil_pcf") or 0)
+    pad = next(m for m in out["members"] if m["values"].get("mark") == "Footing Line A at Post under Beam B")["values"]
+    P = float(pad["P_service"])
+    qh = lambda B: (P - stem * 2.25 + stem * B + B * B * h / 12 * conc + (B * B - (float(fv["wall"]) / 12) ** 2) * sd * sp) / (B * B)
+    assert qh(2.25) == pytest.approx(pb["q"], rel=1e-3) and qh(2.0) > pb["q_allow"]
+    sheet, _, _ = calc.build("footing_iso", pad, d["project"])
+    assert all(r.status == "OK" for r in sheet.rows)
+    # a pad width across typed: the pad is lengthened along the line instead
+    fv.update(at_pad_width="2")
+    pb2 = next(p for p in calc.model_links(d["project"], ms)["pads"] if p["src"] == "Post under Beam B")
+    assert pb2["B"] == 2.0 and pb2["L"] > 2.25 and pb2["q"] <= pb2["q_allow"]
+    # a longer length of footing typed for point loads: the continuous footing carries it
+    fv.update(at_pad_width="", at_spread="4", at_spread_source="test value")
+    pb3 = next(p for p in calc.model_links(d["project"], ms)["pads"] if p["src"] == "Post under Beam B")
+    assert not pb3["enlarged"] and pb3["L"] == 4.0
+    # running again replaces the pads (no duplicates)
+    out2 = calc.model_links(d["project"], out["members"])
+    assert sum(1 for m in out2["members"] if m["values"].get("pad_of")) == 3
 
 def test_header_in_a_wall_line():
     """A beam placed in a wall line at the wall's top level is a header: the joist row over its length goes onto it, the wall keeps the rest
@@ -183,7 +200,8 @@ def test_header_in_the_lower_wall_takes_the_wall_above():
     assert L(by["Line 1, lower level"]["loads"]) + hl == pytest.approx(l0, abs=2)
     up = [r for r in by["Header B LL"]["loads"] if "Line 1, main level" in r.get("label", "") and r["case"] == "Lr"]
     assert len(up) == 1 and (up[0]["x1"], up[0]["x2"]) == ("0", "5")
-    assert "Header B LL, left support, spread over 2 ft" in by["Footing Line 1"]["loads_from"]
+    assert {p["support"] if "support" in p else p["src"] for p in out["pads"] if p["src"] == "Header B LL"} == {"Header B LL"}
+    assert sum(1 for p in out["pads"] if p["src"] == "Header B LL") == 2                  # a pad check under each end
 
 
 def test_header_at_a_wall_corner():

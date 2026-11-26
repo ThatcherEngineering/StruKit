@@ -206,7 +206,17 @@ I-joist, post and footing members from StruCalc files) is dropped. Do not propos
 existing steel .vtx reader (0.165.0) and the tests that use past StruCalc output as a comparison stay as they are.
 
 ## 2026-11-25 18:00 to 18:30, building model readings applied (conservative; tell Zach at the check-in; not ruled)
-- **Point loads on a continuous footing line (0.223.0, 0.224.0):** every post, column or header end on a footing line is spread over the length typed on the footing, and all such per-foot loads are added to the footing's per-foot load as if they sat at one place, with the walls and joist rows on it. Point loads at different places along the line are not kept apart.
+- (Replaced by 0.226.0, Zach 18:22, see below.) Point loads on a continuous footing line were added to its per-foot load as if at one place (0.223.0 to 0.225.0).
 - **Wall weight (0.222.0):** psf x story height x the whole placed length; openings in the wall are not deducted.
 - **Existing walls (0.221.0):** both the wind and the seismic shear on an existing wall line are listed (no governing load picked).
+
+## 2026-11-25 18:22 — point loads on continuous footings get pads (Zach's direction)
+Zach: "beams and headers ... generate point loads. If those point loads exceed the footer bearing capacity of the continuous footer we need to
+be able to size a larger square/rectangular footer at that point load." Built 0.226.0. Applied in it (conservative, not ruled):
+- The continuous footing's own capacity under a point load is checked over a length Le of footing: the length typed on the footing for point
+  loads (with its source), else the footing width (no spread through the stem wall counted).
+- The pad carries the point load plus the footing line's own load and stem wall over the pad's length along the line.
+- On the pad's sheet the load arrives through a block the stem wall thickness square (the column size for shear and flexure).
+- Larger pads go up in 3 in. steps; their thickness starts at the line's (kept if the engineer changes it), bars at the line's transverse
+  bar size and spacing both ways; the pad's own sheet checks bearing, shear, flexure and minimum steel.
 
