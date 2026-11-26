@@ -234,7 +234,7 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - Rows of joists or rafters (members with a spacing) and I-joists are not frame members; their loads reach the frame through the load path.
 - Wood members are not checked from the frame forces; their own sheets (NDS) are the check.
 
-## 2026-11-25 20:20, shear walls and wood checks in the 3D frame (0.232.0), applied (not ruled; tell Zach at the check-in)
+## 2026-11-25 20:12, shear walls and wood checks in the 3D frame (0.232.0), applied (not ruled; tell Zach at the check-in)
 - Shear wall stiffness in the frame: the design shear over the SDPWS Eq. 4.3-1 deflection of its own sheet (a secant stiffness at the design
   load; segments in parallel). It needs the end post area and E and the anchorage slip typed on the wall screen; without them the wall is
   left out of the frame and reported.

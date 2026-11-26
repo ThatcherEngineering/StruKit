@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 20:35. Build **0.232.1**, 616 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 20:25. Build **0.232.1**, 616 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -732,7 +732,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - Readings applied (rulings file): reference E unadjusted, glulam columns Emin, G = E / 16, the 0.8 stiffness reduction applied to wood in the sway run, wood checked on its own sheets.
 - Validation: a 4x10 beam on two 6x6 posts by statics (750 / 250 lb under 1,000 lb at the quarter point; 1,200 lb each under 200 plf) and the deflection at the 3 ft joint equal to w x (L^3 - 2 L x^2 + x^3) / 24 E I plus the posts' shortening P h / A E (within 0.2 percent); the 2026-011 frame against the takedown (5 percent). Sway run with wood pressed in a headless browser.
 
-## 2026-11-25 20:20 local — 0.232.0 shear walls in the 3D frame; wood members checked from the frame forces (616 tests)
+## 2026-11-25 20:12 local — 0.232.0 shear walls in the 3D frame; wood members checked from the frame forces (616 tests)
 - Zach 19:50: "You should finish the two things left then rerun the 2026-011 and show me it".
 - **Shear walls in the sway run.** Each placed shear wall (shear wall, perforated, force-transfer) is an X-braced panel between its top and bottom ends: rigid end posts, two pinned diagonals sized so the panel's lateral stiffness equals the wall's own (design shear / SDPWS Eq. 4.3-1 deflection of its sheet, segments in parallel; force-transfer walls from their piers over the full height). The wall's top plate runs through every joint on it (beam bearings, column tops, walls standing on it); beams bearing on a wall are held vertically there (the wall carries them down) instead of being fixed; wall bottoms at the lowest level are pinned. With walls in the frame each level is tied by a stiff diaphragm (pinned bars on a Delaunay triangulation of the level's joints). Wind and seismic are shared to the wall tops and column tops by tributary width as before, so the run gives drift, second-order effects and member forces for a wood building. New stiffness boxes on the force-transfer wall screen (end post area, E, anchorage slip). Existing walls are not in the frame (said in the notes).
 - **frame3d.py:** a member may set its own number of elements for the second-order run (`nsub`); the fictitious bars use one (a straight two-force bar), which keeps the run fast (2026-011: 64 runs in about 6 s).
