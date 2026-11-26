@@ -447,3 +447,6 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
   smallest spacing with the largest rho_w of all the stiffened panels.
 - Web local yielding at a girder end uses k = the flange thickness (the flange-to-web weld size not counted).
 - With bearing stiffeners the web is not counted on for yielding or crippling at the supports; the stiffener column takes the lower Fy of web and stiffener.
+
+## 2026-11-26 13:40, different top and bottom flange plates (0.261.0), applied (not ruled)
+- Lever arm d + (tp top + tp bottom) / 2 (the plate centroids), the same flange force in both plates.

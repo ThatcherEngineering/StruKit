@@ -995,3 +995,13 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - Side view of the girder draws the transverse stiffeners at their positions and the bearing stiffeners at the supports.
 - **Validation:** AISC Design Examples G.8A / G.8B panel by panel, LRFD and ASD (end panel 217 / 144, second panel 185 / 123 against 184 /
   123, web beyond 132 in. 176 / 117 against 128 / 85.0 kips); bearing checks by hand (no published example on file) (`tests/test_builtup.py`).
+
+## 2026-11-26 13:40 MST — 0.261.0 beam to HSS moment joint: different top and bottom flange plates (Next 3)
+- **Beam to HSS Column Moment Connection screen, "Bottom flange plate width / thickness, if different"** (blank = the top plate's). With a
+  different bottom plate, each plate is checked as its own transverse plate on the HSS face (local yielding of the plate, side wall yielding,
+  face plastification, punching, wall crippling) and for its own tension, rupture, block shear, compression and welds, for the flange force
+  M / (d + (tp top + tp bottom) / 2); the bolt or weld pattern to the beam flange is the same on both. Rows are labelled "Top plate:" and
+  "Bottom plate:"; the elevation draws both plates at their own thickness and a second plan shows the bottom plate.
+- **Validation:** the same plate top and bottom reproduces the single-plate sheet; the bottom plate's face checks equal a single-plate run with
+  that plate at the same lever arm; flange forces by hand (`tests/test_beam_hss_moment.py`). The single-plate checks stay validated by Design
+  Guide 24 Example 6.3 and Design Examples II.B-1 / II.B-2.

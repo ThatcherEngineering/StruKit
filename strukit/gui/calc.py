@@ -494,6 +494,8 @@ FORMS = {
                 F("face", "HSS face the beam frames into", "select", options=["B", "H"], required=False, help="for a rectangular HSS: B is the face named second in the size (HSS10x6: the 6 in. face), H the first; blank = B"),
                 F("flanges", "Flange connection", "select", options=["beam flanges welded directly to the face", "flange plates welded to the face"]),
                 F("bp", "Flange plate width", unit="in", required=False), F("tp", "Flange plate thickness", unit="in", required=False),
+                F("bp_bot", "Bottom flange plate width, if different", unit="in", required=False, help="blank = the same as the top plate"),
+                F("tp_bot", "Bottom flange plate thickness, if different", unit="in", required=False, help="blank = the same as the top plate"),
                 F("plate_Fy", "Flange plate Fy", unit="ksi", required=False), F("plate_source", "Source of the flange plate Fy", "text", required=False),
                 F("plate_Fu", "Flange plate Fu", unit="ksi", required=False), F("beam_Fu", "Beam Fu", unit="ksi", required=False),
                 F("fd", "Flange plate bolts: diameter", unit="in", required=False, help="blank = the flange plate's connection to the beam flange is not checked"),
@@ -2246,6 +2248,8 @@ def _build(kind, values, project):
                          wa1=r.num("fwa1", True, label="Welded: column face to the start of the welds"),
                          Fu=r.num("plate_Fu", True, label="Flange plate Fu"), beam_Fu=r.num("beam_Fu", True, label="Beam Fu"),
                          weld=r.num("fweld", False), FEXX=r.num("fFEXX", False) or 70.0)
+        if plated and (r.num("bp_bot", False) is not None or r.num("tp_bot", False) is not None):
+            plate["bot"] = dict(bp=r.num("bp_bot", False) or plate["bp"], tp=r.num("tp_bot", False) or plate["tp"])
         r.text("flanges")
         args = (r.text("beam"), r.num("beam_Fy"), r.text("beam_source"), r.text("column"), r.num("col_Fy"), r.text("col_source"))
         r.done()

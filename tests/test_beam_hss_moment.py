@@ -135,3 +135,35 @@ def test_column_moment_about_the_other_axis():
     from strukit import shapes
     S2 = shapes.hss("HSS10X10X1/2")["Sy"]
     assert b["U"] == pytest.approx(a["U"] + 1.2 * 5 * 12 / (50 * S2), rel=1e-6) and b["Qf"] < a["Qf"]
+
+
+def test_different_top_and_bottom_flange_plates(tmp_path):
+    """Top and bottom flange plates of different sizes (bottom 5.75 x 5/8 under a 5.5 x 1/2 top plate; W12x26, d = 12.2 in.): lever arm
+    d + (0.5 + 0.625) / 2 = 12.7625 in., the same flange force M / arm in both plates; each plate's face checks equal a single-plate sheet with
+    that plate and that lever arm; the same plates top and bottom give the single-plate sheet."""
+    from strukit import calcsheet
+    v = dict(V, beam="W12X26", column="HSS8X8X1/2", col_Fy="46", flanges="flange plates welded to the face", bp="5.5", tp="0.5", plate_Fy="36",
+             plate_source="ASTM A36", plate_Fu="58", beam_Fu="65", fd="0.75", fgroup="A325", fthreads="N", fn="3", fs="3", fg="3", flev_p="1.5",
+             flev_b="1.5", fa1="2", fweld="0.3125", fFEXX="70", loads=[dict(case="D", M="3", P="4", Mc="6", label=""), dict(case="L", M="9", P="12", Mc="20", label="")])
+    pj = dict(PROJ, method="LRFD")
+    one = calc.build("beam_hss_moment", v, pj)[0]
+    same = calc.build("beam_hss_moment", dict(v, bp_bot="5.5", tp_bot="0.5"), pj)[0]
+    assert [r.check for r in same.rows] == [r.check for r in one.rows]
+    s = calc.build("beam_hss_moment", dict(v, bp_bot="5.75", tp_bot="0.625"), pj)[0]
+    arm = 12.2 + (0.5 + 0.625) / 2
+    Mu = (1.2 * 3 + 1.6 * 9) * 12
+    assert s.conn["arm"] == pytest.approx(arm)
+    r = {x.check: x for x in s.rows}
+    assert r["Top plate: Plastification of the HSS face"].demand == pytest.approx(Mu / arm)
+    assert r["Bottom plate: Plastification of the HSS face"].demand == pytest.approx(Mu / arm)
+    assert s.conn["fp"]["Pp"] == pytest.approx(Mu / arm) and s.conn["bottom"]["fp"]["Pp"] == pytest.approx(Mu / arm)
+    assert r["Bottom plate: Flange plate tensile yielding"].capacity == pytest.approx(0.9 * 36 * 5.75 * 0.625)
+    # the bottom plate's face checks are a single-plate run with the wider plate at the same lever arm
+    from strukit import ws_more
+    from strukit.ws_steel_beam import Combo
+    alone = ws_more.beam_hss_moment_sheet("B", "W12X26", 50, "A992", "HSS8X8X1/2", 46, "A500", [dict(case="D", M=3, P=4, Mc=6), dict(case="L", M=9, P=12, Mc=20)],
+                                          [Combo("1.2D + 1.6L", {"D": 1.2, "L": 1.6}, "t")], "LRFD",
+                                          plate=dict(bp=5.75, tp=0.625, Fy=36, source="A36", arm=arm))
+    assert r["Bottom plate: Plastification of the HSS face"].capacity == pytest.approx(alone.rows[2].capacity)
+    assert len([b for b in s.blocks if b.get("picture")]) >= 2
+    calcsheet.simple_pdf(s, str(tmp_path / "bhm2.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")
