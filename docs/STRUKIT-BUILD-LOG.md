@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 20:50. Build **0.233.0**, 618 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 20:44. Build **0.233.0**, 618 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -743,7 +743,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - Validation: a wall's frame stiffness equals its sheet's V / delta; a 20 x 20 ft four-wall box under 2 kips moves 2 / (kS + kN), base shear in equilibrium, the stiffer wall takes more; the force-transfer pier stiffness by hand; the wood posts' and beams' frame ratios equal their own sheets' compression and bending ratios (2026-011, within 2 percent); NDS Eq. 3.9-3 by hand for a 6x6 post with axial load and moment. Link, governing lateral load and sway pressed in turn in a headless browser on the 2026-011 model.
 - 0.232.1: the 3D Frame Analysis sheet counts the shear walls in the frame and lists each wall's stiffness and how it was found. The 2026-011 test model's seismic sheet has the drift structure type (Table 12.12-1, "all other structures") so its drift check runs when the frame writes the displacements.
 
-## 2026-11-25 20:50 local — 0.233.0 existing walls in the 3D frame; the building model in four views at the front of the package (618 tests)
+## 2026-11-25 20:44 local — 0.233.0 existing walls in the 3D frame; the building model in four views at the front of the package (618 tests)
 - Zach 20:33 (rulings file): existing walls must be able to be accounted for, or just assumed to work and left unchecked; and the 3D model belongs on the calcs, near the beginning, from several angles.
 - **Existing construction table:** "Wall in the 3D frame": assumed to work (rigid, 10,000 kip/in., not checked; the default), stiffness typed (lb/in. in the new "Wall stiffness" column), or left out. In the sway run an existing wall is an X-braced panel like the new walls with that stiffness; beams bearing on it are carried down by it.
 - **New "BM - Building Model" sheet, first after the cover** (before the Design Summary): levels, what is placed, existing walls, and the model in four parallel projections (from each corner), new walls tan, existing grey, footings, beams, columns and joist rows, with a legend (`calcsheet._model3d_picture`, `calc.model_sheet`).
