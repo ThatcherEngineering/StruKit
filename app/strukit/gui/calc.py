@@ -5517,6 +5517,35 @@ def model_frame_sway(project, members):
                     pr = get(v.get("shape") or ""); break
                 except Exception:
                     continue
+            if pr is None and mark not in col_nodes:
+                try:
+                    a_ = shapes.angle(v.get("shape") or "")
+                except Exception:
+                    a_ = None
+                if a_ is not None:                                  # a single angle placed as a beam: Sect. E3 / E7, F10 and H2 on its principal axes
+                    from .. import anglebeam as _ab
+                    g_ = _ab.geometry(a_, str(v.get("angle_vertical") or "long"), str(v.get("angle_toe") or "up"))
+                    _, _, pts_ = _ab.principal_points(a_, g_)
+                    Ltot = sum(mlen[e_] for e_ in B["beam_elems"][mark])
+                    br = str(v.get("bracing") or "")
+                    if br.startswith("continuous"):
+                        Lb_ = 0.01
+                    else:                                           # brace points on the screen, else the whole member between its supports
+                        try:
+                            bp_ = sorted(set([0.0, Ltot / 12.0] + [float(t) for t in str(v.get("brace_pts") or "").replace(",", " ").split()]))
+                            Lb_ = max(b_ - a_ for a_, b_ in zip(bp_, bp_[1:])) * 12.0
+                        except ValueError:
+                            Lb_ = Ltot
+                    fb_ = 0.9 if method_ == "LRFD" else 1 / 1.67
+                    Mnw = min(_ab.principal_strengths(a_, g_, Fy, pts_, sw_, sz_, Lb_, 1.0, neg_beta=True)["Mnw"] for sw_ in (1, -1) for sz_ in (1, -1))
+                    Mnz = min(_ab.principal_strengths(a_, g_, Fy, pts_, sw_, sz_, Lb_, 1.0, neg_beta=True)["Mnz"] for sw_ in (1, -1) for sz_ in (1, -1))
+                    Vn_ = min(_ab.shear(Fy, b_, g_["t"])[0] for b_ in (g_["Lv"], g_["Lh"]))
+                    try:
+                        Pc_ = fb_ * _ab.compression_strength(a_, Fy, Ltot)["Pn"]
+                    except Exception:
+                        Pc_ = None
+                    strength[mark] = dict(angle=True, Mcw=fb_ * Mnw, Mcz=fb_ * Mnz, Pc=Pc_, Pt=Fy * a_["A"] * fb_, V=fb_ * Vn_, Lb=Lb_)
+                    continue
             if mark in col_nodes:
                 L = col_nodes[mark][3] * 12.0
                 strength[mark] = dict(Pc=_sc.check(pr, Fy, L, L, method=method_).P_avail, Mcx=_sb.check(pr, Fy, L, 1.0, method_).M_avail,
@@ -5750,7 +5779,22 @@ def model_frame_sway(project, members):
                     except Exception as e:
                         notes.append(f"{mark}: not checked from the frame forces ({e})"); wood_str.pop(mark, None)
                 S_ = strength.get(mark)
-                if S_:
+                if S_ and S_.get("angle"):                          # single angle: Eq. H2-1 with the terms taken to add (the signs at the toes not tracked)
+                    cur["v_ratio"] = max(cur["v_ratio"] or 0.0, V / alpha / S_["V"])
+                    for e_ in els:
+                        for a_, b_ in r2.stations[e_]:
+                            for P_, Mw_, Mz_ in ((a_[0], a_[4], a_[5]), (-b_[0], b_[4], b_[5])):
+                                Pn_ = P_ / alpha
+                                if Pn_ > 1e-9 and not S_["Pc"]:
+                                    raise_ = f"{mark}: in compression in the frame, and its legs are too slender for Sect. E3 / E7 here; it is not checked from the frame forces"
+                                    if raise_ not in notes:
+                                        notes.append(raise_)
+                                    continue
+                                val = (Pn_ / S_["Pc"] if Pn_ > 0 else -Pn_ / S_["Pt"]) + abs(Mw_) / alpha / S_["Mcw"] + abs(Mz_) / alpha / S_["Mcz"]
+                                if cur["ratio"] is None or val > cur["ratio"]:
+                                    cur.update(ratio=val, eq="Eq. H2-1, principal axes, the terms added", ratio_combo=label,
+                                               at=dict(P=Pn_, Mx=abs(Mw_) / alpha, My=abs(Mz_) / alpha), cap=dict(Pc=S_["Pc"] or 0.0, Mcx=S_["Mcw"], Mcy=S_["Mcz"]))
+                elif S_:
                     cur["v_ratio"] = max(cur["v_ratio"] or 0.0, V / alpha / S_["V"])
                     for e_ in els:
                         ste = r2.stations[e_]
