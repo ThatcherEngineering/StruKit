@@ -187,7 +187,9 @@ FORMS = {
                 F("anc_grade", "Anchorage: rod grade (for Fy and ductility)", "select", required=False,
                   options=["F1554 Gr. 36", "F1554 Gr. 55", "F1554 Gr. 105", "other"])]
                + [f for f in GRID_ANCHORAGE_FIELDS if f["key"] in ("anc_F", "anc_abrg", "anc_tpi", "anc_fy", "anc_ductile", "anc_supp", "anc_sdc")],
-        tables=[T("loads", "Base shear and axial load", [CASE, F("V", "Shear", unit="kip"), F("P", "Axial compression (+)", unit="kip", required=False),
+        tables=[T("loads", "Base shear and axial load", [CASE, F("V", "Shear (along N, against the lug face)", unit="kip"),
+                                                         F("Vt", "Shear across (along B)", unit="kip", required=False),
+                                                         F("P", "Axial compression (+), uplift (-)", unit="kip", required=False),
                                                          F("label", "Note", "text", required=False)])]),
     "crane_runway": dict(
         title="Crane Runway Beam (top-running crane)", code="AISC 360-22", mark="CR",
@@ -1828,6 +1830,10 @@ def _build(kind, values, project):
         cb, m = combos(project, r.miss), method(project, r.miss)
         cbl = cb if m == "LRFD" else combos(project, r.miss, "LRFD")
         loads = [dict(case=x["case"], V=x["V"], P=x.get("P") or 0.0, **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
+        if any(abs(x.get("Vt") or 0.0) > 1e-9 for x in r.rows("loads")):
+            r.miss.append("Shear across the lug (along B): a single plate lug bears only on its face, against shear along N. Shear in the other direction "
+                          "needs a second lug at right angles (a cruciform lug, not built yet) or another path (friction, the rods in shear); "
+                          "leave the column blank once that direction is carried elsewhere")
         if not loads:
             r.miss.append("No load is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)

@@ -22,6 +22,19 @@ def eccentric(V, P, e_in, N, B, fp, f):
     return dict(M=M, q=q, Y=Y, T=max(q * Y - P, 0.0))
 
 
+def rods(V, P, e_in, N, B, fp, f):
+    """Rod tensions of a base plate under axial load P (kips, + compression, - net uplift) and the moment V e about the plate centre, rods at
+    +/- f. Compression or uplift with a large moment: DG 1 Eq. 4-32 bearing block (eccentric), the rods behind the lug take T. Net uplift
+    with V e not over (uplift) f: no bearing; by statics the rows take Tu/2 +/- V e / (2 f). Returns Y, q, Tb (row behind the lug, total),
+    Tf (row toward the edge the shear faces, total), n (rods in tension)."""
+    M = V * e_in
+    if P < 0 and M <= -P * f + 1e-12:
+        Tu = -P
+        return dict(M=M, q=fp * B, Y=0.0, Tb=Tu / 2 + M / (2 * f), Tf=Tu / 2 - M / (2 * f), n=4 if Tu / 2 - M / (2 * f) > 1e-9 else 2)
+    ec = eccentric(V, P, e_in, N, B, fp, f)
+    return dict(M=M, q=ec["q"], Y=ec["Y"], Tb=ec["T"], Tf=0.0, n=2 if ec["T"] > 1e-9 else 0)
+
+
 def concrete(fc_ksi, V, P_comp, bsl, tsl, hsl, ca1, ca2, ha, psi_c, lam=1.0, Abp=None, n_tension=0, Nsa=None):
     """ACI 318-19 limit states of the lug (LRFD, phi = 0.65 both): bearing 1.7 f'c Aef psi_brg (17.11.2.1, depth not over 2 tsl 17.11.2.1.1,
     psi_brg by Eq. 17.11.2.2.1) and breakout by 17.11.3 with 17.7.2: Avc the projected area less the lug's own bearing area, Avco = 4.5 ca1^2,
