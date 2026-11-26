@@ -1671,6 +1671,8 @@ def _block_picture(c, top, pic):
         return _seat_picture(c, top - 6, d)
     if name == "cap_plate":
         return _cap_plate_picture(c, top - 6, d)
+    if name == "through_plate":
+        return _through_plate_picture(c, top - 6, d)
     if name == "stiffened_seat":
         return _stiffened_seat_picture(c, top - 6, d)
     if name == "beam_hss_moment":
@@ -2741,6 +2743,44 @@ def _flush_end_plate_picture(c, top, d):
     c.drawRightString(xs - tp * sc - 2, yb - 9, f"end plate {tp:g} in")
     _small(c, xs + dc * sc / 2 - 30, yb - 30, "side view, same scale; bolts shown as lines")
     return yb - 38
+
+
+def _through_plate_picture(c, top, d):
+    """Plan of a through plate on the HSS column with the beam flanges bolted to it each side, to scale, and an elevation of the joint: plate
+    width, HSS size, distance to the first bolt, spacing, edge distances and gage dimensioned."""
+    H, B, bp, n, s_, g, L1, lep, lef, db_, bf = d["H"], d["B"], d["bp"], d["n"], d["s"], d["g"], d["L1"], d["le_p"], d["le_f"], d["d"], d["bf"]
+    half = L1 + (n - 1) * s_ + lep                     # plate past each HSS face
+    Lp = H + 2 * half
+    sc = min(4.6, (RM - LM - 40) / Lp, 70.0 / max(bp, B))
+    xc, yc = (LM + RM) / 2, top - 22 - max(bp, B) / 2 * sc
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xc - Lp / 2 * sc, yc - bp / 2 * sc, Lp * sc, bp * sc, fill=1, stroke=1)                       # plate
+    c.setFillColorRGB(0.90, 0.92, 0.95)
+    for sg in (-1, 1):                                                                                                                   # beam flanges, held back
+        x0 = xc + sg * (H / 2 + L1 - lef) * sc
+        x1 = xc + sg * (Lp / 2 + 18 / sc) * sc
+        c.rect(min(x0, x1), yc - bf / 2 * sc, abs(x1 - x0), bf * sc, fill=1, stroke=1)
+    c.setDash(3, 2); c.rect(xc - H / 2 * sc, yc - B / 2 * sc, H * sc, B * sc, fill=0, stroke=1); c.setDash()                                  # HSS, dashed
+    c.setFillColorRGB(*INK)
+    for sg in (-1, 1):
+        for i in range(n):
+            xb = xc + sg * (H / 2 + L1 + i * s_) * sc
+            for gy in (-1, 1):
+                c.circle(xb, yc + gy * g / 2 * sc, max(db_ / 2 * sc, 1.5), fill=1, stroke=0)
+    xr0 = xc + (H / 2) * sc
+    memberart._dim_h(c, xc - H / 2 * sc, xc + H / 2 * sc, yc + max(bp, B) / 2 * sc + 14, f"H = {H:g} in", FR, ext_from=yc + B / 2 * sc)
+    memberart._dim_h(c, xr0, xr0 + L1 * sc, yc - max(bp, bf) / 2 * sc - 14, f"{L1:g}", FR, ext_from=yc - g / 2 * sc)
+    memberart._dim_h(c, xr0 + L1 * sc, xr0 + (L1 + (n - 1) * s_) * sc, yc - max(bp, bf) / 2 * sc - 14, f"{n - 1} @ {s_:g} in", FR, ext_from=yc - g / 2 * sc)
+    memberart._dim_h(c, xr0 + (L1 + (n - 1) * s_) * sc, xr0 + half * sc, yc - max(bp, bf) / 2 * sc - 30, f"{lep:g}", FR, ext_from=yc - bp / 2 * sc)
+    xl = xc - (H / 2 + L1) * sc
+    memberart._dim_h(c, xc - (H / 2 + L1 - lef) * sc, xl, yc + max(bp, bf) / 2 * sc + 14, f"{lef:g}", FR, ext_from=yc + bf / 2 * sc)
+    memberart._dim_v(c, yc - bp / 2 * sc, yc + bp / 2 * sc, xc - Lp / 2 * sc - 30, f"bp = {bp:g} in", FR, ext_from=xc - Lp / 2 * sc)
+    memberart._dim_v(c, yc - g / 2 * sc, yc + g / 2 * sc, xc + Lp / 2 * sc + 30, f"g = {g:g} in", FR, ext_from=xc + (H / 2 + L1 + (n - 1) * s_) * sc)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawCentredString(xc, yc - 3, d["column"])
+    yb = yc - max(bp, B, bf) / 2 * sc - 44
+    _small(c, xc, yb, f"plan of a through plate {d['tp']:g} x {bp:g} in. on the HSS (dashed), {d['beam']} flanges bolted each side; to scale; dimensions in inches")
+    return yb - 10
 
 
 def _cap_plate_picture(c, top, d):

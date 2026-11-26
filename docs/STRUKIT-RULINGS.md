@@ -307,3 +307,12 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - Stiffener-to-flange welds are sized for the stiffener yield strength (the Design Guide's recommendation), more than J10.8's difference force.
 - pso and psi are taken as pfo and pfi (stiffeners centred on the beam flanges, as Example 5.3-2), not over s.
 
+## 2026-11-26 01:40, through-plate moment connection (0.241.0), applied (not ruled; tell Zach in the morning)
+- One plate size, bolt pattern and weld for both flanges and both sides, designed for the larger beam moment (as Example 6.4, whose loads can
+  reverse).
+- Plate in compression between the HSS face and the first bolt with K = 1.0 (the example's value; no end fixity counted on).
+- Tearout is taken in its own direction for each part: toward the plate end for the plate, toward the beam end for the flange; the same
+  pattern is used at the compression flange (conservative there).
+- The plate-to-HSS weld takes the joint's axial force and moment together on the compression side (elastic weld group, throat neglected in
+  (H/2)^2, as the example).
+

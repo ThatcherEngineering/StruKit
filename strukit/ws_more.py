@@ -5252,3 +5252,155 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
         sheet.blocks += anc_res[0].blocks
     sheet.shear_lug = dict(steel=res, concrete=conc, e=e, fp=fp, anchor=anc_res[1] if anc_res else None)
     return sheet
+
+
+def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fu, col_source, along, bp, tp, plate_Fy, plate_Fu, plate_source,
+                        d, group, threads, n, s, g, L1, le_p, le_f, weld, FEXX, loads, combos, method, runs=None, runs_from=""):
+    """Through-plate flange-plated moment connection: wide-flange beams each side of a rectangular HSS column, the column cut at the joint and
+    the top and bottom flange plates run through it, bolted to the beam flanges (AISC Design Guide 24, 2nd Ed., Sect. 6.5, as worked in
+    Example 6.4). loads: dict(case, ML, VL, MR, VR kip-ft / kips at the faces of the column, beam moments + when the top flange is in tension,
+    P kips of column compression from above). along: "H" or "B", the HSS dimension along the beams. n bolts in each of two lines (gage g) each
+    side, spacing s, L1 from the HSS face to the first bolt, le_p from the last bolt to the plate end, le_f from the first bolt to the beam end."""
+    from . import bolts
+    from .steel_beam import SteelInputError
+    for nm_, v in (("the source of the beam Fy and Fu", beam_source), ("the source of the column Fu", col_source), ("the source of the plate Fy and Fu", plate_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm_} is blank")
+    if not runs and (not combos or not loads):
+        raise WorksheetError(f"{mark}: loads and load combinations are needed")
+    try:
+        bm = shapes.get(beam)
+        col = shapes.hss(column)
+    except shapes.ShapeError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    if col.get("type") != "HSS-RECT":
+        raise WorksheetError(f"{mark}: the column is a square or rectangular HSS")
+    if min(bp, tp, d, s, g, L1, le_p, le_f, weld, FEXX) <= 0 or n < 2:
+        raise WorksheetError(f"{mark}: sizes must be positive, with at least two bolts in each line")
+    H, Bx = (col["Ht"], col["B"]) if along == "H" else (col["B"], col["Ht"])
+    tw_hss = col["tdes"]
+    db_, tbf, bbf = bm["d"], bm["tf"], bm["bf"]
+    if g > bbf - 2 * 1.0:
+        raise WorksheetError(f"{mark}: the gage {g:g} in. leaves less than 1 in. to the beam flange edges ({bbf:g} in. wide)")
+    lrfd = method == "LRFD"
+    E = 29000.0
+    av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
+    fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
+    try:
+        key, (Fnt, FnvN, FnvX) = bolts._group(group)
+        dh = bolts.standard_hole(d)
+    except SteelInputError as ex:
+        raise WorksheetError(f"{mark}: {ex}")
+    Fnv = FnvN if threads == "N" else FnvX
+    Ab = math.pi * d ** 2 / 4
+    dn = dh + 1 / 16                                         # hole for net area, Sect. B4.3b
+    cases = []
+    src = [(r_["name"], r_["ML"], r_.get("VL") or 0.0, r_["MR"], r_.get("VR") or 0.0, r_.get("P") or 0.0) for r_ in runs] if runs else \
+        [(cb.name, *[sum(cb.factors.get(ld["case"], 0.0) * (ld.get(k) or 0.0) for ld in loads) for k in ("ML", "VL", "MR", "VR", "P")]) for cb in combos]
+    for nm_, ML, VL, MR, VR, P in src:
+        R = max(abs(ML), abs(MR)) * 12 / (db_ + tp)                                            # DG 24 Example 6.4
+        Pc = VL + VR + P
+        Mc = abs((MR - ML) + (VR - VL) * H / 2 / 12) / 2                                       # equilibrium of the joint, kip-ft
+        q = Pc / (2 * (Bx + H)) + Mc * 12 * (H / 2) / (2 * H ** 3 / 12 + 2 * Bx * (H / 2) ** 2)
+        cases.append(dict(name=nm_, ML=ML, VL=VL, MR=MR, VR=VR, P=P, R=R, Pc=Pc, Mc=Mc, q=q))
+    wR = max(cases, key=lambda c_: c_["R"])
+    wq = max(cases, key=lambda c_: c_["q"])
+    R = wR["R"]
+    # plate
+    Ag = bp * tp
+    An = Ag - 2 * dn * tp
+    Ry = av(plate_Fy * Ag, 0.90, 1.67)
+    Rr = av(plate_Fu * An, 0.75, 2.00)
+    r_ = tp / math.sqrt(12)
+    KLr = 1.0 * L1 / r_
+    if KLr <= 25:
+        Pc_n, csrc = plate_Fy * Ag, "AISC 360-22 Sect. J4.4(a), KL/r not over 25"
+    else:
+        Fe = math.pi ** 2 * E / KLr ** 2
+        Fn = 0.658 ** (plate_Fy / Fe) * plate_Fy if plate_Fy / Fe <= 2.25 else 0.877 * Fe
+        Pc_n, csrc = Fn * Ag, "AISC 360-22 Sect. J4.4(b), Chapter E"
+    Rc = av(Pc_n, 0.90, 1.67)
+    # bolts, bolt by bolt (bolt 1 nearest the HSS)
+    rv = Fnv * Ab
+    per = []
+    for i in range(1, int(n) + 1):
+        lc_p = (le_p - dh / 2) if i == n else (s - dh)              # plate: toward its free end
+        lc_f = (le_f - dh / 2) if i == 1 else (s - dh)              # beam flange: toward the beam end
+        cand = dict(shear=rv, plate_bearing=2.4 * d * tp * plate_Fu, plate_tearout=1.2 * lc_p * tp * plate_Fu,
+                    flange_bearing=2.4 * d * tbf * beam_Fu, flange_tearout=1.2 * lc_f * tbf * beam_Fu)
+        k_ = min(cand, key=cand.get)
+        per.append((i, cand[k_], k_, cand))
+    Rb_n = 2 * sum(p_[1] for p_ in per)
+    Rb = av(Rb_n, 0.75, 2.00)
+    # block shear, plate: two lines of bolts and the tension area between them
+    Agv = 2 * (le_p + (n - 1) * s) * tp
+    Anv = Agv - 2 * (n - 0.5) * dn * tp
+    Ant = (g - dn) * tp
+    Rbs_p = min(0.60 * plate_Fu * Anv, 0.60 * plate_Fy * Agv) + plate_Fu * Ant
+    # block shear, beam flange: two lines, tension from the bolts to the flange tips
+    Agv_f = 2 * (le_f + (n - 1) * s) * tbf
+    Anv_f = Agv_f - 2 * (n - 0.5) * dn * tbf
+    Ant_f = (bbf - g - dn) * tbf
+    Rbs_f = min(0.60 * beam_Fu * Anv_f, 0.60 * beam_Fy * Agv_f) + beam_Fu * Ant_f
+    # plate to HSS fillet weld (both HSS pieces), Manual Part 8 with the elastic weld group
+    rw = av(0.60 * FEXX * weld / math.sqrt(2), 0.75, 2.00)
+    tmin = FEXX * weld / math.sqrt(2) / col_Fu                          # AISC Manual Eq. 9-6 form: 3.09 D / Fu for E70
+    wmin = 0.1875 if min(tp, tw_hss) <= 0.5 else 0.25 if min(tp, tw_hss) <= 0.75 else 0.3125
+    Ln = footing_line
+    G24 = "AISC Design Guide 24 (2nd Ed.)"
+    nm, nq = wR["name"], wq["name"]
+    steps = [Ln("Plate force, R = M / (d + tp)", R, "kip", f"{G24} Example 6.4", f"{nm}: the larger beam moment {max(abs(wR['ML']), abs(wR['MR'])):.1f} kip-ft; d = {db_:g} in."),
+             Ln("Plate: Ag = bp tp, An = Ag - 2 (dh + 1/16) tp", f"{Ag:.3g}, {An:.3g}", "in2", "AISC 360-22 Sect. B4.3, D3", f"standard holes dh = {dh:.4g} in. (Table J3.3); U = 1.0 (Table D3.1)"),
+             Ln("Plate in compression, KL / r", KLr, "", csrc, f"L = {L1:g} in. from the HSS face to the first bolt, K = 1.0, r = tp / 12^0.5 = {r_:.3f} in."),
+             Ln("Bolt shear, Fnv Ab", rv, "kip", "AISC 360-22 Eq. J3-1", f"{d:g} in. {group}-{threads}, Fnv = {Fnv:g} ksi")]
+    for i, val, k_, cand in per:
+        steps.append(Ln(f"Bolt {i} from the HSS, nominal", val, "kip", "AISC 360-22 Sect. J3.7, J3.11", f"governs: {k_.replace('_', ' ')}; " +
+                        ", ".join(f"{a.replace('_', ' ')} {b:.1f}" for a, b in cand.items() if a != k_)))
+    steps += [Ln("Bolt group, 2 lines", Rb, "kip", "AISC 360-22 Sect. J3.7, J3.11", f"sum of the bolts' strengths, {2 * n:g} bolts each side; " + fac(0.75, 2.00)),
+              Ln("Block shear, plate: Agv, Anv, Ant", f"{Agv:.3g}, {Anv:.3g}, {Ant:.3g}", "in2", "AISC 360-22 Eq. J4-5", f"Rn = {Rbs_p:.1f} kip, Ubs = 1.0"),
+              Ln("Block shear, beam flange: Agv, Anv, Ant", f"{Agv_f:.3g}, {Anv_f:.3g}, {Ant_f:.3g}", "in2", "AISC 360-22 Eq. J4-5", f"Rn = {Rbs_f:.1f} kip, Ubs = 1.0; tension to both flange tips"),
+              Ln("Joint: P conn = VL + VR + P, M conn", f"{wq['Pc']:.1f} kip, {wq['Mc']:.1f} kip-ft", "", f"{G24} Example 6.4",
+                 f"{nq}: M conn = [MR - ML + (VR - VL) H / 2] / 2, H = {H:g} in. along the beams"),
+              Ln("Weld force per inch, P / (2 (B + H)) + M (H / 2) / I", wq["q"], "kip/in", f"{G24} Example 6.4; AISC Manual Part 8",
+                 f"I per unit throat = 2 H^3 / 12 + 2 B (H / 2)^2 = {2 * H ** 3 / 12 + 2 * Bx * (H / 2) ** 2:,.0f} in3"),
+              Ln("Fillet weld strength per inch", rw, "kip/in", "AISC 360-22 Eq. J2-4", f"{weld:g} in., E{FEXX:g}XX, 0.60 FEXX (w / 2^0.5); " + fac(0.75, 2.00))]
+    rows = [Row("Plate tensile yielding", nm, R, Ry, "kip", "AISC 360-22 Eq. J4-1", ""),
+            Row("Plate tensile rupture", nm, R, Rr, "kip", "AISC 360-22 Eq. J4-2", "net of two holes"),
+            Row("Plate in compression", nm, R, Rc, "kip", csrc.split(",")[0], f"KL/r = {KLr:.1f}"),
+            Row("Bolts (each side)", nm, R, Rb, "kip", "AISC 360-22 Sect. J3.7, J3.11", f"({2 * n:g}) {d:g} in. {group}-{threads}"),
+            Row("Block shear, plate", nm, R, av(Rbs_p, 0.75, 2.00), "kip", "AISC 360-22 Eq. J4-5", ""),
+            Row("Block shear, beam flange", nm, R, av(Rbs_f, 0.75, 2.00), "kip", "AISC 360-22 Eq. J4-5", ""),
+            Row("Plate to HSS weld", nq, wq["q"], rw, "kip/in", "AISC 360-22 Eq. J2-4", "compression side, axial and moment added"),
+            Row("Minimum fillet weld size", "", wmin, weld, "in", "AISC 360-22 Table J2.4", f"thinner part {min(tp, tw_hss):g} in."),
+            Row("HSS wall at the weld (shear rupture)", "", tmin, tw_hss, "in", "AISC Manual Eq. 9-6", "least wall thickness to develop the weld"),
+            Row("Plate width for the fillet weld", "", Bx + 2 * weld, bp, "in", f"{G24} Example 6.4", "plate wider than the HSS by the weld each side"),
+            Row("Bolt spacing, at least 3 d", "", 3 * d, s, "in", "AISC 360-22 Sect. J3.3", "")]
+    for nm_e, le_ in (("plate end", le_p), ("beam end", le_f)):
+        rows.append(Row(f"Edge distance, {nm_e}", "", bolts.min_edge(d), le_, "in", "AISC 360-22 Table J3.4", ""))
+    info = [("Beams", f"{shapes.normalize(beam)} each side, d = {db_:g} in., bf = {bbf:g} in., tf = {tbf:g} in., Fy = {beam_Fy:g} ksi, Fu = {beam_Fu:g} ksi ({beam_source.strip()})"),
+            ("Column", f"{shapes.normalize(column)}, {H:g} in. along the beams, {Bx:g} in. across; design wall {tw_hss:g} in., Fu = {col_Fu:g} ksi ({col_source.strip()}); "
+                       "cut at the joint, the stub between the plates"),
+            ("Through Plates", f"PL {tp:g} x {bp:g} in. at each beam flange, Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()})"),
+            ("Bolts", f"each side of the HSS: two lines at {g:g} in. gage, {n:g} bolts in each at {s:g} in.; {L1:g} in. from the HSS face to the first bolt, "
+                      f"{le_p:g} in. to the plate end, {le_f:g} in. to the beam end; {d:g} in. {group}-{threads} in standard holes"),
+            ("Welds", f"{weld:g} in. fillet all round the HSS to each plate, above and below, E{FEXX:g}XX")]
+    if runs:
+        load_lines = [f"ML = {r_['ML']:>7.2f}  VL = {(r_.get('VL') or 0):>6.2f}  MR = {r_['MR']:>7.2f}  VR = {(r_.get('VR') or 0):>6.2f}  P = {(r_.get('P') or 0):>7.2f}   {r_['name']}" for r_ in runs]
+        combo_lines = [(f"Combined loads at the {method} level" + (f": {runs_from.strip()}" if (runs_from or "").strip() else ""), "")]
+    else:
+        load_lines = [f"{x_['case']:<3} ML = {x_.get('ML') or 0:>7.2f}  VL = {x_.get('VL') or 0:>6.2f}  MR = {x_.get('MR') or 0:>7.2f}  VR = {x_.get('VR') or 0:>6.2f}  P = {x_.get('P') or 0:>7.2f}"
+                      + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
+        combo_lines = [(cb.name, cb.source) for cb in combos]
+    sheet = SimpleSheet(mark, "Through-Plate Moment Connection to an HSS Column", "Connection", method, info,
+                        ["moments in kip-ft (+ top flange in tension), shears and P in kips (P = column compression from above)"] + load_lines, combo_lines,
+                        "Calculation", steps, rows,
+                        ["The plate force is the larger beam moment over (d + tp); the same plate size and bolts are used at both flanges and both sides.",
+                         "Bolt strengths are summed bolt by bolt (AISC 360-22 Sect. J3.11); deformation at the bolt holes at service load is a design consideration (Eq. J3-6a, J3-6c).",
+                         "The plate-to-HSS welds take the column axial force and the joint moment as an elastic weld group on the compression side, where they add."],
+                        ["the beam web shear connection", "the HSS column stub between the plates and the column above and below", "orthogonal framing at the plates",
+                         "beam flange rupture at the bolt holes (AISC 360-22 Sect. F13.1)"])
+    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("through_plate", dict(H=H, B=Bx, t=tw_hss, bp=bp, tp=tp, n=int(n), s=s, g=g, L1=L1, le_p=le_p, le_f=le_f, d=d,
+                                                                                                    bf=bbf, db=db_, tf=tbf, beam=shapes.normalize(beam), column=shapes.normalize(column)))))
+    sheet.tp = dict(R=R, Ag=Ag, An=An, Ry=Ry, Rr=Rr, KLr=KLr, Rc=Rc, rv=rv, per=per, Rb=Rb, Rbs_p=Rbs_p, Rbs_f=Rbs_f, Agv=Agv, Anv=Anv, Ant=Ant, Agv_f=Agv_f, Anv_f=Anv_f,
+                    Ant_f=Ant_f, q=wq["q"], Pc=wq["Pc"], Mc=wq["Mc"], rw=rw, tmin=tmin)
+    return sheet
