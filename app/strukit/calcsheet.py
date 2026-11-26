@@ -435,6 +435,31 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     else:
         hb, true_scale = memberart.elev_depth(sheet.span_ft * 12, depth_in, w)
         memberart.steel_elevation(c, x0, by, w, hb, depth_in, pr["tf"] if hss_kind is None else max(pr["tdes"], depth_in * 0.06))
+        sp_ = sheet.props
+        if bu and (sp_.get("stiff") or sp_.get("brg")):               # transverse and bearing stiffeners seen from the side, between the flanges
+            tfp = max(hb * pr["tf"] / depth_in, 1.5)
+            L_in = sheet.span_ft * 12.0
+            px = lambda xin: x0 + w * xin / L_in
+            st_ = sp_.get("stiff")
+            xs_ = []
+            if st_:
+                if st_.get("panels"):
+                    acc = 0.0
+                    for a_ in st_["panels"]:
+                        acc += a_
+                        if acc < L_in / 2:
+                            xs_ += [acc, L_in - acc]
+                else:
+                    k_ = 1
+                    while k_ * st_["a"] < L_in - 1e-6:
+                        xs_.append(k_ * st_["a"]); k_ += 1
+            c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.35); c.setFillColorRGB(0.62, 0.67, 0.73)
+            for xin in xs_:
+                c.rect(px(xin) - 0.5, by + tfp, 1.0, hb - 2 * tfp, fill=1, stroke=1)
+            if sp_.get("brg") and sp_["brg"].get("ts"):
+                for xin in (0.0, L_in):
+                    xx = px(xin)
+                    c.rect(xx + (0.3 if xin == 0 else -2.1), by + tfp, 1.8, hb - 2 * tfp, fill=1, stroke=1)
         c.setStrokeColorRGB(*BLUE); c.setFillColorRGB(0.91, 0.93, 0.96); c.setLineWidth(0.6)
         down = [ld for ld in sheet.loads if not str(ld.get("dir") or "").startswith("side")]
         side = [ld for ld in sheet.loads if str(ld.get("dir") or "").startswith("side")]
