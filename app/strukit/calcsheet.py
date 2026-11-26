@@ -3235,6 +3235,9 @@ def _beam_hss_moment_picture(c, top, d):
     # elevation, left
     xc, ym = LM + 120, top - 100                    # centre of the column, mid-depth of the beam
     hc = (dd + 14) * sc
+    bot = d.get("bot")
+    if d.get("plan_only"):
+        return _beam_hss_moment_plan(c, top, d, B, H, Bb, tb, a_, ym, hc, xq=(LM + RM) / 2 + 30)
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     memberart.hss_elevation(c, xc - H / 2 * sc, ym - hc / 2, H * sc, hc, d["t"] * sc)                                 # HSS column
     _break_h(c, xc - H / 2 * sc, xc + H / 2 * sc, ym - hc / 2); _break_h(c, xc - H / 2 * sc, xc + H / 2 * sc, ym + hc / 2)
@@ -3247,9 +3250,10 @@ def _beam_hss_moment_picture(c, top, d):
     Lpl = (blv["a1"] + (blv["n"] - 1) * blv["s"] + blv["lev_p"]) if blv else ((wlv["a1"] + wlv["Lw"]) if wlv else 8.0)
     if d["plate"]:
         c.setFillColorRGB(0.62, 0.68, 0.76)
+        tbb = bot["tb"] if bot else tb
         for sg in (1, -1):
-            y0 = ym + sg * dd / 2 * sc if sg > 0 else ym - dd / 2 * sc - tb * sc
-            c.rect(xf, y0, Lpl * sc, tb * sc, fill=1, stroke=1)
+            y0 = ym + sg * dd / 2 * sc if sg > 0 else ym - dd / 2 * sc - tbb * sc
+            c.rect(xf, y0, Lpl * sc, (tb if sg > 0 else tbb) * sc, fill=1, stroke=1)
         if wlv:                                      # the fillets to the beam flange, seen along the plate edges
             c.setFillColorRGB(0.35, 0.38, 0.42)
             wb = max(1.2, wlv["w"] * sc)
@@ -3262,10 +3266,19 @@ def _beam_hss_moment_picture(c, top, d):
     memberart._dim_v(c, ym - dd / 2 * sc, ym + dd / 2 * sc, xf + Lb + 8, f"d = {dd:g} in", FR, ext_from=xf + Lb)
     memberart._dim_h(c, xc - H / 2 * sc, xc + H / 2 * sc, ym - hc / 2 - 12, f"{H:g} in", FR, ext_from=ym - hc / 2)
     if d["plate"]:
-        c.setFont(FR, 6); c.drawString(xf + 2, ym - dd / 2 * sc - tb * sc - 9, f"flange plate {Bb:g} x {tb:g} in, top and bottom")
+        c.setFont(FR, 6)
+        if bot:
+            c.drawString(xf + 2, ym + dd / 2 * sc + tb * sc + 4, f"top plate {Bb:g} x {tb:g} in")
+            c.drawString(xf + 2, ym - dd / 2 * sc - bot["tb"] * sc - 9, f"bottom plate {bot['Bb']:g} x {bot['tb']:g} in")
+        else:
+            c.drawString(xf + 2, ym - dd / 2 * sc - tb * sc - 9, f"flange plate {Bb:g} x {tb:g} in, top and bottom")
     _small(c, xc + 20, ym - hc / 2 - 28, "elevation, to scale")
-    # plan of the connecting face, right
-    xq, yq = RM - 150, top - 100
+    return _beam_hss_moment_plan(c, top, d, B, H, Bb, tb, a_, ym, hc, xq=RM - 150)
+
+
+def _beam_hss_moment_plan(c, top, d, B, H, Bb, tb, a_, ym, hc, xq):
+    """Plan of the HSS face with the flange or flange plate on it (see _beam_hss_moment_picture)."""
+    yq = top - 100
     s2 = min(7.5, 95.0 / B, 95.0 / H)
     c.setLineWidth(0.8); c.setStrokeColorRGB(*INK)
     memberart.hss_plan(c, xq - H * s2 / 2, yq, H * s2, B * s2, d["t"] * s2)                                         # HSS cut at the flange
@@ -3344,8 +3357,9 @@ def _beam_hss_moment_picture(c, top, d):
         c.drawString(xq + 26, yq + (Bb / 2 + a_ / 2) * s2 - 2 + max(0, 6 - a_ * s2), f"a = {a_:.3g} in")
     lo = yq - max(B, Bb, bf_ if wl_ else 0) / 2 * s2
     _small(c, xq - H * s2 / 2 + 20, lo - (34 if wl_ else 26 if bl else 14),
-           ("plan looking up at the bottom flange plate, to scale" if (wl_ and bf_ <= Bb) else "plan at a " + ("flange plate" if d["plate"] else "flange") + ", to scale"))
-    return min(ym - hc / 2 - 36, lo - (42 if wl_ else 34 if bl else 22))
+           ("plan looking up at the bottom flange plate, to scale" if (d.get("plan_only") or (wl_ and bf_ <= Bb)) else
+            "plan at the top flange plate, to scale" if d.get("bot") else "plan at a " + ("flange plate" if d["plate"] else "flange") + ", to scale"))
+    return min(ym - hc / 2 - 36, lo - (42 if wl_ else 34 if bl else 22)) if not d.get("plan_only") else lo - (42 if wl_ else 34 if bl else 22)
 
 
 def _stiffened_seat_picture(c, top, d):

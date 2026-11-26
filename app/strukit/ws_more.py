@@ -4504,6 +4504,8 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
         raise WorksheetError(f"{mark}: '{column}' is not in the HSS table")
     if col.get("type") != "HSS-RECT":
         raise WorksheetError(f"{mark}: this sheet covers a square or rectangular HSS column (AISC Design Guide 24 Example 6.3)")
+    if plate and plate.get("bot") and (abs(plate["bot"]["bp"] - plate["bp"]) > 1e-9 or abs(plate["bot"]["tp"] - plate["tp"]) > 1e-9):
+        return _beam_hss_moment_two_plates(mark, beam, beam_Fy, beam_source, column, col_Fy, col_source, loads, combos, method, face, plate, runs, runs_from)
     onH = str(face or "B").strip().upper().startswith("H")
     B, H = (col["Ht"], col["B"]) if onH else (col["B"], col["Ht"])          # B: width of the connecting face; H: depth of the side walls
     S = col["Sy"] if onH else col["Sx"]                                     # the column bends in the plane of the beam
@@ -4514,7 +4516,7 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
     if plate:
         if not (plate.get("source") or "").strip():
             raise WorksheetError(f"{mark}: the source of the flange plate Fy is blank")
-        Bb, tb, Fyb, arm, what = plate["bp"], plate["tp"], plate["Fy"], dd + plate["tp"], "flange plate"
+        Bb, tb, Fyb, arm, what = plate["bp"], plate["tp"], plate["Fy"], plate.get("arm") or dd + plate["tp"], "flange plate"
     else:
         Bb, tb, Fyb, arm, what = bm["bf"], bm["tf"], beam_Fy, dd - bm["tf"], "beam flange"
     if not (Bb > 0 and tb > 0):
@@ -4554,7 +4556,8 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
     low = min(g0["cap"].values())
     Ln = footing_line
     steps = [Ln("Flange force, Ff = M / lever arm", g0["Ff"], "kip", "AISC Design Guide 24 (2nd Ed.) Example 6.3", f"{g0['name']}: M = {g0['M'] / 12:.1f} kip-ft; lever arm = "
-                + (f"d + tp = {arm:.3g} in. (plates on the outside of the flanges)" if plate else f"d - tf = {arm:.3g} in.")),
+                + ((f"d + (tp top + tp bottom) / 2 = {arm:.3g} in." if plate.get("arm") else f"d + tp = {arm:.3g} in.") + " (plates on the outside of the flanges)"
+                   if plate else f"d - tf = {arm:.3g} in.")),
              Ln("Effective width of the " + what + ", Be", Be, "in", "AISC 360-22 Eq. K1-1", f"(10 / (B / t)) (Fy t / (Fyb tb)) Bb, not over Bb = {Bb:g} in.; B / t = {B / t:.3g}"),
              Ln("Local yielding of the " + what, R_fl, "kip", "AISC 360-22 Eq. J4-1 on Be x tb", f"Fyb = {Fyb:g} ksi, tb = {tb:g} in.; " + fac(0.95, 1.58)),
              Ln("Local yielding of the HSS side walls", R_sw, "kip", "AISC 360-22 Eq. J10-2, two walls", f"2 Fy t (5 k + lb), k = 1.5 t, lb = tb; " + fac(1.00, 1.50)),
@@ -4574,7 +4577,7 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
     if plate and plate.get("d"):
         gM = max(cases, key=lambda c_: c_["M"])
         try:
-            fp = flange_plate_bolted(gM["M"], gM["M"], beam, beam_Fy, plate["beam_Fu"], Bb, tb, Fyb, plate["Fu"], plate["d"], plate["group"], plate["threads"],
+            fp = flange_plate_bolted(gM["M"], gM["M"] * (dd + tb) / arm, beam, beam_Fy, plate["beam_Fu"], Bb, tb, Fyb, plate["Fu"], plate["d"], plate["group"], plate["threads"],
                                      int(plate["n"]), plate["s"], plate["g"], plate["lev_p"], plate["lev_b"], plate["a1"], method, plate.get("weld"),
                                      plate.get("FEXX") or 70.0)
         except Exception as e:
@@ -4594,7 +4597,7 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
             rows.append(Row("Fillet welds, flange plate to the HSS face", nm_, fp["Pp"], fp["R_w"], "kip", "AISC 360-22 Eq. J2-4, J2-5",
                             f"{plate['weld']:g} in. both sides of the plate, kds = 1.5"))
         steps += [Ln("Flange force on the bolts, M / d", fp["Pb"], "kip", "AISC Manual (16th Ed.) Eq. 11-1", f"{nm_}; d = {dd:g} in."),
-                  Ln("Flange force in the plate, M / (d + tp)", fp["Pp"], "kip", "AISC Manual (16th Ed.) Eq. 11-1", f"d + tp = {dd + tb:.3g} in."),
+                  Ln("Flange force in the plate, M / lever arm", fp["Pp"], "kip", "AISC Manual (16th Ed.) Eq. 11-1", f"lever arm {arm:.3g} in."),
                   Ln("Each bolt: least of shear, bearing and tearout", min(fp["per"]), "kip", "AISC 360-22 Eq. J3-1, J3-6a, J3-6c",
                      f"bolt shear alone {fp['rv']:.3g} kip; standard holes {fp['dh']:.4g} in.; deformation at service load considered"),
                   Ln("Net area of the flange plate", fp["An"], "in2", "AISC 360-22 Sect. B4.3b", "two holes, each the hole + 1/16 in."),
@@ -4607,7 +4610,7 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
             raise WorksheetError(f"{mark}: the flange plates are either bolted or welded to the beam flange; give the bolts or the weld, not both")
         gM = max(cases, key=lambda c_: c_["M"])
         try:
-            fw = flange_plate_welded(gM["M"], gM["M"], beam, beam_Fy, plate["beam_Fu"], Bb, tb, Fyb, plate["Fu"], plate["bw"], plate["Lw"],
+            fw = flange_plate_welded(gM["M"], gM["M"] * (dd + tb) / arm, beam, beam_Fy, plate["beam_Fu"], Bb, tb, Fyb, plate["Fu"], plate["bw"], plate["Lw"],
                                      bool(plate.get("end_weld")), plate["wa1"], method, plate.get("FEXX") or 70.0)
         except WorksheetError as e:
             raise WorksheetError(f"{mark}: {e}")
@@ -4628,7 +4631,7 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
             rows.append(Row("Fillet welds, flange plate to the HSS face", nm_, fw["Pp"], Rh, "kip", "AISC 360-22 Eq. J2-4, J2-5",
                             f"{plate['weld']:g} in. both sides of the plate, kds = 1.5"))
         steps += [Ln("Flange force on the welds, M / d", fw["Pw"], "kip", "AISC Manual (16th Ed.) Eq. 11-1", f"{nm_}; d = {dd:g} in."),
-                  Ln("Flange force in the plate, M / (d + tp)", fw["Pp"], "kip", "AISC Manual (16th Ed.) Eq. 11-1", f"d + tp = {dd + tb:.3g} in."),
+                  Ln("Flange force in the plate, M / lever arm", fw["Pp"], "kip", "AISC Manual (16th Ed.) Eq. 11-1", f"lever arm {arm:.3g} in."),
                   Ln("Fillet weld strength per inch, kds = 1.0", fw["q"], "kip/in", "AISC 360-22 Eq. J2-4", f"0.60 FEXX (0.707 w), w = {plate['bw']:g} in., FEXX = {plate.get('FEXX') or 70.0:g} ksi; nominal"),
                   Ln("Longitudinal welds, Rnwl", fw["Rnwl"], "kip", "AISC 360-22 Eq. J2-4", f"two lines of {plate['Lw']:g} in.; nominal")]
         if plate.get("end_weld"):
@@ -4678,6 +4681,39 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
     sheet.conn = dict(Be=Be, R_fl=R_fl, R_sw=R_sw, ceff=ceff, R_ps=R_ps, a=a_, beta=beta, arm=arm, flat=flat, cases=cases, gov={k: v["name"] for k, v in gov.items()},
                       M_avail=low * arm / 12.0, yl=g0["cap"]["yl"], cr=gov["cr"]["cap"]["cr"], Qf=g0["Qf"], U=g0["U"], fp=fp, fw=fw)
     return sheet
+
+
+def _beam_hss_moment_two_plates(mark, beam, beam_Fy, beam_source, column, col_Fy, col_source, loads, combos, method, face, plate, runs, runs_from):
+    """Flange plates of different sizes at the top and bottom flanges: each plate checked as its own transverse plate on the HSS face, for the
+    flange force M over the lever arm d + (tp top + tp bottom) / 2; the bolts or welds to the beam flange are the same pattern on both."""
+    bm = shapes.get(beam)
+    bot = plate["bot"]
+    if not (bot.get("bp", 0) > 0 and bot.get("tp", 0) > 0):
+        raise WorksheetError(f"{mark}: the bottom flange plate width and thickness are needed")
+    arm = bm["d"] + (plate["tp"] + bot["tp"]) / 2.0
+    base = {k: v for k, v in plate.items() if k != "bot"}
+    sh = {}
+    for nm, pl in (("Top", dict(base, arm=arm)), ("Bottom", dict(base, bp=bot["bp"], tp=bot["tp"], arm=arm))):
+        try:
+            sh[nm] = beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_source, loads, combos, method, face, pl, runs, runs_from)
+        except WorksheetError as e:
+            raise WorksheetError(str(e).replace(f"{mark}: ", f"{mark}: {nm.lower()} flange plate: ", 1))
+    top, bo = sh["Top"], sh["Bottom"]
+    from dataclasses import replace as _rep
+    top.rows = [_rep(r_, check=f"Top plate: {r_.check}") for r_ in top.rows] + [_rep(r_, check=f"Bottom plate: {r_.check}") for r_ in bo.rows]
+    top.steps = ([footing_line("Top flange plate", f"{plate['bp']:g} x {plate['tp']:g} in.", "", "", "")] + list(top.steps)
+                 + [footing_line("Bottom flange plate", f"{bot['bp']:g} x {bot['tp']:g} in.", "", "", "")] + list(bo.steps))
+    top.info = [(k, (f"flange plates welded to the HSS face on the outside of each beam flange: top {plate['bp']:g} x {plate['tp']:g} in., bottom {bot['bp']:g} x "
+                     f"{bot['tp']:g} in.; Fy = {plate['Fy']:g} ksi ({plate['source'].strip()})") if k == "Flanges" else
+                 (v.split(";")[0] + f"; top plate width {plate['bp']:g} in., bottom {bot['bp']:g} in.") if k == "Flat of Face" else v) for k, v in top.info]
+    for b_ in top.blocks:
+        if b_.get("picture") and b_["picture"][0] == "beam_hss_moment":
+            b_["picture"][1].update(bot=dict(Bb=bot["bp"], tb=bot["tp"]))
+    pb = next(b_ for b_ in bo.blocks if b_.get("picture") and b_["picture"][0] == "beam_hss_moment")
+    pb["picture"][1].update(plan_only=True)
+    top.blocks.append(dict(title="Bottom Flange Plate", head="Bottom Flange Plate", picture=pb["picture"]))
+    top.conn = dict(top.conn, arm=arm, bottom=bo.conn, M_avail=min(top.conn["M_avail"], bo.conn["M_avail"]))
+    return top
 
 
 def bent_plate_tread(b, t, d):
