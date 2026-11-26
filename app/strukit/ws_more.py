@@ -5312,10 +5312,12 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
 
 
 def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note, kind, class_basis, capacity, trolley, wheel, wheel_source, n, spacing,
-                       powered, share, share_source, combos, method, defl=None):
+                       powered, share, share_source, combos, method, defl=None, spans=None, lb_wheel=None, lb_source=""):
     """Runway beam of a top-running crane, simply supported: ASCE/SEI 7-22 Sect. 4.9 crane loads (crane.loads), moving wheels (crane.moving),
     AISC 360-22 flexure (Sect. F2, Lb = span, Cb = 1.0) and shear (Sect. G2), and the lateral wheel loads on the top flange alone (half the
-    section's Sect. F6 strength) combined by Eq. H1-1b. defl: dict(v_ratio, h_ratio, source) or None."""
+    section's Sect. F6 strength) combined by Eq. H1-1b. defl: dict(v_ratio, h_ratio, source) or None. spans: two or more spans (ft), the beam
+    continuous over them (crane.moving_continuous). lb_wheel: bearing length of a wheel load at the top flange (in.) for web local yielding and
+    crippling under the wheels (Sect. J10.2, J10.3, taken at the member end); blank or 0 = no bearing length counted."""
     from . import crane, steel_beam as sb, steel_beamcol as sbc
     for nm, v in (("where Fy comes from", beam_source), ("how the crane service class or type was assigned", class_basis), ("where the wheel load comes from", wheel_source),
                   ("the basis of the lateral force share", share_source)):
@@ -5348,6 +5350,25 @@ def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note
     Mcy_f = wk.available / 2 / 12                                        # top flange alone, kip-ft
     Mcx = st.M_avail / 12
     ratioH = cl["H"] / cl["P_imp"] if cl["P_imp"] else 0.0
+    if lb_wheel and not (lb_source or "").strip():
+        raise WorksheetError(f"{mark}: say where the wheel bearing length comes from")
+    cont = None
+    if spans and len(spans) > 1:
+        if any(x <= 0 for x in spans):
+            raise WorksheetError(f"{mark}: every span must be positive")
+        Lb_c = max(spans)
+        st = sb.check(p, Fy, Lb_c * 12, 1.0, method)
+        Mcx = st.M_avail / 12
+        EIk = 29000.0 * p["Ix"]
+        per = []
+        for cb in combos:
+            fD, fL = cb.factors.get("D", 0.0), cb.factors.get("L", 0.0)
+            per.append((cb.name, crane.moving_continuous(list(spans), cl["P_imp"], spacing or 0.0, n, EIk, w=wD, H_ratio=ratioH, fD=fD, fL=fL, Mc=Mcx, Mcy=Mcy_f)))
+        dvc = crane.moving_continuous(list(spans), cl["P"], spacing or 0.0, n, EIk, w=0.0, fD=0.0, fL=1.0)["defl"]
+        dhc = crane.moving_continuous(list(spans), cl["H"], spacing or 0.0, n, 29000.0 * p["Iy"] / 2, w=0.0, fD=0.0, fL=1.0)["defl"] if cl["H"] else 0.0
+        gp = max(per, key=lambda x: x[1]["Mpos"]); gn = min(per, key=lambda x: x[1]["Mneg"])
+        gr = max(per, key=lambda x: x[1]["ratio"]); gv = max(per, key=lambda x: x[1]["V"])
+        cont = dict(per=per, Mpos=gp, Mneg=gn, ratio=gr, V=gv, dv=dvc, dh=dhc, Lb=Lb_c)
     rows, worst, best = [], None, None
     for cb in combos:
         fD, fL = cb.factors.get("D", 0.0), cb.factors.get("L", 0.0)
@@ -5362,9 +5383,24 @@ def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note
     Vname = max(combos, key=lambda cb: cb.factors.get("D", 0.0) * wD * L / 2 + cb.factors.get("L", 0.0) * mvL["R"]).name
     Mxmax = max(cb.factors.get("D", 0.0) * MD_at + cb.factors.get("L", 0.0) * mvL["M"] for cb in combos)
     Mxname = max(combos, key=lambda cb: cb.factors.get("D", 0.0) * MD_at + cb.factors.get("L", 0.0) * mvL["M"]).name
-    rows += [Row("Flexure, strong axis (moving wheels)", Mxname, Mxmax, Mcx, "kip-ft", "AISC 360-22 Sect. F2", f"Lb = {L:g} ft, Cb = 1.0"),
-             Row("Strong axis and lateral load on the top flange (Eq. H1-1b)", worst, r, 1.0, "", "AISC 360-22 Eq. H1-1b, Sect. F2, F6", f"Mrx {Mx:.1f}, Mry {My:.2f} kip-ft"),
-             Row("Shear at the support", Vname, Vmax, st.V_avail, "kip", "AISC 360-22 Sect. G2", "first wheel at the support")]
+    if cont:
+        rows += [Row("Flexure, positive moment (moving wheels)", cont["Mpos"][0], cont["Mpos"][1]["Mpos"], Mcx, "kip-ft", "AISC 360-22 Sect. F2", f"Lb = {cont['Lb']:g} ft, Cb = 1.0"),
+                 Row("Flexure, negative moment over a support", cont["Mneg"][0], -cont["Mneg"][1]["Mneg"], Mcx, "kip-ft", "AISC 360-22 Sect. F2", f"Lb = {cont['Lb']:g} ft, Cb = 1.0"),
+                 Row("Strong axis and lateral load on the top flange (Eq. H1-1b)", cont["ratio"][0], cont["ratio"][1]["ratio"], 1.0, "", "AISC 360-22 Eq. H1-1b, Sect. F2, F6",
+                     f"at {cont['ratio'][1]['gov']['x']:.2f} ft: Mrx {cont['ratio'][1]['gov']['Mx']:.1f}, Mry {cont['ratio'][1]['gov']['My']:.2f} kip-ft"),
+                 Row("Shear", cont["V"][0], cont["V"][1]["V"], st.V_avail, "kip", "AISC 360-22 Sect. G2", "largest at any support, any wheel position")]
+        r, worst = cont["ratio"][1]["ratio"], cont["ratio"][0]
+    else:
+        rows += [Row("Flexure, strong axis (moving wheels)", Mxname, Mxmax, Mcx, "kip-ft", "AISC 360-22 Sect. F2", f"Lb = {L:g} ft, Cb = 1.0"),
+                 Row("Strong axis and lateral load on the top flange (Eq. H1-1b)", worst, r, 1.0, "", "AISC 360-22 Eq. H1-1b, Sect. F2, F6", f"Mrx {Mx:.1f}, Mry {My:.2f} kip-ft"),
+                 Row("Shear at the support", Vname, Vmax, st.V_avail, "kip", "AISC 360-22 Sect. G2", "first wheel at the support")]
+    lbw = lb_wheel or 0.0
+    ww = crane.web_under_wheel(p, Fy, lbw, at_end=True)
+    Pw_name = max(combos, key=lambda cb: cb.factors.get("L", 0.0)).name
+    Pw = max(cb.factors.get("L", 0.0) for cb in combos) * cl["P_imp"]
+    Ryw, Rcw = (ww["Ry"], 0.75 * ww["Rc"]) if lrfd else (ww["Ry"] / 1.50, ww["Rc"] / 2.00)
+    rows += [Row("Web local yielding under a wheel", Pw_name, Pw, Ryw, "kip", f"AISC 360-22 {ww['eq_y']}", f"wheel at the beam end; lb = {lbw:g} in."),
+             Row("Web local crippling under a wheel", Pw_name, Pw, Rcw, "kip", f"AISC 360-22 {ww['eq_c']}", f"wheel at the beam end; lb = {lbw:g} in.")]
     E_ = 29000.0
     sym = [(cl["P"], L / 2 - (spacing or 0) / 2), (cl["P"], L / 2 + (spacing or 0) / 2)] if n == 2 and spacing < L else [(cl["P"], L / 2)]
     if n > 2:
@@ -5372,11 +5408,16 @@ def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note
         sym = [(P_, x) for P_, x in sym if 0 <= x <= L]
     dv = max(crane.deflection_mid(L, E_ * p["Ix"], sym), crane.deflection_mid(L, E_ * p["Ix"], [(cl["P"], L / 2)]))
     dh = crane.deflection_mid(L, E_ * p["Iy"] / 2, [(cl["H"], x) for _, x in sym]) if cl["H"] else 0.0
+    Lmin = L
+    if cont:
+        dv, dh, Lmin = cont["dv"], cont["dh"], min(spans)
     if defl:
+        L = Lmin
         if defl.get("v_ratio"):
             rows.append(Row("Vertical deflection, wheel loads without impact", "", dv, L * 12 / defl["v_ratio"], "in", defl["source"].strip(), f"span / {defl['v_ratio']:g}"))
         if defl.get("h_ratio") and cl["H"]:
             rows.append(Row("Lateral deflection, top flange", "", dh, L * 12 / defl["h_ratio"], "in", defl["source"].strip(), f"span / {defl['h_ratio']:g}"))
+    L = span_ft if not cont else sum(spans)
     Ln = footing_line
     ftxt = "0.90" if lrfd else "1 / 1.67"
     steps = [Ln("Vertical impact", f"{cl['impact'] * 100:.0f}%", "", "ASCE/SEI 7-22 Sect. 4.9.3", f"{cl['impact_txt']} ({class_basis.strip()})"),
@@ -5395,9 +5436,27 @@ def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note
              Ln("Lateral moment at the same section", My, "kip-ft", worst, f"lateral wheel loads at the wheel positions: {cl['H']:.3f} kip each"),
              Ln("Eq. H1-1b (Pr = 0): Mrx / Mcx + Mry / Mcy", r, "", "AISC 360-22 Eq. H1-1b", f"{Mx:.1f} / {Mcx:.1f} + {My:.2f} / {Mcy_f:.2f}"),
              Ln("Available shear strength", st.V_avail, "kip", "AISC 360-22 Sect. G2", ""),
+             Ln("Web local yielding under a wheel at the beam end, Fy tw (2.5 k + lb)", Ryw, "kip", f"AISC 360-22 {ww['eq_y']}",
+                f"k = {p['kdes']:g} in., tw = {p['tw']:g} in., lb = {lbw:g} in." + (f" ({lb_source.strip()})" if lbw else " (no bearing length counted)")
+                + "; " + ("phi = 1.00" if lrfd else "Omega = 1.50")),
+             Ln("Web local crippling under a wheel at the beam end", Rcw, "kip", f"AISC 360-22 {ww['eq_c']}", "Qf = 1.0; " + ("phi = 0.75" if lrfd else "Omega = 2.00")),
              Ln("Midspan deflection, wheels without impact", dv, "in", "statics", f"E = 29,000 ksi, Ix = {p['Ix']:g} in4; wheels placed about midspan"),
              Ln("Lateral deflection of the top flange", dh, "in", "statics", f"Iy / 2 = {p['Iy'] / 2:g} in4")]
-    info = [("Runway Beam", f"{shapes.normalize(beam)}, Fy = {Fy:g} ksi ({beam_source.strip()}); simple span {L:g} ft; top flange braced at the supports only"),
+    if cont:
+        steps = [x for x in steps if not (x.label.startswith("Largest moment from the wheels") or x.label.startswith("Dead load moment") or x.label.startswith("Largest end reaction")
+                                           or x.label.startswith("Lateral moment at the same") or x.label.startswith("Eq. H1-1b") or x.label.startswith("Midspan deflection")
+                                           or x.label.startswith("Lateral deflection"))]
+        gpos, gneg, grt = cont["Mpos"][1], cont["Mneg"][1], cont["ratio"][1]
+        steps += [Ln("Continuous beam: spans", " + ".join(f"{x:g}" for x in spans) + " ft", "", "stiffness analysis, wheels moved across every span",
+                     f"wheel group stepped along the beam; E Ix = {29000 * p['Ix']:,.0f} kip-in2"),
+                  Ln("Largest positive moment", gpos["Mpos"], "kip-ft", cont["Mpos"][0], f"at {gpos['x_pos']:.2f} ft; wheels at " + ", ".join(f"{x:.2f}" for x in gpos["pos"]) + " ft"),
+                  Ln("Largest negative moment", gneg["Mneg"], "kip-ft", cont["Mneg"][0], f"at {gneg['x_neg']:.2f} ft"),
+                  Ln("Eq. H1-1b (Pr = 0): Mrx / Mcx + Mry / Mcy", grt["ratio"], "", "AISC 360-22 Eq. H1-1b",
+                     f"at {grt['gov']['x']:.2f} ft: {abs(grt['gov']['Mx']):.1f} / {Mcx:.1f} + {abs(grt['gov']['My']):.2f} / {Mcy_f:.2f}"),
+                  Ln("Largest deflection, wheels without impact", dv, "in", "stiffness analysis", "any span, any wheel position"),
+                  Ln("Largest lateral deflection of the top flange", dh, "in", "stiffness analysis", f"Iy / 2 = {p['Iy'] / 2:g} in4")]
+    info = [("Runway Beam", f"{shapes.normalize(beam)}, Fy = {Fy:g} ksi ({beam_source.strip()}); "
+             + (f"continuous over spans of {', '.join(f'{x:g}' for x in spans)} ft" if cont else f"simple span {L:g} ft") + "; top flange braced at the supports only"),
             ("Crane", f"{kind}; rated capacity {capacity:g} kip, hoist and trolley {trolley or 0:g} kip; " + ("electrically powered trolley" if powered else "trolley not electrically powered")),
             ("Wheels", f"{n} on this runway at {spacing or 0:g} ft; maximum static wheel load {wheel:g} kip ({wheel_source.strip()})")]
     load_lines = [f"L   {cl['P_imp']:>8.2f} kip  vertical, each wheel, with impact",
@@ -5407,13 +5466,15 @@ def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note
                         ["Crane loads (vertical with impact, lateral) are on load case L. Wheels on this runway are equal and move as a group.",
                          "The lateral wheel loads are taken by the top flange alone, with half of the section's y-axis flexural strength; torsion is not computed separately.",
                          "The vertical and lateral wheel loads act at the same positions."],
-                        ["fatigue (AISC 360-22 Appendix 3)", "web local yielding and crippling under the wheels", "the rail, rail clips and stops",
+                        ["fatigue (AISC 360-22 Appendix 3)", "the rail, rail clips and stops",
                          "the longitudinal force in the beam and its end connections (value shown for the bracing)", "underhung cranes (bottom flange bending)",
-                         "continuous runway beams", "the supports, brackets and columns"] + ([] if defl and defl.get("v_ratio") else ["deflection limits"]))
+                         "the supports, brackets and columns"] + ([] if defl and defl.get("v_ratio") else ["deflection limits"]))
     sheet.blocks.append(dict(title="Loading and Section", head="Loading and Section", picture=("crane_runway", dict(
         L=L, loads=[dict(kind="point", P=cl["P_imp"] * 1000, x_ft=x, case="L") for x in mvL["wheels"]] + [dict(kind="uniform", w=wD * 1000, case="D")],
         H=cl["H"], beam=shapes.normalize(beam), d=p["d"], bf=p["bf"], tf=p["tf"], tw=p["tw"]))))
     fac = next(cb for cb in combos if cb.name == Mxname).factors
+    Ls_ = L
+    L = span_ft
     dx = [L * i / 60 for i in range(61)]
     def MVx(x):
         M = fac.get("D", 0) * wD * x * (L - x) / 2
@@ -5424,6 +5485,18 @@ def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note
             V += P_ * (L - a) / L if x < a else -P_ * a / L
         return M, V
     sheet.diagram = dict(combo=Mxname, note="wheels at the position of the largest moment", x=dx, V=[MVx(x)[1] * 1000 for x in dx], M=[MVx(x)[0] * 1000 for x in dx])
+    if cont:
+        from . import beam as bm_
+        gname, gpos = cont["Mpos"][0], cont["Mpos"][1]["pos"]
+        fac = next(cb for cb in combos if cb.name == gname).factors
+        sup_in = [x * 12.0 for x in cont["per"][0][1]["supports"]]
+        L = Ls_
+        rr = bm_.solve(L * 12.0, sup_in, 29000.0 * p["Ix"], [bm_.PointLoad(x * 12.0, fac.get("L", 0.0) * cl["P_imp"]) for x in gpos],
+                       [bm_.DistLoad(0.0, L * 12.0, fac.get("D", 0.0) * wD / 12.0, fac.get("D", 0.0) * wD / 12.0)])
+        sheet.diagram = dict(combo=gname, note="wheels at the position of the largest positive moment", x=[float(x) / 12.0 for x in rr.x],
+                             V=[float(v) * 1000 for v in rr.V], M=[float(m) / 12.0 * 1000 for m in rr.M])
+        sheet.blocks[-1]["picture"][1].update(L=L, supports=cont["per"][0][1]["supports"],
+                                               loads=[dict(kind="point", P=cl["P_imp"] * 1000, x_ft=x, case="L") for x in gpos] + [dict(kind="uniform", w=wD * 1000, case="D")])
     sheet.crane = dict(loads=cl, moving=mvL, Mx=Mx, My=My, ratio=r, Mcx=Mcx, Mcy_f=Mcy_f, V=Vmax, Vc=st.V_avail, dv=dv, dh=dh)
     return sheet
 

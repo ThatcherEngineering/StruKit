@@ -217,6 +217,11 @@ FORMS = {
                 F("powered", "Electrically powered trolley", "select", options=["yes", "no"], help="lateral force of Sect. 4.9.4 applies when yes"),
                 F("share", "Share of the lateral force taken by this runway", help="for example 0.5 for two equal runway beams; Sect. 4.9.4"),
                 F("share_source", "Basis of that share", "text"),
+                F("spans", "Continuous runway beam: spans, left to right", "text", unit="ft", required=False,
+                  help="for example 30, 30, 30: the beam continuous over these spans (the span box above is then the first span); blank = simple span"),
+                F("lb_wheel", "Wheel load bearing length at the top flange", unit="in", required=False,
+                  help="for web local yielding and crippling under a wheel; blank = no bearing length counted"),
+                F("lb_source", "Where that bearing length comes from", "text", required=False),
                 F("defl_v", "Vertical deflection limit, span over", required=False), F("defl_h", "Lateral deflection limit, span over", required=False),
                 F("defl_source", "Where the deflection limits come from", "text", required=False)],
         tables=[]),
@@ -1963,8 +1968,14 @@ def _build(kind, values, project):
         dv, dh, ds = r.num("defl_v", False), r.num("defl_h", False), r.text("defl_source", False) or ""
         if (dv or dh) and not ds.strip():
             r.miss.append("Where the deflection limits come from is blank")
+        spans_ = r.nums("spans") if str(values.get("spans") or "").strip() else None
+        lbw = r.num("lb_wheel", False)
+        lbs = r.text("lb_source", False) or ""
+        if lbw and not lbs.strip():
+            r.miss.append("Where the wheel bearing length comes from is blank")
         r.done()
-        return ws_more.crane_runway_sheet(mark, *args, cb, m, defl=dict(v_ratio=dv, h_ratio=dh, source=ds) if (dv or dh) else None), "simple", {}
+        return ws_more.crane_runway_sheet(mark, *args, cb, m, defl=dict(v_ratio=dv, h_ratio=dh, source=ds) if (dv or dh) else None,
+                                          spans=spans_ if spans_ and len(spans_) > 1 else None, lb_wheel=lbw, lb_source=lbs), "simple", {}
     if kind == "angle_beam":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = []
