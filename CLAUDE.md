@@ -18,6 +18,7 @@ ruled there, do not ask again. The same two files also live in the claude.ai Pro
   ever edited, keep this check-in-first rule.
 - Once he says go: build what he picked, in stretches of about 30 minutes, and check in at the end of each stretch (what StruKit can now
   do, what changed, what needs his ruling), not after every build.
+- After builds, send him the PDFs of the sheets that were built or changed (sample inputs; render and look first) (Zach, 2026-11-26).
 - Ask only for a real decision that is his: a reading of a code provision that could go two ways, or something only he can supply.
 
 ## Hard rules

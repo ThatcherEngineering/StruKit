@@ -428,3 +428,7 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
   |va - vc| x the longer of e1, e2 (both directions of load) and run the whole region; the members across the depth at the opening ends take
   the larger corner force and run chord to chord.
 - Deflection: the Eq. 4.2-1 / 4.2-2 shear term is increased over the region by the largest unit shear around the opening less V / W.
+
+## 2026-11-26 11:10 — Zach: send the PDFs
+- "When you finish builds, I like to see the pdfs of what you built." Standing: after each build (or each check-in stretch), send Zach the
+  printed sheets of what was built or changed (SendUserFile), made with sample inputs, rendered and looked at first.

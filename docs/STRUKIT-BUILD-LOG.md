@@ -958,3 +958,8 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   neglected); it reproduces every tabulated value within 1.2 percent. Every unequal angle in the AISC Shapes Database v16.0 is a size the table
   lists, so the table stays the source; the formula is the fall-back for a size it does not list. The item "unequal angles not in Table
   C-F10.1" is closed.
+
+## 2026-11-26 11:15 MST — 0.257.1 diaphragm opening picture for narrow regions
+- The enlarged plan of the region around a diaphragm opening goes schematic (lengths dimensioned, "not to scale" in the caption) when a zone
+  would be too narrow to label at scale (a short cantilever, small extensions); the zone shears and dimensions no longer collide.
+- Sample sheets sent to Zach (his standing request, 11:10: send the PDFs of what was built after each build).
