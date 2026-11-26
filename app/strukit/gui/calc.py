@@ -2867,6 +2867,102 @@ def _wall_weight(project, v):
     return psf * h * L, f"its own weight {psf:g} psf x {h:g} ft x {L:.2f} ft = {psf * h * L:,.0f} lb dead ({src})"
 
 
+PAD_STEP_FT = 0.25                                           # pad sizes go up in 3 in. steps
+
+
+def _point_pad(project, members, lp, prev_pads):
+    """A point load (post, column, header end) on a continuous footing line, checked as a pad: first the continuous footing itself over a
+    length Le (the length typed on the footing for point loads, else the footing width), with its own line load over that length; where
+    the soil bearing is exceeded, a larger pad, square (or with the width across typed on the footing), in 3 in. steps. Returns
+    (isolated footing member, summary) or a message. The pad is an Isolated Footing member that checks bearing, shear and flexure."""
+    by = {(m.get("values") or {}).get("mark"): m for m in members}
+    foot, src = by.get(lp["foot"]), by.get(lp["src"])
+    if foot is None or src is None:
+        return f"{lp['src']}: the footing line or the member is missing"
+    fv = foot["values"]
+    def n_(k, d=None):
+        t = str(fv.get(k) or "").replace(",", "").strip()
+        try:
+            return float(t) if t else d
+        except ValueError:
+            return d
+    W, h, q_allow, conc = n_("W"), n_("h"), n_("q_allow"), n_("conc_pcf")
+    if None in (W, h, q_allow, conc) or not str(fv.get("soil_source") or "").strip():
+        return f"{lp['src']}, {lp['support']}: footing line {lp['foot']} needs its width, thickness, concrete weight and soil bearing with its source to check the point load on it"
+    wall, stem_h, stem_pcf = n_("wall", 0.0), n_("stem_h", 0.0), n_("stem_pcf", 0.0)
+    soil_d, soil_pcf = n_("soil_depth", 0.0), n_("soil_pcf", 0.0)
+    pc = case_reactions(src["kind"], src["values"], project)
+    if "error" in pc:
+        return f"{lp['src']}: {pc['error']}"
+    sup = next((s_ for s_ in pc["supports"] if s_["name"] == lp["support"]), None)
+    if sup is None:
+        return f"{lp['src']}: no support '{lp['support']}'"
+    line = {}                                                # the footing line's own load per foot, by case (walls and joist rows on it)
+    for lk in _links(foot):
+        per = float(lk.get("per_ft") or 0)
+        s2 = by.get(lk["src"])
+        if per <= 0 or s2 is None:
+            continue
+        g2 = case_reactions(s2["kind"], s2["values"], project)
+        sp2 = next((x for x in g2.get("supports") or [] if x["name"] == lk.get("support")), None)
+        for c, val in (sp2 or {}).get("cases", {}).items():
+            line[c] = line.get(c, 0.0) + val * float(lk.get("count") or 1) / per
+    stem = wall / 12 * stem_h / 12 * stem_pcf                 # stem wall weight per foot
+    Le, Le_src = n_("at_spread"), str(fv.get("at_spread_source") or "").strip()
+    if not Le or not Le_src:
+        Le, Le_src = W, "the footing width"
+    across = n_("at_pad_width")
+    pv = prev_pads.get(f"{lp['foot']} at {lp['src']}") or {}
+    hp = float(str(pv.get("h") or h))
+
+    def trial(B, L, hh):
+        cases = {c: v * 1.0 for c, v in sup["cases"].items()}
+        for c, v in line.items():
+            cases[c] = cases.get(c, 0.0) + v * L
+        cases["D"] = cases.get("D", 0.0) + stem * L
+        g = _governing(dict(supports=[dict(name="base", x_ft=0.0, cases=cases)]), project)["supports"][0]
+        if not g.get("service") or not g.get("strength"):
+            return None, g
+        A = B * L
+        q = (g["service"]["P"] + A * hh / 12 * conc + max(0.0, A - (wall / 12) ** 2) * soil_d * soil_pcf) / A
+        return q, g
+
+    q, g = trial(W, Le, h)
+    if q is None:
+        return "both ASD and LRFD load combinations are needed on the Project page to check point loads on footing lines"
+    enlarged = q > q_allow
+    B, L, hh = W, Le, h
+    if enlarged:
+        hh = hp
+        B = max(W, across or 0.0) if across else max(W, Le)
+        L = B if not across else max(Le, W)
+        for _ in range(200):
+            q, g = trial(B, L, hh)
+            if q <= q_allow:
+                break
+            if across:
+                L += PAD_STEP_FT
+            else:
+                B += PAD_STEP_FT; L = B
+        else:
+            return f"{lp['src']}: no pad up to {B:g} ft works at {q_allow:g} psf"
+    cover = n_("cover", 3.0)
+    sp_t = n_("spacing_t", 12.0)
+    nbar = lambda ft: int(max(2, math.floor((ft * 12 - 2 * cover) / sp_t) + 1))
+    mark = f"{lp['foot']} at {lp['src']}"
+    vals = dict(mark=mark, pad_of=lp["foot"], B=f"{B:g}", L=f"{L:g}", h=f"{hh:g}", fc=fv.get("fc"), fy=fv.get("fy"), conc_pcf=fv.get("conc_pcf"),
+                col_x=f"{wall:g}", col_y=f"{wall:g}", supported="concrete", plate_x="", plate_y="",
+                bar=str(pv.get("bar") or fv.get("bar_t")), n_x=str(nbar(L)), n_y=str(nbar(B) if enlarged else (fv.get("n_l") or nbar(B))),
+                cover=fv.get("cover"), bottom="x",
+                P_service=str(round(g["service"]["P"])), service_combo=g["service"]["name"], Pu=str(round(g["strength"]["P"])), strength_combo=g["strength"]["name"],
+                q_allow=fv.get("q_allow"), soil_source=fv.get("soil_source"), soil_depth=fv.get("soil_depth") or "", soil_pcf=fv.get("soil_pcf") or "",
+                at_x1=f"{lp['pt'][0]:.3f}", at_y1=f"{lp['pt'][1]:.3f}",
+                loads_from=(f"{lp['src']}, {lp['support']}, on continuous footing {lp['foot']}, with {L:g} ft of that footing's own load and stem wall"
+                            + ("" if enlarged else f" (the continuous footing over {Le:g} ft, {Le_src})")))
+    summary = dict(mark=mark, foot=lp["foot"], src=lp["src"], B=B, L=L, h=hh, enlarged=enlarged, q=q, q_allow=q_allow, P=g["service"]["P"], Le=Le, Le_src=Le_src)
+    return dict(kind="footing_iso", values=vals), summary
+
+
 def model_existing(project):
     """Existing walls of the model (by others, not designed): [(name, dict(level, base, p1, p2))]; unreadable rows are skipped."""
     mdl = (project or {}).get("model") or {}
@@ -2930,7 +3026,10 @@ def model_links(project, members):
     dict(members, links, problems, placed)."""
     import copy, math
     ms = copy.deepcopy(members or [])
+    prev_pads = {m["values"].get("mark"): m["values"] for m in ms if (m.get("values") or {}).get("pad_of")}
+    ms = [m for m in ms if not (m.get("values") or {}).get("pad_of")]   # pads under point loads are made again below
     problems, placed = [], []
+    line_points = []
     for m in ms:
         try:
             pl = model_place(project, m)
@@ -3164,18 +3263,8 @@ def model_links(project, members):
                 continue
             if tgt["kind"] in TAKEDOWN_FOOTINGS and tgt["kind"] == "footing_cont" and cs[0][1].get("p2") is not None:
                 sp = num("spacing") if kind in TAKEDOWN_BEAMS else 0
-                if sp <= 0:
-                    try:
-                        spread = float(str(tv.get("at_spread") or "").replace(",", ""))
-                    except ValueError:
-                        spread = 0.0
-                    if spread <= 0 or not str(tv.get("at_spread_source") or "").strip():
-                        problems.append(f"{mark}, {sup['name']}: a point load on continuous footing {tv.get('mark')} is not spread along it; type the length a point load "
-                                        "spreads over (and its source) on that footing's placement card, check it as an isolated footing, or link it by hand")
-                        continue
-                    lk["per_ft"] = round(spread, 4)          # a point load spread evenly over the typed length of footing
-                    lk["spread"] = True
-                    tv.setdefault("links", []).append(lk)
+                if sp <= 0:                                   # a post, column or header end on a footing line: checked as a pad (below)
+                    line_points.append(dict(foot=tv.get("mark"), src=v["mark"], support=sup["name"], pt=pt))
                     made += 1
                     continue
                 lk["per_ft"] = round(sp / 12.0, 4)           # a row of joists straight onto a footing line: per foot = per joist x 12 / spacing
@@ -3236,6 +3325,14 @@ def model_links(project, members):
             if not any(lk2.get("src") == mk for m2, _ in placed for lk2 in _links(m2)):
                 problems.append(f"{mk}: loads bear on this wall but nothing in the model is under it (a footing line or a beam on level {pl['base']}); its loads stop here")
     out = takedown(project, ms)
+    out["pads"] = []
+    for lp in line_points:
+        got = _point_pad(project, out["members"], lp, prev_pads)
+        if isinstance(got, str):
+            problems.append(got)
+        else:
+            out["members"].append(got[0])
+            out["pads"].append(got[1])
     out["problems"] = problems + out["problems"]
     out["existing"] = on_existing
     out["placed"] = len(placed)

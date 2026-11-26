@@ -747,8 +747,10 @@ function placementCard(m, changed) {
   if (beam) fs.push({ key: "at_x2", label: brace ? "Upper end, X" : "Right end, X", type: "text", required: false, help: pos }, { key: "at_y2", label: brace ? "Upper end, Y" : "Right end, Y", type: "text", required: false, help: pos });
   if (m.kind === "footing_cont") fs.push({ key: "at_x2", label: "Other end of the footing, X", type: "text", required: false, help: "blank = a point; with both ends the footing is a line that walls and joist rows bear on" },
     { key: "at_y2", label: "Other end of the footing, Y", type: "text", required: false, help: pos },
-    { key: "at_spread", label: "Footing line: a point load (post, column) spreads over", unit: "ft", type: "text", required: false, help: "the load per foot is the post load over this length; blank = posts on this footing line are reported, not linked" },
-    { key: "at_spread_source", label: "Where that length comes from", type: "text", required: false });
+    { key: "at_spread", label: "Footing line: length of footing that takes a point load (post, column, header end)", unit: "ft", type: "text", required: false,
+      help: "each point load is checked as a pad: this length of the footing with the point load and the footing's own load over it; where the soil bearing is exceeded a larger pad is sized. Blank = the footing width" },
+    { key: "at_spread_source", label: "Where that length comes from", type: "text", required: false },
+    { key: "at_pad_width", label: "Larger pads: width across the footing line", unit: "ft", type: "text", required: false, help: "blank = square pads; with a width the pad is lengthened along the line" });
   if (wall) fs.push({ key: "at_wall_psf", label: "Wall weight (gravity load path)", unit: "psf", type: "text", required: false, help: "of wall face; carried down as dead load x the story height (from the level elevations) x the wall length; blank = not included" },
     { key: "at_wall_psf_source", label: "Where the wall weight comes from", type: "text", required: false });
   if (brace) fs.push({ key: "at_brace", label: "In the 3D frame this brace takes", type: "select", options: ["tension only", "tension and compression"], required: false, help: m.kind === "tension_member" ? "blank = tension only" : "blank = tension and compression" });
@@ -872,8 +874,10 @@ function modelCard(changed) {
   const link = el("button", { class: "btn", onclick: async () => {
     let out;
     try { out = await post("/api/model_links", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
-    out.members.forEach((nm, i) => { S.members[i].values = nm.values; });
-    LINKS = out.links; MODEL_NOTES = out.problems.concat((out.existing || []).map(e => "On " + e.wall + ": " + e.source + ", " + e.support + ", " +
+    S.members = S.members.filter(m => !(m.values || {}).pad_of);
+    out.members.forEach((nm, i) => { if (i < S.members.length) S.members[i].values = nm.values; else S.members.push({ kind: nm.kind, values: nm.values }); });
+    LINKS = out.links; MODEL_NOTES = out.problems.concat((out.pads || []).map(p => p.mark + ": " + (p.enlarged ? "pad " + p.B + " x " + p.L + " ft sized for " + Math.round(p.P).toLocaleString() + " lb service (the continuous footing is not enough)" :
+      "the continuous footing over " + p.L + " ft carries it (" + Math.round(p.q) + " of " + p.q_allow + " psf)") + "; see its Isolated Footing sheet"), (out.existing || []).map(e => "On " + e.wall + ": " + e.source + ", " + e.support + ", " +
       Object.entries(e.cases).map(([c, v]) => c + " " + v.toLocaleString()).join(", ") + " " + e.unit + " (existing construction; check it separately)"));
     setDirty(); await recalcAll(); select("project");
     toast(out.placed + " member" + (out.placed === 1 ? "" : "s") + " placed; " + out.made + " link" + (out.made === 1 ? "" : "s") + " made by position; the load path is recalculated." + (out.problems.length ? " See the notes under the plan." : ""), 12000);
