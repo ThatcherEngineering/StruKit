@@ -61,6 +61,7 @@ function field(f, obj, onchange, inTable = false) {
     input = el("input", { type: "text", class: (f.type === "number" ? "n " : "") + (f.required ? "req" : ""), placeholder: " ", value: val,
       list: f.type === "shape" ? "shapes" : f.type === "shape_any" ? "shapes_any" : f.type === "hss_shape" ? "shapes_hss" : f.type === "shape_col" ? "shapes_col" : f.type === "shape_tension" ? "shapes_tension" : null, spellcheck: "false", autocomplete: "off" });
   }
+  if (!inTable) input.setAttribute("data-key", f.key);
   const set = () => { obj[f.key] = input.value; if (f.type === "select") input.classList.toggle("blank", input.value === ""); onchange(); };
   input.addEventListener(f.type === "select" ? "change" : "input", set);
   if (inTable) return input;
@@ -87,16 +88,27 @@ function recalc(m, now = false) {
   clearTimeout(timer);
   timer = setTimeout(async () => {
     try {
-      const r = await post("/api/calc", { kind: m.kind, values: m.values, project: S.project });
+      const r = await post("/api/calc", { kind: m.kind, values: m.values, project: S.project, members: S.members });
+      showLinked(m, r);
       R.set(m, r); drawNav();
       if (S.members[sel] === m) drawResults(m);
     } catch (e) { toast("The calculation could not run: " + e.message, 8000); }
   }, now ? 0 : 280);
 }
+// A base plate linked to its footing: the boxes the link filled are written into the member and shown in place (no redraw, so typing
+// elsewhere on the screen is not interrupted). A footing linked to a plate gets the plate size the same way.
+function showLinked(m, r) {
+  if (!r || !r.linked) return;
+  for (const [k, v] of Object.entries(r.linked)) {
+    m.values[k] = v;
+    if (S.members[sel] === m) { const inp = document.querySelector('#main [data-key="' + k + '"]'); if (inp && inp.value !== v) inp.value = v; }
+  }
+  setDirty();
+}
 async function recalcAll() {
   if (!S.members.length) return;
   const r = await post("/api/calc_all", { project: S.project, members: S.members });
-  S.members.forEach((m, i) => R.set(m, r.results[i]));
+  S.members.forEach((m, i) => { showLinked(m, r.results[i]); R.set(m, r.results[i]); });
   drawNav(); if (typeof sel === "number") drawResults(S.members[sel]);
 }
 function frameSvg(fr) {
@@ -608,8 +620,9 @@ function fillBar(m, changed) {
       m.values.loads_from = "base forces of column " + pick.value + " in the 3D frame analysis, second-order analysis";
       got.uplift = up;
       if (!m.values.shape) { const c = cols.find(x => x.values.mark === pick.value); if (c) m.values.shape = c.values.shape; }
+      const lk = linkFootingOf(m, pick.value);
       changed(); drawMain();
-      toast("Filled " + comp.length + " runs from the frame." + (up.length ? " Left out, because the column is in uplift (" + up.map(r => r.P.toFixed(1) + " kip").join(", ") + "): " + up.map(r => r.name).join("; ") + ". Check those on the Base Plate with Moment or uplift screen." : ""), 16000);
+      toast("Filled " + comp.length + " runs from the frame." + lk + (up.length ? " Left out, because the column is in uplift (" + up.map(r => r.P.toFixed(1) + " kip").join(", ") + "): " + up.map(r => r.name).join("; ") + ". Check those on the Base Plate with Moment or uplift screen." : ""), 16000);
     } }, "Fill Loads");
     return el("div", { class: "fill" }, el("span", { class: "small" }, "Take the loads from the 3D frame"), pick, go);
   }
@@ -703,6 +716,8 @@ function fillBar(m, changed) {
       m.values.loads_from = s.kind === "guard" ? "post base moment and shear of guard " + (s.values.mark || "") + ", no axial load"
         : /moment$/.test(b) ? "base forces of column " + (s.values.mark || "") + " in the 3D frame analysis, " + b + ", second-order analysis"
         : "base reactions of " + (s.values.mark || "member") + (got.bases.length > 1 ? " at " + b : "") + (s.kind === "frame" || (s.values.ends || "").startsWith("free") ? ", second-order analysis" : "");
+      const lk = s.kind === "guard" ? "" : linkFootingOf(m, s.values.mark || "");
+      if (lk) toast(lk.trim(), 10000);
       if (s.kind === "guard") { m.values.shape = m.values.shape || s.values.post; toast("Guard post base loads filled. The guard load acts in any direction: check the plate with the moment about each axis if the base is not the same both ways.", 12000); }
       changed(); drawMain(); return;
     }
@@ -732,7 +747,45 @@ const MODEL_KINDS = () => TD_BEAMS.concat(TD_POSTS, ["footing_iso", "footing_con
 function modelOf() { const p = S.project; p.model = p.model || {}; ["levels", "grids_x", "grids_y", "existing"].forEach(k => { p.model[k] = p.model[k] || []; }); return p.model; }
 
 // Placement boxes on a member screen: where the member sits in the building model. Optional; a member works without them.
+const PLATE_KINDS = ["base_plate", "base_plate_uplift", "base_plate_biaxial", "base_plate_moment"];
+const PLATE_FOOTINGS = ["footing_iso", "footing_moment"];
+// The footing a base plate sits on: optional. Linked, the footing's plan, thickness and f'c fill the plate's concrete boxes, and the plate's
+// size fills the footing's base plate boxes; stand-alone, both screens keep what is typed on them.
+// The isolated footing the building model linked under a column (its links name the column as their source), or null.
+function footingUnder(colMark) {
+  const has = v => [v.link].concat(v.links || [], (v.loads || []).map(r => r && r.link)).some(l => l && l.src === colMark);
+  const f = S.members.find(x => PLATE_FOOTINGS.includes(x.kind) && has(x.values || {}));
+  return f ? f.values.mark : null;
+}
+function linkFootingOf(m, colMark) {
+  if (m.values.on_footing) return "";
+  const f = footingUnder(colMark);
+  if (!f) return "";
+  m.values.on_footing = f;
+  return " Linked to footing " + f + " (the footing under " + colMark + " in the building model); unlink it under Foundation under this plate.";
+}
+function foundationCard(m, changed) {
+  const foots = S.members.filter(x => PLATE_FOOTINGS.includes(x.kind) && (x.values.mark || "").trim());
+  const marks = foots.map(x => x.values.mark.trim());
+  const box = el("div", {}, el("h2", {}, "Foundation under this plate (optional)"));
+  if (!marks.length && !m.values.on_footing) return el("div", {}, box, el("div", { class: "help" }, "Stand-alone: the concrete is as typed above. Once the project has an Isolated Footing or a Footing with Moment, this plate can be linked to it."));
+  const redraw = () => { changed(); drawMain(); };
+  const opts = marks.slice(); if (m.values.on_footing && !opts.includes(m.values.on_footing)) opts.push(m.values.on_footing);
+  const f = foots.find(x => x.values.mark.trim() === (m.values.on_footing || "").trim());
+  const square = f && String(f.values.B).trim() !== "" && Number(f.values.B) === Number(f.values.L);
+  const fixed = f && f.kind === "footing_moment" && m.kind === "base_plate_moment";
+  const grid = el("div", { class: "grid" },
+    field({ key: "on_footing", label: "Footing under the plate", type: "select", options: opts, required: false, help: "blank = stand-alone (the concrete as typed above)" }, m.values, redraw),
+    f && !square && !fixed ? field({ key: "on_footing_N", label: "Plate length N runs along the footing's", type: "select", options: ["x", "y"], required: true,
+      help: "x = the footing width B, y = the footing length L" + (f.kind === "footing_moment" ? " (B is the direction of the footing's moment)" : "") }, m.values, changed) : null);
+  const filled = { base_plate: "f'c, the support size", base_plate_moment: "f'c, the support size and the concrete thickness at the rods",
+    base_plate_biaxial: "f'c, A2/A1 and the concrete size and thickness at the rods", base_plate_uplift: "the concrete f'c, size and thickness at the rods" }[m.kind];
+  return el("div", {}, box, grid, el("div", { class: "help" }, m.values.on_footing
+    ? "Linked: " + filled + " come from footing " + m.values.on_footing + " (the plate centred on it) and replace what is typed above; the footing's base plate size comes from this plate."
+    : "Stand-alone: the concrete is as typed above."));
+}
 function placementCard(m, changed) {
+  if (PLATE_KINDS.includes(m.kind)) return foundationCard(m, changed);
   if (m.kind === "diaphragm") {
     const levels_ = modelOf().levels.map(l => (l.name || "").trim()).filter(Boolean);
     if (!levels_.length) return null;
@@ -1104,7 +1157,7 @@ function drawProject(main) {
 
 // ---------------------------------------------------------------- files and printing
 async function printSheet(m) {
-  try { const r = await post("/api/pdf", { kind: m.kind, values: m.values, project: S.project }); window.open(r.url, "_blank"); }
+  try { const r = await post("/api/pdf", { kind: m.kind, values: m.values, project: S.project, members: S.members }); window.open(r.url, "_blank"); }
   catch (e) { toast("This member cannot be printed yet: " + e.message, 9000); }
 }
 async function printPackage() {

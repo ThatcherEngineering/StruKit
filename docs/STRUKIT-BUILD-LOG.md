@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 21:25. Build **0.234.0**, 622 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 21:40. Build **0.235.0**, 626 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -36,7 +36,7 @@ Updated 2026-11-25 21:25. Build **0.234.0**, 622 tests passing; `main` and `rele
 7. (Top-running crane runway beam, simple span, done 0.218.0.) Still open and waiting on documents: underhung cranes and monorails (bottom flange local bending), fatigue (AISC 360-22 Appendix 3 is on file; needs the number of cycles by service class), web yielding and crippling under the wheels, continuous runway beams, cap channels; AISC Design Guide 7 would let the lateral load and deflection limits be cited.
 8. (Dropped 2026-11-25 16:51, Zach: he no longer uses StruCalc and StruKit replaces it. No more StruCalc import work. The steel .vtx reader of 0.165.0 stays as it is.)
 8. **From the 2026-011 whole-house model run (0.220.0), in order:** (a) (existing walls 0.221.0; existing beams, posts and footings 0.229.0); (b) (done 0.226.0: every point load on a footing line is checked as a pad, larger pads sized where needed); (c) (wall weight 0.222.0, headers in wall lines 0.224.0; still open: wall weight less the openings; jack and king studs done 0.230.0); (d) (seismic weights from the model done 0.227.0; still open: story forces spread by mass rather than evenly over the width); (e) (diaphragms filled from the model done 0.228.0; still open: cantilevered diaphragms, openings, several spans printed per level); (f) (wood beams and posts 0.231.0; shear walls in the frame and wood checks from the frame forces 0.232.0). Item 8 is finished.
-9. (Shear lugs done 0.219.0; rod anchorage on the uplift and biaxial base plates done 0.234.0.) Still open: concrete breakout of the rods on the shear lug screen; shear lugs with net uplift or two-way shear.
+9. (Shear lugs done 0.219.0; rod anchorage on the uplift and biaxial base plates done 0.234.0; base plates linked to their footing 0.235.0.) Still open: concrete breakout of the rods on the shear lug screen; shear lugs with net uplift or two-way shear.
 10. Built-up three-plate sections as beams and columns; the column side of the extended end plate.
 11. Through-plate and diaphragm beam-to-HSS moment connections (Design Guide 24 Examples 6.2, 6.4).
 12. Carport package: eave beams taking roof load; portal-bay knee with both directions.
@@ -765,4 +765,13 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - Uplift: 2 x 2 rods at gauge x pitch, T/4 each. Biaxial: rod tension in each direction from the Design Guide 1 bearing block (`ws_more.bearing_rod_tension`), corner rods Tx/2 + Ty/2.
 - Validation: AISC Design Guide 1 (3rd Ed.) Example 4.7-3 (four 7/8 in. F1554 Gr. 36 rods, hef 15 in., f'c 4,000 psi, Pu 70 kips): rod steel 20.1 kips per rod, pullout 26.7, breakout 76.3 with Eq. 17.6.2.2.3 as the example uses (StruKit's kc = 24 ruling gives 73.2). Biaxial rod tension tested by statics of the bearing block. Edge cases (side blowout appears, breakout drops) by hand.
 - Browser check: both screens load and compute; sample `StruKit-Sample-Calc-Sheet-Base-Plate-Anchorage-Uplift-Biaxial.pdf` (no overlaps).
+
+## 2026-11-25 21:40 local — 0.235.0 base plates linked to their footing, or stand-alone (626 tests)
+- Zach 21:24: "The anchor rod calcs need to be able to link to a foundation system or be independent."
+- New card on the four base plate screens (Base Plate, Base Plate in Uplift, Biaxial, Base Plate with Moment): "Foundation under this plate (optional)". Blank = stand-alone, exactly as before. Pick an Isolated Footing or a Footing with Moment and, for a footing that is not square, which footing dimension the plate length N runs along.
+- Linked: the footing's plan, thickness and f'c replace the plate's concrete boxes (support size, f'c, A2/A1 on the biaxial screen, concrete length, width and thickness at the rods), with the plate centred on the footing; the footing's base plate boxes take the plate's size (column "steel"). The link is live: change the footing and the plate follows. Both sheets state it (assumption line). Two plates on one isolated footing, a missing footing, or a non-square footing without a direction stop the calculation with the reason.
+- Moment plate on a Footing with Moment: both screens put the moment along their first dimension, so no direction is asked.
+- Filling a biaxial or moment plate's loads from a frame column links it to the footing the building model put under that column, when the plate is not linked yet.
+- Code: `calc.link_foundations`, `linked_values`; `build` carries the link's note and problems; the window's calculations, single sheets, package and command line all run linked. Continuous footings and pads under a column on a footing line are not linked yet (pads are isolated footings and do link).
+- Tests: `tests/test_plate_on_footing.py` (by hand: values filled, footing plate size, breakout drops on a 2 x 2 ft footing, link problems, A2/A1). Browser check of a linked uplift and biaxial project: no page errors.
 

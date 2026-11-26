@@ -111,7 +111,7 @@ def _solve_project(data):
         if m.get("kind") not in calc.FORMS:
             problems.append(f"{mark}: unknown member type '{m.get('kind')}'")
             continue
-        r = calc.results(m["kind"], m.get("values") or {}, proj)
+        r = calc.results(m["kind"], m.get("values") or {}, proj, members)
         if r["state"] != "done":
             problems += [f"{mark}: {t}" for t in r["messages"]]
             continue

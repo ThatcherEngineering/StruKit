@@ -1520,8 +1520,130 @@ def yes(v):
     return {"yes": True, "no": False}.get(v)
 
 
-# ------------------------------------------------------------------ building each worksheet
+# ------------------------------------------------------------------ base plates linked to their footing
+PLATE_KINDS = ("base_plate", "base_plate_uplift", "base_plate_biaxial", "base_plate_moment")
+PLATE_FOOTINGS = ("footing_iso", "footing_moment")
+
+
+def _fnum(v):
+    try:
+        return float(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _plate_on_footing(kind, pv, foot):
+    """(the plate's values filled from the footing it sits on, note for the sheet, problems). The footing's own plan, thickness and f'c
+    replace the concrete boxes of the plate screen; the column is centred on an isolated footing, so the plate is too."""
+    fk, fv = foot["kind"], foot.get("values") or {}
+    fm = (fv.get("mark") or "").strip()
+    B, L, h, fc = (_fnum(fv.get(k)) for k in ("B", "L", "h", "fc"))
+    miss = [f"Footing {fm} under this plate: its {lab} is blank" for lab, v in (("width", B), ("length", L), ("thickness", h), ("f'c", fc)) if not v]
+    if miss:
+        return pv, None, miss
+    o = (pv.get("on_footing_N") or "").strip()
+    if fk == "footing_moment" and kind == "base_plate_moment":
+        o = "x"                                    # both screens put the moment along their first dimension
+    elif abs(B - L) < 1e-9:
+        o = o or "x"
+    if o not in ("x", "y"):
+        return pv, None, [f"Footing {fm} is not square: say which footing dimension the plate length N runs along"]
+    sN, sB = (B, L) if o == "x" else (L, B)
+    sN, sB = 12 * sN, 12 * sB
+    v = dict(pv)
+    if kind in ("base_plate", "base_plate_moment"):
+        v.update(fc=f"{fc:g}", full="no", sup_N=f"{sN:g}", sup_B=f"{sB:g}")
+    if kind == "base_plate_moment":
+        v.update(anc_h=f"{h:g}")
+    if kind == "base_plate_biaxial":
+        N_, B_ = _fnum(pv.get("N")), _fnum(pv.get("B"))
+        v.update(fc=f"{fc:g}", anc_h=f"{h:g}", anc_supN=f"{sN:g}", anc_supB=f"{sB:g}", anc_fc="")
+        if N_ and B_:
+            v.update(area_ratio=f"{min(4.0, min(sN / N_, sB / B_) ** 2):.4g}")
+    if kind == "base_plate_uplift":
+        v.update(anc_fc=f"{fc:g}", anc_h=f"{h:g}", anc_supN=f"{sN:g}", anc_supB=f"{sB:g}")
+    along = ("width B" if o == "x" else "length L") if fk == "footing_iso" else ("width B" if o == "x" else "length L")
+    note = (f"Concrete under the plate: footing {fm}, {B:g} ft x {L:g} ft, {h:g} in. thick, f'c {fc:g} psi; the plate is centred on the footing "
+            f"with its length N along the footing {along}.")
+    if kind == "base_plate_biaxial" and N_ and B_:
+        note += f" A2/A1 = {min(4.0, min(sN / N_, sB / B_) ** 2):.3g} (the largest area of the footing similar to and concentric with the plate, AISC 360-22 J8)."
+    return v, note, []
+
+
+def link_foundations(members):
+    """The project's members with each base plate that names its footing filled from that footing, and each such footing given the
+    plate's plan size. Stand-alone plates and footings are returned unchanged. Returns a new list (the stored values are not changed)."""
+    foots = {(m.get("values") or {}).get("mark", "").strip(): m for m in members if m.get("kind") in PLATE_FOOTINGS}
+    out, on = [], {}
+    for m in members:
+        v = m.get("values") or {}
+        fm = (v.get("on_footing") or "").strip()
+        if m.get("kind") not in PLATE_KINDS or not fm:
+            out.append(m)
+            continue
+        if fm not in foots:
+            out.append(dict(m, values=dict(v, _link_miss=[f"Footing {fm}, named as the foundation under this plate, is not in the project"])))
+            continue
+        nv, note, miss = _plate_on_footing(m["kind"], v, foots[fm])
+        nv = dict(nv)
+        if miss:
+            nv["_link_miss"] = miss
+        else:
+            nv["_link_note"] = note
+            on.setdefault(fm, []).append((m, nv))
+        out.append(dict(m, values=nv))
+    for i, m in enumerate(out):
+        fm = (m.get("values") or {}).get("mark", "").strip()
+        if m.get("kind") not in PLATE_FOOTINGS or fm not in on:
+            continue
+        v = dict(m["values"])
+        plates = on[fm]
+        if len(plates) > 1:
+            v["_link_miss"] = [f"Base plates {', '.join(p['values'].get('mark', '?') for p, _ in plates)} all name footing {fm}; one plate per isolated footing"]
+        else:
+            p, pv = plates[0]
+            N_, B_ = _fnum(pv.get("N")), _fnum(pv.get("B"))
+            if N_ and B_:
+                o = (pv.get("on_footing_N") or "x").strip() if not (m["kind"] == "footing_moment" and p["kind"] == "base_plate_moment") else "x"
+                if abs((_fnum(v.get("B")) or 0) - (_fnum(v.get("L")) or -1)) < 1e-9 and not (pv.get("on_footing_N") or "").strip():
+                    o = "x"
+                px, py = (N_, B_) if o == "x" else (B_, N_)
+                v.update(supported="steel", plate_x=f"{px:g}", plate_y=f"{py:g}")
+                v["_link_note"] = f"Base plate: {p['values'].get('mark', '')}, {px:g} in. x {py:g} in., centred on the footing."
+        out[i] = dict(m, values=v)
+    return out
+
+
+def linked_values(kind, values, members):
+    """One member's values as the project's links leave them (the window sends the whole project with each calculation)."""
+    if not members or (kind not in PLATE_KINDS and kind not in PLATE_FOOTINGS):
+        return values
+    mark = (values.get("mark") or "").strip()
+    probe = [m for m in members if not (m.get("kind") == kind and (m.get("values") or {}).get("mark", "").strip() == mark)]
+    for m in link_foundations(probe + [dict(kind=kind, values=values)]):
+        if m.get("kind") == kind and (m.get("values") or {}).get("mark", "").strip() == mark:
+            return m["values"]
+    return values
+
+
 def build(kind, values, project):
+    """Returns (sheet, pdf kind, keyword arguments for the calc sheet). A base plate linked to its footing (link_foundations) carries the
+    link's problems and its note in _link_miss / _link_note."""
+    if values.get("_link_miss"):
+        raise Missing(list(values["_link_miss"]))
+    out = _build(kind, values, project)
+    note = values.get("_link_note")
+    if note:
+        sh = out[0]
+        res = getattr(sh, "result", None)
+        if res is not None and hasattr(res, "notes"):
+            res.notes.insert(0, note)
+        elif hasattr(sh, "assumptions"):
+            sh.assumptions.insert(0, note)
+    return out
+
+
+def _build(kind, values, project):
     """Returns (sheet, pdf kind, keyword arguments for the calc sheet)."""
     form = FORMS[kind]
     r = Reader(form, values)
@@ -5537,8 +5659,16 @@ def _row(r):
                 dc=r.dc, status=r.status, source=r.source, note=r.note)
 
 
-def results(kind, values, project):
-    """What the screen shows for one member. Never raises: problems come back as messages."""
+def results(kind, values, project, members=None):
+    """What the screen shows for one member. Never raises: problems come back as messages. With the project's members, a base plate linked
+    to its footing (and that footing) is calculated as linked; "linked" lists the boxes the link filled, for the screen to show."""
+    if members is not None:
+        lv = linked_values(kind, values, members)
+        filled = {k: v for k, v in lv.items() if not k.startswith("_") and values.get(k) != v}
+        out = results(kind, lv, project)
+        if filled:
+            out["linked"] = filled
+        return out
     try:
         sheet, pk, kw = build(kind, values, project)
     except Missing as e:
@@ -5573,8 +5703,8 @@ def results(kind, values, project):
     return out
 
 
-def sheet_pdf(kind, values, project, path):
-    sheet, pk, kw = build(kind, values, project)
+def sheet_pdf(kind, values, project, path, members=None):
+    sheet, pk, kw = build(kind, linked_values(kind, values, members) if members else values, project)
     fn = {"steel_beam": calcsheet.steel_beam_pdf, "steel_column": calcsheet.steel_column_pdf,
           "footing": calcsheet.footing_pdf, "frame": calcsheet.frame_pdf, "conn": calcsheet.conn_pdf,
           "simple": calcsheet.simple_pdf}[pk]
@@ -5931,6 +6061,7 @@ def package_pdf(project, members, path, cover=True):
     """Every member that calculates, in the order listed, behind a cover sheet.
     Returns (sheets, skipped marks)."""
     items, skipped, contents, flag_lines, codes = [], [], [], [], []
+    members = link_foundations(members)
     for m in members:
         try:
             sheet, pk, kw = build(m["kind"], m["values"], project)

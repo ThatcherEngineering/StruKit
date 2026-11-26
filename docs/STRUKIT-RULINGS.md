@@ -262,3 +262,10 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - Biaxial rod tensions for the anchorage come from the bearing block at 0.65 x fp(max) (LRFD) under the factored loads.
 - With the concrete length and width left blank, the rods are taken 1.5 hef or more from every edge; the sheet states that as an assumption.
 
+## 2026-11-25 21:24 — Zach's rulings (do not ask again)
+- **"Sounds good"** to the 0.234.0 check-in readings, now ruled: (1) biaxial base plate corner rod takes Tx/2 + Ty/2 (added, not a square-root
+  combination); (2) biaxial rod tensions for the anchorage from the bearing block at 0.65 fp(max) under the factored loads; (3) with the
+  concrete size left blank the rods are taken 1.5 hef or more from every edge, stated on the sheet.
+- **Anchor rod calcs link to the foundation or stand alone:** "The anchor rod calcs need to be able to link to a foundation system or be
+  independent." Built 0.235.0: each base plate screen can name its footing (live link both ways) or stay stand-alone.
+
