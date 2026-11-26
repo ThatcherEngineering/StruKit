@@ -3796,6 +3796,42 @@ def _slopes(placed):
     return off, ends
 
 
+def _wall_openings(m, zb, zt, L, problems):
+    """Openings of a placed wall for the 3D views: [(from, to) along the wall from End 1 in ft, (bottom, top) elevation in ft]. From the
+    placement card ("Openings for the views": start, width, sill, height in ft, groups separated by ;), else a perforated wall's openings table,
+    else a force-transfer wall's openings (first pier, opening, more openings) from End 1."""
+    v = m.get("values") or {}
+    out = []
+    num = lambda t: float(str(t).replace(",", "").strip())
+    typed = str(v.get("at_openings") or "").strip()
+    try:
+        if typed:
+            for grp in typed.split(";"):
+                q = [num(t) for t in grp.replace(",", " ").split()]
+                if not q:
+                    continue
+                if len(q) != 4:
+                    raise ValueError(grp)
+                out.append(((q[0], q[0] + q[1]), (zb + q[2], zb + q[2] + q[3])))
+        elif m.get("kind") == "perforated_wall":
+            for r in v.get("openings") or []:
+                if str(r.get("x") or "").strip() and str(r.get("w") or "").strip():
+                    x, w, h, sl = num(r["x"]), num(r["w"]), num(r.get("h") or 0), num(r.get("sill") or 0)
+                    out.append(((x, x + w), (zb + sl, zb + sl + h)))
+        elif m.get("kind") == "ftao_wall" and str(v.get("L1") or "").strip():
+            x = num(v["L1"])
+            more = [r for r in v.get("more") or [] if str(r.get("w") or "").strip()]
+            rows = [(num(v["Lo"]), num(v["ho"]), num(v.get("sill") or 0))] + [(num(r["w"]), num(r["ho"]), num(r.get("sill") or 0)) for r in more]
+            piers = [num(v.get("L2") or 0)] + [num(r.get("pier") or 0) for r in more]       # the pier to the right of each opening
+            for (w, ho, sl), pr in zip(rows, piers):
+                out.append(((x, x + w), (zb + sl, zb + sl + ho)))
+                x += w + pr
+    except (ValueError, KeyError, TypeError) as e:
+        problems.append(f"{v.get('mark')}: an opening for the views cannot be read ({e}); give start, width, sill and height in feet, groups separated by ;")
+        return []
+    return [((max(0.0, a_), min(L, b_)), (max(zb, lo), min(zt, hi))) for (a_, b_), (lo, hi) in out if b_ > a_ and hi > lo]
+
+
 def model_view(project, members):
     """What the 3D view draws: every placed member as a line or a point in space (ft), with its mark and kind.
     dict(items=[dict(mark, kind, a=(x, y, z), b=(x, y, z) or None, type)], levels=[(name, elev)], problems=[...])."""
@@ -3840,7 +3876,8 @@ def model_view(project, members):
         elif kind in MODEL_WALLS:
             i = order.index(pl["level"])
             zb = levels[i - 1][1] if i > 0 else z - 9.0
-            items.append(dict(mark=mark, kind=kind, type="wall", a=(*pl["p1"], z), b=(*pl["p2"], z), zb=zb))
+            items.append(dict(mark=mark, kind=kind, type="wall", a=(*pl["p1"], z), b=(*pl["p2"], z), zb=zb,
+                              openings=_wall_openings(m, zb, z, math.hypot(pl["p2"][0] - pl["p1"][0], pl["p2"][1] - pl["p1"][1]), problems)))
         else:
             sp = 0.0
             try:
@@ -3848,7 +3885,24 @@ def model_view(project, members):
             except ValueError:
                 pass
             d1_, d2_ = zends(m, pl)
-            items.append(dict(mark=mark, kind=kind, type="joist" if (kind == "ijoist" or sp > 0) else "beam", a=(*pl["p1"], z + d1_), b=(*pl["p2"], z + d2_)))
+            a_, b_ = (*pl["p1"], z + d1_), (*pl["p2"], z + d2_)
+            rw = str((m.get("values") or {}).get("at_row") or "").replace(",", "").strip()
+            if sp > 0 and rw:                                  # a row: every member at its spacing over the width it covers, and the deck on it
+                try:
+                    W = float(rw)
+                except ValueError:
+                    W = 0.0
+                L_ = math.hypot(b_[0] - a_[0], b_[1] - a_[1]) or 1.0
+                rx, ry = (b_[1] - a_[1]) / L_, -(b_[0] - a_[0]) / L_          # to the right of the member, looking from end 1 to end 2
+                n = int(abs(W) / (sp / 12.0) + 1e-6)
+                sg = 1.0 if W > 0 else -1.0
+                for k in range(n + 1):
+                    off = sg * k * sp / 12.0
+                    items.append(dict(mark=mark if k == 0 else "", kind=kind, type="joist", a=(a_[0] + rx * off, a_[1] + ry * off, a_[2]), b=(b_[0] + rx * off, b_[1] + ry * off, b_[2]), row=True))
+                off = sg * abs(W)
+                items.append(dict(mark="", kind=kind, type="deck", b=None, a=a_, poly=[a_, b_, (b_[0] + rx * off, b_[1] + ry * off, b_[2]), (a_[0] + rx * off, a_[1] + ry * off, a_[2])]))
+            else:
+                items.append(dict(mark=mark, kind=kind, type="joist" if (kind == "ijoist" or sp > 0) else "beam", a=a_, b=b_))
     for nm, epl in model_existing(project):                   # existing walls: grey panels from the level below to their top
         if epl["level"] in el and epl.get("kind", "wall") == "wall":
             i = order.index(epl["level"])
@@ -3861,7 +3915,7 @@ WOOD_FRAME_BEAMS = ("wood_beam", "lvl_beam", "glulam_beam", "wey_beam")
 WOOD_FRAME_COLS = ("wood_post", "builtup_post", "lvl_post", "wey_post", "glulam_post")
 FRAME_BEAMS, FRAME_COLS = ("steel_beam",) + WOOD_FRAME_BEAMS, ("steel_column", "hss_column") + WOOD_FRAME_COLS
 WOOD_G_OVER_E = 1.0 / 16.0
-EXISTING_RIGID_KIP_IN = 10000.0                               # an existing wall "assumed to work" in the 3D frame: 10,000 kip/in., rigid beside wood walls                                     # shear modulus of wood for the frame's torsion stiffness, G = E / 16
+EXISTING_RIGID_KIP_IN = 10000.0                               # an existing wall "assumed to work" in the 3D frame: 10,000 kip/in., rigid beside wood walls
 
 
 def _wood_frame_strength(kind, v, L_in):
@@ -5782,12 +5836,14 @@ def model_sheet(project, members):
     if not view["items"]:
         return None
     from collections import Counter
-    cnt = Counter(i["type"] for i in view["items"])
+    cnt = Counter(i["type"] for i in view["items"] if not (i.get("row") and not i.get("mark")))       # a row of joists counts once
+    n_open = sum(len(i.get("openings") or []) for i in view["items"])
     names = dict(wall="walls", beam="beams", column="columns and posts", joist="joist and rafter rows", footing="footings", brace="braces")
     n_ex = sum(1 for i in view["items"] if i.get("existing"))
     sh = SimpleSheet("BM", "Building Model", "Model", (project or {}).get("method") or "",
                      [("Levels", ", ".join(f"{nm} {el:g} ft" for nm, el in view["levels"])),
-                      ("Placed", ", ".join(f"{cnt[k]} {names.get(k, k)}" for k in ("beam", "joist", "column", "wall", "footing", "brace") if cnt.get(k)))]
+                      ("Placed", ", ".join(f"{cnt[k]} {names.get(k, k)}" for k in ("beam", "joist", "column", "wall", "footing", "brace") if cnt.get(k))
+                       + (f", {n_open} window and door openings" if n_open else ""))]
                      + ([("Existing", f"{n_ex} existing wall" + ("s" if n_ex != 1 else "") + " (by others)")] if n_ex else []),
                      [], [], "", [], [],
                      ["Parallel projections of the members as placed in the building model; not to scale. Each member is checked on its own sheet."], [])

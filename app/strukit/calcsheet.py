@@ -1481,7 +1481,7 @@ def _simple_pdf(sheet, path, job, code, date, page=1, pages=1):
         _steps(p, sheet.steps_title, sheet.steps)
     for b in sheet.blocks:
         if b.get("picture"):
-            p.room(500 if b["picture"][0] == "model3d" else 316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
+            p.room(515 if b["picture"][0] == "model3d" else 316 if b["picture"][0] == "wind_mwfrs" and len(b["picture"][1]["panels"]) > 2 else
                    230 if b["picture"][0] in ("anchorage", "perforated_wall", "base_biaxial", "frame3d") else 250 if b["picture"][0] == "flush_end_plate" else 215 if b["picture"][0] == "lag" else 175)
             if b["picture"][0] in ("wind_mwfrs", "wind_zones", "seismic_forces", "diaphragm", "collector", "nailed", "toe_nail", "lag", "bolted", "bolted_perp", "model3d"):
                 p.head(b["title"]); p.y = _block_picture(p.c, p.y + 4, b["picture"]) - 6
@@ -2433,7 +2433,7 @@ def _end_plate_picture(c, top, d):
 def _frame3d_picture(c, top, d):
     """Parallel projection of the placed frame (columns, beams, braces) with member marks; not to a stated scale. d: items of calc.model_view."""
     import math
-    items = [i for i in d["items"] if i.get("b") is not None and i.get("type") != "wall"]
+    items = [i for i in d["items"] if i.get("b") is not None and i.get("type") not in ("wall", "joist", "deck")]
     if not items:
         return top
     yaw, tilt = math.radians(d.get("yaw", 30.0)), math.radians(d.get("tilt", 24.0))
@@ -2510,7 +2510,12 @@ def _model3d_picture(c, top, d):
         tp = it.get("type")
         if tp == "wall":
             a, b = it["a"], it["b"]
-            return [("wall", [a, b, (b[0], b[1], it["zb"]), (a[0], a[1], it["zb"])])]
+            L = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
+            at = lambda t, z: (a[0] + (b[0] - a[0]) * t / L, a[1] + (b[1] - a[1]) * t / L, z)
+            ops = [("opening", [at(s1, lo), at(s2, lo), at(s2, hi), at(s1, hi)]) for (s1, s2), (lo, hi) in it.get("openings") or []]
+            return [("wall", [a, b, (b[0], b[1], it["zb"]), (a[0], a[1], it["zb"])])] + ops
+        if tp == "deck":
+            return [("deck", list(it["poly"]))]
         if tp == "footing":
             a, b = it["a"], it.get("b")
             z = a[2]
@@ -2526,6 +2531,7 @@ def _model3d_picture(c, top, d):
         return []
 
     shapes_ = [(it, kind_, pts) for it in items for kind_, pts in polys(it)]
+    OPEN, DECK = ((0.88, 0.93, 0.98), (0.30, 0.38, 0.48)), ((0.90, 0.84, 0.74), (0.72, 0.62, 0.48))
     for vi, (yaw_deg, side) in enumerate(views):
         yaw = math.radians(yaw_deg)
         pr = lambda p: (p[0] * math.cos(yaw) + p[1] * math.sin(yaw),
@@ -2544,16 +2550,18 @@ def _model3d_picture(c, top, d):
         Y = lambda q: oy + sc * q[1]
         c.setStrokeColorRGB(0.85, 0.87, 0.9); c.setLineWidth(0.4)
         c.rect(cx0, cy1 - ch, cw, ch, fill=0, stroke=1)
-        for it, kind_, pts in sorted(shapes_, key=lambda t: -sum(dep(q) for q in t[2]) / len(t[2])):
+        # farthest first; an opening is drawn right after its wall (same depth, a hair nearer)
+        key_ = lambda t: -(sum(dep(q) for q in t[2]) / len(t[2])) + (0.01 if t[1] == "opening" else 0.0)
+        for it, kind_, pts in sorted(shapes_, key=key_):
             sp = [pr(q) for q in pts]
-            if kind_ in ("wall", "foot"):
-                fill, stroke = (WALL_E if it.get("existing") else WALL) if kind_ == "wall" else FOOT
+            if kind_ in ("wall", "foot", "opening", "deck"):
+                fill, stroke = ((WALL_E if it.get("existing") else WALL) if kind_ == "wall" else FOOT if kind_ == "foot" else OPEN if kind_ == "opening" else DECK)
                 path = c.beginPath(); path.moveTo(X(sp[0]), Y(sp[0]))
                 for q in sp[1:]:
                     path.lineTo(X(q), Y(q))
                 path.close()
-                c.setFillColorRGB(*fill); c.setFillAlpha(0.55 if kind_ == "wall" else 0.9)
-                c.setStrokeColorRGB(*stroke); c.setLineWidth(0.6)
+                c.setFillColorRGB(*fill); c.setFillAlpha({"wall": 0.55, "opening": 0.95, "deck": 0.30}.get(kind_, 0.9))
+                c.setStrokeColorRGB(*stroke); c.setLineWidth(0.3 if kind_ == "deck" else 0.6)
                 c.drawPath(path, fill=1, stroke=1)
                 c.setFillAlpha(1.0)
             else:
@@ -2564,20 +2572,21 @@ def _model3d_picture(c, top, d):
         c.drawCentredString(cx0 + cw / 2, cy1 - ch - 9, f"View from the {side} side")
     yb = top - 6 - 2 * (ch + capH + 10) - 4
     leg = [("wall", "new shear and bearing walls"), ("wall_e", "existing walls"), ("foot", "footings"),
-           ("beam", "beams"), ("column", "columns and posts"), ("joist", "joist and rafter rows")]
+           ("beam", "beams"), ("column", "columns and posts"), ("joist", "joists and rafters"),
+           ("opening", "windows and doors"), ("deck", "floor and roof decks")]
     c.setFont(FR, 7)
     for k_, (kind_, text) in enumerate(leg):
         x = LM + (k_ % 3) * ((RM - LM) / 3)
         y = yb - (k_ // 3) * 11
-        if kind_ in ("wall", "wall_e", "foot"):
-            fill, stroke = WALL if kind_ == "wall" else WALL_E if kind_ == "wall_e" else FOOT
+        if kind_ in ("wall", "wall_e", "foot", "opening", "deck"):
+            fill, stroke = {"wall": WALL, "wall_e": WALL_E, "foot": FOOT, "opening": OPEN, "deck": DECK}[kind_]
             c.setFillColorRGB(*fill); c.setStrokeColorRGB(*stroke); c.setLineWidth(0.6); c.rect(x, y - 1, 12, 6, fill=1, stroke=1)
         else:
             wdt, colr = {"column": (1.6, INK), "joist": (0.5, (0.45, 0.5, 0.56))}.get(kind_, (1.2, NAVY))
             c.setStrokeColorRGB(*colr); c.setLineWidth(wdt); c.line(x, y + 2, x + 12, y + 2)
         c.setFillColorRGB(*GREY); c.drawString(x + 17, y, text)
     c.setFillColorRGB(*INK); c.setStrokeColorRGB(*INK)
-    return yb - 24
+    return yb - 35
 
 
 def _seat_picture(c, top, d):

@@ -759,6 +759,8 @@ function placementCard(m, changed) {
       help: "each point load is checked as a pad: this length of the footing with the point load and the footing's own load over it; where the soil bearing is exceeded a larger pad is sized. Blank = the footing width" },
     { key: "at_spread_source", label: "Where that length comes from", type: "text", required: false },
     { key: "at_pad_width", label: "Larger pads: width across the footing line", unit: "ft", type: "text", required: false, help: "blank = square pads; with a width the pad is lengthened along the line" });
+  if (wall) fs.push({ key: "at_openings", label: "Openings for the 3D views (windows, doors)", type: "text", required: false,
+    help: "start along the wall from End 1, width, sill above the level below, height, in feet; groups separated by ; for example 2 3 3 4; 12 3 0 6.67. Blank on a perforated or force-transfer wall: its own openings are drawn from End 1" });
   if (wall) fs.push({ key: "at_wall_psf", label: "Wall weight (gravity load path)", unit: "psf", type: "text", required: false, help: "of wall face; carried down as dead load x the story height (from the level elevations) x the wall length; blank = not included" },
     { key: "at_wall_psf_source", label: "Where the wall weight comes from", type: "text", required: false });
   if (brace) fs.push({ key: "at_brace", label: "In the 3D frame this brace takes", type: "select", options: ["tension only", "tension and compression"], required: false, help: m.kind === "tension_member" ? "blank = tension only" : "blank = tension and compression" });
@@ -836,7 +838,10 @@ function view3dSvg(view) {
   const P = p => { const xr = p[0] * cy + p[1] * sy, yr = -p[0] * sy + p[1] * cy; return [xr, -(p[2] * ct + yr * st), yr * ct - p[2] * st]; };   // screen x, screen y, depth
   const segs = [];
   items.forEach(i => {
-    if (i.type === "wall") { const a2 = [i.a[0], i.a[1], i.zb], b2 = [i.b[0], i.b[1], i.zb]; segs.push({ poly: [i.a, i.b, b2, a2], item: i }); }
+    if (i.type === "wall") { const a2 = [i.a[0], i.a[1], i.zb], b2 = [i.b[0], i.b[1], i.zb]; segs.push({ poly: [i.a, i.b, b2, a2], item: i });
+      const L = Math.hypot(i.b[0] - i.a[0], i.b[1] - i.a[1]) || 1, at = (t, z) => [i.a[0] + (i.b[0] - i.a[0]) * t / L, i.a[1] + (i.b[1] - i.a[1]) * t / L, z];
+      (i.openings || []).forEach(o => segs.push({ poly: [at(o[0][0], o[1][0]), at(o[0][1], o[1][0]), at(o[0][1], o[1][1]), at(o[0][0], o[1][1])], item: { type: "opening", mark: "" }, near: 0.01 })); }
+    else if (i.type === "deck") segs.push({ poly: i.poly, item: i });
     else if (i.type === "footing" && i.b) { const z = i.a[2], dx = i.b[0] - i.a[0], dy = i.b[1] - i.a[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, s = 1.0;
       segs.push({ poly: [[i.a[0] + nx * s, i.a[1] + ny * s, z], [i.b[0] + nx * s, i.b[1] + ny * s, z], [i.b[0] - nx * s, i.b[1] - ny * s, z], [i.a[0] - nx * s, i.a[1] - ny * s, z]], item: i }); }
     else if (i.type === "footing") { const s = 1.5, z = i.a[2]; segs.push({ poly: [[i.a[0] - s, i.a[1] - s, z], [i.a[0] + s, i.a[1] - s, z], [i.a[0] + s, i.a[1] + s, z], [i.a[0] - s, i.a[1] + s, z]], item: i }); }
@@ -849,15 +854,16 @@ function view3dSvg(view) {
   svg.setAttribute("viewBox", `0 0 ${w + 2 * pad} ${h + 2 * pad}`); svg.setAttribute("class", "frame");
   const add = (tag, a, text) => { const n = document.createElementNS(ns, tag); for (const k in a) n.setAttribute(k, a[k]); if (text) n.textContent = text; svg.append(n); };
   const S2 = p => { const q = P(p); return [q[0] - x0 + pad, q[1] - y0 + pad, q[2]]; };
-  segs.forEach(g => { const q = (g.poly || g.line).map(S2); g.q = q; g.depth = q.reduce((t, p) => t + p[2], 0) / q.length; });
+  segs.forEach(g => { const q = (g.poly || g.line).map(S2); g.q = q; g.depth = q.reduce((t, p) => t + p[2], 0) / q.length - (g.near || 0); });
   segs.sort((a, b) => b.depth - a.depth);                    // far things first
   const col = { beam: "#213651", joist: "#6C7C90", column: "#1B2430" };
   segs.forEach(g => {
     const i = g.item, q = g.q;
-    if (g.poly) add("polygon", { points: q.map(p => p[0] + "," + p[1]).join(" "), fill: i.existing ? "#C3C9D1" : i.type === "wall" ? "#C9A27A" : "#D5DAE1", "fill-opacity": i.type === "wall" ? 0.55 : 0.8, stroke: i.existing ? "#7A8594" : i.type === "wall" ? "#8A5A2B" : "#3A4756", "stroke-width": fsz * 0.08 });
+    const pf = { wall: ["#C9A27A", 0.55, "#8A5A2B"], opening: ["#E0EDF9", 0.95, "#4D617A"], deck: ["#E6D6BD", 0.3, "#B89E7A"] }[i.type] || ["#D5DAE1", 0.8, "#3A4756"];
+    if (g.poly) add("polygon", { points: q.map(p => p[0] + "," + p[1]).join(" "), fill: i.existing ? "#C3C9D1" : pf[0], "fill-opacity": pf[1], stroke: i.existing ? "#7A8594" : pf[2], "stroke-width": fsz * (i.type === "deck" ? 0.03 : 0.08) });
     else add("line", { x1: q[0][0], y1: q[0][1], x2: q[1][0], y2: q[1][1], stroke: col[i.type] || "#213651", "stroke-width": fsz * (i.type === "column" ? 0.42 : i.type === "joist" ? 0.14 : 0.3), "stroke-linecap": "round" });
     const mx = q.reduce((t, p) => t + p[0], 0) / q.length, my = q.reduce((t, p) => t + p[1], 0) / q.length;
-    add("text", { x: mx + fsz * 0.3, y: my - fsz * 0.3, "font-size": fsz * 0.85, fill: "#1B2430" }, i.mark);
+    if (i.mark) add("text", { x: mx + fsz * 0.3, y: my - fsz * 0.3, "font-size": fsz * 0.85, fill: "#1B2430" }, i.mark);
   });
   return svg;
 }
