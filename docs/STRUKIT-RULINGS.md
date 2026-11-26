@@ -323,28 +323,28 @@ plate at a column top (Design Guide 39 Table A-2(d), (e)); (3) cruciform shear l
 connections (Design Guide 24 Examples 6.3, 6.5); (5) story forces spread by mass; (6) every sheet type re-read against the "factual, not a
 design log" rule. Unattended: no questions; conservative readings applied and recorded here.
 
-## 2026-11-26 01:35, cut-out plate (0.242.0), applied (not ruled)
+## 2026-11-26 01:18, cut-out plate (0.242.0), applied (not ruled)
 - The unbalanced flange force between the two beams goes to the HSS side walls through the plate welds on those two walls only (the
   example has balanced moments and checks no weld); the weld on the HSS face toward the beams is not counted on.
 - Beam flexure at the holes uses the larger beam moment and Mn = Fy Zx where F13.1 does not apply (no lateral-torsional buckling at the joint).
 
-## 2026-11-26 01:52, four-bolt extended end plate at a column top (0.243.0), applied (not ruled)
+## 2026-11-26 01:25, four-bolt extended end plate at a column top (0.243.0), applied (not ruled)
 - Ct = 0.5 when the column top is less than a column depth above the beam's tension flange face (de + pfo < dc).
 - The cap plate is checked as a stiffener on its area outside the column web, for the force by Eq. 3-48; its welds for the same force.
 
-## 2026-11-26 02:10, cruciform shear lug (0.244.0), applied (not ruled)
+## 2026-11-26 01:36, cruciform shear lug (0.244.0), applied (not ruled)
 - ACI 318-19 gives no rule for a lug with shear in two directions: the concrete bearing ratios of the two directions are added, and the
   breakout ratios are added (linear interaction), each plate counted only for the shear across its face.
 - The corner rod takes half the rod tension of each direction added (as the biaxial base plate ruling of 2026-11-25 21:24); with net uplift
   the uplift is counted in both directions.
 - The base plate bending at the lug is checked for each direction separately.
 
-## 2026-11-26 01:42, welded WT flange connection (0.245.0), applied (not ruled)
+## 2026-11-26 01:45, welded WT flange connection (0.245.0), applied (not ruled)
 - With the column moment at the joint left blank, U (Eq. K1-6) uses the beam moment, as Example 6.5 does.
 - The HSS crippling uses Qf of the combination with the largest force over Qf; the other checks use the largest force.
 - A reinforcing fillet on the flare-bevel welds is not counted on.
 
-## 2026-11-26 01:48, story force by weight (0.246.0), applied (not ruled)
+## 2026-11-26 01:51, story force by weight (0.246.0), applied (not ruled)
 - The default stays "evenly over the building width"; "by the weight in the building model" is the engineer's choice per seismic sheet.
 - By weight, the story force is shared by the placed seismic weight between the half-way lines (flexible diaphragm, as the even spread);
   accidental torsion and the weight not placed in the model (typed on the seismic sheet only) are not distributed differently.

@@ -44,6 +44,16 @@ def _printed_sheets_are_clean(request, tmp_path):
             found += [(os.path.basename(f),) + tuple(x) for x in _audit.audit(f)]
         except Exception:
             pass
+    dump = os.environ.get("STRUKIT_TEXT_DUMP")                 # the text of every printed sheet, for reading the wording across all sheet types
+    if dump:
+        try:
+            import fitz
+            with open(dump, "a") as fh:
+                for f in glob.glob(os.path.join(str(tmp_path), "**", "*.pdf"), recursive=True):
+                    for pg in fitz.open(f):
+                        fh.write(f"=== {request.node.nodeid} | {os.path.basename(f)}\n{pg.get_text()}\n")
+        except Exception:
+            pass
     log = os.environ.get("STRUKIT_AUDIT_LOG")
     if found and log:
         with open(log, "a") as fh:
