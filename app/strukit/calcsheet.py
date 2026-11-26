@@ -441,25 +441,31 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
             L_in = sheet.span_ft * 12.0
             px = lambda xin: x0 + w * xin / L_in
             st_ = sp_.get("stiff")
+            from .ws_steel_beam import _faces
+            sups_ = list(getattr(sheet, "supports", None) or (0.0, sheet.span_ft))
+            fcs = _faces(sups_, sheet.span_ft)
             xs_ = []
             if st_:
-                if st_.get("panels"):
+                for s0, dr, lim, _ in fcs:
                     acc = 0.0
-                    for a_ in st_["panels"]:
+                    for a_ in (st_["panels"] or []) if st_.get("panels") else [st_["a"]] * 400:
                         acc += a_
-                        if acc < L_in / 2:
-                            xs_ += [acc, L_in - acc]
-                else:
-                    k_ = 1
-                    while k_ * st_["a"] < L_in - 1e-6:
-                        xs_.append(k_ * st_["a"]); k_ += 1
+                        if acc >= lim * 12.0 - 1e-6:
+                            break
+                        xs_.append(s0 * 12.0 + dr * acc)
             c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.35); c.setFillColorRGB(0.62, 0.67, 0.73)
             for xin in xs_:
                 c.rect(px(xin) - 0.5, by + tfp, 1.0, hb - 2 * tfp, fill=1, stroke=1)
             if sp_.get("brg") and sp_["brg"].get("ts"):
-                for xin in (0.0, L_in):
+                for s0 in sups_:
+                    xin = s0 * 12.0
                     xx = px(xin)
-                    c.rect(xx + (0.3 if xin == 0 else -2.1), by + tfp, 1.8, hb - 2 * tfp, fill=1, stroke=1)
+                    off = 0.3 if xin <= 1e-6 else (-2.1 if abs(xin - L_in) <= 1e-6 else -0.9)
+                    c.rect(xx + off, by + tfp, 1.8, hb - 2 * tfp, fill=1, stroke=1)
+                if sp_["brg"].get("at_loads"):
+                    for ld in sheet.loads:
+                        if ld.get("kind") == "point" and not str(ld.get("dir") or "").startswith("side"):
+                            c.rect(px(ld["x_ft"] * 12.0) - 0.9, by + tfp, 1.8, hb - 2 * tfp, fill=1, stroke=1)
         c.setStrokeColorRGB(*BLUE); c.setFillColorRGB(0.91, 0.93, 0.96); c.setLineWidth(0.6)
         down = [ld for ld in sheet.loads if not str(ld.get("dir") or "").startswith("side")]
         side = [ld for ld in sheet.loads if str(ld.get("dir") or "").startswith("side")]

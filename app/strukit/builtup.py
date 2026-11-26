@@ -383,3 +383,54 @@ def column_check(p, Fy, Lcx, Lcy, Lcz=None, method="ASD", E=E_STEEL):
     P_avail = 0.90 * Pn if method == "LRFD" else Pn / 1.67
     L.append(SLine("phi_c Pn" if method == "LRFD" else "Pn / Omega_c", P_avail, "kip", "Sect. E1: phi_c = 0.90, Omega_c = 1.67"))
     return SteelColumnResult(Pn, P_avail, Fn, governs, max(sx, sy), L)
+
+
+def _plastic_moment(strips):
+    """Plastic moment of a section made of strips [(x0, x1, width, Fy)] along one axis (the depth): the plastic neutral axis where the yield
+    forces balance, then M = sum of Fy |x - PNA| dA (kip-in. with in. and ksi)."""
+    tot = sum((x1 - x0) * w * F for x0, x1, w, F in strips)
+    lo, hi = min(s[0] for s in strips), max(s[1] for s in strips)
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        below = sum(max(0.0, min(x1, mid) - x0) * w * F for x0, x1, w, F in strips)
+        lo, hi = (mid, hi) if below < tot / 2 else (lo, mid)
+    pna = (lo + hi) / 2
+    M = 0.0
+    for x0, x1, w, F in strips:
+        for a_, b_ in ((x0, min(x1, pna)), (max(x0, pna), x1)):
+            if b_ > a_:
+                M += F * w * (b_ - a_) * abs((a_ + b_) / 2 - pna)
+    return M, pna
+
+
+def end_panel_tfa(p, Fy, a, ts, bs, Fyst, e_end, E=E_STEEL):
+    """End web panel with tension field action, AISC 360-22 Sect. G2.3 (Eq. G2-12 to G2-15), with a pair of end (bearing) stiffeners bs wide,
+    ts thick, their inside face e_end from the end of the girder. Flanges of unequal area: Mpf from the smaller flange (Commentary Sect. G2.3).
+    Returns dict(Vn, beta_v, de, Mpf, Mpst, Mpm, Cv2, kv, eq)."""
+    h, tw, d = p["h"], p["tw"], p["d"]
+    Aw = d * tw
+    ah = a / h
+    if ah > 3.0:
+        raise ValueError("a / h over 3: Sect. G2.3 does not apply")
+    kv = 5 + 5 / ah ** 2
+    r = math.sqrt(kv * E / Fy)
+    lam = h / tw
+    Cv2 = 1.0 if lam <= 1.10 * r else (1.10 * r / lam if lam <= 1.37 * r else 1.51 * kv * E / (lam ** 2 * Fy))
+    de = 35 * tw * (0.8 - Cv2) ** 2 if Cv2 <= 0.8 else 0.0                         # Eq. G2-14, G2-15
+    fl = min(((p["bft"], p["tft"]), (p["bfb"], p["tfb"])), key=lambda f: f[0] * f[1])
+    Mpf, _ = _plastic_moment([(0.0, fl[1], fl[0], Fy)] + ([(fl[1], fl[1] + de, tw, Fy)] if de > 0 else []))
+    e_eff = min(e_end, 0.84 * tw * math.sqrt(E / Fy))
+    Lw = de + e_eff                                                                  # web in the end post, measured from the girder end
+    x1 = e_eff                                                                       # the stiffener's inside face
+    x0 = max(0.0, x1 - ts)
+    strips = [(0.0, Lw, tw, Fy)] if Lw > 0 else []
+    strips.append((x0, x1, 2 * bs, Fyst))                                            # the two plates beside the web (the web counted above)
+    if Lw <= 0:
+        strips.append((x0, x1, tw, Fy))
+    Mpst, _ = _plastic_moment(strips)
+    Mpm = min(Mpf, Mpst)
+    if Cv2 >= 1.0:
+        return dict(Vn=0.6 * Fy * Aw, beta_v=0.0, de=de, Mpf=Mpf, Mpst=Mpst, Mpm=Mpm, Cv2=Cv2, kv=kv, eq="Eq. G2-12 (Cv2 = 1)")
+    beta = min(1.0, 2.8 * (math.sqrt(Mpf + Mpm) + math.sqrt(Mpst + Mpm)) / (h * math.sqrt(Fy * tw * (1 - Cv2))))   # Eq. G2-13
+    Vn = 0.6 * Fy * Aw * (Cv2 + beta * (1 - Cv2) / (1.15 * math.sqrt(1 + ah ** 2)))                              # Eq. G2-12
+    return dict(Vn=Vn, beta_v=beta, de=de, Mpf=Mpf, Mpst=Mpst, Mpm=Mpm, Cv2=Cv2, kv=kv, eq="Eq. G2-12", e_eff=e_eff, Lw=Lw)

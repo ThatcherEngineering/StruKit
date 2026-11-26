@@ -113,6 +113,12 @@ FORMS = {
                 F("bu_brg_ts", "Built-up: bearing stiffener thickness", unit="in", required=False, help="blank = no bearing stiffeners"),
                 F("bu_brg_bs", "Built-up: bearing stiffener width, each side", unit="in", required=False),
                 F("bu_brg_clip", "Built-up: bearing stiffener corner clip", unit="in", required=False, help="clear of the flange-to-web weld"),
+                F("bu_lbp", "Built-up: bearing length of the concentrated loads", unit="in", required=False,
+                  help="web local yielding and crippling under each point load on the top flange (J10.2, J10.3); blank = not checked"),
+                F("bu_brg_loads", "Built-up: bearing stiffeners under the concentrated loads", "select", options=["no", "yes"], required=False,
+                  help="yes: the bearing stiffener plates above under each point load, with a 25 tw web strip (12 tw within d of the end)"),
+                F("bu_brg_e", "Built-up: girder end to the inside face of the bearing stiffeners", unit="in", required=False,
+                  help="for tension field action in the end panel (Sect. G2.3); blank = the stiffener thickness (stiffeners flush with the end)"),
                 F("bu_Fyst", "Built-up: stiffener Fy", unit="ksi", required=False)],
         tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point"]),
                                      F("mag", "Load", unit="k/ft or k"),
@@ -1845,10 +1851,13 @@ def _build(kind, values, project):
                        bs=r.num("bu_bs", True, label="Built-up: stiffener plate width"), Fy=r.num("bu_Fyst", False) or Fy)
         brg = None
         if r.num("bu_lb", False):
-            brg = dict(lb=r.num("bu_lb", False))
+            brg = dict(lb=r.num("bu_lb", False), lbp=r.num("bu_lbp", False), at_loads=str(values.get("bu_brg_loads") or "").startswith("y"))
+            if brg["at_loads"] and not r.num("bu_brg_ts", False):
+                r.miss.append("Built-up: bearing stiffeners under the loads need the bearing stiffener plate sizes")
             if r.num("bu_brg_ts", False):
                 brg.update(ts=r.num("bu_brg_ts", False), bs=r.num("bu_brg_bs", True, label="Built-up: bearing stiffener width"),
-                           clip=r.num("bu_brg_clip", True, label="Built-up: bearing stiffener corner clip"), Fy=r.num("bu_Fyst", False) or Fy)
+                           clip=r.num("bu_brg_clip", True, label="Built-up: bearing stiffener corner clip"), Fy=r.num("bu_Fyst", False) or Fy,
+                           e=r.num("bu_brg_e", False))
         r.done()
         s = ws_steel_beam.run(mark, shape, Fy, span, loads, cb, dc, "continuous" if br == "continuous" else pts, m, sw,
                               spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0, overhang_right=r.num("oh_right", False) or 0.0, fixed=fixed,
