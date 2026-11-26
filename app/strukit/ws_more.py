@@ -4945,7 +4945,70 @@ def base_plate_uplift_sheet(mark, shape, col_Fy, N, B, t, Fy_plate, rod_d, rod_F
     return sheet
 
 
-def angle_strut_sheet(mark, shape, Fy, steel_source, length_ft, attached, loads, combos, method):
+def _angle_strut_h2(mark, a, Fy, steel_source, length_ft, attached, e_off, loads, combos, method):
+    """Single angle in compression designed for the eccentricity of its load (anglebeam.eccentric_compression; AISC Design Examples v16.0
+    Example E.14B): axial load with the moments about both principal axes, Sect. H2."""
+    from . import anglebeam as ab
+    if e_off < 0:
+        raise WorksheetError(f"{mark}: the load's distance outside the back of the attached leg cannot be negative")
+    totals = {cb.name: sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads) for cb in combos}
+    worst = max(totals, key=lambda k: totals[k])
+    P = totals[worst]
+    if P <= 0:
+        raise WorksheetError(f"{mark}: no combination puts the angle in compression; enter compression as positive")
+    L = length_ft * 12
+    try:
+        r = ab.eccentric_compression(a, Fy, L, attached, e_off, P, method)
+    except ab.AngleBeamError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    lrfd = method == "LRFD"
+    c, f = r["comp"], r["flex"]
+    Ln = footing_line
+    red = ("0.90 x" if lrfd else "1 / 1.67 x")
+    steps = [Ln("Required compressive strength", P, "kip", worst, ""),
+             Ln("Load point: distance from the w axis, ew", r["ew"], "in", "AISC Design Examples v16.0 Example E.14B",
+                f"at mid-width of the attached leg, {e_off:g} in. outside its back; centroid x = {a['xbar']:g}, y = {a['ybar']:g} in.; tan alpha = {a['tan_alpha']:g}"),
+             Ln("Load point: distance from the z axis, ez", r["ez"], "in", "AISC Design Examples v16.0 Example E.14B", "signed: + on the side of the points it compresses"),
+             Ln("Lc / rz", c["Lc_r"], "", "AISC 360-22 Sect. E3", f"Lc = L = {L:g} in. (K = 1.0), rz = {a['rz']:g} in.; b / t = {max(a['b'], a['d']) / a['t']:.1f}, "
+                f"under 0.71 (E / Fy)^0.5 = {c['lam_ft']:.1f}: flexural-torsional buckling not required (Sect. E4)"),
+             Ln("Fe", c["Fe"], "ksi", "AISC 360-22 Eq. E3-4", ""),
+             Ln("Fn", c["Fn"], "ksi", "AISC 360-22 Eq. E3-2, E3-3", "")]
+    for sl in c["slender"]:
+        steps.append(Ln(f"Leg {sl['b']:g} in.: effective width", sl["be"], "in", "AISC 360-22 Eq. E7-3, E7-5",
+                        f"b / t = {sl['lam']:.1f} over {sl['lim']:.1f}; Fel = {sl['Fel']:.1f} ksi; c1 = 0.22, c2 = 1.49 (Table E7.1)"))
+    steps += [Ln("Pn = Fn Ae", c["Pn"], "kip", "AISC 360-22 Eq. E7-1" if c["slender"] else "AISC 360-22 Eq. E3-1", f"Ae = {c['Ae']:.3f} in2; available {red} Pn = {r['Pc']:.1f} kip"),
+              Ln("Mnw, major principal axis", f["Mnw"], "kip-in", "AISC 360-22 Sect. F10", f"{f['gov_w'][0]}: {f['gov_w'][2]}"),
+              Ln("Mnz, minor principal axis", f["Mnz"], "kip-in", "AISC 360-22 Sect. F10", f"{f['gov_z'][0]}: {f['gov_z'][2]}"),
+              Ln("B1, major axis", r["B1w"], "", "AISC 360-22 Eq. A-8-3", f"Cm = 1.0; Pe1 = pi^2 E Iw / L^2 = {r['Pe1w']:,.0f} kip (Eq. A-8-5)"),
+              Ln("B1, minor axis", r["B1z"], "", "AISC 360-22 Eq. A-8-3", f"Cm = 1.0; Pe1 = pi^2 E Iz / L^2 = {r['Pe1z']:,.0f} kip; alpha = {1.0 if lrfd else 1.6:g}"),
+              Ln("Mrw = B1 P ew; Mrz = B1 P ez", f"{r['B1w'] * r['Mw']:.1f} and {r['B1z'] * r['Mz']:.1f} kip-in", "", "AISC 360-22 App. 8.1", "")]
+    for k, v in r["ratios"].items():
+        steps.append(Ln(f"Eq. H2-1 at point {k}", f"{v:.3f}", "", "AISC 360-22 Eq. H2-1",
+                        "P / Pc + Mrw / Mcw + Mrz / Mcz, each term + where it compresses the point" + (" (A short-leg toe, B heel, C long-leg toe)" if k == "A" else "")))
+    rows = [Row("Axial compression", worst, P, r["Pc"], "kip", "AISC 360-22 Sect. E3, E7", f"Lc / rz = {c['Lc_r']:.0f}"),
+            Row(f"Axial load and bending, point {r['gov']}", worst, r["ratio"], 1.0, "", "AISC 360-22 Eq. H2-1", "principal axes, second-order moments by B1"),
+            Row("Slenderness Lc / rz", "", c["Lc_r"], 200.0, "", "AISC 360-22 Sect. E2 User Note", "200 preferred maximum")]
+    leg = "either leg" if abs(a["b"] - a["d"]) < 1e-9 else f"the {attached} leg"
+    info = [("Angle", f"{a['label']}, Ag = {a['A']:g} in2, Fy = {Fy:g} ksi ({steel_source.strip()})"), ("Length", f"{length_ft:g} ft between the end connections"),
+            ("Ends", f"loaded through {leg} at both ends; the load acts at mid-width of that leg, {e_off:g} in. outside its back")]
+    load_lines = [f"{x['case']:<3} {x['P']:>8.2f} kip" + (f"   {x['label']}" if x.get("label") else "") for x in loads]
+    sheet = SimpleSheet(mark, "Single-Angle Compression Member (eccentric load)", "Member", method, info, load_lines, [(cb.name, cb.source) for cb in combos],
+                        f"Calculation ({worst})", steps, rows,
+                        ["The load's eccentricity gives the same moment at both ends (Cm = 1.0); the ends are pinned for buckling (K = 1.0).",
+                         "Moments are taken about the principal axes; Eq. H2-1 is checked at the two toes and the heel."],
+                        ["the end connections and the parts the angle connects to", "tension in the angle under load reversal (Steel Tension Member sheet)",
+                         "bending from transverse load or self-weight"])
+    g_ = r["g"]
+    xc_, yc_ = (a["xbar"], a["ybar"]) if g_["long_v"] else (a["ybar"], a["xbar"])
+    vt, ht = (g_["t"] / 2, g_["Lv"]), (g_["Lh"], g_["t"] / 2)
+    sh_t, lg_t = (ht, vt) if g_["long_v"] else (vt, ht)
+    sheet.blocks.append(dict(title="Section", head="Section", picture=("angle_ecc", dict(Lv=g_["Lv"], Lh=g_["Lh"], t=g_["t"], e=e_off, xc=xc_, yc=yc_, w_hat=r["w_hat"],
+                                                                                    pts_xy={"A": sh_t, "B": (0.0, 0.0), "C": lg_t}, P=f"{P:.1f} kip", shape=a["label"]))))
+    sheet.strut = dict(P=P, Pc=r["Pc"], ratio=r["ratio"], gov=r["gov"], h2=r)
+    return sheet
+
+
+def angle_strut_sheet(mark, shape, Fy, steel_source, length_ft, attached, loads, combos, method, e_off=None):
     """Single angle in compression, loaded through one leg at each end (brace, kicker, web member of a planar truss): AISC 360-22 Sect. E5(a)
     effective slenderness with Sect. E3. attached: "long" or "short" leg (either for an equal-leg angle). loads: dict(case, P) kips, compression."""
     if not (steel_source or "").strip():
@@ -4965,11 +5028,14 @@ def angle_strut_sheet(mark, shape, Fy, steel_source, length_ft, attached, loads,
     if not equal and attached not in ("long", "short"):
         raise WorksheetError(f"{mark}: say whether the long or the short leg is the attached leg")
     E = 29000.0
+    if e_off is not None:
+        return _angle_strut_h2(mark, a, Fy, steel_source, length_ft, "long" if equal else attached, e_off, loads, combos, method)
     lam, lam_r = bl / t, 0.45 * math.sqrt(E / Fy)
     if lam > lam_r:
-        raise WorksheetError(f"{mark}: b / t = {lam:.1f} is over 0.45 (E / Fy)^0.5 = {lam_r:.1f}; angles with slender legs (AISC 360-22 Sect. E7) are not covered")
+        raise WorksheetError(f"{mark}: b / t = {lam:.1f} is over 0.45 (E / Fy)^0.5 = {lam_r:.1f}; angles with slender legs (AISC 360-22 Sect. E7) are not covered by Sect. E5 here; "
+                             "use the design for the load's eccentricity (Sect. H2)")
     if not equal and bl / bs >= 1.7:
-        raise WorksheetError(f"{mark}: the leg ratio {bl / bs:.2f} is 1.7 or more; Sect. E5 does not apply and the angle is designed for axial load with bending (Chapter H)")
+        raise WorksheetError(f"{mark}: the leg ratio {bl / bs:.2f} is 1.7 or more; Sect. E5 does not apply: use the design for the load's eccentricity (Sect. H2)")
     L = length_ft * 12
     short = (not equal) and attached == "short"
     ra = a["ry"] if (equal or not short) else a["rx"]          # axis parallel to the attached leg

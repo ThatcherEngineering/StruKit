@@ -182,3 +182,79 @@ def shear(Fy, b, t):
     c_ = 1.37 * math.sqrt(kv * E / Fy)
     Cv2, eq = (1.0, "G2-9") if lam <= a_ else ((a_ / lam, "G2-10") if lam <= c_ else (1.51 * kv * E / (lam ** 2 * Fy), "G2-11"))
     return 0.6 * Fy * b * t * Cv2, Cv2, eq
+
+
+def compression_strength(a, Fy, Lc):
+    """Single angle, axial compression about the minor principal axis: AISC 360-22 Sect. E3 with Lc / rz, and Sect. E7 (Table E7.1 case (c),
+    c1 = 0.22, c2 = 1.49) for a slender leg. Flexural-torsional buckling (Sect. E4) is not built: legs with b / t over 0.71 (E / Fy)^0.5 are
+    refused. Returns dict(Fe, Fn, Ae, Pn, steps)."""
+    t = a["t"]
+    legs = sorted((a["b"], a["d"]), reverse=True)
+    lr, lft = 0.45 * math.sqrt(E / Fy), 0.71 * math.sqrt(E / Fy)
+    if legs[0] / t > lft:
+        raise AngleBeamError(f"b / t = {legs[0] / t:.1f} is over 0.71 (E / Fy)^0.5 = {lft:.1f}: flexural-torsional buckling (AISC 360-22 Sect. E4) applies and is not built")
+    slr = Lc / a["rz"]
+    Fe = math.pi ** 2 * E / slr ** 2
+    Fn = 0.658 ** (Fy / Fe) * Fy if Fy / Fe <= 2.25 else 0.877 * Fe
+    Ae, notes = a["A"], []
+    for b in legs:
+        lam = b / t
+        lim = lr * math.sqrt(Fy / Fn)
+        if lam > lim:                                                      # Sect. E7.1(b)
+            Fel = (1.49 * lr / lam) ** 2 * Fy                              # Eq. E7-5
+            be = b * (1 - 0.22 * math.sqrt(Fel / Fn)) * math.sqrt(Fel / Fn)  # Eq. E7-3
+            Ae -= t * (b - be)
+            notes.append(dict(b=b, lam=lam, lim=lim, Fel=Fel, be=be))
+    return dict(Lc_r=slr, Fe=Fe, Fn=Fn, Ae=Ae, Pn=Fn * Ae, slender=notes, lam_r=lr, lam_ft=lft)
+
+
+def eccentric_compression(a, Fy, L, attached, e_off, P, method):
+    """Single angle loaded in compression through one leg with the load eccentric to the centroid (AISC 360-22 Sect. H2 with the moments of
+    the eccentricity on the principal axes, Appendix 8 B1 on each axis with Cm = 1.0), as worked in AISC Design Examples v16.0 Example E.14B.
+    The load acts at mid-width of the attached leg, e_off (in.) outside the back of that leg (at the gusset). L: length (in.), the effective
+    length for buckling about z and for B1 (K = 1.0). P: required axial compression (kips). Returns the strengths and the H2-1 ratio at A, B, C."""
+    lrfd = method == "LRFD"
+    g = geometry(a, attached, "up")                                        # the attached leg drawn vertical, its back at x = 0, toe up
+    w_hat, z_hat, _ = principal_points(a, g)                               # w_hat, z_hat: the directions in which distances from the w and z axes are measured
+    xc, yc = (a["xbar"], a["ybar"]) if g["long_v"] else (a["ybar"], a["xbar"])
+    t_ = g["t"]
+    vtoe, htoe = (t_ / 2, g["Lv"]), (g["Lh"], t_ / 2)
+    short_toe, long_toe = (htoe, vtoe) if g["long_v"] else (vtoe, htoe)
+    pts = {}
+    for k, p_ in (("A", short_toe), ("B", (0.0, 0.0)), ("C", long_toe)):
+        dw = (p_[0] - xc) * w_hat[0] + (p_[1] - yc) * w_hat[1]          # distance from the w axis
+        dz = (p_[0] - xc) * z_hat[0] + (p_[1] - yc) * z_hat[1]          # distance from the z axis
+        pts[k] = (math.copysign(a.get("w" + k, 0.0), dz) if a.get("w" + k) else 0.0, math.copysign(a.get("z" + k, 0.0), dw) if a.get("z" + k) else 0.0)
+    xl, yl = -e_off, g["Lv"] / 2.0
+    ew = (xl - xc) * w_hat[0] + (yl - yc) * w_hat[1]                     # the load's distance from the w axis (Example E.14B "ew")
+    ez = (xl - xc) * z_hat[0] + (yl - yc) * z_hat[1]                     # and from the z axis ("ez")
+    Mw, Mz = P * ew, P * ez                                                # + where it compresses the points on the load's side
+    c = compression_strength(a, Fy, L)
+    Pc = 0.90 * c["Pn"] if lrfd else c["Pn"] / 1.67
+    s = principal_strengths(a, g, Fy, pts, Mw, Mz, L, 1.0)
+    Mcw = 0.90 * s["Mnw"] if lrfd else s["Mnw"] / 1.67
+    Mcz = 0.90 * s["Mnz"] if lrfd else s["Mnz"] / 1.67
+    alpha = 1.0 if lrfd else 1.6
+    Pe1w, Pe1z = math.pi ** 2 * E * a["Iw"] / L ** 2, math.pi ** 2 * E * a["Iz"] / L ** 2
+    if alpha * P >= min(Pe1w, Pe1z):
+        raise AngleBeamError("the axial load is over the elastic buckling load of the angle (B1 unbounded)")
+    B1w, B1z = max(1.0, 1.0 / (1 - alpha * P / Pe1w)), max(1.0, 1.0 / (1 - alpha * P / Pe1z))
+    terms = interaction(pts, B1w * Mw, B1z * Mz, Mcw, Mcz)
+    ratios = {k: P / Pc + v for k, v in terms.items()}
+    gov = max(ratios, key=lambda k: ratios[k])
+    return dict(ew=ew, ez=ez, Mw=Mw, Mz=Mz, comp=c, Pc=Pc, flex=s, Mcw=Mcw, Mcz=Mcz, Pe1w=Pe1w, Pe1z=Pe1z, B1w=B1w, B1z=B1z,
+                ratios=ratios, gov=gov, ratio=ratios[gov], pts=pts, g=g, w_hat=w_hat)
+
+
+def eccentric_capacity(a, Fy, L, attached, e_off, method):
+    """The axial load at which the H2-1 ratio of eccentric_compression reaches 1.0 (bisection)."""
+    lo, hi = 0.0, 0.0
+    hi = compression_strength(a, Fy, L)["Pn"]
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        try:
+            r = eccentric_compression(a, Fy, L, attached, e_off, mid, method)["ratio"]
+        except AngleBeamError:
+            r = 2.0
+        lo, hi = (mid, hi) if r <= 1.0 else (lo, mid)
+    return lo

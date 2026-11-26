@@ -1686,6 +1686,8 @@ def _block_picture(c, top, pic):
         return _wt_flange_picture(c, top - 6, d)
     if name == "stiffened_seat":
         return _stiffened_seat_picture(c, top - 6, d)
+    if name == "angle_ecc":
+        return _angle_ecc_picture(c, top - 6, d)
     if name == "beam_hss_moment":
         return _beam_hss_moment_picture(c, top - 6, d)
     if name == "flush_end_plate":
@@ -2218,6 +2220,55 @@ def _angle_beam_picture(c, top, d):
     ys = min(yv0, yh) - 18
     _small(c, hx + Lh * sc / 2, ys, "section, to scale")
     return min(yl, ys) - 12
+
+
+def _angle_ecc_picture(c, top, d):
+    """Cut section of a single angle loaded through one leg, to scale: the angle with its thickness, the gusset plate against the back of
+    the attached leg (cut short with break lines), the centroid, the principal axes w and z (centre lines), the load point at mid-width of the
+    attached leg, points A, B, C named; the leg lengths, the load's offset and its height on the leg dimensioned."""
+    Lv, Lh, t, e, xc, yc = d["Lv"], d["Lh"], d["t"], d["e"], d["xc"], d["yc"]
+    wx, wy = d["w_hat"]
+    sc = min(150.0 / (Lv + 2), 170.0 / (Lh + e + 4), 26.0)
+    hx, hy = LM + 190, top - 36 - Lv * sc                  # heel, outside corner
+    X = lambda x: hx + x * sc
+    Y = lambda y: hy + y * sc
+    tg = max(2 * e, 0.375)                                 # gusset drawn at twice the load's offset (the load on its centre line)
+    c.setFillColorRGB(0.86, 0.89, 0.92); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+    c.rect(X(-tg), Y(-1.0), tg * sc, (Lv + 2.0) * sc, fill=1, stroke=1)            # gusset plate, cut
+    _break_h(c, X(-tg) - 2, X(0) + 2, Y(-1.0)); _break_h(c, X(-tg) - 2, X(0) + 2, Y(Lv + 1.0))
+    c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.7)
+    pth = c.beginPath(); pth.moveTo(X(0), Y(0)); pth.lineTo(X(Lh), Y(0)); pth.lineTo(X(Lh), Y(t)); pth.lineTo(X(t), Y(t)); pth.lineTo(X(t), Y(Lv))
+    pth.lineTo(X(0), Y(Lv)); pth.close(); c.drawPath(pth, fill=1, stroke=1)
+    # principal axes through the centroid, as centre lines
+    c.setStrokeColorRGB(0.35, 0.40, 0.48); c.setLineWidth(0.4); c.setDash([6, 2, 1, 2])
+    R = 0.42 * max(Lv, Lh)
+    for (ux, uy), nm in (((-wy, wx), "w"), ((wx, wy), "z")):              # the w axis runs across w_hat; the z axis across z_hat (= along w_hat)
+        if ux < 0 or (abs(ux) < 1e-9 and uy < 0):
+            ux, uy = -ux, -uy                                               # name each axis at its right-hand (or upper) end
+        if nm == "z" and uy < 0:
+            ux, uy = -ux, -uy
+        c.line(X(xc - ux * R), Y(yc - uy * R), X(xc + ux * R), Y(yc + uy * R))
+        c.setDash(); c.setFont(FR, 6.5); c.setFillColorRGB(0.35, 0.40, 0.48)
+        c.drawString(X(xc + ux * R) + 3, Y(yc + uy * R) + 1, nm); c.setDash([6, 2, 1, 2])
+    c.setDash()
+    c.setFillColorRGB(*INK); c.circle(X(xc), Y(yc), 1.4, fill=1, stroke=0)
+    # load point
+    lx, ly = X(-e), Y(Lv / 2)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(1, 1, 1); c.setLineWidth(0.9)
+    c.circle(lx, ly, 3.2, fill=1, stroke=1); c.line(lx - 2.2, ly - 2.2, lx + 2.2, ly + 2.2); c.line(lx - 2.2, ly + 2.2, lx + 2.2, ly - 2.2)
+    c.setFillColorRGB(*LOADC); c.setFont(FR, 6); c.drawRightString(lx - 6, ly + 4, f"P, {d['P']}")
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    for nm, (px, py) in d["pts_xy"].items():
+        c.drawString(X(px) + 3, Y(py) + 2, nm)
+    memberart._dim_v(c, Y(0), Y(Lv), X(Lh) + 26, f"{Lv:g} in", FR, ext_from=X(t))
+    yb_ = min(Y(0), Y(yc - R * 1.0)) - 14
+    memberart._dim_h(c, X(0), X(Lh), yb_, f"{Lh:g} in, t = {t:g} in", FR, ext_from=Y(0))
+    memberart._dim_v(c, Y(0), ly, X(-tg) - 40, f"{Lv / 2:g} in", FR, ext_from=X(-tg))
+    yt_ = Y(Lv + 1.0) + 14
+    memberart._dim_h(c, lx, X(0), yt_, "", FR, ext_from=Y(Lv + 1.0) + 4)
+    c.setFont(FR, 6); c.setFillColorRGB(*INK); c.drawRightString(lx - 6, yt_ - 2, f"load {e:g} in outside the leg")
+    _small(c, X(Lh / 2), yb_ - 22, f"{d['shape']} section, to scale; load at mid-width of the attached leg; principal axes w and z")
+    return yb_ - 30
 
 
 def _crane_runway_picture(c, top, d):
