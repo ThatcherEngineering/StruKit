@@ -434,3 +434,34 @@ def end_panel_tfa(p, Fy, a, ts, bs, Fyst, e_end, E=E_STEEL):
     beta = min(1.0, 2.8 * (math.sqrt(Mpf + Mpm) + math.sqrt(Mpst + Mpm)) / (h * math.sqrt(Fy * tw * (1 - Cv2))))   # Eq. G2-13
     Vn = 0.6 * Fy * Aw * (Cv2 + beta * (1 - Cv2) / (1.15 * math.sqrt(1 + ah ** 2)))                              # Eq. G2-12
     return dict(Vn=Vn, beta_v=beta, de=de, Mpf=Mpf, Mpst=Mpst, Mpm=Mpm, Cv2=Cv2, kv=kv, eq="Eq. G2-12", e_eff=e_eff, Lw=Lw)
+
+
+def flange_web_weld(p, V, w, FEXX, Fu, method, l=None, s=None, P=None, lb=None):
+    """Flange-to-web fillet welds of a three-plate I (both sides of the web at each flange), as AISC Design Examples v16.0 Example F.14:
+    shear flow q = V Q / Ix at the flange with the larger Q (Q of that flange about the elastic neutral axis); weld strength per inch, both
+    sides, phi 0.60 FEXX (0.707 w) x 2 (AISC 360-22 Eq. J2-4, kds = 1.0; Manual Eq. 8-2a / 8-2b); web base metal 0.60 Fu tw (Eq. J4-4 per inch,
+    Sect. J2 and J4.2); flange base metal 2 x 0.60 Fu tf; minimum size Table J2.4. Intermittent welds of length l at s on centres: strengths x l / s,
+    l at least 4 w and 1-1/2 in. (Sect. J2.2b(e)). P, lb: a concentrated load bearing on the top flange without a stiffener, taken by the top
+    welds over lb + 5 tf and added to the shear flow as a vector. Returns dict."""
+    lrfd = method == "LRFD"
+    av = (lambda Rn: 0.75 * Rn) if lrfd else (lambda Rn: Rn / 2.00)
+    d, yb, Ix, tw = p["d"], p["yb"], p["Ix"], p["tw"]
+    Qt = p["bft"] * p["tft"] * (d - yb - p["tft"] / 2)
+    Qb = p["bfb"] * p["tfb"] * (yb - p["tfb"] / 2)
+    Q = max(Qt, Qb)
+    q = V * Q / Ix
+    fv = 0.0
+    if P and lb is not None:
+        fv = P / (lb + 5 * p["tft"])
+    qt = V * Qt / Ix
+    q_top = math.hypot(qt, fv)
+    demand = max(q, q_top)
+    f = (l / s) if (l and s) else 1.0
+    R_w = av(0.60 * FEXX * 0.7071 * w) * 2 * f
+    R_web = av(0.60 * Fu * tw) * f
+    tf_min = min(p["tft"], p["tfb"])
+    R_fl = av(0.60 * Fu * tf_min) * 2 * f
+    tthin = min(tw, tf_min)
+    wmin = 0.125 if tthin <= 0.25 else 0.1875 if tthin <= 0.5 else 0.25 if tthin <= 0.75 else 0.3125     # Table J2.4
+    lmin = max(4 * w, 1.5) if (l and s) else None
+    return dict(Qt=Qt, Qb=Qb, Q=Q, q=q, fv=fv, q_top=q_top, demand=demand, R_w=R_w, R_web=R_web, R_fl=R_fl, wmin=wmin, f=f, lmin=lmin)
