@@ -312,3 +312,91 @@ def demands(a, T_row, V):
             rv = max(rv, ratio)
     inter = (rt + rv) if (rt > 0.2 and rv > 0.2) else None
     return out, inter, rt, rv
+
+
+def tension_grid(da, nt, futa, fya, ductile, hef, Abrg, fc, ha, nx, sx, ny, sy, cx1, cx2, cy1, cy2, cracked, supplementary, runs,
+                 deep_eq_for_groups=False):
+    """Rods of an nx by ny grid all able to take tension (a base plate in uplift, or the rods of a plate under biaxial moment), ACI 318-19
+    17.6, by load case. Spacing sx along x (nx rods), sy along y; cx1 / cx2: from the rods at x = 0 / x = (nx - 1) sx to the concrete edges,
+    cy1 / cy2 likewise. runs: [(name, {(i, j): tension kips of the rod at column i, row j})] at factored (LRFD) loads.
+    For each run: rod steel and pullout for the most loaded rod; concrete breakout for the rods in tension as a group (the smallest
+    rectangle of the grid holding them; eccentricity of their resultant from its centre by Eq. 17.6.2.3.1 about each axis, the product of the
+    two, 17.6.2.3.2); side-face blowout of each edge closer than hef / 2.5, for the rods along it (Eq. 17.6.4.1, 17.6.4.1.1, 17.6.4.2).
+    Returns dict(rows=[(check, run, demand, design, source, note)], lines=[Line], phi=dict)."""
+    for nm, v in (("rod diameter", da), ("threads per inch", nt), ("rod Fu", futa), ("rod Fy", fya), ("embedment hef", hef),
+                  ("head bearing area", Abrg), ("f'c", fc), ("concrete thickness", ha)):
+        if v is None or v <= 0:
+            raise AnchorageError(f"anchorage: {nm} must be a positive number")
+    if hef >= ha:
+        raise AnchorageError("anchorage: the embedment is not less than the concrete thickness")
+    if da > 4 or fc > 10000:
+        raise AnchorageError("anchorage: outside ACI 318-19 17.3.1 / 17.3.2 (rod over 4 in. or f'c over 10,000 psi)")
+    fu = min(futa, 1.9 * fya, 125.0)
+    A_se = ase(da, nt)
+    phi_ts = 0.75 if ductile else 0.65
+    phi_c = 0.75 if supplementary else 0.70
+    phi_p = 0.70
+    psi_cN = 1.0 if cracked else 1.25
+    psi_cP = 1.0 if cracked else 1.4
+    Nsa = A_se * fu
+    Npn = psi_cP * 8 * Abrg * fc / 1000.0
+    L = [Line("Ase = pi/4 (da - 0.9743/nt)^2", A_se, "in2", "ACI 318-19 R17.6.1.2"),
+         Line("Nsa = Ase futa", Nsa, "kip", "Eq. 17.6.1.2", f"futa = {fu:g} ksi (not over 1.9 fya or 125 ksi); phi = {phi_ts:g}"),
+         Line("Npn = psi_c,P 8 Abrg f'c", Npn, "kip", "Eq. 17.6.3.1, 17.6.3.2.2a", f"psi_c,P = {psi_cP:g}; phi = {phi_p:g}")]
+    best = {}
+
+    def keep(key, check, run, dem, des, src, note):
+        if dem <= 0:
+            return
+        if key not in best or dem / des > best[key][2] / best[key][3]:
+            best[key] = (check, run, dem, des, src, note)
+
+    edges = [("x", 0, cx1, cy1, cy2), ("x", nx - 1, cx2, cy1, cy2), ("y", 0, cy1, cx1, cx2), ("y", ny - 1, cy2, cx1, cx2)]
+    shown = set()
+    for name, T in runs:
+        ten = {k: t for k, t in T.items() if t > 1e-9}
+        if not ten:
+            continue
+        tmax = max(ten.values())
+        keep("Nsa", "rod steel, tension", name, tmax, phi_ts * Nsa, "ACI 318-19 Eq. 17.6.1.2; Table 17.5.3(a)", "most loaded rod")
+        keep("Npn", "pullout", name, tmax, phi_p * Npn, "ACI 318-19 17.6.3; Table 17.5.3(c)", "most loaded rod")
+        i0, i1 = min(i for i, _ in ten), max(i for i, _ in ten)
+        j0, j1 = min(j for _, j in ten), max(j for _, j in ten)
+        Ttot = sum(ten.values())
+        xc, yc = (i0 + i1) / 2 * sx, (j0 + j1) / 2 * sy
+        ex = abs(sum(t * i * sx for (i, j), t in ten.items()) / Ttot - xc)
+        ey = abs(sum(t * j * sy for (i, j), t in ten.items()) / Ttot - yc)
+        N, d = tension_breakout(hef, fc, i1 - i0 + 1, sx, j1 - j0 + 1, sy, cx1 + i0 * sx, cx2 + (nx - 1 - i1) * sx,
+                                cy1 + j0 * sy, cy2 + (ny - 1 - j1) * sy, psi_cN, deep_eq_for_groups)
+        h_ = d["hef"]
+        psi_ec = 1.0 / (1 + ex / (1.5 * h_)) * 1.0 / (1 + ey / (1.5 * h_))
+        Ncbg = N * psi_ec / 1000.0
+        who = f"{len(ten)} rod{'s' if len(ten) > 1 else ''} in tension as a group"
+        keep("Ncb", "breakout, tension", name, Ttot, phi_c * Ncbg, "ACI 318-19 17.6.2; Table 17.5.3(b)",
+             f"{who}; ANc {d['ANc']:.0f} in2, ANco {d['ANco']:.0f} in2, psi_ec,N {psi_ec:.3f}, psi_ed,N {d['psi_ed']:.3f}, psi_c,N {psi_cN:g}, Nb {d['Nb'] / 1000:.1f} kip ({d['eq']})")
+        if ("Ncb", i0, i1, j0, j1) not in shown:
+            shown.add(("Ncb", i0, i1, j0, j1))
+            L.append(Line(f"Ncbg, {who}", N / 1000.0, "kip", "Eq. 17.6.2.1b, 17.6.2.2.1",
+                          f"ANc = {d['ANc']:.0f} in2; ANco = 9 hef^2 = {d['ANco']:.0f} in2; psi_ed,N = {d['psi_ed']:.3f}; psi_c,N = {psi_cN:g}; before psi_ec,N"))
+        for ax, idx, c1, c2a, c2b in edges:
+            if hef <= 2.5 * c1:
+                continue
+            along = [k for k in ten if (k[0] if ax == "x" else k[1]) == idx]
+            if not along:
+                continue
+            n_al = (ny if ax == "x" else nx)
+            s_al = sy if ax == "x" else sx
+            Nsb = 160 * c1 * math.sqrt(Abrg) * _rootfc(fc) / 1000.0
+            c2 = min(c2a, c2b)
+            f_ = (1 + min(max(c2 / c1, 1.0), 3.0)) / 4 if c2 < 3 * c1 else 1.0
+            if n_al > 1 and s_al < 6 * c1:
+                Nsbg = (1 + (n_al - 1) * s_al / (6 * c1)) * Nsb
+                keep(f"Nsb{ax}{idx}", f"side blowout, edge {c1:g} in. away", name, sum(ten[k] for k in along), phi_c * Nsbg,
+                     "ACI 318-19 Eq. 17.6.4.1, 17.6.4.2; Table 17.5.3(b)", f"the {n_al} rods along that edge as a group")
+            else:
+                keep(f"Nsb{ax}{idx}", f"side blowout, edge {c1:g} in. away", name, max(ten[k] for k in along), phi_c * Nsb * f_,
+                     "ACI 318-19 Eq. 17.6.4.1, 17.6.4.1.1; Table 17.5.3(b)", "the rod nearest that edge")
+    if min(cx1, cx2, cy1, cy2) * 2.5 >= hef:
+        L.append(Line("2.5 x least edge distance", 2.5 * min(cx1, cx2, cy1, cy2), "in", "17.6.4.1", "not less than hef: side-face blowout does not apply"))
+    order = ["Nsa", "Ncb", "Npn"] + sorted(k for k in best if k.startswith("Nsb"))
+    return dict(rows=[best[k] for k in order if k in best], lines=L, phi=dict(steel=phi_ts, concrete=phi_c, pullout=phi_p))

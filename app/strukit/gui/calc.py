@@ -30,6 +30,65 @@ def T(key, label, columns, help=""):
 
 
 CASE = F("case", "Case", "text", help="D, L, Lr, S, W, E, Em (seismic with overstrength) ...")
+
+GRID_ANCHORAGE_FIELDS = [
+    F("anc_hef", "Anchorage: rod embedment to the head, hef", unit="in", required=False,
+      help="ACI 318-19 Chapter 17 for the rods in tension; leave blank to leave the anchorage in the concrete unchecked"),
+    F("anc_fc", "Anchorage: concrete f'c at the rods", unit="psi", required=False, help="blank on the biaxial screen = the f'c above"),
+    F("anc_h", "Anchorage: concrete thickness at the rods", unit="in", required=False),
+    F("anc_supN", "Anchorage: concrete length at the rods (along N), plate centred", unit="in", required=False, help="blank with the width = the rods are 1.5 hef or more from every edge"),
+    F("anc_supB", "Anchorage: concrete width at the rods (along B)", unit="in", required=False),
+    F("anc_F", "Anchorage: hex head or nut, width across flats", unit="in", required=False, help="leave blank for a heavy hex nut (AISC Design Guide 1 Table 4-2)"),
+    F("anc_abrg", "Anchorage: head bearing area, if not a hex", unit="in2", required=False),
+    F("anc_tpi", "Anchorage: rod threads per inch", required=False, help="leave blank for coarse thread (AISC Design Guide 1 Table 4-1)"),
+    F("anc_fy", "Anchorage: anchor rod Fy (when no grade is picked)", unit="ksi", required=False),
+    F("anc_ductile", "Anchorage: rod steel is ductile (when no grade is picked)", "select", options=["yes", "no"], required=False,
+      help="elongation at least 14 percent and reduction in area at least 30 percent"),
+    F("anc_cracked", "Anchorage: concrete at the rods at service load", "select", options=["cracked", "uncracked"], required=False),
+    F("anc_supp", "Anchorage: supplementary reinforcement at the rods", "select", options=["yes", "no"], required=False, help="ACI 318-19 Table 17.5.3(b)"),
+    F("anc_sdc", "Anchorage: Seismic Design Category", "select", options=["A or B", "C to F"], required=False)]
+
+
+def _read_grid_anchorage(r, rod_d, grade, default_fc=None):
+    """Anchorage inputs of a base plate whose rods are checked all in tension (uplift, biaxial); None when hef is blank."""
+    if r.num("anc_hef", False) is None:
+        return None, None
+    from .. import anchorage as _an, anchor_rods as _ar
+    lab = lambda k: r.labels[k].replace("Anchorage: ", "Anchorage, ")
+    pick = lambda k, opts: (opts.index(r.text(k, False)) if r.text(k, False) in opts else r.miss.append(lab(k) + " is blank"))
+    F_, ab = r.num("anc_F", False), r.num("anc_abrg", False)
+    tab = _ar.size(rod_d) if rod_d else None
+    if F_ is not None and ab is not None:
+        r.miss.append("Anchorage: give the hex width across flats or the head bearing area, not both")
+    nt = r.num("anc_tpi", False)
+    if nt is None:
+        nt = tab[0] if tab else r.miss.append(lab("anc_tpi") + " is blank (the rod diameter is not in the Design Guide 1 table)")
+    fya = grade[1] if grade else r.num("anc_fy", label=lab("anc_fy"))
+    fc_ = r.num("anc_fc", False)
+    if fc_ is None:
+        fc_ = default_fc if default_fc else r.num("anc_fc", label=lab("anc_fc"))
+    a = dict(hef=r.num("anc_hef"), ha=r.num("anc_h", label=lab("anc_h")), nt=nt, fya=fya, fc=fc_)
+    d_ = (0 if grade[2] else 1) if grade else pick("anc_ductile", ["yes", "no"])
+    c_, s_ = pick("anc_cracked", ["cracked", "uncracked"]), pick("anc_supp", ["yes", "no"])
+    sdc = r.text("anc_sdc", False)
+    if not sdc:
+        r.miss.append(lab("anc_sdc") + " is blank")
+    if None not in (d_, c_, s_):
+        a.update(ductile=d_ == 0, cracked=c_ == 0, supplementary=s_ == 0, sdc=sdc)
+    if F_ is not None and rod_d:
+        a.update(Abrg=_an.hex_bearing_area(F_, rod_d), head=f"hex head or nut, {F_:g} in across flats")
+    elif ab is not None:
+        a.update(Abrg=ab, head="head bearing area typed in")
+    elif tab:
+        a.update(Abrg=tab[1], head="heavy hex nut, AISC Design Guide 1 Table 4-2")
+    else:
+        r.miss.append("Anchorage: give the hex width across flats or the head bearing area (the rod diameter is not in the Design Guide 1 table)")
+    sN, sB = r.num("anc_supN", False), r.num("anc_supB", False)
+    if (sN is None) != (sB is None):
+        r.miss.append("Anchorage: give both the concrete length and width at the rods, or neither")
+    return a, ((sN, sB) if sN is not None and sB is not None else None)
+
+
 FORMS = {
     "steel_beam": dict(
         title="Steel Beam", code="AISC 360-22", mark="B",
@@ -276,9 +335,12 @@ FORMS = {
                 F("rod_grade", "Anchor rod grade", "select", required=False, options=["F1554 Gr. 36", "F1554 Gr. 55", "F1554 Gr. 105", "other"]),
                 F("rod_Fu", "Anchor rod Fu (grade: other)", unit="ksi", required=False), F("rod_source", "Anchor rod material (grade: other)", "text", required=False),
                 F("rod_edge", "Rods from the plate ends", unit="in"), F("rod_side", "Rods from the plate sides", unit="in"),
-                F("loads_from", "Loads come from", "text", required=False)],
+                F("loads_from", "Loads come from", "text", required=False)] + GRID_ANCHORAGE_FIELDS,
         tables=[T("cases", "Combined loads", [F("name", "Combination or run", "text"), F("P", "Axial compression", unit="kip"), F("Mx", "Moment, column strong axis", unit="kip-ft"),
-                                              F("My", "Moment, column weak axis", unit="kip-ft")])]),
+                                              F("My", "Moment, column weak axis", unit="kip-ft")]),
+                T("cases_lrfd", "Factored (LRFD) loads for the rod anchorage", [F("name", "Combination or run", "text"), F("P", "Pu, compression", unit="kip"),
+                                                                                 F("Mx", "Mux, strong axis", unit="kip-ft"), F("My", "Muy, weak axis", unit="kip-ft")],
+                  help="needed only when the anchorage is checked and the project's design method is ASD; moment signs set which rods are in tension")]),
     "flush_end_plate": dict(
         title="End-Plate Moment Connection (flush, or four-bolt extended)", code="AISC 360-22", mark="FEP",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"),
@@ -1245,8 +1307,12 @@ FORMS = {
                 F("rod_d", "Anchor rod diameter", unit="in"), F("rod_Fu", "Anchor rod Fu", unit="ksi"), F("rod_source", "Anchor rod material", "text", help="for example: ASTM F1554 Grade 36"),
                 F("gauge", "Rod spacing across the web", unit="in", help="four rods inside the column profile, two each side of the web"),
                 F("pitch", "Rod spacing along the web", unit="in"),
-                F("weld", "Web fillet weld size, each side", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
-        tables=[T("cases", "Net uplift by load combination", [F("name", "Combination", "text"), F("T", "Net uplift", unit="kip")])]),
+                F("weld", "Web fillet weld size, each side", unit="in"), F("FEXX", "Electrode strength", unit="ksi"),
+                F("anc_grade", "Anchorage: rod grade (for Fy and ductility)", "select", required=False,
+                  options=["F1554 Gr. 36", "F1554 Gr. 55", "F1554 Gr. 105", "other"])] + GRID_ANCHORAGE_FIELDS,
+        tables=[T("cases", "Net uplift by load combination", [F("name", "Combination", "text"), F("T", "Net uplift", unit="kip")]),
+                T("cases_lrfd", "Factored (LRFD) net uplift for the rod anchorage", [F("name", "Combination", "text"), F("T", "Net uplift, Tu", unit="kip")],
+                  help="needed only when the anchorage is checked and the project's design method is ASD")]),
     "base_plate_moment": dict(
         title="Base Plate with Moment", code="AISC 360-22, AISC Design Guide 1, ACI 318-19", mark="BPM",
         fields=[F("shape", "Column", "shape_col", help="W, M, S or HP shape, or square or rectangular HSS"), F("N", "Plate length (direction of the moment)", unit="in"),
@@ -1696,8 +1762,14 @@ def build(kind, values, project):
         cases = r.rows("cases")
         if not cases:
             r.miss.append("No load case is entered")
+        from .. import anchor_rods as _ar
+        _gu = _ar.grade(r.text("anc_grade", False) or "")
+        anc, sup = _read_grid_anchorage(r, args[6], _gu)
+        fact = r.rows("cases_lrfd") if anc else None
+        if anc and m == "ASD" and not fact:
+            r.miss.append("Anchorage: enter the factored (LRFD) net uplift; ACI 318-19 Chapter 17 is strength design")
         r.done()
-        return ws_more.base_plate_uplift_sheet(mark, *args, cases, m), "simple", {}
+        return ws_more.base_plate_uplift_sheet(mark, *args, cases, m, anchorage=anc, cases_factored=fact, support=sup), "simple", {}
     if kind == "seat":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
@@ -1722,8 +1794,12 @@ def build(kind, values, project):
         if not cases:
             r.miss.append("No load case is entered")
         args = (r.text("shape"), r.num("N"), r.num("B"), r.num("t"), r.num("Fy"), r.num("fc"), r.num("area_ratio"), r.num("rod_d"), _fu, _src, r.num("rod_edge"), r.num("rod_side"))
+        anc, sup = _read_grid_anchorage(r, args[7], _g, default_fc=args[5])
+        fact = r.rows("cases_lrfd") if anc else None
+        if anc and m == "ASD" and not fact:
+            r.miss.append("Anchorage: enter the factored (LRFD) loads; ACI 318-19 Chapter 17 is strength design")
         r.done()
-        return ws_more.base_plate_biaxial_sheet(mark, *args, cases, m), "simple", {}
+        return ws_more.base_plate_biaxial_sheet(mark, *args, cases, m, anchorage=anc, cases_factored=fact, support=sup), "simple", {}
     if kind == "flush_end_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], M=x["M"], T=x["T"] or 0.0, V=x["V"] or 0.0) for x in r.rows("runs")]

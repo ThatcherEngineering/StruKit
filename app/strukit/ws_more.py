@@ -335,6 +335,43 @@ def base_plate_moment_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, rod
     return sheet
 
 
+def _anchorage_grid(mark, sheet, rod_d, rod_Fu, a, nx, sx, ny, sy, edges, runs, load_lines):
+    """Adds the ACI 318-19 Chapter 17 checks of a grid of rods in tension (anchorage.tension_grid) to a base plate sheet. a: as for _anchorage,
+    plus fc (psi). edges: (cx1, cx2, cy1, cy2) from the outer rods to the concrete edges. runs: [(name, {(i, j): rod tension, kips})] at factored
+    loads. load_lines: the factored cases, printed."""
+    need = ("hef", "ha", "nt", "fya", "ductile", "Abrg", "head", "cracked", "supplementary", "sdc", "fc")
+    gone = [k for k in need if a.get(k) is None]
+    if gone:
+        raise WorksheetError(f"{mark}: rod anchorage is missing: " + ", ".join(gone))
+    if str(a["sdc"]).strip().upper() not in ("A", "B", "A OR B"):
+        raise WorksheetError(f"{mark}: rod anchorage in Seismic Design Category C to F needs ACI 318-19 Sect. 17.10, which is not built")
+    if not runs:
+        raise WorksheetError(f"{mark}: rod anchorage needs the factored (LRFD) load cases (ACI 318-19 Chapter 17 is strength design, Sect. 17.4)")
+    try:
+        res = anch.tension_grid(rod_d, a["nt"], rod_Fu, a["fya"], a["ductile"], a["hef"], a["Abrg"], a["fc"], a["ha"], nx, sx, ny, sy, *edges,
+                                a["cracked"], a["supplementary"], runs)
+    except anch.AnchorageError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    for check, run, dem, des, src, note in res["rows"]:
+        sheet.rows.append(Row("ACI " + check, run, dem, des, "kip", src, note))
+    spc = [x for x in ((sx if nx > 1 else None), (sy if ny > 1 else None)) if x]
+    if spc:
+        sheet.rows.append(Row("ACI rod spacing, minimum", "all", 4 * rod_d, min(spc), "in", "ACI 318-19 Table 17.9.2(a), cast-in anchors not torqued",
+                              "demand is the minimum spacing 4 da; capacity is the least spacing provided"))
+    crk = "cracked at service load" if a["cracked"] else "uncracked at service load"
+    sheet.info += [("Rod Anchorage", f"cast-in, embedment hef = {a['hef']:g} in to the head; {a['head']} (Abrg = {a['Abrg']:.3f} in2); {a['nt']:g} threads per inch; "
+                                     f"Fy = {a['fya']:g} ksi; {'ductile' if a['ductile'] else 'brittle'} steel element (ACI 318-19 Ch. 2)"),
+                   ("Concrete at Rods", f"f'c = {a['fc']:g} psi; {a['ha']:g} in thick; {crk}; supplementary reinforcement {'present' if a['supplementary'] else 'not present'}; "
+                                        f"rods {edges[0]:g} / {edges[1]:g} in. from the concrete ends and {edges[2]:g} / {edges[3]:g} in. from its sides; Seismic Design Category {a['sdc']}")]
+    sheet.blocks.append(dict(title="Rod Anchorage in the Concrete (factored loads)", lines=list(load_lines) + [""] + [
+        f"{ln.label}: {ln.value:,.2f} {ln.unit}  ({ln.source}{'; ' + ln.note if ln.note else ''})" for ln in res["lines"]]))
+    sheet.assumptions += ["Rod anchorage is checked for the factored (LRFD) load cases; ACI 318-19 Chapter 17 is strength design.",
+                          "Anchorage: normalweight concrete (lambda_a = 1.0, Table 17.2.4.1); rods cast in with a head or nut, not torqued; anchor reinforcement is not counted."]
+    sheet.not_checked = [x for x in sheet.not_checked if not x.startswith("anchorage of the rods in the concrete")]
+    sheet.not_checked.append("anchorage of the rods in shear (the base shear goes by friction or a shear lug)")
+    return res
+
+
 def _anchorage(mark, p, N, B, support, fc_psi, rod_d, rod_Fu, n_rods, rod_edge, rod_side, n_shear, cases, Fy_plate, a):
     """Anchorage of the rods of a base plate with moment in the concrete, ACI 318-19
     Chapter 17 (see anchorage.py). a: dict with hef, ha, nt (threads per inch), fya, ductile,
@@ -3468,7 +3505,22 @@ def biaxial_base_strength(P, L, W, f, c, x, fp, tp, Fy, T_rods, lrfd=True):
     return dict(M=M, T=T, Y=Y, governs="anchor rods" if T_rods <= T_plate else "plate bending at the rods", T_plate=T_plate, M_bearing=M_bearing, M_plate=Mpl, q=q)
 
 
-def base_plate_biaxial_sheet(mark, shape, N, B, tp, Fy_plate, fc_psi, area_ratio, rod_d, rod_Fu, rod_source, edge_N, edge_B, cases, method):
+def bearing_rod_tension(P, M, L, f, q):
+    """Tension in the rods on one side under axial compression P and moment M (kips, kip-in.), the uniform bearing block model of AISC Design
+    Guide 1 (3rd Ed.) Sect. 4.3.7 (Eq. 4-53 to 4-55): q Y - T = P and q Y (L/2 - Y/2) + T f = M. Zero when the resultant stays within the
+    bearing (small moment). q: bearing per inch at the factored level."""
+    if M <= 1e-9:
+        return 0.0
+    a = L / 2 + f
+    disc = a * a - 2 * (P * f + M) / q
+    if disc < 0:
+        raise WorksheetError("base plate: the moment is more than the bearing and the rods can resist (Design Guide 1 Eq. 4-53 has no solution)")
+    Y = a - math.sqrt(disc)
+    return max(0.0, q * Y - P)
+
+
+def base_plate_biaxial_sheet(mark, shape, N, B, tp, Fy_plate, fc_psi, area_ratio, rod_d, rod_Fu, rod_source, edge_N, edge_B, cases, method,
+                             anchorage=None, cases_factored=None, support=None):
     """Column base plate with axial compression and moment about both axes, four anchor rods (one near each corner): AISC Design Guide 1 (3rd Ed.)
     Sect. 4.3.8, Eq. 4-69, as worked in Example 4.7-14. The moment strength in each direction is found at the case's axial load (anchor rods, or
     plate bending at the rods), then (Mrx / Mcx)^2 + (Mry / Mcy)^2 <= 1. cases: dict(name, P kips compression, Mx, My kip-ft) at the method's level."""
@@ -3547,6 +3599,31 @@ def base_plate_biaxial_sheet(mark, shape, N, B, tp, Fy_plate, fc_psi, area_ratio
     sheet.blocks.append(dict(title="Base Plate", head="Base Plate", picture=("base_biaxial", dict(N=N, B=B, d=dcol, b=bcol, tf=tfl, tw=p.get("tw") or tfl, kind=col_kind, edge_N=edge_N,
                                                                                                 edge_B=edge_B, rod_d=rod_d))))
     sheet.biax = dict(fp=fp, m=m, n=n, rt=rt, t_bear=t_bear, cases=out, worst=w)
+    if anchorage:
+        fact = cases if method == "LRFD" else (cases_factored or [])
+        fpu = 0.65 * fp_n                                    # factored bearing stress for the rod tensions (ACI strength design)
+        sx_, sy_ = N - 2 * edge_N, B - 2 * edge_B
+        sup = support or (None, None)
+        far = 1.5 * anchorage["hef"] + 1.0
+        cx = (sup[0] - sx_) / 2 if sup[0] else far
+        cy = (sup[1] - sy_) / 2 if sup[1] else far
+        if cx <= 0 or cy <= 0:
+            raise WorksheetError(f"{mark}: the concrete support must be larger than the rod pattern")
+        runs, lines = [], []
+        for cs in fact:
+            P, Mx, My = cs["P"], cs["Mx"] * 12, cs["My"] * 12
+            Tx = bearing_rod_tension(P, abs(Mx), N, fx, fpu * B)
+            Ty = bearing_rod_tension(P, abs(My), B, fy, fpu * N)
+            ix = 1 if Mx >= 0 else 0                         # the rods on the tension side of each moment
+            jy = 1 if My >= 0 else 0
+            T = {(i, j): (Tx / 2 if i == ix else 0.0) + (Ty / 2 if j == jy else 0.0) for i in (0, 1) for j in (0, 1)}
+            runs.append((cs["name"], T))
+            lines.append(f"{cs['name']:<26} Pu = {P:>7.2f} kip   Mux = {cs['Mx']:>7.2f}   Muy = {cs['My']:>7.2f} kip-ft   rods: {Tx:.2f} kip (strong), {Ty:.2f} kip (weak)")
+        sheet.anchor = _anchorage_grid(mark, sheet, rod_d, rod_Fu, anchorage, 2, sx_, 2, sy_, (cx, cx, cy, cy), runs, lines)
+        sheet.assumptions.append("Anchorage: the rod tension from each moment comes from the bearing block model of Design Guide 1 Sect. 4.3.7 at the factored "
+                                 "bearing stress (each direction alone); a corner rod takes half of each direction's tension, added.")
+        if not (support and support[0] and support[1]):
+            sheet.assumptions.append("Anchorage: the rods are at least 1.5 hef from every edge of the concrete.")
     return sheet
 
 
@@ -4404,7 +4481,8 @@ def wind_enclosure_sheet(mark, walls, roof_gross, roof_open, openings_basis):
     return sheet
 
 
-def base_plate_uplift_sheet(mark, shape, col_Fy, N, B, t, Fy_plate, rod_d, rod_Fu, rod_source, gauge, pitch, weld, FEXX, cases, method):
+def base_plate_uplift_sheet(mark, shape, col_Fy, N, B, t, Fy_plate, rod_d, rod_Fu, rod_source, gauge, pitch, weld, FEXX, cases, method,
+                            anchorage=None, cases_factored=None, support=None):
     """Base plate of a wide-flange column in net uplift, four anchor rods inside the column profile, two each side of the web: AISC Design Guide 1
     (3rd Ed.) Example 4.7-3.  gauge: rod spacing across the web; pitch: rod spacing along the web.  One-way plate bending about the web face
     over a 45 degree width from each rod; the web fillet welds each side over the same width; local stress in the web.
@@ -4480,6 +4558,19 @@ def base_plate_uplift_sheet(mark, shape, col_Fy, N, B, t, Fy_plate, rod_d, rod_F
                         picture=None)
     sheet.blocks.append(dict(title="Base Plate Plan", head="Base Plate Plan", picture=("base_plate_uplift", dict(d=d, bf=bf, tf=tf, tw=tw, N=N, B=B, g=gauge, s=pitch, rod_d=rod_d, shape=shapes.normalize(shape)))))
     sheet.uplift = dict(r=r, rod=rod, a=a, beff=beff, M=M, Mc=Mc, t_req=t_req, rw=rw, weld=wr.R_avail, fweb=fweb, Fweb=Fweb)
+    if anchorage:
+        fact = cases if method == "LRFD" else (cases_factored or [])
+        sup = support or (None, None)
+        far = 1.5 * anchorage["hef"] + 1.0                   # no edge given: the rods are at least 1.5 hef from every edge
+        cx = (sup[0] - pitch) / 2 if sup[0] else far
+        cy = (sup[1] - gauge) / 2 if sup[1] else far
+        if cx <= 0 or cy <= 0:
+            raise WorksheetError(f"{mark}: the concrete support must be larger than the rod pattern")
+        runs = [(c["name"], {(i, j): c["T"] / 4.0 for i in (0, 1) for j in (0, 1)}) for c in fact if c["T"] > 0]
+        sheet.anchor = _anchorage_grid(mark, sheet, rod_d, rod_Fu, anchorage, 2, pitch, 2, gauge, (cx, cx, cy, cy), runs,
+                                       [f"{c['name']:<26} Tu = {c['T']:>8.2f} kip uplift, {c['T'] / 4:.2f} kip each rod" for c in fact])
+        if not (support and support[0] and support[1]):
+            sheet.assumptions.append("Anchorage: the rods are at least 1.5 hef from every edge of the concrete.")
     return sheet
 
 
