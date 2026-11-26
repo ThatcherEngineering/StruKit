@@ -256,3 +256,9 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - **3D model on the calcs:** "I wish you would include that 3D model on the calcs. It would be really cool if it was near the beginning of
   the report, multiple angles of the model." Built 0.233.0: a Building Model sheet right after the cover with four views.
 
+## 2026-11-25 21:25, rod anchorage on the uplift and biaxial base plates (0.234.0), applied (not ruled; tell Zach at the check-in)
+- Biaxial base plate: each corner rod takes half the rod tension from each direction (Tx/2 + Ty/2), the two directions added at the corner
+  (the larger, not a square-root combination).
+- Biaxial rod tensions for the anchorage come from the bearing block at 0.65 x fp(max) (LRFD) under the factored loads.
+- With the concrete length and width left blank, the rods are taken 1.5 hef or more from every edge; the sheet states that as an assumption.
+

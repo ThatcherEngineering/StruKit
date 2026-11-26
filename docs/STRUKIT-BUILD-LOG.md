@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 21:00. Build **0.233.1**, 619 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 21:25. Build **0.234.0**, 622 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -36,7 +36,7 @@ Updated 2026-11-25 21:00. Build **0.233.1**, 619 tests passing; `main` and `rele
 7. (Top-running crane runway beam, simple span, done 0.218.0.) Still open and waiting on documents: underhung cranes and monorails (bottom flange local bending), fatigue (AISC 360-22 Appendix 3 is on file; needs the number of cycles by service class), web yielding and crippling under the wheels, continuous runway beams, cap channels; AISC Design Guide 7 would let the lateral load and deflection limits be cited.
 8. (Dropped 2026-11-25 16:51, Zach: he no longer uses StruCalc and StruKit replaces it. No more StruCalc import work. The steel .vtx reader of 0.165.0 stays as it is.)
 8. **From the 2026-011 whole-house model run (0.220.0), in order:** (a) (existing walls 0.221.0; existing beams, posts and footings 0.229.0); (b) (done 0.226.0: every point load on a footing line is checked as a pad, larger pads sized where needed); (c) (wall weight 0.222.0, headers in wall lines 0.224.0; still open: wall weight less the openings; jack and king studs done 0.230.0); (d) (seismic weights from the model done 0.227.0; still open: story forces spread by mass rather than evenly over the width); (e) (diaphragms filled from the model done 0.228.0; still open: cantilevered diaphragms, openings, several spans printed per level); (f) (wood beams and posts 0.231.0; shear walls in the frame and wood checks from the frame forces 0.232.0). Item 8 is finished.
-9. (Shear lugs done 0.219.0.) Still open: anchorage in the concrete on the uplift base plate and the four-rod biaxial base plate; concrete breakout of the rods on the shear lug screen; shear lugs with net uplift or two-way shear.
+9. (Shear lugs done 0.219.0; rod anchorage on the uplift and biaxial base plates done 0.234.0.) Still open: concrete breakout of the rods on the shear lug screen; shear lugs with net uplift or two-way shear.
 10. Built-up three-plate sections as beams and columns; the column side of the extended end plate.
 11. Through-plate and diaphragm beam-to-HSS moment connections (Design Guide 24 Examples 6.2, 6.4).
 12. Carport package: eave beams taking roof load; portal-bay knee with both directions.
@@ -757,4 +757,12 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - 2026-011 model: openings read by scale from the architect's elevations A4.1 / A4.2 (West = Line 1, South = Line A, East = Line B; about 0.5 ft), 10 openings on the six walls; the sheet counts each joist row once.
 - The 3D Frame Analysis picture leaves out joists and decks (not frame members).
 - Test: a 10 ft row at 24 in. draws six joists and a deck; typed openings, a force-transfer wall's own opening, and an unreadable entry reported.
+
+## 2026-11-25 21:25 local — 0.234.0 rod anchorage in the concrete on the uplift and biaxial base plates (622 tests)
+- Zach 21:06 go on Next item 9.
+- **Uplift and Biaxial Base Plate screens** take the same anchorage boxes as the base plate with moment (embedment hef, f'c, concrete thickness, concrete length and width at the rods, head, cracked, supplementary reinforcement, SDC) and a table of factored (LRFD) loads; blank hef leaves the anchorage unchecked and listed under "not checked". ASD projects need the factored table (Chapter 17 is strength design).
+- New `anchorage.tension_grid`: any grid of rods with its own tension in each rod, per load case. ACI 318-19 17.6.1 rod steel, 17.6.2 breakout of the rods in tension as a group (ANc of the rods in tension only, psi_ec,N the product of the two directions 17.6.2.3.1, psi_ed,N, psi_c,N, kc = 24 per the 2026-11-23 ruling), 17.6.3 pullout, 17.6.4 side-face blowout where hef > 2.5 ca1 (group factor 17.6.4.2), Table 17.9.2(a) spacing and edge, 17.10 seismic factor for SDC C to F.
+- Uplift: 2 x 2 rods at gauge x pitch, T/4 each. Biaxial: rod tension in each direction from the Design Guide 1 bearing block (`ws_more.bearing_rod_tension`), corner rods Tx/2 + Ty/2.
+- Validation: AISC Design Guide 1 (3rd Ed.) Example 4.7-3 (four 7/8 in. F1554 Gr. 36 rods, hef 15 in., f'c 4,000 psi, Pu 70 kips): rod steel 20.1 kips per rod, pullout 26.7, breakout 76.3 with Eq. 17.6.2.2.3 as the example uses (StruKit's kc = 24 ruling gives 73.2). Biaxial rod tension tested by statics of the bearing block. Edge cases (side blowout appears, breakout drops) by hand.
+- Browser check: both screens load and compute; sample `StruKit-Sample-Calc-Sheet-Base-Plate-Anchorage-Uplift-Biaxial.pdf` (no overlaps).
 
