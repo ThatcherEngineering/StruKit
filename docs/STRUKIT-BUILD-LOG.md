@@ -1037,3 +1037,19 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation: by hand** (no published example of a stiffened seat on an HSS is on file; DG24 2nd Ed. gives the method in words only):
   Mn 955.2 kip-in., punching 1,215.8 kip-in., Qf with 200 kips in the column, the screen and the sheet (`tests/test_stiffened_seat.py`).
   The rest of the seat stays validated by Example II.A-14 and Table 10-7.
+
+## 2026-11-26 16:45 MST — 0.264.0 single angles over several spans and overhangs, on the Steel Beam screen, and in the 3D frame (Next 1, done)
+- **Single-Angle Beam screen: more spans and overhangs** (boxes as on the Steel Beam screen). The down and sideways loads are solved as
+  continuous beams (`contbeam`, uniform stiffness), the live load arranged span by span (Sect. 4.3.3) for the down loads; Sect. F10 / H2 at
+  every station with each span (or overhang) between supports as an unbraced length, Cb by Eq. F1-1 (not over 1.5 on the principal axes), and
+  the negative beta_w over a segment where the major-axis moment reverses (Commentary F10.2). With continuous restraint, the geometric axis
+  with each flange in compression in turn. Deflection: both directions solved with EI = 1 and resolved on the principal axes, against span /
+  ratio (2 x overhang / ratio). Reactions at every support for the takedown. Midspan restraint, axial load and sideways live loads on a
+  continuous angle are refused. The loading picture draws every support and dimensions the spans.
+- **Steel Beam screen with a single angle** (for example L4x4x1/4): new boxes for the vertical leg, the toe and the Fy source; the sheet is the
+  Single-Angle Beam sheet (bracing: continuous, at the supports only, or at midspan of a single span); reactions for the takedown.
+- **3D frame:** an angle placed as a steel beam takes its principal-axis stiffness (Iw, Iz, J) with the member's local axes along the principal
+  axes (the horizontal leg toward the member's local y). It is checked on its own sheet, not from the frame forces (noted on the frame sheet).
+- **Validation:** statics and Table 3-23 by hand (two-span support moment w L^2 / 8, shear 5 w L / 8, Cb 2.27 from the quarter-point moments,
+  overhang span moment 1.218 kip-ft, two-span deflection with live on one span 0.0092 w L^4 / E I); the F10 / H2 sum at the governing station;
+  the negative beta_w; the 3D frame against the Commentary F10.2 ratios (1.572 down, 0.949 sideways) (`tests/test_angle_beam.py`).

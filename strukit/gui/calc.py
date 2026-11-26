@@ -103,6 +103,10 @@ FORMS = {
                 F("bracing", "Compression flange braced", "select", options=["continuous", "at points"]),
                 F("brace_pts", "Brace points", "text", "ft", required=False,
                   help="distances from the left end, separated by commas; the ends are always braced"),
+                F("angle_vertical", "Single angle: vertical leg", "select", options=["long", "short"], required=False,
+                  help="a single angle (for example L4x4x1/4) is checked as on the Single-Angle Beam screen (AISC 360-22 F10, H2); either for equal legs"),
+                F("angle_toe", "Single angle: toe of the vertical leg", "select", options=["up", "down"], required=False),
+                F("angle_source", "Single angle: where Fy comes from", "text", required=False),
                 F("self_weight", "Add self-weight", "select", options=["yes", "no"]),
                 F("bu_a", "Built-up: transverse stiffener clear spacing, a", "text", unit="in", required=False,
                   help="blank = no transverse stiffeners; one spacing = stiffeners at a along the girder; a list (for example 42, 90) = panel by panel from each support, no stiffeners beyond"),
@@ -250,7 +254,10 @@ FORMS = {
                 F("toe", "Toe of the vertical leg", "select", options=["up", "down"]),
                 F("restraint", "Lateral-torsional restraint", "select", options=["none between the ends", "at midspan only", "continuous along the length"],
                   help="continuous: for example a deck or sheathing fastened along the angle"),
-                F("self_weight", "Add the angle's own weight as dead load", "select", options=["yes", "no"])],
+                F("self_weight", "Add the angle's own weight as dead load", "select", options=["yes", "no"]),
+                F("more_spans", "More spans (continuous over supports)", "text", "ft", required=False, help="separated by commas, left to right after the first span; blank = one span"),
+                F("oh_left", "Overhang past the left support", unit="ft", required=False, help="load positions are measured from the left end of the angle"),
+                F("oh_right", "Overhang past the right support", unit="ft", required=False)],
         tables=[T("loads", "Loads", [CASE, F("kind", "Load", "select", options=["uniform, full span", "point", "axial, through the centroid"]),
                                      F("value", "Value (kip/ft or kip)", help="axial: compression positive, tension negative"),
                                      F("x", "Point load at, from the left support", unit="ft", required=False),
@@ -1848,6 +1855,39 @@ def _build(kind, values, project):
             r.miss.append("No loads are entered")
         dc = checks(r.rows("defl"), r.miss, "Deflection limits")
         cases_used([ld["case"] for ld in loads], cb, r.miss)
+        is_angle = False
+        try:
+            shapes.get(shape or "")
+        except Exception:
+            try:
+                shapes.angle(shape or ""); is_angle = True
+            except Exception:
+                pass
+        if is_angle:                                          # a single angle: the Single-Angle Beam checks (F10, H2)
+            if fixed:
+                r.miss.append("Single angle: a beam fixed to one support is not covered; use bearing supports")
+            for ld in loads:
+                if ld["kind"] == "uniform" and ("x1_ft" in ld):
+                    r.miss.append("Single angle: uniform loads over the whole length only (leave From and To blank)"); break
+                if ld.get("e_in"):
+                    r.miss.append("Single angle: loads applied off the shear center (torsion) are not covered"); break
+            if br == "continuous":
+                rs_ = "continuous"
+            elif not pts:
+                rs_ = "none"
+            elif len(pts) == 1 and not more and not r.num("oh_left", False) and not r.num("oh_right", False) and span and abs(pts[0] - span / 2) < 1e-6:
+                rs_ = "midspan"
+            else:
+                rs_ = None
+                r.miss.append("Single angle: braced continuously, at the supports only (no brace points), or at midspan of a single span")
+            src_ = r.text("angle_source", True)
+            tv = r.text("angle_toe", True)
+            al = [dict(case=ld["case"], kind=ld["kind"], dir=ld.get("dir", "down"), **({"w": ld["w"]} if ld["kind"] == "uniform" else {"P": ld["P"], "x": ld["x_ft"]}),
+                       **({"label": ld["label"]} if ld.get("label") else {})) for ld in loads]
+            r.done()
+            return ws_more.angle_beam_sheet(mark, shape, Fy, src_, span, str(values.get("angle_vertical") or ""), tv, rs_, sw, al, cb, m, dc,
+                                            spans=([span] + more) if more else None, oh_left=r.num("oh_left", False) or 0.0,
+                                            oh_right=r.num("oh_right", False) or 0.0), "simple", {}
         bus = None
         if str(values.get("bu_a") or "").strip():
             try:
@@ -2062,8 +2102,10 @@ def _build(kind, values, project):
         dc = checks(r.rows("defl"), r.miss, "Deflection limits")
         args = (r.text("shape"), r.num("Fy"), r.text("steel_source"), r.num("span"), r.text("vertical", False) or "", r.text("toe"),
                 "midspan" if rs.startswith("at midspan") else "continuous" if rs.startswith("continuous") else "none", yes(r.text("self_weight")))
+        more_ = (r.nums("more_spans") or []) if r.text("more_spans", False) else []
         r.done()
-        return ws_more.angle_beam_sheet(mark, *args, loads, cb, m, dc), "simple", {}
+        return ws_more.angle_beam_sheet(mark, *args, loads, cb, m, dc, spans=([args[3]] + more_) if more_ else None,
+                                        oh_left=r.num("oh_left", False) or 0.0, oh_right=r.num("oh_right", False) or 0.0), "simple", {}
     if kind == "tension_member":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
@@ -4659,7 +4701,15 @@ def _frame_section(kind, v):
         except Exception:
             continue
     if sec is None:
-        raise ValueError(f"'{name}' is not in the shapes table")
+        try:
+            a_ = shapes.angle(name)
+        except Exception:
+            raise ValueError(f"'{name}' is not in the shapes table")
+        from .. import anglebeam as _ab                       # a single angle: principal axes, the major axis taking the vertical bending as near as it can
+        g_ = _ab.geometry(a_, str(v.get("angle_vertical") or "long"), str(v.get("angle_toe") or "up"))
+        w_hat, z_hat, _ = _ab.principal_points(a_, g_)
+        return dict(A=a_["A"], Ix=a_["Iw"], Iy=a_["Iz"], J=max(a_.get("J") or 0.0, 1e-3), W=a_.get("W") or 0.0, E=29000.0, G=11200.0, wood=False,
+                    angle_n=(z_hat[0], z_hat[1]))
     return dict(A=sec["A"], Ix=sec["Ix"], Iy=sec["Iy"], J=max(sec.get("J") or 0.0, 1e-3), W=sec.get("W") or 0.0, E=29000.0, G=11200.0, wood=False)
 
 
@@ -4824,7 +4874,16 @@ def _model_frame_build(project, members, sway=False):
             nm = f"bm:{v['mark']}:{i}"
             mom_i = str(v.get("at_fix_i") or "").strip().lower().startswith("moment") or sup_x[0] > 1e-6       # an overhang tip is a free end, not a pin
             mom_j = str(v.get("at_fix_j") or "").strip().lower().startswith("moment") or Lm - sup_x[-1] > 1e-6
-            fr.member(nm, names[i], names[i + 1], sec["E"], sec["G"], sec["A"], sec["Ix"], sec["Iy"], sec["J"],
+            up_ = None
+            if sec.get("angle_n"):                              # single angle: local z across the major principal axis (the horizontal leg toward local y)
+                import numpy as _np
+                pa_, pb_ = _np.array(fr.nodes[names[i]]), _np.array(fr.nodes[names[i + 1]])
+                xd = (pb_ - pa_) / _np.linalg.norm(pb_ - pa_)
+                sy_ = _np.cross([0.0, 0.0, 1.0], xd)
+                if _np.linalg.norm(sy_) > 1e-9:
+                    sy_ = sy_ / _np.linalg.norm(sy_)
+                    up_ = tuple(sec["angle_n"][0] * sy_ + sec["angle_n"][1] * _np.cross(xd, sy_))
+            fr.member(nm, names[i], names[i + 1], sec["E"], sec["G"], sec["A"], sec["Ix"], sec["Iy"], sec["J"], up=up_,
                       release_i=("my", "mz") if (i == 0 and not mom_i) else (), release_j=("my", "mz") if (i == len(cl) - 2 and not mom_j) else ())
             beam_elems.setdefault(v["mark"], []).append(nm)
             for c, kind_, mag, x1, x2 in rows:

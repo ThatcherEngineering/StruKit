@@ -154,3 +154,67 @@ def test_axial_and_transverse_load_by_hand():
     proj = dict(name="T", number="1", address="", method="LRFD", date="2026-11-26", combos=[dict(expr="1.2D + 1.6L", source="ASCE/SEI 7-22 Sect. 2.3.1")])
     sc, _, _ = calc.build("angle_beam", v, proj)
     assert sc.angle_beam["ratio"] == pytest.approx(s.angle_beam["ratio"]) and any("axial" in x for x in sc.load_lines)
+
+
+def test_continuous_and_overhanging_angles_by_hand():
+    """Single angles over two spans and with an overhang (no published example; statics and the F10 / H2 steps by hand).
+    L4x4x1/4, two 6 ft spans, 1.2 (0.05) + 1.6 (0.15) = 0.30 kip/ft: support moment w L^2 / 8 = 1.35 kip-ft, largest shear 5 w L / 8 = 1.125 kips.
+    In each span M(x) = 3 w L x / 8 - w x^2 / 2: quarter points 0.3375, 0, -1.0125 kip-ft, so Cb = 12.5 (1.35) / (2.5 (1.35) + 3 (0.3375) + 0 +
+    3 (1.0125)) = 2.27, taken as 1.5 for the principal axis check (as on the simple span). The H2-1 value at the support equals the interaction of the
+    principal moments with the strengths at Lb = 6 ft, Cb = 1.5. Deflection, continuous restraint, live load arranged: one span loaded gives
+    0.0092 w L^4 / (E I) (AISC Manual Table 3-23, two equal spans, load on one span), more than both spans loaded (0.00541)."""
+    s = angle_beam_sheet("LB", "L4X4X1/4", 50, "A572 Gr. 50", 6, "", "up", "none", False, DL, [LR], "LRFD", spans=[6, 6])
+    d = s.angle_beam["detail"]
+    assert d["x"] == pytest.approx(6.0) and d["Mv"] == pytest.approx(-1.35, rel=1e-4) and d["Cb"] == pytest.approx(1.5)
+    r = {x.check: x for x in s.rows}
+    assert r["Shear, vertical leg"].demand == pytest.approx(1.125, rel=1e-3)
+    a = shapes.angle("L4X4X1/4"); g = ab.geometry(a, "", "up")
+    w_hat, z_hat, pts = ab.principal_points(a, g)
+    Bw, Bz = -1.35 * z_hat[1], -1.35 * w_hat[1]
+    st = ab.principal_strengths(a, g, 50, pts, Bw, Bz, 72.0, 1.5)
+    it = ab.interaction(pts, Bw, Bz, 0.9 * st["Mnw"] / 12, 0.9 * st["Mnz"] / 12)
+    assert s.angle_beam["ratio"] == pytest.approx(max(abs(v) for v in it.values()), rel=1e-4)
+    # unequal legs with reverse curvature in the span: the negative beta_w is used
+    u = angle_beam_sheet("LB", "L6X4X1/2", 36, "A36", 8, "long", "up", "none", False, DL, [LR], "LRFD", spans=[8, 8])
+    assert u.angle_beam["detail"]["st"]["beta_w"] < 0
+    # overhang of 3 ft past the right support of a 6 ft span, continuous restraint: live on the span only governs the positive moment:
+    # R left = (0.30 x 6 x 3 - 1.2 (0.05) x 3 x 1.5) / 6 = 0.855 kips, M max = 0.855^2 / (2 x 0.30) = 1.218 kip-ft (top flange, the toe, in compression)
+    o = angle_beam_sheet("LB", "L4X4X1/4", 50, "A572 Gr. 50", 6, "", "up", "continuous", False, DL, [LR], "LRFD", oh_right=3.0)
+    assert o.angle_beam["detail"]["M"] == pytest.approx(0.855 ** 2 / 0.6, rel=2e-3) and "arrangement" in o.angle_beam["worst"]
+    # deflection with continuous restraint, two equal spans, live on one span: 0.0092 w L^4 / (E Ix), w = 0.15 kip/ft
+    v = angle_beam_sheet("LB", "L4X4X1/4", 50, "A572 Gr. 50", 6, "", "up", "continuous", False, DL, [LR], "LRFD", spans=[6, 6],
+                         defl=[__import__("strukit.ws_steel_beam", fromlist=["DeflCheck"]).DeflCheck("live", {"L": 1.0}, 360, "IBC Table 1604.3")])
+    dl = {x.check: x for x in v.rows}["Deflection, live"]
+    assert dl.demand == pytest.approx(0.0092 * (0.15 / 12) * 72 ** 4 / (29000 * 3.0), rel=0.01) and dl.capacity == pytest.approx(72 / 360)
+    with pytest.raises(WorksheetError):
+        angle_beam_sheet("LB", "L4X4X1/4", 50, "A36", 6, "", "up", "midspan", False, DL, [LR], "LRFD", spans=[6, 6])
+
+
+def test_angle_in_the_3d_frame_and_on_the_steel_beam_screen():
+    """A single angle placed as a steel beam in the building model: in the 3D frame it bends about its principal axes. An L4x4x1/4 beam 6 ft
+    long, pinned to two W12x65 columns, 1 kip live at midspan: the vertical deflection of the angle (less the column shortening) is
+    P L^3 / (48 E) x (1 / Iw + 1 / Iz) / 2 = 1.572 x the geometric-axis value, with a sideways component of 0.949 x (AISC 360-22 Commentary
+    Sect. F10.2: about 1.56 and 0.94). The Steel Beam screen gives the Single-Angle Beam sheet for an angle."""
+    proj = dict(method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[dict(expr="D + L", source="t")], name="t", number="t", date="2026-11-26",
+                model=dict(levels=[dict(name="Base", elev="0"), dict(name="Roof", elev="10")], grids_x=[], grids_y=[]))
+    bm = dict(kind="steel_beam", values=dict(mark="LB", shape="L4X4X1/4", Fy="50", span="6", more_spans="", oh_left="", oh_right="", bracing="at points", brace_pts="",
+              self_weight="no", angle_vertical="", angle_toe="up", angle_source="ASTM A572 Gr. 50",
+              loads=[dict(case="L", kind="point", mag="1", x1="3", x2="", label="")], defl=[],
+              at_level="Roof", at_x1="0", at_y1="0", at_x2="6", at_y2="0"))
+    col = lambda mark, x: dict(kind="steel_column", values=dict(mark=mark, shape="W12X65", Fy="50", at_level="Roof", at_base="Base", at_x1=str(x), at_y1="0",
+                                                                 at_base_fix="fixed", self_weight="no", loads=[]))
+    ms = [bm, col("C1", 0), col("C2", 6)]
+    B = calc._model_frame_build(proj, ms, sway=True)                  # the sway model: joints not held sideways by a diaphragm
+    assert B["problems"] == []
+    fr = B["fr"]
+    for nd, (x, y, z) in fr.nodes.items():
+        if abs(x - 36.0) < 1e-6 and abs(z - 120.0) < 1e-6:
+            mid = nd
+    res = fr.solve({mid: (0, 0, -1.0, 0, 0, 0)}, [])
+    ends = [n for n, (x, y, z) in fr.nodes.items() if abs(z - 120.0) < 1e-6 and (abs(x) < 1e-6 or abs(x - 72.0) < 1e-6)]
+    dz = -res.disp[mid][2] + sum(res.disp[n][2] for n in ends) / 2
+    dy = abs(res.disp[mid][1] - sum(res.disp[n][1] for n in ends) / 2)
+    geo = 72.0 ** 3 / (48 * 29000 * 3.0)
+    assert dz / geo == pytest.approx(1.5 * (1 / 4.82 + 1 / 1.19), rel=0.01) and dy / geo == pytest.approx(1.5 * (1 / 1.19 - 1 / 4.82), rel=0.02)
+    s, kind, _ = calc.build("steel_beam", bm["values"], proj)
+    assert s.title == "Single-Angle Beam" and kind == "simple"

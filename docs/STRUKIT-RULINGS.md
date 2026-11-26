@@ -463,3 +463,10 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
   the seat moment R x 0.8 W, and the punching check of Manual Eq. 10-10 for the stiffener. To be confirmed against a published procedure.
 - Bolted stiffener angles: the outstanding leg against Table B4.1a Case 3 (0.45 (E / Fy)^0.5, single angles), not Case 1 (0.56, pairs of angles
   in continuous contact).
+
+## 2026-11-26 16:45, single angles over several spans (0.264.0), applied (not ruled)
+- Each support braces the angle; each span or overhang is one unbraced length; Cb on the principal axes not over 1.5 (as on the simple span).
+- Where the major-axis moment reverses within an unbraced length, the negative beta_w over all of it (Commentary F10.2).
+- Overhang deflection against 2 x the overhang / ratio (as the Steel Beam screen).
+- In the 3D frame the horizontal leg is taken toward the member's local y (the plan direction of the leg is not on the screen); the gravity run
+  holds every frame joint sideways (the level's diaphragm), so an angle's lateral deflection shows only in the sway run.

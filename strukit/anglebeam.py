@@ -170,8 +170,10 @@ def geometric_strength(a, g, Fy, restraint, Lb, Cb):
     return out
 
 
-def principal_strengths(a, g, Fy, pts, Bw, Bz, Lb, Cb):
-    """Mnw and Mnz (kip-in.) for moments with these signs: Bw > 0 compresses points with z > 0; Bz > 0 compresses points with w > 0."""
+def principal_strengths(a, g, Fy, pts, Bw, Bz, Lb, Cb, neg_beta=False):
+    """Mnw and Mnz (kip-in.) for moments with these signs: Bw > 0 compresses points with z > 0; Bz > 0 compresses points with w > 0.
+    neg_beta: the major-axis moment reverses within the unbraced segment; the negative beta_w is used for the whole segment (AISC 360-22
+    Commentary Sect. F10.2)."""
     t = g["t"]
     legs = {"A": g["bs"], "C": g["bl"]}
     Sw = {k: a["Iw"] / abs(p[1]) for k, p in pts.items() if p[1]}
@@ -181,7 +183,7 @@ def principal_strengths(a, g, Fy, pts, Bw, Bz, Lb, Cb):
     lw = [("yielding", 1.5 * Myw, "1.5 Fy Sw (Eq. F10-1)")]
     comp_w = [k for k in ("A", "C") if pts[k][1] and Bw * pts[k][1] > 0]
     bw = beta_w(g)
-    sign = 1.0 if ("A" in comp_w and "C" not in comp_w) else -1.0
+    sign = -1.0 if neg_beta else (1.0 if ("A" in comp_w and "C" not in comp_w) else -1.0)
     bw_s = sign * bw
     rz = a["rz"]
     Mcr = 9 * E * a["A"] * rz * t * Cb / (8 * Lb) * (math.sqrt(1 + (4.4 * bw_s * rz / (Lb * t)) ** 2) + 4.4 * bw_s * rz / (Lb * t))
