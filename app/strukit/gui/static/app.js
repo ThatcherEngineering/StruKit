@@ -678,7 +678,7 @@ function fillBar(m, changed) {
       let got;
       try { got = await post("/api/frame_beam_hss", { project: S.project, members: S.members, mark: pick.value, end: end.value }); } catch (e) { return toast(e.message, 12000); }
       if (!got.rows || !got.rows.length) return toast((got.messages || []).join("  ") || "The frame did not run.", 12000);
-      m.values.runs = got.rows.map(r => ({ name: r.name, M: r.M.toFixed(2), P: r.P.toFixed(2), Mc: r.Mc.toFixed(2) }));
+      m.values.runs = got.rows.map(r => ({ name: r.name, M: r.M.toFixed(2), P: r.P.toFixed(2), Mc: r.Mc.toFixed(2), Mc2: (r.Mc2 || 0).toFixed(2) }));
       m.values.loads_from = "forces at the " + end.value + " end of beam " + pick.value + " and at the top of column " + got.column + " in the 3D frame analysis, second-order analysis";
       m.values.face = got.face;
       if (!m.values.beam) { const b = bms.find(x => x.values.mark === pick.value); if (b) m.values.beam = b.values.shape; }
@@ -1044,6 +1044,7 @@ function modelCard(changed) {
     ["col_shape", "Column section"], ["col_Fy", "Column Fy, ksi"], ["raf_shape", "Rafter section"], ["raf_Fy", "Rafter Fy, ksi"], ["D", "Roof dead load, psf"], ["S", "Roof snow load, psf"], ["Lr", "Roof live load, psf"],
     ["eave_shape", "Eave beam section along the building, moment-connected (optional)"], ["eave_Fy", "Eave beam Fy, ksi"], ["eave_bays", "Portal bays with eave beams (bay numbers, or all)"],
     ["strut_shape", "Eave strut section in the other bays, pinned (optional)"], ["strut_Fy", "Eave strut Fy, ksi"],
+    ["eave_trib", "Roof width on each eave beam or strut, ft (blank = none)"],
     ["prefix", "Mark prefix (optional)"]];
   const bentBtn = el("button", { class: "btn", onclick: async () => {
     let out;

@@ -4446,6 +4446,7 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
     onH = str(face or "B").strip().upper().startswith("H")
     B, H = (col["Ht"], col["B"]) if onH else (col["B"], col["Ht"])          # B: width of the connecting face; H: depth of the side walls
     S = col["Sy"] if onH else col["Sx"]                                     # the column bends in the plane of the beam
+    S2 = col["Sx"] if onH else col["Sy"]                                    # and about its other axis (a beam framing in the other direction)
     t, A = col["tdes"], col["A"]
     flat = B - 4.5 * col["tnom"]                                            # workable flat: corner radius 2.25 x the nominal thickness
     dd = bm["d"]
@@ -4466,9 +4467,10 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
     fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
     beta = Bb / B
     Fc = col_Fy if lrfd else 0.6 * col_Fy
-    src = [(r_["name"], abs(r_["M"]) * 12.0, abs(r_.get("P") or 0.0), abs(r_.get("Mc") or 0.0) * 12.0) for r_ in runs] if runs else \
+    src = [(r_["name"], abs(r_["M"]) * 12.0, abs(r_.get("P") or 0.0), abs(r_.get("Mc") or 0.0) * 12.0, abs(r_.get("Mc2") or 0.0) * 12.0) for r_ in runs] if runs else \
         [(cb.name, abs(sum(cb.factors.get(ld["case"], 0.0) * ld["M"] for ld in loads)) * 12.0, abs(sum(cb.factors.get(ld["case"], 0.0) * (ld.get("P") or 0.0) for ld in loads)),
-          abs(sum(cb.factors.get(ld["case"], 0.0) * (ld.get("Mc") or 0.0) for ld in loads)) * 12.0) for cb in combos]
+          abs(sum(cb.factors.get(ld["case"], 0.0) * (ld.get("Mc") or 0.0) for ld in loads)) * 12.0,
+          abs(sum(cb.factors.get(ld["case"], 0.0) * (ld.get("Mc2") or 0.0) for ld in loads)) * 12.0) for cb in combos]
     Be = min((10.0 / (B / t)) * (col_Fy * t / (Fyb * tb)) * Bb, Bb)
     R_fl = av(Fyb * Be * tb, 0.95, 1.58)
     R_sw = av(2 * col_Fy * t * (5 * 1.5 * t + tb), 1.00, 1.50)
@@ -4478,14 +4480,14 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
     R_ps = av(0.6 * col_Fy * t * (2 * ceff + 2 * tb), 1.00, 1.50)
     cr = 1.6 * t ** 2 * (1 + 3 * tb / H) * math.sqrt(E * col_Fy)                                                   # Eq. 2-19 before Qf
     cases = []
-    for name_, M, P, Mc in src:
-        U = P / (Fc * A) + Mc / (Fc * S)
+    for name_, M, P, Mc, Mc2 in src:
+        U = P / (Fc * A) + Mc / (Fc * S) + Mc2 / (Fc * S2)                 # Eq. K1-6, with the column moment about its other axis added
         if U > 1.0 + 1e-9:
             raise WorksheetError(f"{mark}: in '{name_}' the column itself is used past its strength at the joint (P / Fc A + M / Fc S = {U:.2f}); the connection cannot be checked")
         Qf = min(1.0, max(0.4, 1.3 - 0.4 * U / beta))               # AISC 360-22 Eq. K1-4: 0.4 <= Qf <= 1.0
         Ff = M / arm
         cap = dict(fl=R_fl, sw=R_sw, yl=av(yl * Qf, 1.00, 1.50), ps=R_ps, cr=av(cr * Qf, 0.75, 2.00))
-        cases.append(dict(name=name_, M=M, P=P, Mc=Mc, U=U, Qf=Qf, Ff=Ff, cap=cap, ratio={k: Ff / v for k, v in cap.items()}))
+        cases.append(dict(name=name_, M=M, P=P, Mc=Mc, Mc2=Mc2, U=U, Qf=Qf, Ff=Ff, cap=cap, ratio={k: Ff / v for k, v in cap.items()}))
     gov = {k: max(cases, key=lambda c_: c_["ratio"][k]) for k in ("fl", "sw", "yl", "ps", "cr")}
     g0 = gov["yl"]
     low = min(g0["cap"].values())
@@ -4495,7 +4497,9 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
              Ln("Effective width of the " + what + ", Be", Be, "in", "AISC 360-22 Eq. K1-1", f"(10 / (B / t)) (Fy t / (Fyb tb)) Bb, not over Bb = {Bb:g} in.; B / t = {B / t:.3g}"),
              Ln("Local yielding of the " + what, R_fl, "kip", "AISC 360-22 Eq. J4-1 on Be x tb", f"Fyb = {Fyb:g} ksi, tb = {tb:g} in.; " + fac(0.95, 1.58)),
              Ln("Local yielding of the HSS side walls", R_sw, "kip", "AISC 360-22 Eq. J10-2, two walls", f"2 Fy t (5 k + lb), k = 1.5 t, lb = tb; " + fac(1.00, 1.50)),
-             Ln("Column utilization at the joint, U", g0["U"], "", "AISC 360-22 Eq. K1-6", f"P / (Fc A) + M / (Fc S); P = {g0['P']:.1f} kip, M = {g0['Mc'] / 12:.1f} kip-ft, Fc = {Fc:g} ksi, A = {A:g} in2, S = {S:g} in3"),
+             Ln("Column utilization at the joint, U", g0["U"], "", "AISC 360-22 Eq. K1-6", f"P / (Fc A) + M / (Fc S)" + (" + M2 / (Fc S2)" if any(c_["Mc2"] for c_ in cases) else "")
+                + f"; P = {g0['P']:.1f} kip, M = {g0['Mc'] / 12:.1f} kip-ft" + (f", M2 = {g0['Mc2'] / 12:.1f} kip-ft about the other axis, S2 = {S2:g} in3" if any(c_["Mc2"] for c_ in cases) else "")
+                + f", Fc = {Fc:g} ksi, A = {A:g} in2, S = {S:g} in3"),
              Ln("Chord-stress factor, Qf", g0["Qf"], "", "AISC 360-22 Eq. K1-4", f"1.3 - 0.4 U / beta, not under 0.4 and not over 1.0; beta = Bb / B = {beta:.3g}"),
              Ln("Plastification of the connecting face", g0["cap"]["yl"], "kip", "AISC Manual (16th Ed.) Eq. 9-44", f"a = b = (B - Bb) / 2 = {a_:.3g} in., l = tb, w = B; times Qf; " + fac(1.00, 1.50)),
              Ln("Effective punching width, ceff", ceff, "in", "AISC 360-22 Eq. K1-2", f"(10 / (B / t)) Bb, not over Bb"),
@@ -4588,7 +4592,8 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
                                      f"gage {plate['g']:g} in., spacing {plate['s']:g} in.; plate end to last bolt {plate['lev_p']:g} in., beam end to first bolt "
                                      f"{plate['lev_b']:g} in., column face to first bolt {plate['a1']:g} in.; plate Fu = {plate['Fu']:g} ksi, beam Fu = {plate['beam_Fu']:g} ksi"))
     if runs:
-        load_lines = [f"M = {abs(r_['M']):>7.2f} kip-ft   column P = {abs(r_.get('P') or 0):>7.2f} kip, M = {abs(r_.get('Mc') or 0):>6.2f} kip-ft   {r_['name']}" for r_ in runs]
+        load_lines = [f"M = {abs(r_['M']):>7.2f} kip-ft   column P = {abs(r_.get('P') or 0):>7.2f} kip, M = {abs(r_.get('Mc') or 0):>6.2f} kip-ft"
+                      + (f", other axis {abs(r_.get('Mc2') or 0):.2f} kip-ft" if r_.get("Mc2") else "") + f"   {r_['name']}" for r_ in runs]
         combo_lines = [(f"Combined loads at the {method} level" + (f": {runs_from.strip()}" if (runs_from or "").strip() else ""), "")]
     else:
         load_lines = [f"{x_['case']:<3} M = {x_['M']:>7.2f} kip-ft   column P = {(x_.get('P') or 0):>7.2f} kip, M = {(x_.get('Mc') or 0):>6.2f} kip-ft" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
@@ -4597,7 +4602,8 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
                         "Calculation", steps, rows,
                         ["The moment is taken by a force couple in the " + ("flange plates" if plate else "beam flanges") + "; the shear is taken by a separate web connection.",
                          "Each flange force acts on the HSS face as a transverse plate. The " + what + " is welded to the flat of the face with a weld that develops it.",
-                         "The chord-stress factor Qf is applied for every combination, with the column axial load and moment at the joint as entered.",
+                         "The chord-stress factor Qf is applied for every combination, with the column axial load and moments at the joint as entered; a column moment about the "
+                         "other axis (a beam framing into the joint in the other direction) is added to the utilization U.",
                          "HSS wall local crippling is taken for one wall (AISC Design Guide 24 Example 6.3)."],
                         ([] if ((fp and fp.get("R_w")) or (fw and fw.get("R_hss_w"))) else ["the weld of the " + what + " to the HSS face"])
                         + ["the web (shear) connection", "panel shear in the HSS side walls where the moments on opposite faces do not balance"]
