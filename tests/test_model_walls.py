@@ -118,6 +118,16 @@ def test_wall_weight_reaches_the_footing_line():
     w = next(m for m in ms if m["values"].get("mark") == "Line 1, lower level")["values"]
     w["at_wall_psf_source"] = ""
     assert "source" in calc._wall_weight(d["project"], w)
+    # openings deducted when picked: a 3 x 4 ft window and a 3 x 6.8 ft door take 10 psf x 32.4 sq ft off the wall
+    w["at_wall_psf_source"] = "test value"
+    W0, _ = calc._wall_weight(d["project"], w)
+    w.update(at_openings="2 3 3 4; 8 3 0 6.8", at_wall_deduct="yes")
+    W1, note = calc._wall_weight(d["project"], w)
+    assert W0 - W1 == pytest.approx(10 * (12 + 20.4)) and "less 32.4 sq ft of 2 openings" in note
+    w["at_wall_deduct"] = "no"
+    assert calc._wall_weight(d["project"], w)[0] == pytest.approx(W0)
+    w.update(at_wall_deduct="yes", at_openings="2 3 x 4")
+    assert "cannot be read" in calc._wall_weight(d["project"], w)
 
 
 def test_point_loads_on_footing_lines_get_pads():

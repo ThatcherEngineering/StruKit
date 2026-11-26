@@ -288,4 +288,6 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - Eq. 17.11.2.2.1a: n = the rods in tension under that combination; Nsa = Ase futa per rod, futa not over 1.9 fya or 125 ksi (fya from the
   rod grade when given, otherwise Fu is used uncapped by 1.9 fya; for F1554 grades the cap does not bind).
 - Shear across a single plate lug is not carried by the lug (refused, not checked as a resultant).
+- (0.238.0, applied) Deducting openings from the wall weight is the engineer's choice per wall (default: not deducted); when deducted, the
+  window and door weight is not added back.
 
