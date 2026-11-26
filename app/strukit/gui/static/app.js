@@ -755,7 +755,8 @@ function placementCard(m, changed) {
   if (TD_BEAMS.includes(m.kind)) fs.push({ key: "at_dz1", label: "Left end above the level (sloped member)", unit: "ft", type: "text", required: false, help: "blank = at the level, or following the sloped beam it sits on" },
     { key: "at_dz2", label: "Right end above the level", unit: "ft", type: "text", required: false });
   if (TD_BEAMS.includes(m.kind)) fs.push({ key: "at_row", label: "Joists or rafters: the row runs on, to its left or right, for", unit: "ft", type: "text", required: false,
-    help: "for a member with a spacing; + to the right of its line looking from the left end to the right end, - to the left; blank = the row covers the whole beam it lands on" });
+    help: "for a member with a spacing; + to the right of its line looking from the left end to the right end, - to the left; blank = the row covers the whole beam it lands on. " +
+      "A beam placed in a wall line at the wall's top level is a header: it takes what bears on the wall over its length, and its ends go down to what is under the wall." });
   if (m.kind === "steel_beam") fs.push({ key: "at_fix_i", label: "Left end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false, help: "blank = pinned (shear connection)" },
     { key: "at_fix_j", label: "Right end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false });
   if (m.kind === "steel_column" || m.kind === "hss_column") fs.push({ key: "at_base_fix", label: "Base (3D frame)", type: "select", options: ["pinned", "fixed", "fixed for sway in X only", "fixed for sway in Y only"], required: false, help: "blank = pinned" },
