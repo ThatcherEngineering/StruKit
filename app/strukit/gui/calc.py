@@ -174,13 +174,19 @@ FORMS = {
                 F("bp_Fy", "Base plate Fy", unit="ksi"),
                 F("s_rod", "Anchor rod square, side", unit="in", help="four rods, the lug centred between them"), F("rod_d", "Anchor rod diameter", unit="in"),
                 F("rod_Fu", "Anchor rod Fu", unit="ksi"), F("rod_source", "Where the rod Fu comes from", "text", help="for example: ASTM F1554 Grade 36"),
-                F("hef_rod", "Anchor rod embedment", unit="in", required=False),
+                F("hef_rod", "Anchor rod embedment", unit="in", required=False,
+                  help="to the head; given, the rods are also checked in tension in the concrete (ACI 318-19 17.6), the boxes at the end"),
                 F("fc", "Concrete f'c", unit="psi"), F("A2A1", "Concrete bearing area ratio A2 / A1 (1 to 4)"),
                 F("ca1", "Lug face to the concrete edge, in the direction of the shear", unit="in"),
                 F("ca2", "Lug side to the side edges of the concrete", unit="in"), F("ha", "Concrete member depth", unit="in"),
                 F("psi_c", "Concrete cracking (psi_c,V)", "select", options=["cracked, no supplementary reinforcement (1.0)", "cracked, No. 4 or larger edge bar (1.2)",
                                                                           "cracked, edge bar and stirrups at 4 in. or less (1.4)", "uncracked at service loads (1.4)"],
-                  help="ACI 318-19 17.7.2.5.1")],
+                  help="ACI 318-19 17.7.2.5.1"),
+                F("rod_back", "Anchorage: rods to the concrete edge behind (opposite the shear)", unit="in", required=False,
+                  help="blank = 1.5 hef or more"),
+                F("anc_grade", "Anchorage: rod grade (for Fy and ductility)", "select", required=False,
+                  options=["F1554 Gr. 36", "F1554 Gr. 55", "F1554 Gr. 105", "other"])]
+               + [f for f in GRID_ANCHORAGE_FIELDS if f["key"] in ("anc_F", "anc_abrg", "anc_tpi", "anc_fy", "anc_ductile", "anc_supp", "anc_sdc")],
         tables=[T("loads", "Base shear and axial load", [CASE, F("V", "Shear", unit="kip"), F("P", "Axial compression (+)", unit="kip", required=False),
                                                          F("label", "Note", "text", required=False)])]),
     "crane_runway": dict(
@@ -1521,7 +1527,7 @@ def yes(v):
 
 
 # ------------------------------------------------------------------ base plates linked to their footing
-PLATE_KINDS = ("base_plate", "base_plate_uplift", "base_plate_biaxial", "base_plate_moment")
+PLATE_KINDS = ("base_plate", "base_plate_uplift", "base_plate_biaxial", "base_plate_moment", "shear_lug")
 PLATE_FOOTINGS = ("footing_iso", "footing_moment")
 
 
@@ -1562,9 +1568,23 @@ def _plate_on_footing(kind, pv, foot):
             v.update(area_ratio=f"{min(4.0, min(sN / N_, sB / B_) ** 2):.4g}")
     if kind == "base_plate_uplift":
         v.update(anc_fc=f"{fc:g}", anc_h=f"{h:g}", anc_supN=f"{sN:g}", anc_supB=f"{sB:g}")
+    if kind == "shear_lug":
+        N_, B_ = _fnum(pv.get("N")), _fnum(pv.get("B"))
+        tsl, bsl, s_ = _fnum(pv.get("tsl")), _fnum(pv.get("bsl")), _fnum(pv.get("s_rod"))
+        v.update(fc=f"{fc:g}", ha=f"{h:g}")
+        if N_ and B_:
+            v.update(A2A1=f"{max(1.0, min(4.0, min(sN / N_, sB / B_) ** 2)):.4g}")
+        if tsl:
+            v.update(ca1=f"{sN / 2 - tsl / 2:g}")
+        if bsl:
+            v.update(ca2=f"{sB / 2 - bsl / 2:g}")
+        if s_:
+            v.update(rod_back=f"{sN / 2 - s_ / 2:g}")
     along = ("width B" if o == "x" else "length L") if fk == "footing_iso" else ("width B" if o == "x" else "length L")
     note = (f"Concrete under the plate: footing {fm}, {B:g} ft x {L:g} ft, {h:g} in. thick, f'c {fc:g} psi; the plate is centred on the footing "
             f"with its length N along the footing {along}.")
+    if kind == "shear_lug":
+        note = note.replace("the plate is centred", "the plate and lug are centred").replace("its length N", "the shear along N")
     if kind == "base_plate_biaxial" and N_ and B_:
         note += f" A2/A1 = {min(4.0, min(sN / N_, sB / B_) ** 2):.3g} (the largest area of the footing similar to and concentric with the plate, AISC 360-22 J8)."
     return v, note, []
@@ -1590,7 +1610,8 @@ def link_foundations(members):
             nv["_link_miss"] = miss
         else:
             nv["_link_note"] = note
-            on.setdefault(fm, []).append((m, nv))
+            if m["kind"] != "shear_lug":                # the lug sits under a base plate on the same footing; the plate sizes the footing's plate boxes
+                on.setdefault(fm, []).append((m, nv))
         out.append(dict(m, values=nv))
     for i, m in enumerate(out):
         fm = (m.get("values") or {}).get("mark", "").strip()
@@ -1816,8 +1837,16 @@ def _build(kind, values, project):
         args = (n_("bsl"), n_("tsl"), n_("hsl"), n_("t_grout"), n_("lug_Fy"), n_("lug_Fu"), r.text("lug_source"), n_("weld"), n_("FEXX"), n_("N"), n_("B"), n_("tbp"),
                 n_("bp_Fy"), n_("s_rod"), n_("rod_d"), n_("rod_Fu"), r.text("rod_source"), n_("hef_rod", False), (n_("fc") or 0) / 1000.0, n_("A2A1"), n_("ca1"), n_("ca2"),
                 n_("ha"), psi)
+        anc = None
+        from .. import anchor_rods as _ar
+        if args[17]:                                   # rod embedment given: the rods in tension in the concrete too (ACI 318-19 17.6)
+            ra = Reader(dict(fields=FORMS["shear_lug"]["fields"] + [f for f in GRID_ANCHORAGE_FIELDS if f["key"] not in [g["key"] for g in FORMS["shear_lug"]["fields"]]], tables=[]),
+                        dict(values, anc_hef=values.get("hef_rod"), anc_h=values.get("ha"), anc_fc=values.get("fc"), anc_supN="", anc_supB="",
+                             anc_cracked="uncracked" if pc.startswith("uncracked") else "cracked"))
+            anc, _ = _read_grid_anchorage(ra, args[14], _ar.grade(r.text("anc_grade", False) or ""))
+            r.miss += ra.miss
         r.done()
-        return ws_more.shear_lug_sheet(mark, *args, loads, cb, cbl, m), "simple", {}
+        return ws_more.shear_lug_sheet(mark, *args, loads, cb, cbl, m, anchorage=anc, rod_back=r.num("rod_back", False)), "simple", {}
     if kind == "crane_runway":
         cb, m = combos(project, r.miss), method(project, r.miss)
         args = (r.text("beam"), r.num("Fy"), r.text("beam_source"), r.num("span"), r.num("rail", False) or 0.0, r.text("rail_note", False) or "",
