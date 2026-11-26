@@ -456,3 +456,10 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
   girder are checked as end panels without tension field action (Sect. G2.1).
 - Unequal flanges: Mpf from the smaller flange (the Commentary's approach to G2.3(b)).
 - The tension flange stress check of G2.3 uses the smaller of Sx top and bottom and the largest moment within a of the support.
+
+## 2026-11-26 15:45, stiffened seats (0.263.0), applied (not ruled)
+- Stiffened seat on an HSS face: DG24 2nd Ed. Sect. 5.1.2 asks for a yield line mechanism with the HSS wall pinned at its edges (Abolitz and
+  Warner, 1965) but prints no equation; StruKit uses DG24 Eq. 2-6 (the longitudinal plate in in-plane bending yield line, Manual Eq. 9-46) with
+  the seat moment R x 0.8 W, and the punching check of Manual Eq. 10-10 for the stiffener. To be confirmed against a published procedure.
+- Bolted stiffener angles: the outstanding leg against Table B4.1a Case 3 (0.45 (E / Fy)^0.5, single angles), not Case 1 (0.56, pairs of angles
+  in continuous contact).

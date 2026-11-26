@@ -68,3 +68,53 @@ def test_column_web_limits_and_top_angle(tmp_path):
     assert not ws_more.stiffened_seat_sheet(*a, top=dict(t=0.1875, leg=4, attach="welded along the toes only")).ok
     from strukit import calcsheet
     calcsheet.simple_pdf(s, str(tmp_path / "ss.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")
+
+
+def test_stiffened_seat_on_an_hss_face_by_hand(tmp_path):
+    """The Example II.A-14 seat (W21x68, PL 5/8 x 7 x 15 stiffener, 5/16 fillets) welded to the face of an HSS12x12x5/8 (t design 0.581 in.,
+    Fy 50, Fu 62 ksi), AISC Design Guide 24 (2nd Ed.) Sect. 5.2.6; no published example, checked by hand. LRFD R = 1.2 (21) + 1.6 (62.5) =
+    125.2 kips at 0.8 W = 5.6 in.: Mr = 701.1 kip-in.
+      Face plastification, DG24 Eq. 2-6 (Manual Eq. 9-46): beta = 0.625 / 12 = 0.0521, eta = 15 / 12 = 1.25;
+      50 (0.581)^2 (15) [1 / 2.5 + 2 / (1 - 0.0521)^0.5 + 1.25 / (1 - 0.0521)] = 253.2 x 3.7729 = 955.2 kip-in. (Qf = 1 with no column load).
+      With 200 kips in the column: U = 200 / (50 x 25.7) = 0.156; Qf = 1 - 0.3 U (1 + U) = 0.946 (Eq. K1-3, longitudinal plate).
+      Punching, Manual Eq. 10-10a: 0.75 (62)(0.581)(15)^2 / 5 = 1,215.8 kip-in."""
+    from strukit import shapes
+    col = shapes.hss("HSS12X12X5/8")
+    hss = dict(shape="HSS12X12X5/8", face="B", Fy=50, Fu=62, Fy_source="ASTM A500 Gr. C", P=0.0, M=0.0, source="t")
+    s = ws_more.stiffened_seat_sheet("SS1", "W21X68", 50, "ASTM A992", 7, 15, 0.625, 50, "ASTM A572 Gr. 50", 0.375, 0.3125, 70, "HSS12X12X5/8 face",
+                                     col["tdes"], 62, LOADS, COMB["LRFD"], "LRFD", hss=hss)
+    h = s.conn["hss"]
+    t = col["tdes"]
+    assert t == pytest.approx(0.581)
+    assert h["Mr"] == pytest.approx(125.2 * 5.6) and h["Qf"] == 1.0
+    assert h["Mn"] == pytest.approx(50 * t ** 2 * 15 * (1 / 2.5 + 2 / (1 - 0.625 / 12) ** 0.5 + 1.25 / (1 - 0.625 / 12)), rel=1e-9)
+    assert h["Mn"] == pytest.approx(955.2, abs=0.5) and h["punch"] == pytest.approx(1215.8, abs=0.5)
+    r = {x.check: x for x in s.rows}
+    assert r["HSS face plastification under the stiffener"].demand == pytest.approx(701.1, abs=0.1)
+    s2 = ws_more.stiffened_seat_sheet("SS1", "W21X68", 50, "ASTM A992", 7, 15, 0.625, 50, "ASTM A572 Gr. 50", 0.375, 0.3125, 70, "HSS12X12X5/8 face",
+                                      t, 62, LOADS, COMB["LRFD"], "LRFD", hss=dict(hss, P=200.0))
+    U = 200 / (50 * col["A"])
+    assert s2.conn["hss"]["U"] == pytest.approx(U) and s2.conn["hss"]["Qf"] == pytest.approx(1 - 0.3 * U * (1 + U))
+    with pytest.raises(Exception):                                    # bolted angles on an HSS face are not covered
+        ws_more.stiffened_seat_sheet("SS1", "W21X68", 50, "a", 7, 15, 0.625, 50, "s", 0.375, 0.0, 70, "h", t, 62, LOADS, COMB["LRFD"], "LRFD",
+                                     bolted=dict(d=0.75, group="A325", threads="N", n=3, s=3, lev=1.5, Fu=58), hss=hss)
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="SS2", beam="W21X68", beam_Fy="50", beam_source="ASTM A992", W="7", L="15", ts="0.625", stiff_Fy="50", stiff_source="ASTM A572 Gr. 50",
+             tseat="0.375", weld="0.3125", FEXX="70", support="", t_sup="", Fu_sup="", hss_col="HSS12X12X5/8", hss_Fy="50", hss_Fu="62",
+             hss_Fy_source="ASTM A500 Gr. C", hss_P="0", hss_M="0", hss_source="column takedown", top_t="0.25", top_leg="4", top_attach="welded along the toes only",
+             loads=[dict(case="D", P="21", label=""), dict(case="L", P="62.5", label="")])
+    sc = calc.build("stiffened_seat", v, dict(job="t", name="t", method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[]))[0]
+    assert sc.conn["hss"]["Mn"] == pytest.approx(h["Mn"]) and sc.conn["tmin"] == pytest.approx(3.09 * 5 / 62, rel=1e-6)
+    calcsheet.simple_pdf(sc, str(tmp_path / "ss_hss.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")
+
+
+def test_bolted_angle_leg_width_to_thickness():
+    """All-bolted stiffened seat: the outstanding angle leg W / t against 0.45 (E / Fy)^0.5 (Table B4.1a Case 3): 5 / 0.375 = 13.3 against
+    0.45 (29,000 / 36)^0.5 = 12.8, flagged; 4 / 0.375 = 10.7 passes."""
+    bo = dict(d=0.75, group="A325", threads="N", n=3, s=3, lev=1.5, Fu=58)
+    for W, ok in ((5.0, False), (4.0, True)):
+        s = ws_more.stiffened_seat_sheet("SS1", "W21X68", 50, "a", W, 15, 0.375, 36, "s", 0.375, 0.0, 70, "W14X90 flange", 0.71, 65,
+                                         [dict(case="D", P=2.0), dict(case="L", P=4.0)], COMB["LRFD"], "LRFD", bolted=bo)
+        r = {x.check: x for x in s.rows}["Stiffener angle outstanding leg, W / t"]
+        assert r.demand == pytest.approx(W / 0.375) and r.capacity == pytest.approx(0.45 * (29000 / 36) ** 0.5) and (r.status != "FLAG") == ok

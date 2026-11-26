@@ -3382,7 +3382,21 @@ def _stiffened_seat_picture(c, top, d):
     ylo, yhi = ys - tp * sc - L * sc - 14, ys + dd * sc + 14
     tsup = d.get("t_sup") or 0.5
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    if sup and not sup["web"]:                       # W column seen from the side, its flange at the face
+    hssc = sup if (sup and sup.get("kind") == "hss") else None
+    if hssc:                                         # HSS column cut lengthwise through the seat: both walls hatched (the far one broken off if wide)
+        full = hssc["H"] * sc
+        colw = min(full, 90.0)
+        if colw >= full - 1e-6:
+            memberart.hss_cut_side(c, xf - colw, ylo, colw, yhi - ylo, hssc["t"] * sc)
+        else:
+            tw_ = max(hssc["t"] * sc, 1.2)
+            c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.setFillColorRGB(0.93, 0.94, 0.96)
+            c.rect(xf - colw, ylo, colw, yhi - ylo, fill=1, stroke=0)
+            c.setFillColorRGB(*memberart.STEEL_CUT); c.rect(xf - tw_, ylo, tw_, yhi - ylo, fill=1, stroke=1); memberart._hatch_rect(c, xf - tw_, ylo, tw_, yhi - ylo)
+            _break_v(c, xf - colw, ylo, yhi)
+        _break_h(c, xf - colw, xf, ylo); _break_h(c, xf - colw, xf, yhi)
+        sup = None
+    elif sup and not sup["web"]:                       # W column seen from the side, its flange at the face
         colw = min(sup["d"] * sc, 90.0)
         memberart.w_side(c, xf - colw, ylo, colw, yhi - ylo, sup["tf"] * sc)
         _break_h(c, xf - colw, xf, ylo); _break_h(c, xf - colw, xf, yhi)
@@ -3464,7 +3478,28 @@ def _stiffened_seat_picture(c, top, d):
     yl = ystf - 30
     _small(c, xf - 20, yl, "section at the beam centreline, to scale; beam set back 1/2 in.")
     low = yl - 6
-    # plan section, cut above the seat plate, where the support is a W shape
+    # plan section, cut above the seat plate, where the support is a W shape or an HSS
+    if hssc:
+        s2 = min(6.0, 150.0 / (max(hssc["H"], hssc["B"]) + W + 6))
+        xq = RM - 30 - (W + 6) * s2
+        cq = ys - tp * sc - 30
+        memberart.hss_plan(c, xq - hssc["H"] * s2 / 2, cq, hssc["H"] * s2, hssc["B"] * s2, hssc["t"] * s2)
+        bw_ = min(d.get("bbf") or 7.0, hssc["B"] - 1.0)
+        c.setFillColorRGB(0.90, 0.92, 0.95); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+        c.rect(xq, cq - bw_ / 2 * s2, (W + 0.5) * s2, bw_ * s2, fill=1, stroke=1)
+        c.setDash(2, 1.5); c.rect(xq, cq - ts * s2 / 2, W * s2, ts * s2, fill=0, stroke=1); c.setDash()
+        xb2 = xq + 0.5 * s2
+        c.setFillColorRGB(*memberart.STEEL_CUT)
+        c.rect(xb2, cq - max(d.get("tw", 0.4) * s2, 1.2) / 2, (W + 5) * s2, max(d.get("tw", 0.4) * s2, 1.2), fill=1, stroke=1)
+        _break_v(c, xb2 + (W + 5) * s2, cq - bw_ / 2 * s2 - 2, cq + bw_ / 2 * s2 + 2)
+        c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*INK)
+        xBp = xq + max(W / 2, 2.625) * s2
+        for sg in (1, -1):
+            c.circle(xBp, cq + sg * min(1.75, bw_ / 2 - 1.0) * s2, max(1.6, 0.4 * s2), fill=1, stroke=1)
+        hb = hssc["B"] * s2 / 2
+        memberart._dim_v(c, cq - hb, cq + hb, xq - hssc["H"] * s2 - 10, f"{hssc['B']:g} in face", FR, ext_from=xq - hssc["H"] * s2)
+        _small(c, xq - hssc["H"] * s2 * 0.5 + 10, cq - hb - 14, "plan, cut above the seat, to scale")
+        low = min(low, cq - hb - 20)
     if sup:
         s2 = min(6.0, 150.0 / (max(sup["d"], sup["bf"]) + W + 6))
         xq = RM - 30 - (W + 6) * s2                   # face of the support in plan

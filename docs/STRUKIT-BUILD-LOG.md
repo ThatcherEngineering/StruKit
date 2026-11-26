@@ -1024,3 +1024,16 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation: by hand** (no published example of G2.3 or of these bearing checks is on file): G2.3 on the G.8A girder (Cv2 0.635, de 0.297
   in., Mpf 454, Mpst 103 kip-in., beta_v 1.0, Vn 280.5 kips), the two-span girder (reactions 375 / 127.5 kips with patterned live load, panel
   shear 161.25 kips), point loads (242.2 / 164.4 / 582.4 kips) (`tests/test_builtup.py`).
+
+## 2026-11-26 15:45 MST — 0.263.0 stiffened seats: on an HSS column face; bolted angle leg width-to-thickness (Next 3, done)
+- **Stiffened Seated Connection screen, "Support is the face of an HSS column"** (column, face, Fy, Fu and source, column axial load and moment
+  at the joint with their source): a welded plate stiffener on one face of a square or rectangular HSS, as AISC Design Guide 24 (2nd Ed.)
+  Sect. 5.2.6 describes. The support thickness and Fu are the column's (design thickness), so the Manual Eq. 9-6 base metal check of the
+  welds applies to the HSS wall. Added limit states (DG24 Sect. 5.1): face plastification under the stiffener as a longitudinal plate in
+  in-plane bending, Mn = Fy t^2 L [1 / (2 eta) + 2 / (1 - beta)^0.5 + eta / (1 - beta)] Qf (DG24 Eq. 2-6, Manual Eq. 9-46), against R x 0.8 W,
+  with Qf for a longitudinal plate (Spec Eq. K1-3); wall shear yielding (punching), Manual Eq. 10-10 (Fu t L^2 / 5); the stiffener on the flat
+  of the face. Bolted angles, seats on both faces and round HSS are refused. The picture draws the HSS cut lengthwise (walls hatched) and in plan.
+- **All-bolted stiffened seats:** the outstanding angle leg W / t is checked against 0.45 (E / Fy)^0.5 (Table B4.1a Case 3).
+- **Validation: by hand** (no published example of a stiffened seat on an HSS is on file; DG24 2nd Ed. gives the method in words only):
+  Mn 955.2 kip-in., punching 1,215.8 kip-in., Qf with 200 kips in the column, the screen and the sheet (`tests/test_stiffened_seat.py`).
+  The rest of the seat stays validated by Example II.A-14 and Table 10-7.
