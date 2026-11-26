@@ -963,3 +963,15 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - The enlarged plan of the region around a diaphragm opening goes schematic (lengths dimensioned, "not to scale" in the caption) when a zone
   would be too narrow to label at scale (a short cantilever, small extensions); the zone shears and dimensions no longer collide.
 - Sample sheets sent to Zach (his standing request, 11:10: send the PDFs of what was built after each build).
+
+## 2026-11-26 11:40 MST — 0.258.0 single-angle beam deflection (Next 2, part)
+- **Single-Angle Beam screen, "Deflection limits" table** (name, service loads such as L or D + L, span /, source), as on the Steel Beam
+  screen. With continuous lateral-torsional restraint: vertical deflection about the geometric axis (Ix of the vertical bending axis). Otherwise
+  the loads (down and sideways) are resolved on the principal axes, each component bends the angle about the other principal axis (Iw, Iz from
+  the Shapes Database), and the displacement is the vector sum; the sheet prints the down and sideways components at the station of the largest
+  resultant, and the check row compares the resultant with span / ratio (`anglebeam.deflection`).
+- **Validation: AISC 360-22 Commentary Sect. F10.2 (Figure C-F10.2):** an unrestrained equal-leg angle deflects 1.56 times the geometric-axis
+  value vertically and 0.94 times sideways (1.82 total). L4x4x1/4: 1.572 and 0.949 by the principal axes; uniform and point load closed forms
+  (`tests/test_angle_beam.py`). Sample sheet: the Example F.11C angle with live and wind deflection limits.
+- Applied (conservative, not ruled): with restraint at midspan only, the deflection is the unrestrained (principal axis) value; the limit is
+  checked against the resultant, not the vertical component alone.

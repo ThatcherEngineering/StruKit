@@ -242,7 +242,9 @@ FORMS = {
         tables=[T("loads", "Loads", [CASE, F("kind", "Load", "select", options=["uniform, full span", "point"]), F("value", "Value (kip/ft or kip)"),
                                      F("x", "Point load at, from the left support", unit="ft", required=False),
                                      F("dir", "Direction", "select", options=["down", "sideways"], help="sideways: horizontal, positive from the toe of the horizontal leg toward the heel"),
-                                     F("label", "Note", "text", required=False)])]),
+                                     F("label", "Note", "text", required=False)]),
+                T("defl", "Deflection limits", [F("label", "Name", "text"), F("expr", "Loads", "text", help="for example L, or D + L (service)"),
+                                                F("ratio", "Span /"), F("source", "Source", "text")])]),
     "tension_member": dict(
         title="Steel Tension Member", code="AISC 360-22", mark="TM",
         fields=[F("shape", "Section", "shape_tension", required=False, help="W, M, S, HP, C, MC, HSS, pipe or single angle (for example L3x3x3/16); blank for a threaded rod"),
@@ -2017,10 +2019,11 @@ def _build(kind, values, project):
             r.miss.append("No load is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
         rs = r.text("restraint") or ""
+        dc = checks(r.rows("defl"), r.miss, "Deflection limits")
         args = (r.text("shape"), r.num("Fy"), r.text("steel_source"), r.num("span"), r.text("vertical", False) or "", r.text("toe"),
                 "midspan" if rs.startswith("at midspan") else "continuous" if rs.startswith("continuous") else "none", yes(r.text("self_weight")))
         r.done()
-        return ws_more.angle_beam_sheet(mark, *args, loads, cb, m), "simple", {}
+        return ws_more.angle_beam_sheet(mark, *args, loads, cb, m, dc), "simple", {}
     if kind == "tension_member":
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]

@@ -93,3 +93,31 @@ def test_beta_w_footnote_formula_against_table_c_f10_1():
         a = shapes.angle(lab)
         bl, bs = max(a["b"], a["d"]), min(a["b"], a["d"])
         assert bl == bs or (round(bl, 3), round(bs, 3)) in ab.BETA_W
+
+
+def test_deflection_principal_axes_against_commentary():
+    """Unrestrained equal-leg angle under a vertical load: AISC 360-22 Commentary Sect. F10.2 (Figure C-F10.2) gives the vertical deflection as
+    1.56 and the horizontal as 0.94 times the geometric-axis value (total 1.82). L4x4x1/4 (Ix 3.0, Iw 4.82, Iz 1.19 in4): by the principal
+    axes Ix / 2 (1 / Iw + 1 / Iz) = 1.572 and Ix / 2 (1 / Iz - 1 / Iw) = 0.949. 6 ft span, 0.05 kip/ft: geometric 5 w L^4 / (384 E Ix) =
+    5 (0.05/12)(72^4) / (384 x 29,000 x 3.0) = 0.01676 in."""
+    from strukit import anglebeam as ab, shapes
+    a = shapes.angle("L4x4x1/4")
+    g = ab.geometry(a, "", "up")
+    d0 = 5 * (0.05 / 12) * 72 ** 4 / (384 * 29000 * 3.0)
+    assert d0 == pytest.approx(0.01676, abs=1e-5)
+    r = ab.deflection(a, g, 72.0, [dict(kind="uniform", w=0.05 / 12, dir="down")], "none")
+    assert r["x"] == pytest.approx(36.0) and r["dv"] / d0 == pytest.approx(1.56, abs=0.02) and abs(r["dh"]) / d0 == pytest.approx(0.94, abs=0.015)
+    assert r["dv"] / d0 == pytest.approx(1.5 * (1 / 4.82 + 1 / 1.19), rel=1e-6) and r["d"] / d0 == pytest.approx(1.82, abs=0.03)
+    c = ab.deflection(a, g, 72.0, [dict(kind="uniform", w=0.05 / 12, dir="down")], "continuous")
+    assert c["d"] == pytest.approx(d0, rel=1e-6) and c["dh"] == 0
+    # point load at midspan, P L^3 / (48 E I) on each principal axis
+    p = ab.deflection(a, g, 72.0, [dict(kind="point", P=0.5, x=36.0, dir="down")], "continuous")
+    assert p["d"] == pytest.approx(0.5 * 72 ** 3 / (48 * 29000 * 3.0), rel=1e-6)
+    # on the screen
+    v = dict(mark="LB1", shape="L4X4X1/4", Fy="36", steel_source="A36", span="6", vertical="", toe="up", restraint="none between the ends", self_weight="no",
+             loads=[dict(case="D", kind="uniform, full span", value="0.05", x="", dir="down", label="")],
+             defl=[dict(label="dead", expr="D", ratio="240", source="project criteria")])
+    proj = dict(name="T", number="1", address="", method="LRFD", date="2026-11-26", combos=[dict(expr="1.4D", source="ASCE/SEI 7-22 Sect. 2.3.1")])
+    s, _, _ = calc.build("angle_beam", v, proj)
+    row = [x for x in s.rows if x.check == "Deflection, dead"][0]
+    assert row.demand == pytest.approx(r["d"], rel=1e-6) and row.capacity == pytest.approx(72 / 240)

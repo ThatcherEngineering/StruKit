@@ -5202,7 +5202,7 @@ def tension_rod_sheet(mark, rod_d, Fy, Fu, steel_source, length_ft, loads, combo
     return sheet
 
 
-def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, restraint, self_weight, loads, combos, method):
+def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, restraint, self_weight, loads, combos, method, defl=()):
     """Single angle as a simply supported beam, AISC 360-22 Sect. F10, G3 and H2 (see anglebeam). loads: dict(case, kind "uniform" (w kip/ft,
     the full span) or "point" (P kips at x ft), dir "down" or "sideways"). restraint: "none", "midspan" (lateral-torsional restraint at
     midspan) or "continuous"."""
@@ -5353,6 +5353,22 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
         Vn, Cv2, eq = ab.shear(Fy, b, g["t"])
         steps.append(Ln(f"Shear, {nm}: Vn = 0.6 Fy b t Cv2", Vn, "kip", "AISC 360-22 Eq. G3-1", f"b = {b:g} in., Cv2 = {Cv2:.3f} (Eq. {eq}); " + ("0.90 Vn" if lrfd else "Vn / 1.67") + f" = {fv * Vn:.2f} kip"))
         rows.append(Row(f"Shear, {nm}", cbn or worst, V, fv * Vn, "kip", "AISC 360-22 Eq. G3-1", ""))
+    for dc in defl or ():
+        sv = []
+        for x in lds:
+            f = dc.factors.get(x["case"], 0.0)
+            if f:
+                sv.append(dict(kind=x["kind"], dir=x.get("dir", "down"), **({"w": f * x["w"] / 12.0} if x["kind"] == "uniform" else {"P": f * x["P"], "x": x["x"] * 12.0})))
+        if not sv:
+            raise WorksheetError(f"{mark}: deflection '{dc.label}': none of its load cases has a load on the angle")
+        df = ab.deflection(a, g, L * 12.0, sv, restraint)
+        lim = L * 12.0 / dc.ratio
+        how = ("about the geometric axis, I = %.2f in4" % g["Ix"] if restraint == "continuous" else
+               f"loads resolved on the principal axes, Iw = {a['Iw']:g}, Iz = {a['Iz']:g} in4; vector sum")
+        steps.append(Ln(f"Deflection, {dc.label}", f"{df['d']:.3f} in", "", "AISC 360-22 Commentary Sect. F10.2" if restraint != "continuous" else "statics",
+                        f"at {df['x'] / 12:.2f} ft: {df['dv']:.3f} in. down, {df['dh']:.3f} in. sideways; {how}; E = 29,000 ksi"))
+        rows.append(Row(f"Deflection, {dc.label}", "service", df["d"], lim, "in", f"L / {dc.ratio:g}; {dc.source.strip()}",
+                        "resultant of the vertical and sideways components" if restraint != "continuous" else "vertical"))
     info = [("Section", f"{shapes.normalize(shape)}, Fy = {Fy:g} ksi ({steel_source.strip()})"),
             ("Span", f"{L:g} ft, simply supported; ends braced"),
             ("Orientation", orient + "; the horizontal leg points away from the heel"),
@@ -5368,7 +5384,7 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
     if not geometric:
         assumptions.append("Principal-axis section properties from the AISC Shapes Database v16.0; beta_w from " + ab.beta_w_source(g) + ".")
     sheet = SimpleSheet(mark, "Single-Angle Beam", "Member", method, info, load_lines, [(cb.name, cb.source) for cb in combos], f"Calculation ({worst})", steps, rows,
-                        assumptions, ["deflection (unrestrained angles deflect about the principal axes)", "axial load", "the end connections", "bearing at the supports"])
+                        assumptions, (["deflection (no limit entered)"] if not defl else []) + ["axial load", "the end connections", "bearing at the supports"])
     sheet.blocks.append(dict(title="Loading and Section", head="Loading and Section", picture=("angle_beam", dict(
         L=L, loads=[dict(kind="uniform", w=x["w"] * 1000, case=x["case"]) if x["kind"] == "uniform" else dict(kind="point", P=x["P"] * 1000, x_ft=x["x"], case=x["case"])
                     for x in lds if x.get("dir", "down") == "down"],

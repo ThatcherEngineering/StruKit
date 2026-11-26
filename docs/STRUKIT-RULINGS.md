@@ -432,3 +432,7 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 ## 2026-11-26 11:10 — Zach: send the PDFs
 - "When you finish builds, I like to see the pdfs of what you built." Standing: after each build (or each check-in stretch), send Zach the
   printed sheets of what was built or changed (SendUserFile), made with sample inputs, rendered and looked at first.
+
+## 2026-11-26 11:40, single-angle beam deflection (0.258.0), applied (not ruled)
+- An angle with lateral-torsional restraint at midspan only is taken to deflect as unrestrained (principal axes) for the deflection check.
+- The deflection limit is compared with the resultant of the vertical and sideways components (not the vertical component alone).

@@ -296,3 +296,47 @@ def eccentric_capacity(a, Fy, L, attached, e_off, method):
             r = 2.0
         lo, hi = (mid, hi) if r <= 1.0 else (lo, mid)
     return lo
+
+
+def _span_defl(L, ld, x):
+    """Deflection (times EI) at x of a simple span L under one load: dict(kind 'uniform' w per length | 'point' P at a). Same units."""
+    if ld["kind"] == "uniform":
+        w = ld["w"]
+        return w * x * (L ** 3 - 2 * L * x * x + x ** 3) / 24.0
+    P, a_ = ld["P"], ld["x"]
+    b_ = L - a_
+    if x <= a_:
+        return P * b_ * x * (L * L - b_ * b_ - x * x) / (6.0 * L)
+    xr = L - x
+    return P * a_ * xr * (L * L - a_ * a_ - xr * xr) / (6.0 * L)
+
+
+def deflection(a, g, L, loads, restraint):
+    """Deflection of a simply supported single angle under service loads (in.). L in.; loads: dict(kind 'uniform' (w kip/in.) or
+    'point' (P kip at x in.), dir 'down' or 'sideways'). restraint 'continuous': bending about the geometric axis with g["Ix"], vertical only
+    (down loads). Otherwise the loads are resolved on the principal axes and each component bends the angle about the other principal axis
+    (AISC 360-22 Commentary Sect. F10.2: the angle deflects laterally as well as in the direction of the load; Figure C-F10.2); the
+    displacement is the vector sum. Returns dict(x, dv, dh, d) at the station of the largest resultant, and the station grid used."""
+    xs = [L * i / 96 for i in range(97)] + [ld["x"] for ld in loads if ld["kind"] == "point"]
+    best = dict(x=0.0, dv=0.0, dh=0.0, d=0.0)
+    if restraint == "continuous":
+        for x in xs:
+            dv = sum(_span_defl(L, ld, x) for ld in loads if ld.get("dir", "down") == "down") / (E * g["Ix"])
+            if abs(dv) > abs(best["d"]):
+                best = dict(x=x, dv=dv, dh=0.0, d=abs(dv))
+        return best
+    w_hat, z_hat, _ = principal_points(a, g)
+    Iw, Iz = a["Iw"], a["Iz"]
+    for x in xs:
+        ux = uy = 0.0
+        for ld in loads:
+            F = (0.0, -1.0) if ld.get("dir", "down") == "down" else (-1.0, 0.0)          # unit force direction in x (toward the toe), y (up)
+            k = _span_defl(L, ld, x)
+            fw, fz = F[0] * w_hat[0] + F[1] * w_hat[1], F[0] * z_hat[0] + F[1] * z_hat[1]
+            uw, uz = k * fw / (E * Iz), k * fz / (E * Iw)                                  # along w bends about z (Iz); along z about w (Iw)
+            ux += uw * w_hat[0] + uz * z_hat[0]
+            uy += uw * w_hat[1] + uz * z_hat[1]
+        d = (ux * ux + uy * uy) ** 0.5
+        if d > best["d"]:
+            best = dict(x=x, dv=-uy, dh=ux, d=d)
+    return best
