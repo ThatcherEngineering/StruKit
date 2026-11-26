@@ -63,3 +63,37 @@ def test_force_transfer_wall_stiffness_from_its_piers():
     assert k == pytest.approx(2 * vv * 4 / d, rel=1e-6) and "pier" in how
     v.pop("chord_A")
     assert "end post area" in calc._wall_stiffness(PROJ, dict(kind="ftao_wall", values=v))
+
+
+def test_existing_walls_in_the_frame():
+    """Existing walls go into the frame as the Project page says: a typed stiffness (here equal to wall S, so S and the existing wall share
+    2 kips equally and the roof moves 2 / 2kS), assumed to work (rigid: the roof barely moves), or left out (not in the frame)."""
+    import copy
+    mem = [m for m in _box() if m["values"]["mark"] != "N"]
+    kS = calc._wall_stiffness(PROJ, mem[0])[0]
+    for mode, k_, expect in (("stiffness typed", f"{kS:.3f}", 2.0 / (2 * kS / 1000)), ("assumed to work (rigid)", "", None)):
+        P = copy.deepcopy(PROJ)
+        P["model"]["existing"] = [dict(name="House", kind="wall", level="Roof", x1="0", y1="20", x2="20", y2="20", frame=mode, k=k_)]
+        B = calc._model_frame_build(P, mem, sway=True)
+        assert B["problems"] == [] and any("(existing)" in w_["mark"] for w_ in B["walls"])
+        fr = B["fr"]
+        tops = [nd for nd, (x, y, z) in fr.nodes.items() if abs(z - 108.0) < 1e-6]
+        res = fr.solve({nd: (2.0 / len(tops), 0, 0, 0, 0, 0) for nd in tops}, [])
+        dx = max(abs(res.disp[nd][0]) for nd in tops)
+        if expect is not None:
+            assert dx == pytest.approx(expect, rel=1e-3)
+        else:
+            assert dx < 0.6 * 2.0 / (kS / 1000)              # far stiffer than S alone; S's corner moves only by the twist
+    P = copy.deepcopy(PROJ)
+    P["model"]["existing"] = [dict(name="House", kind="wall", level="Roof", x1="0", y1="20", x2="20", y2="20", frame="left out")]
+    B = calc._model_frame_build(P, mem, sway=True)
+    assert not any("(existing)" in w_["mark"] for w_ in B["walls"])
+
+
+def test_building_model_sheet_near_the_front():
+    """The package opens (after the cover) with the Building Model sheet: four 3D views of what is placed, with the levels."""
+    import json, os
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+    sh = calc.model_sheet(d["project"], d["members"])
+    assert sh.mark == "BM" and sh.blocks[0]["picture"][0] == "model3d" and len(sh.blocks[0]["picture"][1]["items"]) > 20
+    assert calc.model_sheet(PROJ, []) is None

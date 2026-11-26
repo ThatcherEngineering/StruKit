@@ -872,8 +872,10 @@ function modelCard(changed) {
   const ex = { key: "existing", label: "Existing construction (by others, not designed here)", columns: [{ key: "name", label: "Name", type: "text", required: true },
       { key: "kind", label: "Is a", type: "select", options: ["wall", "beam", "post", "footing"], required: false },
       { key: "level", label: "Level at its top", type: "text", required: true }, { key: "x1", label: "End 1 (or point), X", type: "text", required: true }, { key: "y1", label: "End 1 (or point), Y", type: "text", required: true },
-      { key: "x2", label: "End 2, X", type: "text", required: false }, { key: "y2", label: "End 2, Y", type: "text", required: false }],
-    help: "Optional, for additions: existing walls, beams, posts and footings take what bears on them, and the loads are listed for checking the existing construction; an existing wall is also a wall line for wind and seismic. A post or footing may be a point (End 2 blank). Blank Is a = wall." };
+      { key: "x2", label: "End 2, X", type: "text", required: false }, { key: "y2", label: "End 2, Y", type: "text", required: false },
+      { key: "frame", label: "Wall in the 3D frame", type: "select", options: ["assumed to work (rigid)", "stiffness typed", "left out"], required: false },
+      { key: "k", label: "Wall stiffness", unit: "lb/in", type: "text", required: false }],
+    help: "Optional, for additions: existing walls, beams, posts and footings take what bears on them, and the loads are listed for checking the existing construction; an existing wall is also a wall line for wind and seismic. A post or footing may be a point (End 2 blank). Blank Is a = wall. In the 3D frame an existing wall is assumed to work (rigid, not checked) unless you type its stiffness or leave it out." };
   const holder = el("div", {});
   const levels = mdl.levels.map(l => (l.name || "").trim()).filter(Boolean);
   const pickLevel = el("select", {}, levels.map(l => el("option", { value: l }, l)).concat([el("option", { value: "(3D)" }, "3D view")]));

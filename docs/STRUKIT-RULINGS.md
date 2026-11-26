@@ -248,3 +248,11 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
   the length between frame joints; CP for built-up columns with Kf in the stack direction. LVL Ft taken without a length factor. Glulam and
   Weyerhaeuser beams carrying axial force from the frame are reported (no Fc or Ft in StruKit's tables for them).
 
+## 2026-11-25 20:33 — Zach's rulings (do not ask again)
+- **Existing walls in the 3D frame:** "existing walls need to have the option to be accounted for but also need to just be assumed that they
+  work and are just unaccounted for." Built 0.233.0: each existing wall's "Wall in the 3D frame" is assumed to work (rigid, 10,000 kip/in.,
+  not checked) unless the engineer types its stiffness or leaves it out. Modelling existing construction in detail is not to be built
+  ("It would be a massive build").
+- **3D model on the calcs:** "I wish you would include that 3D model on the calcs. It would be really cool if it was near the beginning of
+  the report, multiple angles of the model." Built 0.233.0: a Building Model sheet right after the cover with four views.
+

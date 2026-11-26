@@ -3187,7 +3187,8 @@ def model_existing(project):
         if not nm or lv not in levels or None in p1 or (p2 is not None and None in p2) or (p2 is None and kd not in ("post", "footing")):
             continue
         i = levels.index(lv)
-        out.append((nm, dict(level=lv, base=levels[i - 1] if i > 0 else lv, p1=p1, p2=p2, kind=kd)))
+        out.append((nm, dict(level=lv, base=levels[i - 1] if i > 0 else lv, p1=p1, p2=p2, kind=kd,
+                             frame=str(r.get("frame") or "").strip() or "assumed to work (rigid)", k=str(r.get("k") or "").replace(",", "").strip())))
     return out
 
 
@@ -3859,7 +3860,8 @@ def model_view(project, members):
 WOOD_FRAME_BEAMS = ("wood_beam", "lvl_beam", "glulam_beam", "wey_beam")
 WOOD_FRAME_COLS = ("wood_post", "builtup_post", "lvl_post", "wey_post", "glulam_post")
 FRAME_BEAMS, FRAME_COLS = ("steel_beam",) + WOOD_FRAME_BEAMS, ("steel_column", "hss_column") + WOOD_FRAME_COLS
-WOOD_G_OVER_E = 1.0 / 16.0                                     # shear modulus of wood for the frame's torsion stiffness, G = E / 16
+WOOD_G_OVER_E = 1.0 / 16.0
+EXISTING_RIGID_KIP_IN = 10000.0                               # an existing wall "assumed to work" in the 3D frame: 10,000 kip/in., rigid beside wood walls                                     # shear modulus of wood for the frame's torsion stiffness, G = E / 16
 
 
 def _wood_frame_strength(kind, v, L_in):
@@ -4289,6 +4291,24 @@ def _model_frame_build(project, members, sway=False):
             zt, zb = elev[pl["level"]], elev[pl["base"]]
             t1, t2, b1, b2 = node(*pl["p1"], zt), node(*pl["p2"], zt), node(*pl["p1"], zb), node(*pl["p2"], zb)
             wpl.append((m, pl, (t1, t2, b1, b2), k_kip, got[1], zt, zb))
+        for nm, epl in model_existing(project):              # existing walls: assumed to work (rigid), a typed stiffness, or left out
+            if epl.get("kind", "wall") != "wall" or epl["level"] not in elev or epl["base"] not in elev or epl["base"] == epl["level"]:
+                continue
+            mode = epl.get("frame") or "assumed to work (rigid)"
+            if mode.startswith("left out"):
+                continue
+            if mode.startswith("stiffness"):
+                try:
+                    k_kip, how = float(epl["k"]) / 1000.0, "stiffness typed on the Project page"
+                    if k_kip <= 0:
+                        raise ValueError
+                except ValueError:
+                    problems.append(f"{nm}: the existing wall's stiffness (lb/in.) is blank or not a number"); continue
+            else:
+                k_kip, how = EXISTING_RIGID_KIP_IN, "existing, assumed to work (rigid, not checked)"
+            zt, zb = elev[epl["level"]], elev[epl["base"]]
+            t1, t2, b1, b2 = node(*epl["p1"], zt), node(*epl["p2"], zt), node(*epl["p1"], zb), node(*epl["p2"], zb)
+            wpl.append((dict(kind="existing", values=dict(mark=nm + " (existing)")), epl, (t1, t2, b1, b2), k_kip, how, zt, zb))
         for m, pl, (t1, t2, b1, b2), k_kip, how, zt, zb in wpl:
             mk = m["values"]["mark"]
             Lw = math.hypot(pl["p2"][0] - pl["p1"][0], pl["p2"][1] - pl["p1"][1]) * FT
@@ -4347,7 +4367,7 @@ def _model_frame_build(project, members, sway=False):
                          + "; ".join(f"{w_['mark']} {w_['k']:,.0f} lb/in., {w_['how']}" for w_ in wall_rows)
                          + "). Each level is tied by a stiff diaphragm. The walls' design shears come from the wall-line distribution (flexible diaphragm); "
                          "the frame gives drift, second-order effects and member forces."
-                         + (" Existing walls are not in the frame (their stiffness is not known): the new walls take all the lateral load in the frame."
+                         + (" Existing walls are in the frame as the Project page says (assumed to work: rigid and not checked; or a typed stiffness; or left out)."
                             if any(e_.get("kind", "wall") == "wall" for _, e_ in model_existing(project)) else ""))
     if problems:
         return dict(problems=problems, notes=notes)
@@ -5755,6 +5775,26 @@ def existing_sheet(project, members):
     return sh
 
 
+def model_sheet(project, members):
+    """The building model in four 3D views near the front of the package, with the levels and what is placed. None when nothing is placed."""
+    from ..ws_more import SimpleSheet
+    view = model_view(project, members)
+    if not view["items"]:
+        return None
+    from collections import Counter
+    cnt = Counter(i["type"] for i in view["items"])
+    names = dict(wall="walls", beam="beams", column="columns and posts", joist="joist and rafter rows", footing="footings", brace="braces")
+    n_ex = sum(1 for i in view["items"] if i.get("existing"))
+    sh = SimpleSheet("BM", "Building Model", "Model", (project or {}).get("method") or "",
+                     [("Levels", ", ".join(f"{nm} {el:g} ft" for nm, el in view["levels"])),
+                      ("Placed", ", ".join(f"{cnt[k]} {names.get(k, k)}" for k in ("beam", "joist", "column", "wall", "footing", "brace") if cnt.get(k)))]
+                     + ([("Existing", f"{n_ex} existing wall" + ("s" if n_ex != 1 else "") + " (by others)")] if n_ex else []),
+                     [], [], "", [], [],
+                     ["Parallel projections of the members as placed in the building model; not to scale. Each member is checked on its own sheet."], [])
+    sh.blocks = [dict(title="Building Model, Four Views", picture=("model3d", dict(items=view["items"], levels=view["levels"])), lines=[])]
+    return sh
+
+
 def package_pdf(project, members, path, cover=True):
     """Every member that calculates, in the order listed, behind a cover sheet.
     Returns (sheets, skipped marks)."""
@@ -5796,6 +5836,10 @@ def package_pdf(project, members, path, cover=True):
     if sm is not None:
         items.insert(0, ("simple", sm, "", {}))
         contents.insert(0, dict(mark="SUM", title="Design Summary", code="", flags=0))
+    bm = model_sheet(project, members)
+    if bm is not None:
+        items.insert(0, ("simple", bm, "", {}))
+        contents.insert(0, dict(mark="BM", title="Building Model", code="", flags=0))
     cov = None
     if cover:
         def lst(key):
