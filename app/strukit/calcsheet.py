@@ -2715,9 +2715,17 @@ def _flush_end_plate_picture(c, top, d):
         return yb - 38
     # side view
     xs = RM - 170                                      # outside face of the column flange
-    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xs, yb - 14, dc * sc, Hp * sc + 14, fill=1, stroke=1)
-    c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xs, yb - 14, tcf * sc, Hp * sc + 14, fill=1, stroke=0); c.rect(xs + (dc - tcf) * sc, yb - 14, tcf * sc, Hp * sc + 14, fill=1, stroke=0)
-    c.rect(xs, yt, dc * sc, max(tcap * sc, 2), fill=1, stroke=1)                                         # cap plate
+    up = 14 if d.get("cont") else 0                    # a continuous column runs on above the plate
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xs, yb - 14, dc * sc, Hp * sc + 14 + up, fill=1, stroke=1)
+    c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xs, yb - 14, tcf * sc, Hp * sc + 14 + up, fill=1, stroke=0); c.rect(xs + (dc - tcf) * sc, yb - 14, tcf * sc, Hp * sc + 14 + up, fill=1, stroke=0)
+    if not d.get("cont"):
+        c.rect(xs, yt, dc * sc, max(tcap * sc, 2), fill=1, stroke=1)                                     # cap plate
+    st = d.get("stiff")
+    if st:                                                                                              # stiffeners in line with both beam flanges
+        c.setFillColorRGB(0.45, 0.5, 0.58)
+        for yc_ in (y_top - tf / 2 * sc, y_top - (D - tf / 2) * sc):
+            c.rect(xs + tcf * sc, yc_ - st["ts"] / 2 * sc, st["ls"] * sc, max(st["ts"] * sc, 1.2), fill=1, stroke=1)
+        memberart._dim_h(c, xs + tcf * sc, xs + (tcf + st["ls"]) * sc, y_top - tf * sc - 12, f"{st['ls']:g} in", FR, ext_from=y_top - tf * sc)
     c.setFillColorRGB(0.45, 0.5, 0.58); c.rect(xs - tp * sc, yb, tp * sc, Hp * sc, fill=1, stroke=1)   # end plate
     c.setFillColorRGB(0.90, 0.92, 0.95); c.rect(xs - tp * sc - 70, y_top - D * sc, 70, D * sc, fill=1, stroke=1)
     c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xs - tp * sc - 70, y_top - tf * sc, 70, tf * sc, fill=1, stroke=0); c.rect(xs - tp * sc - 70, y_top - D * sc, 70, tf * sc, fill=1, stroke=0)
@@ -2726,7 +2734,11 @@ def _flush_end_plate_picture(c, top, d):
         c.line(xs - tp * sc - 5, yy, xs + tcf * sc + 5, yy)
     c.setLineWidth(0.9); c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawString(xs - tp * sc - 66, y_top - D * sc / 2, d["beam"]); c.drawString(xs + tcf * sc + 8, yb + Hp * sc / 2, d["column"])
-    c.drawString(xs + 4, yt + max(tcap * sc, 2) + 4, f"cap plate {tcap:g} in"); c.drawRightString(xs - tp * sc - 2, yb - 9, f"end plate {tp:g} in")
+    if not d.get("cont"):
+        c.drawString(xs + 4, yt + max(tcap * sc, 2) + 4, f"cap plate {tcap:g} in")
+    elif st:
+        c.drawString(xs + dc * sc + 6, y_top - tf / 2 * sc - 2, f"stiffeners {st['ts']:g} x {st['bs']:g} in")
+    c.drawRightString(xs - tp * sc - 2, yb - 9, f"end plate {tp:g} in")
     _small(c, xs + dc * sc / 2 - 30, yb - 30, "side view, same scale; bolts shown as lines")
     return yb - 38
 
