@@ -3004,6 +3004,74 @@ def model_diaphragms(project, members):
     return dict(members=ms, filled=filled, problems=problems)
 
 
+def _stud_packs(project, hm, is_header):
+    """Jack studs under each end of a header and the king studs beside the opening, from the header's placement card: each end's jack
+    studs a Wood Post (one stud) or a Built-Up Wood Column (2 to 5) carrying that end's reaction by load case; the king studs one Wood Post
+    each, taking the wind on the wall over half the opening plus half a stud space, shared among them. Returns ([members], [summary]),
+    None when the header has no studs typed, or a message."""
+    v = hm.get("values") or {}
+    mark = v.get("mark") or "?"
+    nj = str(v.get("at_jacks") or "").strip()
+    nk = str(v.get("at_kings") or "").strip()
+    if not nj and not nk:
+        return None
+    if not is_header:
+        return f"{mark}: jack or king studs are typed, but the beam is not placed in a wall line at the wall's top level (a header)"
+    def num(k, label, need=True):
+        t = str(v.get(k) or "").replace(",", "").strip()
+        if not t:
+            if need:
+                raise Missing([f"{mark}: {label} is blank (placement card)"])
+            return None
+        try:
+            return float(t)
+        except ValueError:
+            raise Missing([f"{mark}: {label} is not a number"])
+    sp_, gr_, sz_ = str(v.get("at_jack_species") or "").strip(), str(v.get("at_jack_grade") or "").strip(), str(v.get("at_jack_size") or "").strip()
+    try:
+        if not (sp_ and gr_ and sz_):
+            raise Missing([f"{mark}: the stud species, grade and size are needed (placement card)"])
+        mem, summ = [], []
+        base = dict(species=sp_, grade=gr_, service="dry service", incised="no", k_source="pinned top and bottom (NDS Appendix G)", unit_weight="", stud_of=mark)
+        if nj:
+            n = int(float(nj))
+            hj = num("at_jack_h", "the jack stud height")
+            br = num("at_jack_brace", "the jack stud bracing along the wall", False)
+            got = case_reactions(hm["kind"], v, project)
+            if "error" in got:
+                return f"{mark}: {got['error']}"
+            for sup in got["supports"]:
+                rows = [dict(case=c, P=str(round(P)), label=f"reaction of {mark}, {sup['name']}") for c, P in sup["cases"].items() if abs(P) >= 0.5]
+                mk = f"{mark} jacks, {sup['name']}"
+                if n == 1:
+                    vals = dict(base, mark=mk, size=sz_, height=f"{hj:g}", lu1="", lu2=f"{br:g}" if br else "", Ke1="1", Ke2="1", loads=rows, lateral=[])
+                    mem.append(dict(kind="wood_post", values=vals))
+                else:
+                    vals = dict(base, mark=mk, size=sz_, plies=str(n), fastening="nailed", height=f"{hj:g}", lu_d="", lu_stack=f"{br:g}" if br else "",
+                                Ke_d="1", Ke_stack="1", loads=rows)
+                    mem.append(dict(kind="builtup_post", values=vals))
+                summ.append(dict(mark=mk, header=mark, n=n, P=sum(sup["cases"].values())))
+        if nk:
+            k = int(float(nk))
+            hk = num("at_king_h", "the king stud height")
+            p = num("at_king_p", "the wind pressure on the wall")
+            src = str(v.get("at_king_p_source") or "").strip()
+            if not src:
+                raise Missing([f"{mark}: where the wind pressure on the king studs comes from (placement card)"])
+            ss = num("at_stud_sp", "the stud spacing")
+            span = float(str(v.get("span") or 0) or 0)
+            w = p * (span / 2 + ss / 12 / 2) / k
+            brk = num("at_jack_brace", "the stud bracing along the wall", False)
+            vals = dict(base, mark=f"{mark} king studs", size=sz_, height=f"{hk:g}", lu1="", lu2=f"{brk:g}" if brk else "", Ke1="1", Ke2="1",
+                        loads=[dict(case="D", P="0", label="no axial load: the header bears on the jack studs")],
+                        lateral=[dict(case="W", kind="uniform", mag=f"{w:.1f}", x="", label=f"{p:g} psf x ({span:g} / 2 + {ss:g} in. / 2) / {k} king stud{'s' if k > 1 else ''} ({src})")])
+            mem.append(dict(kind="wood_post", values=vals))
+            summ.append(dict(mark=vals["mark"], header=mark, n=k, w=w))
+    except Missing as e:
+        return "; ".join(e.items)
+    return mem, summ
+
+
 PAD_STEP_FT = 0.25                                           # pad sizes go up in 3 in. steps
 
 
@@ -3168,7 +3236,7 @@ def model_links(project, members):
     import copy, math
     ms = copy.deepcopy(members or [])
     prev_pads = {m["values"].get("mark"): m["values"] for m in ms if (m.get("values") or {}).get("pad_of")}
-    ms = [m for m in ms if not (m.get("values") or {}).get("pad_of")]   # pads under point loads are made again below
+    ms = [m for m in ms if not (m.get("values") or {}).get("pad_of") and not (m.get("values") or {}).get("stud_of")]   # pads and stud packs are made again below
     problems, placed = [], []
     line_points = []
     for m in ms:
@@ -3471,6 +3539,15 @@ def model_links(project, members):
             if not any(lk2.get("src") == mk for m2, _ in placed for lk2 in _links(m2)):
                 problems.append(f"{mk}: loads bear on this wall but nothing in the model is under it (a footing line or a beam on level {pl['base']}); its loads stop here")
     out = takedown(project, ms)
+    out["studs"] = []
+    header_marks = {m_["values"].get("mark") for m_, _p in placed if id(m_) in headers}
+    for hm in [m for m in out["members"] if m.get("kind") in TAKEDOWN_BEAMS]:
+        got = _stud_packs(project, hm, hm["values"].get("mark") in header_marks)
+        if isinstance(got, str):
+            problems.append(got)
+        elif got:
+            out["members"] += got[0]
+            out["studs"] += got[1]
     out["pads"] = []
     for lp in line_points:
         got = _point_pad(project, out["members"], lp, prev_pads)
