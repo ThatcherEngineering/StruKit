@@ -147,3 +147,47 @@ def test_cantilevered_diaphragm_sdpws_example(tmp_path):
     u = ws_more.diaphragm_sheet("D2", "Sheathing and Single-Floor, 15/32 in, 8d common", 2, 1, "OSB", 0.5, "DF-L", 12, 20, 200, "ELF", "seismic", "ASD", cant=dict())
     assert u.ok and u.diaphragm["v"] == pytest.approx(200 * 12 / 20) and "Aspect ratio L'/W'" in [x.check for x in u.rows]
     calcsheet.simple_pdf(s, str(tmp_path / "cant.pdf"), "Job", "SDPWS-2021", "Nov 26, 2026")
+
+
+def test_opening_force_transfer_by_hand(tmp_path):
+    """One interior opening, force transfer around it (diaphragm.opening): the APA T555 / Diekmann shear wall analysis turned flat. No
+    published diaphragm example is on file, so this is checked by hand. Simple span 60 ft, depth 30 ft, 200 plf; opening 8 ft along the
+    span x 6 ft across, 12 ft from the support and 10 ft from the chord (d1 = 10, d2 = 14); framing extended 8 ft each side.
+      region 4 to 28 ft; V = 200(30 - 4) = 5,200 lb (the larger end); Lr = 24 ft; H = 5,200(24)/30 = 4,160 lb; va = 4,160/16 = 260 plf;
+      O = 260(6) = 1,560 lb; F1 = 1,560(10/24) = 650, F2 = 910 lb; strips V/(d1 + d2) = 5,200/24 = 216.7 plf;
+      corner zones 216.7 - 650/10 = 151.7 plf (both); F/d = 65 plf; members along the sides |260 - 151.7| x 8 = 866.7 lb
+      (also the Vierendeel value V a / (2 (d1 + d2)) = 5,200(8)/48 = 866.7 lb with e1 = e2); chord lines 151.7(16) + 216.7(8) = 4,160 = H."""
+    r = dp.opening(60, 30, 200, False, 12, 8, 10, 6, 8, 8)
+    assert r["V"] == 5200 and r["Lr"] == 24 and r["H"] == pytest.approx(4160) and r["va"] == pytest.approx(260) and r["O"] == pytest.approx(1560)
+    s1, s2 = r["strips"]
+    assert (s1["F"], s2["F"]) == pytest.approx((650, 910)) and s1["v"] == pytest.approx(216.67, abs=0.01) and s2["v"] == pytest.approx(s1["v"])
+    assert s1["vc"] == pytest.approx(151.67, abs=0.01) and s2["vc"] == pytest.approx(151.67, abs=0.01) and s1["vF"] == pytest.approx(65)
+    assert r["N_side"] == pytest.approx(866.67, abs=0.01) and r["F_end"] == pytest.approx(910) and r["v_max"] == pytest.approx(260)
+    assert max(abs(c) for c in r["checks"]) < 1e-6
+    # unequal extensions: the side member takes |va - vc| x the longer extension; equilibrium still closes
+    u = dp.opening(60, 30, 200, False, 12, 8, 10, 6, 6, 10)
+    assert u["N_side"] == pytest.approx(abs(u["va"] - u["strips"][0]["vc"]) * 10) and max(abs(c) for c in u["checks"]) < 1e-6
+    # cantilever: shear w (L' - x) at the end of the region nearer the line
+    cv = dp.opening(20, 30, 150, True, 6, 4, 10, 6, 3, 3)
+    assert cv["V"] == pytest.approx(150 * 17)
+    for bad in (dict(x0=2), dict(y0=24), dict(e2=50)):                    # framing outside the span; opening at the far chord
+        a = dict(x0=12, a=8, y0=10, b=6, e1=8, e2=8); a.update(bad)
+        with pytest.raises(dp.DiaphragmError):
+            dp.opening(60, 30, 200, False, a["x0"], a["a"], a["y0"], a["b"], a["e1"], a["e2"])
+    # on the screen and the printed sheet
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 5a")])
+    v = dict(mark="DI2", panel="Structural I, 15/32 in, 10d common", face="2", edges="blocked", spacing="4", panel_type="OSB", G="0.50", G_source="DF-L, NDS Table 12.3.3A",
+             L="60", W="30", load="wind", w="200", w_source="sheet WM1, 0.6 W", op_a="8", op_b="6", op_x0="12", op_y0="10", op_e1="8", op_e2="8")
+    sheet, kind, _ = calc.build("diaphragm", v, proj)
+    row = [x for x in sheet.rows if x.check == "Unit shear around the opening"][0]
+    assert row.demand == pytest.approx(260) and row.capacity == pytest.approx(1190 / 2.0)
+    assert not any("openings in the diaphragm" in t for t in sheet.not_checked)
+    calcsheet._simple_pdf(sheet, str(tmp_path / "op.pdf"), "2026-000", "SDPWS-2021", "2026-11-26")
+    with pytest.raises(calc.Missing):
+        calc.build("diaphragm", dict(v, op_e1=""), proj)
+    # deflection: the shear term over the region at the largest shear around the opening, 0.5 x 24 x (260 - 5,200/30) / (1000 x 15) = 0.0693 in
+    d0 = calc.build("diaphragm", dict(v, op_a="", chord_A="16.5", chord_E="1400000"), proj)[0].diaphragm["defl"]
+    d1 = calc.build("diaphragm", dict(v, chord_A="16.5", chord_E="1400000"), proj)[0].diaphragm
+    assert d1["defl_opening"] == pytest.approx(0.5 * 24 * (260 - 5200 / 30) / 15000) and d1["defl"] == pytest.approx(d0 + d1["defl_opening"])

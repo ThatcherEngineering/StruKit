@@ -83,12 +83,30 @@ def shear(d, group, threads="N", planes=1, method="ASD"):
     return BoltResult(Rn, _avail(Rn, method), "bolt shear rupture (J3.7)", lines)
 
 
+def _threaded_ratio(d, group):
+    """For a threaded part (group 'FU=...'): the ratio of Fu Ase (AISC Design Guide 1, 3rd Ed., Table 4-1 tensile stress area) to
+    0.75 Fu Ab (Table J3.2), not over 1.0, so the tensile strength is the lower of the two (Zach's ruling 2026-11-26). 1.0 for bolts and
+    for diameters Table 4-1 does not list. Returns (ratio, Ase or None)."""
+    if not str(group).upper().strip().startswith("FU="):
+        return 1.0, None
+    from .anchor_rods import SIZES
+    for dd, v in SIZES.items():
+        if abs(dd - d) < 1e-6:
+            return min(1.0, v[2] / (0.75 * area(d))), v[2]
+    return 1.0, None
+
+
 def tension(d, group, method="ASD"):
-    """Tension rupture of one bolt. Eq. J3-1 with Fnt from Table J3.2."""
+    """Tension rupture of one bolt. Eq. J3-1 with Fnt from Table J3.2. A threaded part (anchor rod) takes the lower of that and Fu Ase."""
     key, (Fnt, _, _) = _group(group)
-    Rn = Fnt * area(d)
-    return BoltResult(Rn, _avail(Rn, method), "bolt tension rupture (J3.7)",
-                      [Line("Rn = Fnt Ab", Rn, "kip", "Eq. J3-1; Table J3.2", f"{key}, Fnt = {Fnt:.0f} ksi")])
+    r, Ase = _threaded_ratio(d, group)
+    Rn = Fnt * area(d) * r
+    if Ase is None:
+        lines = [Line("Rn = Fnt Ab", Rn, "kip", "Eq. J3-1; Table J3.2", f"{key}, Fnt = {Fnt:.0f} ksi")]
+    else:
+        lines = [Line("Rn = lower of Fnt Ab and Fu Ase", Rn, "kip", "Eq. J3-1, Table J3.2; AISC Design Guide 1 (3rd Ed.) Table 4-1",
+                      f"{key}: Fnt Ab = {Fnt * area(d):.2f} kip, Fu Ase = {Fnt / 0.75 * Ase:.2f} kip (Ase = {Ase:g} in2)")]
+    return BoltResult(Rn, _avail(Rn, method), "bolt tension rupture (J3.7)", lines)
 
 
 def tension_with_shear(d, group, V_req, threads="N", planes=1, method="ASD"):
@@ -102,10 +120,12 @@ def tension_with_shear(d, group, V_req, threads="N", planes=1, method="ASD"):
         raise SteelInputError(f"bolt: required shear stress {frv:.1f} ksi exceeds the available "
                               f"{fv_avail:.1f} ksi (J3.7); combined check not applicable")
     Fnt_p = min(1.3 * Fnt - Fnt / fv_avail * frv, Fnt)
-    Rn = Fnt_p * area(d)
+    r, Ase = _threaded_ratio(d, group)
+    Rn = Fnt_p * area(d) * r
     lines = [Line("frv", frv, "ksi", "J3.8", f"available {fv_avail:.1f} ksi"),
              Line("Fnt'", Fnt_p, "ksi", "Eq. J3-3a" if method == "LRFD" else "Eq. J3-3b"),
-             Line("Rn = Fnt' Ab", Rn, "kip", "Eq. J3-2")]
+             Line("Rn = Fnt' Ab", Rn, "kip", "Eq. J3-2") if Ase is None else
+             Line("Rn = Fnt' Ab x lower of 1 and Fu Ase / (0.75 Fu Ab)", Rn, "kip", "Eq. J3-2; AISC Design Guide 1 (3rd Ed.) Table 4-1", f"Ase = {Ase:g} in2")]
     return BoltResult(Rn, _avail(Rn, method), "combined tension and shear (J3.8)", lines)
 
 

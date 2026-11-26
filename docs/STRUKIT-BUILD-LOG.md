@@ -931,3 +931,30 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Wood Diaphragm screen, "Layout: cantilevered past one line (open front)"**, with "torsionally irregular" and "stories": L is the cantilever L' and W its width W' (SDPWS-2021 Figure 4A). Unit shear at the line v = w L' / W', chord force T = C = w L'^2 / (2 W') at the line, deflection at the free edge by SDPWS Eq. 4.2-2 (3 v L'^3 / (E A W') + 0.5 v L' / (1000 Ga) + sum(x' Dc) / W'). Limits for seismic load (Sect. 4.2.6.1, wood structural panels per 4.2.8.1): L'/W' not over 1.5, or 1.0 (one story) / 0.67 (over one story) when torsionally irregular; L' not over 35 ft; none of 4.2.6.1 when L' is 6 ft or less (exception); Table 4.2.2 for wind. The sheet notes when a one-story diaphragm may be idealized as rigid for torsion (Sect. 4.2.6.2). Story drift at the edges with torsion (item 3) is listed as not checked. Plan picture with the one line of resistance and the open edge dashed.
 - **Validation: SDPWS-2021 Commentary Example C4.2.6.1-2** (L' 32 ft, W' 136 ft, v 201.6 plf, EA 26.4e6 lb, Ga 17 kips/in., splice 16 ft / 0.054 in.: 0.006 + 0.190 + 0.006 = 0.20 in.) (`tests/test_diaphragm.py`). Opened in a headless browser: no page errors.
 - **Not built: openings in diaphragms.** SDPWS gives no method; it needs a rational analysis (force transfer around the opening, as for shear walls). No published worked example of a diaphragm opening is on file. Asked Zach.
+
+## 2026-11-26 10:45 MST — 0.257.0 diaphragm openings; anchor rod strength the lower of J3.2 and Fu Ase; missing references log
+(Clock note: the times written on the 2026-11-26 entries above ran ahead of the clock; from here times are Denver time from the machine.)
+- **Zach replied to the closing check-in:** he agrees with every conservative reading listed (now rulings; see the rulings file), picked option
+  (a) for diaphragm openings until the design guides are on file, asked for a running log of missing design guides, and said to continue the list.
+- **Wood Diaphragm screen, one interior opening** (boxes "Opening: ..."; blank = no opening): position along the span and from the chord, its
+  length a and width b, and the lengths e1, e2 its framing runs into full-depth diaphragm each side (SDPWS-2021 Sect. 4.2.1 last sentence;
+  boundary elements at interior openings, definitions and 4.2.7.1). The force-transfer analysis of APA T555 / Diekmann for a wall with one
+  opening, turned flat (`diaphragm.opening`): the region e1 + a + e2 by the full depth W is the free body; strips d1, d2 beside the opening act
+  as the piers; V = the larger diaphragm shear at the region's ends. Prints H = V Lr / W, va = H / (e1 + e2), O = va b, the corner forces, the
+  strip shear V / (d1 + d2), the corner zones (both T555's (v d - F) / d and F / d), the force in the members along the opening sides
+  (|va - vc| x the longer extension) and across the depth (the larger corner force), and the shear-line equilibrium checks. New check row
+  "Unit shear around the opening". The deflection's shear term is increased over the region. Works for single spans and cantilevers.
+  Picture: the opening and its framing (drawn as wood) in the plan, and an enlarged plan of the region with every zone's unit shear, the
+  member forces and every length dimensioned.
+- **Validation: by hand (no published diaphragm-opening example is on file; logged in the missing references log).** 60 x 30 ft, 200 plf,
+  8 x 6 ft opening 12 ft from the support and 10 ft from the chord, 8 ft extensions: V 5,200 lb, H 4,160 lb, va 260 plf, O 1,560 lb, corner
+  forces 650 / 910 lb, strips 216.7 plf, corner zones 151.7 plf, side members 866.7 lb (equal to the Vierendeel strip value V a / 2(d1 + d2)
+  when e1 = e2), equilibrium closes; unequal extensions; cantilever; refusals (`tests/test_diaphragm.py`).
+- **Anchor rod tensile strength (ruled):** every threaded part (`bolts.tension` and `tension_with_shear` for "FU=" groups) takes the lower of
+  0.75 Fu Ab and Fu Ase (Design Guide 1 Table 4-1). The biaxial base plate test now gives the Guide's 12.7 kips for its 5/8 in. rods (was
+  12.9); larger sizes are unchanged.
+- **Missing references log** added to `docs/REFERENCES.md`; CLAUDE.md points to it.
+- **Single angles, beta_w (Next 2, part):** `anglebeam.beta_w_formula` computes beta_w by the footnote of Commentary Table C-F10.1 (fillets
+  neglected); it reproduces every tabulated value within 1.2 percent. Every unequal angle in the AISC Shapes Database v16.0 is a size the table
+  lists, so the table stays the source; the formula is the fall-back for a size it does not list. The item "unequal angles not in Table
+  C-F10.1" is closed.

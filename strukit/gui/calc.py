@@ -1161,7 +1161,14 @@ FORMS = {
                 F("chord_A", "Deflection: chord area", unit="in2", required=False),
                 F("chord_E", "Deflection: chord E", unit="psi", required=False),
                 F("defl_limit", "Deflection: limit", unit="in", required=False),
-                F("defl_limit_source", "Deflection: where the limit comes from", "text", required=False)],
+                F("defl_limit_source", "Deflection: where the limit comes from", "text", required=False),
+                F("op_a", "Opening: length along the span, a", unit="ft", required=False, help="blank = no opening; one rectangular interior opening, force transfer around it"),
+                F("op_b", "Opening: width across the diaphragm, b", unit="ft", required=False),
+                F("op_x0", "Opening: support (or line of resistance) to the near edge", unit="ft", required=False, help="along the span"),
+                F("op_y0", "Opening: chord to the opening, d1", unit="ft", required=False, help="across the diaphragm"),
+                F("op_e1", "Opening: framing extended before the opening, e1", unit="ft", required=False,
+                  help="the length of full-depth diaphragm the members along the opening sides run into, toward the support (SDPWS 4.2.1)"),
+                F("op_e2", "Opening: framing extended past the opening, e2", unit="ft", required=False, help="the same, on the far side")],
         tables=[T("splices", "Chord splices (for deflection)", [F("x", "Distance to the nearest support", unit="ft"), F("slip", "Slip at the design load", unit="in")],
                   help="Optional.")]),
     "nailed_connection": dict(
@@ -2639,13 +2646,16 @@ def _build(kind, values, project):
             r.miss.append("Blocked: nail spacing at the boundaries is blank")
         G, gs, L_, W_, load, w, ws = r.num("G"), r.text("G_source"), r.num("L"), r.num("W"), r.text("load"), r.num("w"), r.text("w_source")
         sp = r.rows("splices")
+        opn = None
+        if str(values.get("op_a") or "").strip():
+            opn = dict(a=r.num("op_a"), b=r.num("op_b"), x0=r.num("op_x0"), y0=r.num("op_y0"), e1=r.num("op_e1"), e2=r.num("op_e2"))
         r.done()
         return ws_more.diaphragm_sheet(mark, panel, int(face), 1 if case == "Case 1" else 2, pt, G, gs, L_, W_, w, ws, load, m,
                                        r.num("chord_E", False), r.num("chord_A", False), [(x["x"], x["slip"]) for x in sp],
                                        r.num("defl_limit", False), r.text("defl_limit_source", False) or "", blocked=blk,
                                        spacing=({"2-1/2": 2.5}.get(spc) or float(spc)) if blk else None,
                                        cant=(dict(irregular=str(values.get("torsion_irr") or "").startswith("y"), stories=int(float(values.get("stories") or 1)))
-                                             if str(values.get("layout") or "").startswith("cantilever") else None)), "simple", {}
+                                             if str(values.get("layout") or "").startswith("cantilever") else None), opening=opn), "simple", {}
     if kind == "nailed_connection":
         cb = combos(project, r.miss, "ASD")
         from .. import dowel as _dowel
@@ -5417,7 +5427,9 @@ def model_frame_sway(project, members):
                 raise ValueError("no Fy on its screen")
             if b["pr"] is None:                              # threaded rod: body yielding and 0.75 Fu Ab at the threads
                 Fu = float(v.get("Fu") or 0)
-                b["Pt"] = phi_t(Fy * b["A"], 0.75 * Fu * b["A"]) if Fu > 0 else Fy * b["A"] * (0.9 if method_ == "LRFD" else 1 / 1.67)
+                from .. import bolts as _bl
+                _r = _bl._threaded_ratio((4 * b["A"] / math.pi) ** 0.5, "FU=1")[0]      # lower of 0.75 Fu Ab and Fu Ase (DG1 Table 4-1)
+                b["Pt"] = phi_t(Fy * b["A"], 0.75 * Fu * b["A"] * _r) if Fu > 0 else Fy * b["A"] * (0.9 if method_ == "LRFD" else 1 / 1.67)
             else:
                 b["Pt"] = Fy * b["A"] * (0.9 if method_ == "LRFD" else 1 / 1.67)
             if not b["tension_only"]:
@@ -5430,7 +5442,7 @@ def model_frame_sway(project, members):
             notes.append(f"{mark}: not checked from the frame forces ({str(e) or type(e).__name__}).")
     if braces:
         notes.append("Braces are pinned at both ends and carry axial force only; their own weight is left out. Tension-only braces are taken out of any run that would put them in "
-                     "compression, and the run is repeated. Brace tension is checked against yielding of the gross section (rods: also 0.75 Fu Ab); net section rupture and the "
+                     "compression, and the run is repeated. Brace tension is checked against yielding of the gross section (rods: also the lower of 0.75 Fu Ab and Fu Ase at the threads); net section rupture and the "
                      "end connections are on the brace's own screen.")
     by_name = {mm.name: mm for mm in fr.members}
     any_tension_only = any(b["tension_only"] for b in braces.values())

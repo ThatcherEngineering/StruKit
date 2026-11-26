@@ -400,3 +400,31 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 ## 2026-11-26 12:10, carport (0.254.0), applied (not ruled)
 - Eave beams and struts carry a roof strip of the width typed; the rafters keep their full tributary load (the strip is counted twice).
 - At a portal-bay knee the HSS column's moment about its other axis is added to U (Eq. K1-6 is written for one axis).
+
+## 2026-11-26, reply to the closing check-in — Zach's rulings (do not ask again)
+- **"I agree with your conservative rulings."** Every reading listed as waiting at the closing check-in is now ruled, as applied:
+  - the 2026-11-26 readings above (welded flange plate U on the side welds; the stiffened seat readings; crane wheel at the beam end, no
+    bearing length unless typed, continuous runway Lb = the longest span and deflection over the shortest; DG39 A-2(f) "dce" read as de;
+    stiffened girders with one spacing, no end-panel tension field, first interior panel at a; the carport strip counted on the rafters too;
+    the other-axis column moment added to U at a portal knee);
+  - the 2026-11-26 01:11 run readings (cut-out plate, column-top end plate, cruciform lug, WT flange, story force by weight);
+  - the overnight 2026-11-25 22:28 to 23:23 readings (lug net uplift, built-up sections, end plate column side, through plate);
+  - the crane runway readings of 2026-11-25 16:06 (lateral wheel loads on the top flange alone, Cb = 1.0, deflection limits typed);
+  - the bottom-only cope, the stiffened seat stiffener at 2 w for 36 < Fy < 50 ksi, the compression flange plate length (2026-11-25 14:20);
+  - open-building column wind Cf from Figure 29.4-1 at the column's own h/D; fascia Cf = 2.0 with both edges that face the wind counted;
+  - **anchor rod tensile strength: the lower of 0.75 Fu Ab (AISC 360-22 Table J3.2) and Fu Ase (AISC Design Guide 1 Table 4-1), always.**
+    Built 0.257.0 for every threaded part (anchor rods on every base plate screen, shear lug rods, tension rods, rod braces in the 3D frame).
+    It governs only for 5/8 in. rods (Ase / 0.75 Ab = 0.98); the larger sizes keep 0.75 Fu Ab.
+- **Diaphragm openings: option (a) for now** ("Do option A for now until I get the design guides needed"): the shear wall force-transfer
+  analysis turned flat, checked by hand. Built 0.257.0. When a published diaphragm-opening example is supplied, validate against it.
+- **Keep a log of missing design guides as the work goes on.** It is `docs/REFERENCES.md`, "Missing references log"; CLAUDE.md points to it.
+- "Continue with the list": build the Next list in order, in stretches of about 30 minutes with a check-in at the end of each.
+
+## 2026-11-26, diaphragm opening (0.257.0), applied (not ruled)
+- The shear through the region around the opening is the larger of the diaphragm shears at the two ends of the region, used over the whole
+  region (the load inside the region is not deducted).
+- Corner zones are checked for the larger of APA T555's (v d - F) / d and the corner force per foot F / d (as the wall ruling of 2025-11-25 16:06).
+- The lengths e1, e2 the opening's framing runs into full-depth diaphragm are typed (no default); the members along the opening sides take
+  |va - vc| x the longer of e1, e2 (both directions of load) and run the whole region; the members across the depth at the opening ends take
+  the larger corner force and run chord to chord.
+- Deflection: the Eq. 4.2-1 / 4.2-2 shear term is increased over the region by the largest unit shear around the opening less V / W.

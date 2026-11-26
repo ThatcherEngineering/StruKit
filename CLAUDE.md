@@ -84,4 +84,5 @@ ruled there, do not ask again. The same two files also live in the claude.ai Pro
 ## References
 Every standard is in Zach's folder `C:\Users\zacht\OneDrive\Desktop\StrucutralDesign` (spelled that way) on his laptop. `docs/REFERENCES.md`
 says which file is which (several have numbered names) and which pages and examples StruKit reads. Stage only what the item in hand needs;
-never put the standards or their text in the repo. Not on file: ASCE 7-16, AISI S100, ASABE EP484/EP486; TMS 402 is unreadable.
+never put the standards or their text in the repo. Missing references (design guides and standards a build is waiting on) are logged in `docs/REFERENCES.md`,
+"Missing references log": keep it current as you build (Zach, 2026-11-26) and list it in check-ins. TMS 402 is unreadable.

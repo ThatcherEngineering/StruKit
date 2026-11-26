@@ -24,8 +24,8 @@ def test_example_4_7_14_on_the_screen():
     b = s.biax
     assert b["fp"] == pytest.approx(4.42, abs=0.005) and b["m"] == pytest.approx(2.96, abs=0.005) and b["n"] == pytest.approx(3.76, abs=0.005)
     assert b["t_bear"] == pytest.approx(1.67, abs=0.01)                                  # 1.49 n (fp / Fy)^0.5
-    # StruKit's rod strength is 0.75 x 0.75 Fu Ab (AISC 360-22 Table J3.2) = 12.9 kips against the Guide's 12.7: strengths 1 percent higher
-    assert b["rt"] == pytest.approx(12.9, abs=0.06) and b["worst"]["sx"]["M"] == pytest.approx(837, rel=0.015) and b["worst"]["val"] == pytest.approx(0.988, abs=0.03)
+    # rod strength: the lower of 0.75 x 0.75 Fu Ab (Table J3.2, 12.9 kips) and 0.75 Fu Ase (the Guide's Table 4-1, 12.7 kips): the Guide's value
+    assert b["rt"] == pytest.approx(12.7, abs=0.02) and b["worst"]["sx"]["M"] == pytest.approx(837, rel=0.015) and b["worst"]["val"] == pytest.approx(0.988, abs=0.015)
     assert s.ok and [r.check for r in s.rows] == ["Plate thickness, bearing side", "Biaxial interaction"]
     thin = calc.build("base_plate_biaxial", dict(V, t="1.5"), PROJ)[0]
     assert thin.rows[0].status == "FLAG"

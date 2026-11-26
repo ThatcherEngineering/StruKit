@@ -34,4 +34,26 @@ page number in the PDF file, not the printed page number. More page numbers are 
 | Simpson C-C-2026 catalog | `Simpson\C-C-2026.pdf` | Hold-downs (pp. 59-67). |
 | TMS 402/602-16 | `715304102-TMS-402-602-16-Masonry-Code.pdf` | Sign-in protected; cannot be read. Do not work around it. |
 
-Not on file: ASCE 7-16, AISI S100, ASABE EP484 / EP486.
+Not on file: see the missing references log below.
+
+## Missing references log (Zach, 2026-11-26: "Keep a log of what design guides are missing as we continue to build")
+
+Every session keeps this table current: add a row the first time a build stops short for want of a reference, add the items to an existing
+row as more wait on it, and move a row to "Received" when Zach supplies the document. The check-ins list it under "Needed from Zach".
+
+| Reference | What it would let StruKit build or confirm | Items waiting on it | First noted |
+|---|---|---|---|
+| AISC Design Guide 7, Industrial Buildings: Roofs to Anchor Rods (crane runways) | crane lateral loads and their share to each runway, runway deflection limits, cap channels, fatigue of runway girders; a published runway example to validate against | Next 6 (underhung cranes, fatigue, cap channels); the crane readings applied 2026-11-25 and 2026-11-26 | 2026-11-25 |
+| MHI MH27.1 (underhung cranes and monorails) and CMAA 74 | underhung crane wheel loads, flange bending under the wheels, crane classes | Next 6 | 2026-11-26 |
+| AISC Design Guide 9, Torsional Analysis of Structural Steel Members | W-shape torsion (warping stresses), torsion of crane runways and spandrels | beams with torsion; J and Cw of built-up sections are already cited to it | 2026-11-26 |
+| A published wood diaphragm opening example (for example the SEAOC Structural/Seismic Design Manual Vol. 2, APA diaphragm design examples, Breyer's Design of Wood Structures) | an independent check of the diaphragm opening analysis | diaphragm openings (built 0.257.0 by the shear wall force-transfer method turned flat, checked by hand) | 2026-11-26 |
+| AISC Steel Construction Manual, 16th Ed. | Table 10-9 and the Part 10 seat provisions now cited from the 15th Ed.; Part 9 / 10 values now read on 14th and 15th Ed. pages | Next 9 | 2026-11-26 |
+| ASCE/SEI 7-16 | snow and load combinations for Pueblo (PRBD) and El Paso County (PPRBD) while on the 2021 IBC | the 7-16 load path | 2026-11-20 |
+| AISI S100 (cold-formed steel) | purlins, girts, roof and wall panel of metal buildings and carports | carport package cold-formed members | 2026-11-24 |
+| A method for an HSS rafter on an HSS column cap plate (a reference, or Zach's own as a Thatcher Engineering standard) | the 2026-030 style knee | carport knee on a cap plate | 2026-11-24 |
+| TMS 402/602-16 in a copy that opens normally | CMU walls | CMU walls | 2026-11-20 |
+| ASABE EP484 / EP486 | post-frame diaphragms and post embedment | post-frame | 2026-11-20 |
+| Zach's wind drift limit and its source | the drift checks under wind (the boxes stay blank) | drift under wind | 2026-11-24 |
+
+Received: AISC Design Guide 1 (2026-11-23); NDS 2018 and Supplement; SDPWS 2021; ASCE 7-22; AISC 360-22; Design Examples v16; DG24; DG39
+(end plates); AISC Manual 14th and 15th Ed.

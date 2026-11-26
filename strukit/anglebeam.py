@@ -95,12 +95,50 @@ def principal_points(a, g):
 
 
 def beta_w(g):
+    """|beta_w| (in.): AISC 360-22 Commentary Table C-F10.1 for the sizes it lists; otherwise by the table's footnote,
+    beta_w = (1 / Iw) integral over A of z (w^2 + z^2) dA - 2 z0, with the angle as two rectangles (fillets left out) and the shear center at the
+    intersection of the leg mid-lines (within 1.2 percent of the table's values for every size it lists, tests/test_angle_beam.py)."""
     if g["equal"]:
         return 0.0
     key = (round(g["bl"], 3), round(g["bs"], 3))
-    if key not in BETA_W:
-        raise AngleBeamError(f"no beta_w for an L{g['bl']:g}x{g['bs']:g} in AISC 360-22 Commentary Table C-F10.1; this angle is outside the check")
-    return BETA_W[key]
+    if key in BETA_W:
+        return BETA_W[key]
+    return beta_w_formula(g["bl"], g["bs"], g["t"])
+
+
+def beta_w_source(g):
+    if g["equal"]:
+        return "equal legs"
+    return ("AISC 360-22 Commentary Table C-F10.1" if (round(g["bl"], 3), round(g["bs"], 3)) in BETA_W else
+            "AISC 360-22 Commentary Table C-F10.1 footnote [a], fillets neglected")
+
+
+def beta_w_formula(L, S, t, n=400):
+    """|beta_w| by the footnote of Commentary Table C-F10.1, numerically over the two legs (long leg L, short leg S, thickness t, in.)."""
+    pts = []
+    for x0, y0, w_, h_, nx, ny in ((0.0, 0.0, t, L, 8, n), (t, 0.0, S - t, t, n, 8)):
+        dA = w_ * h_ / (nx * ny)
+        pts += [(x0 + (i + 0.5) * w_ / nx, y0 + (j + 0.5) * h_ / ny, dA) for i in range(nx) for j in range(ny)]
+    A = sum(p[2] for p in pts)
+    xc, yc = sum(p[0] * p[2] for p in pts) / A, sum(p[1] * p[2] for p in pts) / A
+    Ix = sum((p[1] - yc) ** 2 * p[2] for p in pts)
+    Iy = sum((p[0] - xc) ** 2 * p[2] for p in pts)
+    Ixy = sum((p[0] - xc) * (p[1] - yc) * p[2] for p in pts)
+    th = 0.5 * math.atan2(-2 * Ixy, Ix - Iy)
+    best = None
+    for ang in (th, th + math.pi / 2):
+        u = (math.cos(ang), math.sin(ang)); v = (-u[1], u[0])
+        Iw = sum(((p[0] - xc) * v[0] + (p[1] - yc) * v[1]) ** 2 * p[2] for p in pts)
+        if best is None or Iw > best[0]:
+            best = (Iw, u, v)
+    Iw, u, v = best
+    z0 = (t / 2 - xc) * v[0] + (t / 2 - yc) * v[1]
+    I3 = 0.0
+    for x, y, dA in pts:
+        dx, dy = x - xc, y - yc
+        w_, z_ = dx * u[0] + dy * u[1], dx * v[0] + dy * v[1]
+        I3 += z_ * (w_ * w_ + z_ * z_) * dA
+    return abs(I3 / Iw - 2 * z0)
 
 
 def geometric_strength(a, g, Fy, restraint, Lb, Cb):

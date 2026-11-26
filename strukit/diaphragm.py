@@ -22,7 +22,8 @@ Read from the standard (pp. 18-19 and 27 of the document; tables read from the p
                  Eq. 4.2-1: 5 v L^3 / (8 E A W) + 0.25 v L / (1000 Ga) + sum(x Dc) / (2 W).
 Unit shear v = w L / (2 W); chord force T = C = w L^2 / (8 W) (statics).
 Not covered: high load diaphragms (Table 4.2B), lumber sheathed
-diaphragms, openings, collectors, torsion. Cantilevered diaphragms of open front structures (4.2.6, Eq. 4.2-2) by _design(cant=...).
+diaphragms, collectors, torsion. Cantilevered diaphragms of open front structures (4.2.6, Eq. 4.2-2) by _design(cant=...).
+One rectangular interior opening by opening() (force transfer around the opening, below).
 """
 from .shearwall import FACTORS
 
@@ -190,3 +191,51 @@ def collector(W, R, segments):
     pts[-1] = (pts[-1][0], 0.0 if abs(pts[-1][1]) < 1e-6 * R else pts[-1][1])
     xm, Fm = max(pts, key=lambda p_: abs(p_[1]))
     return dict(vd=vd, vw=vw, Lw=Lw, points=pts, Fmax=abs(Fm), x_max=xm, segments=segs, full=abs(Lw - W) < 1e-6)
+
+
+def opening(L, W, w, cant, x0, a, y0, b, e1, e2):
+    """Force transfer around one rectangular interior opening in a uniformly loaded diaphragm (SDPWS-2021 Sect. 4.2.1 last sentence,
+    boundary elements at interior openings, definitions; 4.2.7.1). No published diaphragm example is on file: the Diekmann / APA T555
+    force-transfer analysis of a shear wall with one opening (shearwall.ftao_multi) is applied to the diaphragm turned flat, the region
+    of diaphragm around the opening taken as the free body:
+      wall length L  -> diaphragm depth W (along the load); piers L1, L2 -> strips d1 = y0 and d2 = W - y0 - b beside the opening;
+      opening width Lo -> b; wall height h -> region length Lr = e1 + a + e2 along the span; ho -> a; sheathing above and below the
+      opening -> e1, e2, the lengths of full-depth diaphragm each side of the opening into which the opening's framing extends.
+    Shear V: the larger of the diaphragm shears at the two ends of the region, used through the whole region (the load inside the region
+    not deducted). L, W, x0 (support or line of resistance to the near edge of the opening, along the span), a, y0 (chord to the opening,
+    across the depth), b, e1, e2 in ft; w plf at the level of the design method; cant True for a cantilever (x0 from the line of resistance).
+    Returns dict of the region forces; every unit shear plf, forces lb."""
+    for nm, v in (("the opening length", a), ("the opening width", b), ("the distance from the chord to the opening", y0),
+                  ("the length of diaphragm before the opening", e1), ("the length of diaphragm past the opening", e2)):
+        if v is None or v <= 0:
+            raise DiaphragmError(f"diaphragm opening: {nm} must be positive")
+    if x0 is None or x0 < 0:
+        raise DiaphragmError("diaphragm opening: the distance from the support to the opening must not be negative")
+    d1, d2 = y0, W - y0 - b
+    if d2 <= 1e-9:
+        raise DiaphragmError("diaphragm opening: the opening reaches the far chord; an opening at the edge is not an interior opening")
+    xs, xe = x0 - e1, x0 + a + e2
+    if xs < -1e-9 or xe > L + 1e-9:
+        raise DiaphragmError(f"diaphragm opening: the opening and its framing extensions run from {xs:g} to {xe:g} ft, outside the "
+                             f"{'cantilever' if cant else 'span'} (0 to {L:g} ft); shorten the extensions")
+    Vx = (lambda x: w * (L - x)) if cant else (lambda x: w * (L / 2.0 - x))
+    V = max(abs(Vx(xs)), abs(Vx(xe)))
+    Lr = e1 + a + e2
+    H = V * Lr / W                                   # chord force change across the region (the hold-down force of the wall analysis)
+    va = H / (e1 + e2)                               # full-depth diaphragm each side of the opening
+    O = va * b                                       # boundary force at each end of the opening
+    S = d1 + d2
+    strips = []
+    for d in (d1, d2):
+        F = O * d / S                                # corner force
+        T = d * b / S                                # tributary width of the opening
+        v = (V / W) * (d + T) / d                    # = V / (d1 + d2)
+        R = v * d
+        vc = (R - F) / d                             # corner zone, T555
+        strips.append(dict(d=d, F=F, T=T, v=v, R=R, vc=vc, vF=F / d,
+                           N=abs(va - vc) * max(e1, e2)))     # member along the opening side at the opening corner
+    checks = [s_["vc"] * (e1 + e2) + s_["v"] * a - H for s_ in strips]     # each chord line carries H; the opening sides net zero
+    checks += [va * (e1 + e2) - s_["vc"] * (e1 + e2) - s_["v"] * a for s_ in strips]
+    v_max = max(va, max(max(s_["v"], abs(s_["vc"]), s_["vF"]) for s_ in strips))
+    return dict(V=V, xs=xs, xe=xe, Lr=Lr, H=H, va=va, O=O, strips=strips, d1=d1, d2=d2, x0=x0, a=a, y0=y0, b=b, e1=e1, e2=e2,
+                F_end=max(s_["F"] for s_ in strips), N_side=max(s_["N"] for s_ in strips), checks=checks, v_max=v_max, v_plain=V / W)

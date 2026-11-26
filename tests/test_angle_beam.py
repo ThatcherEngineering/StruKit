@@ -79,3 +79,17 @@ def test_screen_and_refusals(tmp_path):
         angle_beam_sheet("LB", "L4X4X1/4", 50, "A36", 6, "long", "up", "continuous", False, DL + [dict(case="L", kind="uniform", w=0.1, dir="sideways")], [LR], "LRFD")
     s2 = angle_beam_sheet("LB", "L6X4X1/2", 36, "A36", 8, "long", "up", "none", True, DL, [LR], "LRFD")
     assert not s2.angle_beam["geometric"]                           # unequal legs without continuous restraint: principal axes
+
+
+def test_beta_w_footnote_formula_against_table_c_f10_1():
+    """beta_w by the footnote of AISC 360-22 Commentary Table C-F10.1 (fillets neglected) reproduces every tabulated value within 1.2 percent
+    at the thicknesses of the shapes table; every unequal angle in the AISC Shapes Database v16.0 is a size the table lists."""
+    from strukit import anglebeam as ab, shapes
+    for (bl, bs), b in ab.BETA_W.items():
+        for t in (0.375, 0.5):
+            if t < bs / 4:
+                assert ab.beta_w_formula(bl, bs, t) == pytest.approx(b, rel=0.012)
+    for lab in shapes.angle_labels():
+        a = shapes.angle(lab)
+        bl, bs = max(a["b"], a["d"]), min(a["b"], a["d"])
+        assert bl == bs or (round(bl, 3), round(bs, 3)) in ab.BETA_W

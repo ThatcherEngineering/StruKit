@@ -1521,9 +1521,10 @@ def live_load_sheet(mark, floors, roofs):
 
 
 def diaphragm_sheet(mark, panel, face_in, case, panel_type, G, G_source, L, W, w, w_source, load, method, chord_E=None, chord_A=None,
-                    splice=(), defl_limit=None, defl_limit_source="", blocked=False, spacing=None, cant=None):
+                    splice=(), defl_limit=None, defl_limit_source="", blocked=False, spacing=None, cant=None, opening=None):
     """Unblocked or blocked wood structural panel diaphragm, single span between two lines of resistance,
-    uniformly loaded, SDPWS-2021 Sect. 4.2 (see diaphragm.py). w is at the level of `method`."""
+    uniformly loaded, SDPWS-2021 Sect. 4.2 (see diaphragm.py). w is at the level of `method`.
+    opening: None or dict(x0, a, y0, b, e1, e2) ft, one interior opening by force transfer around it (diaphragm.opening)."""
     from . import diaphragm as dp
     is_cant = cant is not None
     for nm, v in (("the source of the framing specific gravity", G_source), ("the source of the load", w_source)):
@@ -1557,8 +1558,34 @@ def diaphragm_sheet(mark, panel, face_in, case, panel_type, G, G_source, L, W, w
             Row("Aspect ratio L'/W'" if is_cant else "Aspect ratio L/W", "", r["ratio"], r["ratio_max"], "", r["ratio_src"], "")]
     if is_cant and r.get("length_max"):
         rows.append(Row("Cantilever length L'", "", L, r["length_max"], "ft", "SDPWS-2021 Sect. 4.2.6.1 item 4", "35 ft maximum"))
+    op = None
+    if opening:
+        try:
+            op = dp.opening(L, W, w, is_cant, opening["x0"], opening["a"], opening["y0"], opening["b"], opening["e1"], opening["e2"])
+        except dp.DiaphragmError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        except (KeyError, TypeError):
+            raise WorksheetError(f"{mark}: the opening needs its position, length, width and the framing extensions each side")
+        s1, s2 = op["strips"]
+        T555 = "force transfer around openings, APA T555 method"
+        steps += [Ln("opening", f"{op['a']:g} ft along the span x {op['b']:g} ft across", "", "", f"{op['x0']:g} ft from the {'line of resistance' if is_cant else 'support'}, "
+                      f"{op['y0']:g} ft from the chord"),
+                  Ln("region around the opening, Lr = e1 + a + e2", f"{op['Lr']:g} ft", "", "Sect. 4.2.1", f"framing at the opening extended e1 = {op['e1']:g} ft and e2 = {op['e2']:g} ft "
+                      f"into full-depth diaphragm (from {op['xs']:g} to {op['xe']:g} ft)"),
+                  Ln("shear at the region, V", op["V"], "lb", "statics", "the larger of the shears at the two ends of the region"),
+                  Ln("chord force change across the region, H = V Lr / W", op["H"], "lb", T555, ""),
+                  Ln("unit shear in the full depth each side of the opening, va = H / (e1 + e2)", op["va"], "plf", T555, ""),
+                  Ln("boundary force at each end of the opening, O = va b", op["O"], "lb", T555, ""),
+                  Ln("corner forces, O d / (d1 + d2)", f"{s1['F']:,.0f} lb and {s2['F']:,.0f} lb", "", T555, f"strips beside the opening d1 = {op['d1']:g} ft, d2 = {op['d2']:g} ft"),
+                  Ln("unit shear in the strips beside the opening, V / (d1 + d2)", s1["v"], "plf", T555, ""),
+                  Ln("corner zones, (v d - F) / d", f"{s1['vc']:.0f} plf and {s2['vc']:.0f} plf", "", T555, f"corner force per foot F / d: {s1['vF']:.0f} and {s2['vF']:.0f} plf"),
+                  Ln("members across the depth at the opening ends", op["F_end"], "lb", T555, "tension and compression; continuous from chord to chord"),
+                  Ln("members along the opening sides, |va - vc| x larger of e1, e2", op["N_side"], "lb", T555, f"tension and compression; continuous over the region, {op['Lr']:g} ft"),
+                  Ln("shear lines of the region: chord lines equal H, opening sides net zero", "; ".join(f"{(0.0 if abs(c) < 0.5 else c):,.0f}" for c in op["checks"]) + " lb", "", T555, "")]
+        rows.append(Row("Unit shear around the opening", load, op["v_max"], r["capacity"], "plf", "SDPWS-2021 Sect. 4.2.4, " + tab,
+                        "largest of the full-depth, strip and corner-zone shears and the corner force per foot"))
     not_checked = ["the chords, their splices and connections for the chord force", "the transfer of the reactions to the walls or frames below (collectors, Sect. 4.1.9)",
-                   "openings in the diaphragm", ("story drift at the edges with torsion and accidental torsion (Sect. 4.2.6.1 item 3)" if is_cant else
+                   ("the framing members, blocking and connections at the opening for the forces listed" if op else "openings in the diaphragm"), ("story drift at the edges with torsion and accidental torsion (Sect. 4.2.6.1 item 3)" if is_cant else
                                                   "torsion and open front conditions (Sect. 4.2.5, 4.2.6)"), "the panel layout and nailing against the cases of the " + tab + " figure"]
     if r["defl"] is not None:
         steps += [Ln("Ga", r["Ga"], "kips/in", tab, panel_type),
@@ -1572,6 +1599,14 @@ def diaphragm_sheet(mark, panel, face_in, case, panel_type, G, G_source, L, W, w
                      Ln("chord splice slip: sum(x Dc) / (2 W)", f"{r['defl_splice']:.3f} in", "", "Eq. 4.2-1",
                         "; ".join(f"{d:g} in. at {x:g} ft" for x, d in splice) if splice else "no splice slip entered"),
                      Ln("mid-span deflection", f"{r['defl']:.3f} in", "", "Eq. 4.2-1", "at the load level of the design method")])]
+        if op:
+            k_ = 1.0 if is_cant else 0.5
+            extra = k_ * op["Lr"] * max(0.0, op["v_max"] - op["v_plain"]) / (1000.0 * r["Ga"])
+            r["defl"] += extra
+            r["defl_opening"] = extra
+            steps += [Ln(f"added at the opening: {k_:g} Lr (v around the opening - V / W) / (1000 Ga)", f"{extra:.3f} in", "", "Eq. " + ("4.2-2" if is_cant else "4.2-1") + " shear term",
+                         f"the largest unit shear around the opening over the region, less the shear without the opening, {op['V'] / W:.0f} plf"),
+                      Ln("deflection with the opening", f"{r['defl']:.3f} in", "", "", "")]
         if defl_limit is not None:
             rows.append(Row("Deflection at the free edge" if is_cant else "Mid-span deflection", load, r["defl"], defl_limit, "in",
                             f"SDPWS-2021 Eq. {'4.2-2' if is_cant else '4.2-1'}; limit: " + defl_limit_source.strip(), ""))
@@ -1595,8 +1630,13 @@ def diaphragm_sheet(mark, panel, face_in, case, panel_type, G, G_source, L, W, w
           "Unblocked wood structural panel diaphragm with common nails at 6 in. on centre at diaphragm boundaries and supported panel edges (Sect. 4.2.8.1.3)."),
          "The load w is entered at the level of the design method."],
         not_checked, picture=None)
-    sheet.blocks.append(dict(title="Plan", picture=("diaphragm", dict(L=L, W=W, w=w, v=r["v"], R=r["reaction"], T=r["chord"], cant=is_cant))))
+    if op:
+        sheet.assumptions.append("One rectangular interior opening, framed with members across the depth at its ends and along its sides, each extended into full-depth "
+                                 "diaphragm the lengths stated and connected to develop the forces listed (Sect. 4.2.1, 4.2.7.1). Sheathing in each zone takes a uniform unit "
+                                 "shear; the chords carry the moment of the whole diaphragm as without the opening.")
+    sheet.blocks.append(dict(title="Plan", picture=("diaphragm", dict(L=L, W=W, w=w, v=r["v"], R=r["reaction"], T=r["chord"], cant=is_cant, opening=op))))
     sheet.diaphragm = r
+    sheet.opening = op
     return sheet
 
 
@@ -5121,7 +5161,7 @@ def angle_strut_sheet(mark, shape, Fy, steel_source, length_ft, attached, loads,
 
 def tension_rod_sheet(mark, rod_d, Fy, Fu, steel_source, length_ft, loads, combos, method):
     """Threaded steel rod in tension (hanger, tie, sag rod): tensile yielding of the body, AISC 360-22 Eq. D2-1, and the tensile strength of the
-    threaded part, Sect. J3.7 with Fnt = 0.75 Fu of Table J3.2 on the unthreaded body area.  loads: dict(case, P) kips, tension."""
+    threaded part, Sect. J3.7 with Fnt = 0.75 Fu of Table J3.2 on the unthreaded body area, or Fu Ase (Design Guide 1 Table 4-1) where lower.  loads: dict(case, P) kips, tension."""
     from . import bolts
     from .steel_beam import SteelInputError
     if not (steel_source or "").strip():
@@ -5149,7 +5189,7 @@ def tension_rod_sheet(mark, rod_d, Fy, Fu, steel_source, length_ft, loads, combo
     steps = [Ln("Required tensile strength", T, "kip", worst, ""),
              Ln("Ab", f"{Ab:.3f} in2", "", "", f"{rod_d:g} in. rod, unthreaded body"),
              Ln("Tensile yielding, Pn = Fy Ab", Py, "kip", "AISC 360-22 Eq. D2-1", f"Fy = {Fy:g} ksi; " + ("0.90 Pn" if lrfd else "Pn / 1.67") + f" = {Pyc:.2f} kip"),
-             Ln("Threaded part, Rn = 0.75 Fu Ab", thr.Rn, "kip", "AISC 360-22 Eq. J3-1, Table J3.2", f"Fu = {Fu:g} ksi; " + ("0.75 Rn" if lrfd else "Rn / 2.00") + f" = {thr.R_avail:.2f} kip")]
+             Ln("Threaded part, Rn = lower of 0.75 Fu Ab and Fu Ase", thr.Rn, "kip", "AISC 360-22 Eq. J3-1, Table J3.2; AISC Design Guide 1 (3rd Ed.) Table 4-1", f"Fu = {Fu:g} ksi; " + ("0.75 Rn" if lrfd else "Rn / 2.00") + f" = {thr.R_avail:.2f} kip")]
     rows = [Row("Tensile yielding", worst, T, Pyc, "kip", "AISC 360-22 Eq. D2-1", "rod body"),
             Row("Tensile strength at the threads", worst, T, thr.R_avail, "kip", "AISC 360-22 Sect. J3.7", "threaded part")]
     info = [("Rod", f"{rod_d:g} in. threaded rod, Fy = {Fy:g} ksi, Fu = {Fu:g} ksi ({steel_source.strip()})"), ("Length", f"{length_ft:g} ft")]
@@ -5326,7 +5366,7 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
     assumptions = ["Down loads act vertically; sideways loads act horizontally, from the toe of the horizontal leg toward the heel when positive.",
                    "Loads act through the shear center (the heel); torsion is not considered."]
     if not geometric:
-        assumptions.append("Principal-axis section properties from the AISC Shapes Database v16.0; beta_w from AISC 360-22 Commentary Table C-F10.1.")
+        assumptions.append("Principal-axis section properties from the AISC Shapes Database v16.0; beta_w from " + ab.beta_w_source(g) + ".")
     sheet = SimpleSheet(mark, "Single-Angle Beam", "Member", method, info, load_lines, [(cb.name, cb.source) for cb in combos], f"Calculation ({worst})", steps, rows,
                         assumptions, ["deflection (unrestrained angles deflect about the principal axes)", "axial load", "the end connections", "bearing at the supports"])
     sheet.blocks.append(dict(title="Loading and Section", head="Loading and Section", picture=("angle_beam", dict(
@@ -5579,7 +5619,8 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
     Vy_c, Vr_c, My_c, Mr_c = st["Vy"] * ph(1.0, 1.5), st["Vr"] * ph(0.75, 2.0), st["My"] * ph(0.9, 1.67), st["Mr"] * ph(0.75, 2.0)
     rw_c = st["rw"] * ph(0.75, 2.0)
     Ab = math.pi * rod_d ** 2 / 4
-    rod_c = 0.75 * rod_Fu * Ab * ph(0.75, 2.0)
+    from . import bolts as _b_
+    rod_c = _b_.tension(rod_d, f"FU={rod_Fu:g}", "LRFD" if lrfd else "ASD").R_avail      # lower of 0.75 Fu Ab and Fu Ase
     Zp = bsl * tbp ** 2 / 4
     plate_c = bp_Fy * Zp * ph(0.9, 1.67)
     tot = lambda cb: (sum(cb.factors.get(x["case"], 0.0) * x["V"] for x in loads), sum(cb.factors.get(x["case"], 0.0) * (x.get("P") or 0.0) for x in loads))
@@ -5630,7 +5671,7 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
     wmin = 0.125 if tmin <= 0.25 else 0.1875 if tmin <= 0.5 else 0.25 if tmin <= 0.75 else 0.3125
     rows.append(Row("Minimum fillet weld size", "", wmin, weld, "in", "AISC 360-22 Table J2.4", f"thinner part {tmin:g} in."))
     gr = pick(res, "rod")
-    rows.append(Row("Anchor rod tension, most loaded rod", gr["cb"], gr["rod"], rod_c, "kip", "AISC 360-22 Table J3.2", f"{rod_d:g} in. rods, 0.75 Fu Ab"))
+    rows.append(Row("Anchor rod tension, most loaded rod", gr["cb"], gr["rod"], rod_c, "kip", "AISC 360-22 Table J3.2; AISC Design Guide 1 (3rd Ed.) Table 4-1", f"{rod_d:g} in. rods, lower of 0.75 Fu Ab and Fu Ase"))
     gp = pick(res, "Mpl")
     rows.append(Row("Base plate bending at the lug", gp["cb"], gp["Mpl"], plate_c, "kip-in", "AISC Design Guide 1 Example 4.7-5; AISC 360-22 Sect. J4.5", f"width = lug width {bsl:g} in."))
     rows.append(Row("Base plate thickness, at least the lug thickness", "", tsl, tbp, "in", "AISC Design Guide 1 Sect. 4.3.3", "recommended"))
