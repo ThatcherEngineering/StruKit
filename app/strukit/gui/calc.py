@@ -2844,7 +2844,7 @@ def case_reactions(kind, values, project):
             if c:
                 tot[c] = tot.get(c, 0.0) + P
         notes = ["a wall passes down what bears on it"]
-        ww = _wall_weight(project, v)
+        ww = _wall_weight(project, v, kind)
         if isinstance(ww, str):
             return dict(error=ww)
         if ww:
@@ -3076,9 +3076,10 @@ def _coord(text, grids):
     return None
 
 
-def _wall_weight(project, v):
-    """A placed wall's own weight for the load path: (lb, note) from its typed psf x story height x placed length; None when no weight is
-    typed; a message when the weight is typed but cannot be used (no source, no elevations, not placed)."""
+def _wall_weight(project, v, kind="shear_wall"):
+    """A placed wall's own weight for the load path: (lb, note) from its typed psf x story height x placed length, less the area of its
+    openings (windows and doors, as for the 3D views) when "deduct the openings" is picked; None when no weight is typed; a message when the
+    weight is typed but cannot be used (no source, no elevations, not placed, an opening that cannot be read)."""
     t = str(v.get("at_wall_psf") or "").replace(",", "").strip()
     if not t:
         return None
@@ -3102,6 +3103,17 @@ def _wall_weight(project, v):
         return "the wall weight needs elevations for the level at the top of the wall and the level below"
     h = el[pl["level"]] - el[pl["base"]]
     L = math.hypot(pl["p2"][0] - pl["p1"][0], pl["p2"][1] - pl["p1"][1])
+    if str(v.get("at_wall_deduct") or "").strip().lower().startswith("yes"):
+        probs = []
+        ops = _wall_openings(dict(kind=kind, values=v), el[pl["base"]], el[pl["level"]], L, probs)
+        if probs:
+            return probs[0].split(": ", 1)[-1]
+        A = sum((b - a) * (hi - lo) for (a, b), (lo, hi) in ops)
+        if A >= h * L - 1e-9:
+            return "the openings cover the whole wall; check the openings typed"
+        W = psf * (h * L - A)
+        return W, (f"its own weight {psf:g} psf x ({h:g} ft x {L:.2f} ft less {A:.1f} sq ft of {len(ops)} opening{'s' if len(ops) != 1 else ''}) "
+                   f"= {W:,.0f} lb dead ({src})")
     return psf * h * L, f"its own weight {psf:g} psf x {h:g} ft x {L:.2f} ft = {psf * h * L:,.0f} lb dead ({src})"
 
 
@@ -3149,7 +3161,7 @@ def model_seismic_weights(project, members):
             continue
         mark = v.get("mark") or "?"
         if kind in MODEL_WALLS:
-            ww = _wall_weight(project, v)
+            ww = _wall_weight(project, v, kind)
             if ww is None:
                 no_wt.append(mark); continue
             if isinstance(ww, str):

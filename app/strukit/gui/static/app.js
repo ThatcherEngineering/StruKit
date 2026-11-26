@@ -816,7 +816,9 @@ function placementCard(m, changed) {
   if (wall) fs.push({ key: "at_openings", label: "Openings for the 3D views (windows, doors)", type: "text", required: false,
     help: "start along the wall from End 1, width, sill above the level below, height, in feet; groups separated by ; for example 2 3 3 4; 12 3 0 6.67. Blank on a perforated or force-transfer wall: its own openings are drawn from End 1" });
   if (wall) fs.push({ key: "at_wall_psf", label: "Wall weight (gravity load path)", unit: "psf", type: "text", required: false, help: "of wall face; carried down as dead load x the story height (from the level elevations) x the wall length; blank = not included" },
-    { key: "at_wall_psf_source", label: "Where the wall weight comes from", type: "text", required: false });
+    { key: "at_wall_psf_source", label: "Where the wall weight comes from", type: "text", required: false },
+    { key: "at_wall_deduct", label: "Wall weight: deduct the openings", type: "select", options: ["no", "yes"], required: false,
+      help: "yes = the window and door areas (the openings for the 3D views below, or the wall's own openings) are taken off the wall area; blank = no" });
   if (brace) fs.push({ key: "at_brace", label: "In the 3D frame this brace takes", type: "select", options: ["tension only", "tension and compression"], required: false, help: m.kind === "tension_member" ? "blank = tension only" : "blank = tension and compression" });
   if (TD_BEAMS.includes(m.kind)) fs.push({ key: "at_dz1", label: "Left end above the level (sloped member)", unit: "ft", type: "text", required: false, help: "blank = at the level, or following the sloped beam it sits on" },
     { key: "at_dz2", label: "Right end above the level", unit: "ft", type: "text", required: false });
