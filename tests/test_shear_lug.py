@@ -130,3 +130,30 @@ def test_shear_across_the_lug_is_refused():
     proj = dict(name="T", number="1", address="", method="LRFD", date="2026-11-25", combos_lrfd=[dict(expr="1.2D + 1.0W", source="ASCE/SEI 7-22 Sect. 2.3.1")])
     r = calc.results("shear_lug", v, proj)
     assert r["state"] == "incomplete" and any("cruciform" in m for m in r["messages"])
+
+
+def test_cruciform_lug():
+    """Cruciform lug: each plate checked as the single lug for the shear across its face (turned for B), the concrete ratios of the two
+    directions added, and the corner rod taking half the rod tension of each direction (no published example; by the single-lug results)."""
+    from strukit.ws_more import shear_lug_cruciform_sheet
+    lr = [Combo("1.0W", {"W": 1.0}, "t")]
+    s = shear_lug_cruciform_sheet("SL", *GEOM, [dict(case="W", V=25.0, Vt=10.0, P=0.0)], lr, lr, "LRFD", ca1_t=14.5, ca2_t=99)
+    r = _rows(s)
+    one_x = shear_lug_sheet("SL", *GEOM, [dict(case="W", V=25.0, P=0.0)], lr, lr, "LRFD")
+    one_y = shear_lug_sheet("SL", *GEOM, [dict(case="W", V=10.0, P=0.0)], lr, lr, "LRFD")      # square plate, same edges: the B direction is the same lug
+    bx, by = one_x.shear_lug["concrete"][0]["c"], one_y.shear_lug["concrete"][0]["c"]
+    assert r["Concrete bearing, both directions"].demand == pytest.approx(25 / bx["phiVbrg"] + 10 / by["phiVbrg"])
+    assert r["Concrete breakout, both directions"].demand == pytest.approx(25 / bx["phiVcb"] + 10 / by["phiVcb"])
+    assert r["Concrete breakout, both directions"].status != "OK"                                    # 0.96 + 0.38: the lug fails in combined breakout
+    assert r["Anchor rod tension, corner rod (both directions)"].demand == pytest.approx(one_x.shear_lug["steel"][0]["T"] / 2 + one_y.shear_lug["steel"][0]["T"] / 2)
+    assert r["Along B: Lug welds to the plate"].demand == pytest.approx(_rows(one_y)["Lug welds to the plate"].demand)
+    v = dict(mark="SL1", bsl="8", tsl="1", hsl="2", t_grout="2", lug_Fy="50", lug_Fu="65", lug_source="ASTM A572 Gr. 50", weld="0.3125", FEXX="70", N="15", B="15", tbp="1",
+             bp_Fy="50", s_rod="8.5", rod_d="0.75", rod_Fu="58", rod_source="ASTM F1554 Gr. 36", fc="4000", A2A1="4", ca1="30", ca2="99", ha="99",
+             psi_c="cracked, no supplementary reinforcement (1.0)", lug_shape="cruciform (two plates crossing, shear in both directions)", ca1_t="30", ca2_t="99",
+             loads=[dict(case="W", V="20", Vt="12", P="", label="")])
+    proj = dict(name="T", number="1", address="", method="LRFD", date="2026-11-26", combos_lrfd=[dict(expr="1.2D + 1.0W", source="ASCE/SEI 7-22 Sect. 2.3.1")])
+    res = calc.results("shear_lug", v, proj)
+    assert res["state"] == "done" and any(x["check"] == "Concrete breakout, both directions" for x in res["rows"])
+    foot = dict(kind="footing_iso", values=dict(mark="F1", B="6", L="5", h="30", fc="4000"))
+    lv = calc.link_foundations([foot, dict(kind="shear_lug", values=dict(v, on_footing="F1", on_footing_N="x"))])[1]["values"]
+    assert (lv["ca1"], lv["ca2"], lv["ca1_t"], lv["ca2_t"]) == ("35.5", "26", "29.5", "32")

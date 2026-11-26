@@ -332,3 +332,10 @@ design log" rule. Unattended: no questions; conservative readings applied and re
 - Ct = 0.5 when the column top is less than a column depth above the beam's tension flange face (de + pfo < dc).
 - The cap plate is checked as a stiffener on its area outside the column web, for the force by Eq. 3-48; its welds for the same force.
 
+## 2026-11-26 02:10, cruciform shear lug (0.244.0), applied (not ruled)
+- ACI 318-19 gives no rule for a lug with shear in two directions: the concrete bearing ratios of the two directions are added, and the
+  breakout ratios are added (linear interaction), each plate counted only for the shear across its face.
+- The corner rod takes half the rod tension of each direction added (as the biaxial base plate ruling of 2026-11-25 21:24); with net uplift
+  the uplift is counted in both directions.
+- The base plate bending at the lug is checked for each direction separately.
+

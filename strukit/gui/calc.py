@@ -186,6 +186,11 @@ FORMS = {
                   help="ACI 318-19 17.7.2.5.1"),
                 F("rod_back", "Anchorage: rods to the concrete edge behind (opposite the shear)", unit="in", required=False,
                   help="blank = 1.5 hef or more"),
+                F("lug_shape", "Lug", "select", options=["single plate", "cruciform (two plates crossing, shear in both directions)"], required=False,
+                  help="blank = single plate (shear along N only)"),
+                F("ca1_t", "Cruciform: lug face to the edge in the direction of the shear along B", unit="in", required=False),
+                F("ca2_t", "Cruciform: lug side to the side edges for the shear along B", unit="in", required=False),
+                F("rod_back_t", "Cruciform: rods to the concrete edge behind (opposite the shear along B)", unit="in", required=False, help="blank = 1.5 hef or more"),
                 F("anc_grade", "Anchorage: rod grade (for Fy and ductility)", "select", required=False,
                   options=["F1554 Gr. 36", "F1554 Gr. 55", "F1554 Gr. 105", "other"])]
                + [f for f in GRID_ANCHORAGE_FIELDS if f["key"] in ("anc_F", "anc_abrg", "anc_tpi", "anc_fy", "anc_ductile", "anc_supp", "anc_sdc")],
@@ -1624,6 +1629,13 @@ def _plate_on_footing(kind, pv, foot):
             v.update(ca2=f"{sB / 2 - bsl / 2:g}")
         if s_:
             v.update(rod_back=f"{sN / 2 - s_ / 2:g}")
+        if str(pv.get("lug_shape") or "").startswith("cruciform"):
+            if tsl:
+                v.update(ca1_t=f"{sB / 2 - tsl / 2:g}")
+            if bsl:
+                v.update(ca2_t=f"{sN / 2 - bsl / 2:g}")
+            if s_:
+                v.update(rod_back_t=f"{sB / 2 - s_ / 2:g}")
     along = ("width B" if o == "x" else "length L") if fk == "footing_iso" else ("width B" if o == "x" else "length L")
     note = (f"Concrete under the plate: footing {fm}, {B:g} ft x {L:g} ft, {h:g} in. thick, f'c {fc:g} psi; the plate is centred on the footing "
             f"with its length N along the footing {along}.")
@@ -1872,9 +1884,13 @@ def _build(kind, values, project):
         cb, m = combos(project, r.miss), method(project, r.miss)
         cbl = cb if m == "LRFD" else combos(project, r.miss, "LRFD")
         loads = [dict(case=x["case"], V=x["V"], P=x.get("P") or 0.0, **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
-        if any(abs(x.get("Vt") or 0.0) > 1e-9 for x in r.rows("loads")):
+        cruci = str(values.get("lug_shape") or "").startswith("cruciform")
+        if cruci:
+            for x, row in zip(loads, r.rows("loads")):
+                x["Vt"] = row.get("Vt") or 0.0
+        if not cruci and any(abs(x.get("Vt") or 0.0) > 1e-9 for x in r.rows("loads")):
             r.miss.append("Shear across the lug (along B): a single plate lug bears only on its face, against shear along N. Shear in the other direction "
-                          "needs a second lug at right angles (a cruciform lug, not built yet) or another path (friction, the rods in shear); "
+                          "needs a second lug at right angles (pick the cruciform lug) or another path (friction, the rods in shear); "
                           "leave the column blank once that direction is carried elsewhere")
         if not loads:
             r.miss.append("No load is entered")
@@ -1893,7 +1909,12 @@ def _build(kind, values, project):
                              anc_cracked="uncracked" if pc.startswith("uncracked") else "cracked"))
             anc, _ = _read_grid_anchorage(ra, args[14], _ar.grade(r.text("anc_grade", False) or ""))
             r.miss += ra.miss
+        if cruci:
+            ct = (r.num("ca1_t", True, label=r.labels["ca1_t"]), r.num("ca2_t", True, label=r.labels["ca2_t"]))
         r.done()
+        if cruci:
+            return ws_more.shear_lug_cruciform_sheet(mark, *args, loads, cb, cbl, m, anchorage=anc, rod_back=r.num("rod_back", False),
+                                                     ca1_t=ct[0], ca2_t=ct[1], rod_back_t=r.num("rod_back_t", False)), "simple", {}
         return ws_more.shear_lug_sheet(mark, *args, loads, cb, cbl, m, anchorage=anc, rod_back=r.num("rod_back", False)), "simple", {}
     if kind == "crane_runway":
         cb, m = combos(project, r.miss), method(project, r.miss)

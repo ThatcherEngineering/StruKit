@@ -5484,3 +5484,74 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
     sheet.tp = dict(R=R, Ag=Ag, An=An, Ry=Ry, Rr=Rr, KLr=KLr, Rc=Rc, rv=rv, per=per, Rb=Rb, Rbs_p=Rbs_p, Rbs_f=Rbs_f, Agv=Agv, Anv=Anv, Ant=Ant, Agv_f=Agv_f, Anv_f=Anv_f,
                     Ant_f=Ant_f, q=wq["q"], Pc=wq["Pc"], Mc=wq["Mc"], rw=rw, tmin=tmin, lw=lw, bs_cases=bs_cases, Mn_b=Mn_b, Mb=Mb, Afn=Afn, Runb=Runb, Rc_n=Pc_n)
     return sheet
+
+
+def shear_lug_cruciform_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, weld, FEXX, N, B, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod,
+                              fc, A2A1, ca1, ca2, ha, psi_c, loads, combos, combos_lrfd, method, anchorage=None, rod_back=None,
+                              ca1_t=None, ca2_t=None, rod_back_t=None):
+    """Cruciform shear lug: two plates bsl x tsl crossing at the centre of the base plate, each bearing against the concrete for the shear
+    across its face. loads: dict(case, V along N, Vt along B, P). Each direction is checked as the single plate lug (shear_lug_sheet) with the
+    geometry turned for the B direction (ca1_t, ca2_t its edge distances); the concrete bearing and breakout ratios of the two directions under
+    the same combination are added (ACI 318-19 gives no rule for shear in two directions on a lug). With the anchorage, each rod takes the
+    sum of its tensions from the two directions."""
+    from dataclasses import replace
+    if ca1_t is None or ca2_t is None:
+        raise WorksheetError(f"{mark}: give the edge distances for the shear along B (ca1 and ca2 in that direction)")
+    lx = [dict(x, V=x.get("V") or 0.0) for x in loads]
+    ly = [dict(x, V=x.get("Vt") or 0.0) for x in loads]
+    args = (bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, weld, FEXX)
+    sx = shear_lug_sheet(mark, *args, N, B, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod, fc, A2A1, ca1, ca2, ha, psi_c, lx, combos, combos_lrfd, method)
+    sy = shear_lug_sheet(mark, *args, B, N, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod, fc, A2A1, ca1_t, ca2_t, ha, psi_c, ly, combos, combos_lrfd, method)
+    sh = sx
+    sh.title = "Shear Lug, Cruciform"
+    sh.rows = [replace(r, check="Along N: " + r.check) for r in sx.rows] + [replace(r, check="Along B: " + r.check) for r in sy.rows if r.combo]
+    sh.steps = [replace(l, label="Along N: " + l.label) for l in sx.steps] + [replace(l, label="Along B: " + l.label) for l in sy.steps if not l.label.startswith(("Eccentricity", "Concrete bearing stress limit", "Lug:", "Weld lever"))]
+    rx = next(r for r in sh.rows if "Anchor rod tension" in r.check)
+    sh.rows = [r for r in sh.rows if "Anchor rod tension" not in r.check]
+    both = [(a["cb"], max(a["T"], a["Tf"]) / 2 + max(b["T"], b["Tf"]) / 2) for a, b in zip(sx.shear_lug["steel"], sy.shear_lug["steel"])]
+    wr = max(both, key=lambda t: t[1])
+    sh.rows.append(Row("Anchor rod tension, corner rod (both directions)", wr[0], wr[1], rx.capacity, "kip", rx.source, rx.note + "; half the rod tension of each direction added"))
+    cx, cy = sx.shear_lug["concrete"], sy.shear_lug["concrete"]
+    best_b = best_c = None
+    for a, b in zip(cx, cy):
+        rb = a["V"] / a["c"]["phiVbrg"] + b["V"] / b["c"]["phiVbrg"] if a["c"]["phiVbrg"] > 0 and b["c"]["phiVbrg"] > 0 else float("inf")
+        rc = a["V"] / a["c"]["phiVcb"] + b["V"] / b["c"]["phiVcb"]
+        if best_b is None or rb > best_b[0]:
+            best_b = (rb, a["cb"])
+        if best_c is None or rc > best_c[0]:
+            best_c = (rc, a["cb"])
+    sh.rows += [Row("Concrete bearing, both directions", best_b[1], best_b[0], 1.0, "", "ACI 318-19 17.11.2.1", "sum of Vu / phi Vbrg along N and along B"),
+                Row("Concrete breakout, both directions", best_c[1], best_c[0], 1.0, "", "ACI 318-19 17.11.3.1", "sum of Vu / phi Vcb along N and along B")]
+    sh.info[0] = ("Shear Lug", f"cruciform: two PL {tsl:g} x {bsl:g} in. crossing at the centre, {hsl:g} in. into the concrete below {t_grout:g} in. of grout; "
+                               f"Fy {lug_Fy:g}, Fu {lug_Fu:g} ksi ({lug_source.strip()})")
+    sh.info[-1] = ("Concrete", f"f'c = {fc * 1000:,.0f} psi; A2/A1 = {A2A1:g}; along N: ca1 = {ca1:g}, ca2 = {ca2:g} in.; along B: ca1 = {ca1_t:g}, ca2 = {ca2_t:g} in.; "
+                               f"member depth {ha:g} in.")
+    sh.load_lines = [f"{x["case"]:<3} V along N {x.get('V') or 0:>7.2f}   along B {x.get('Vt') or 0:>7.2f} kip" + (f"   P {x['P']:>7.2f} kip" if x.get("P") else "")
+                + (f"   {x['label']}" if x.get("label") else "") for x in loads]
+    sh.assumptions = [a for a in sh.assumptions if "shear acts along" not in a.lower()] + [
+        "Each plate takes the shear across its face; the plate along the shear is not counted on. The concrete bearing and breakout ratios of the two directions under "
+        "the same combination are added."]
+    if anchorage:
+        far = 1.5 * anchorage["hef"] + 1.0
+        e_x = (rod_back if rod_back else far, ca1 + tsl / 2 - s_rod / 2)
+        e_y = (rod_back_t if rod_back_t else far, ca1_t + tsl / 2 - s_rod / 2)
+        if min(e_x + e_y) <= 0:
+            raise WorksheetError(f"{mark}: the anchor rods lie outside the concrete edges given")
+        runs, lines = [], []
+        for a, b in zip(cx, cy):
+            t = {(i, j): 0.0 for i in (0, 1) for j in (0, 1)}
+            for j in (0, 1):
+                t[(0, j)] += a["Tu"] / 2; t[(1, j)] += a["Tf"] / 2
+            for i in (0, 1):
+                t[(i, 0)] += b["Tu"] / 2; t[(i, 1)] += b["Tf"] / 2
+            lines.append(f"{a['cb']:<26} rods behind the lug along N {a['Tu']:.2f}, along B {b['Tu']:.2f} kip total; most loaded rod {max(t.values()):.2f} kip")
+            if max(t.values()) > 1e-9:
+                runs.append((a["cb"], t))
+        if runs:
+            sh0 = SimpleSheet(mark, "", "", method, [], [], [], "", [], [], [], [])
+            _anchorage_grid(mark, sh0, rod_d, rod_Fu, anchorage, 2, s_rod, 2, s_rod, (e_x[0], e_x[1], e_y[0], e_y[1]), runs, lines)
+            sh.rows += sh0.rows; sh.info += sh0.info; sh.blocks += sh0.blocks
+            sh.assumptions += sh0.assumptions + ["Anchorage: each rod takes the sum of its tensions from the bearing blocks along N and along B (uplift counted in both)."]
+            sh.not_checked = [x for x in sh.not_checked if not x.startswith("concrete breakout of the anchor rods")]
+    sh.shear_lug_y = sy.shear_lug
+    return sh
