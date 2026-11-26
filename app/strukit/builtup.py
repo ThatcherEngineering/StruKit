@@ -236,6 +236,50 @@ def _flexure_one(p, Fy, Lb, Cb, E, L, tag):
     return cands[governs], governs, sect, web, flange
 
 
+def shear_panel(p, Fy, a=None, tfa=False, E=E_STEEL):
+    """Nominal shear strength of a web panel of a three-plate I (AISC 360-22 Sect. G2): a = clear distance between transverse stiffeners (in.;
+    None = no stiffeners, kv = 5.34); tfa: an interior panel with a / h not over 3 considering tension field action (Sect. G2.2, Eq. G2-6 to
+    G2-11); otherwise Sect. G2.1 (Eq. G2-1 to G2-5). Returns dict(Vn, kv, Cv, eq, Vn2 = 0.6 Fy Aw Cv2 (the Vc2 basis of Eq. G2-17))."""
+    h, tw, d = p["h"], p["tw"], p["d"]
+    Aw = d * tw
+    ah = (a / h) if a else None
+    kv = 5.34 if (ah is None or ah > 3.0) else 5 + 5 / ah ** 2               # Eq. G2-5
+    r = math.sqrt(kv * E / Fy)
+    lam = h / tw
+    Cv1 = 1.0 if lam <= 1.10 * r else 1.10 * r / lam                        # Eq. G2-3, G2-4
+    Cv2 = 1.0 if lam <= 1.10 * r else (1.10 * r / lam if lam <= 1.37 * r else 1.51 * kv * E / (lam ** 2 * Fy))   # Eq. G2-9 to G2-11
+    Vn2 = 0.6 * Fy * Aw * Cv2
+    if tfa and ah is not None and ah <= 3.0:
+        if lam <= 1.10 * r:
+            return dict(Vn=0.6 * Fy * Aw, kv=kv, Cv=1.0, eq="Eq. G2-6", Vn2=Vn2, Cv2=Cv2, ah=ah)
+        Afc, Aft = p["bft"] * p["tft"], p["bfb"] * p["tfb"]
+        if 2 * Aw / (Afc + Aft) <= 2.5 and h / p["bft"] <= 6.0 and h / p["bfb"] <= 6.0:
+            Vt = 0.6 * Fy * Aw * (Cv2 + (1 - Cv2) / (1.15 * math.sqrt(1 + ah ** 2)))          # Eq. G2-7
+            eq = "Eq. G2-7"
+        else:
+            Vt = 0.6 * Fy * Aw * (Cv2 + (1 - Cv2) / (1.15 * (ah + math.sqrt(1 + ah ** 2))))   # Eq. G2-8
+            eq = "Eq. G2-8"
+        V1 = 0.6 * Fy * Aw * Cv1
+        if V1 > Vt:                                                         # Sect. G2.2: the larger of G2.1 and G2.2 is permitted
+            return dict(Vn=V1, kv=kv, Cv=Cv1, eq="Eq. G2-1 (Sect. G2.1, larger than G2.2)", Vn2=Vn2, Cv2=Cv2, ah=ah)
+        return dict(Vn=Vt, kv=kv, Cv=Cv2, eq=eq, Vn2=Vn2, Cv2=Cv2, ah=ah)
+    return dict(Vn=0.6 * Fy * Aw * Cv1, kv=kv, Cv=Cv1, eq="Eq. G2-1, " + ("G2-3" if Cv1 == 1.0 else "G2-4"), Vn2=Vn2, Cv2=Cv2, ah=ah)
+
+
+def stiffener_check(p, Fy, a, ts, bs, Fyst, rho_w, E=E_STEEL):
+    """Transverse stiffener pair (one plate each side of the web, bs wide, ts thick) by AISC 360-22 Sect. G2.4: (b / t)st not over
+    0.56 (E / Fyst)^0.5 (Eq. G2-16) and Ist at least Ist2 + (Ist1 - Ist2) rho_w (Eq. G2-17 to G2-19), Ist about the web centre."""
+    h, tw = p["h"], p["tw"]
+    bt, bt_lim = bs / ts, 0.56 * math.sqrt(E / Fyst)
+    rho_st = max(Fy / Fyst, 1.0)
+    Ist = ts * (2 * bs + tw) ** 3 / 12.0
+    Ist1 = h ** 4 * rho_st ** 1.3 / 40.0 * (Fy / E) ** 1.5                  # Eq. G2-18
+    bp = min(a, h)
+    Ist2 = max((2.5 / (a / h) ** 2 - 2) * bp * tw ** 3, 0.5 * bp * tw ** 3)   # Eq. G2-19
+    need = Ist2 + (Ist1 - Ist2) * max(rho_w, 0.0)
+    return dict(bt=bt, bt_lim=bt_lim, Ist=Ist, Ist1=Ist1, Ist2=Ist2, need=need, rho_st=rho_st)
+
+
 def beam_check(p, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL, compression=None):
     """Major-axis flexure and shear of a three-plate I (AISC 360-22 Ch. F, G2.1(b) without stiffeners). compression: "top" (positive
     moment), "bottom" (negative moment), or None = a singly symmetric section checked with each flange in compression and the lower strength
@@ -244,10 +288,13 @@ def beam_check(p, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL, compression=None):
     if method not in ("ASD", "LRFD"):
         raise SteelInputError("steel beam: method must be ASD or LRFD")
     h, tw = p["h"], p["tw"]
-    lim = 0.40 * E / Fy                                 # F13.2, no transverse stiffeners (a/h over 1.5)
+    st = p.get("stiff")
+    if st and st["a"] / h <= 1.5:
+        lim, ltxt = 12.0 * math.sqrt(E / Fy), "12.0 (E/Fy)^0.5 with stiffeners at a/h not over 1.5 (AISC 360-22 Eq. F13-3)"
+    else:
+        lim, ltxt = 0.40 * E / Fy, "0.40 E/Fy (AISC 360-22 Eq. F13-4)"
     if h / tw > lim:
-        raise SteelInputError(f"built-up section: h/tw = {h / tw:.0f} exceeds 0.40 E/Fy = {lim:.0f} for a web without stiffeners (AISC 360-22 Eq. F13-4); "
-                              "stiffened girders are not built")
+        raise SteelInputError(f"built-up section: h/tw = {h / tw:.0f} exceeds {lim:.0f}, {ltxt}")
     L = []
     for q, tag in ((p, ""), (_flip(p), "bottom flange in compression: ")) if not p["symmetric"] else ((p, ""),):
         aw = 2 * (q["d"] - q["tft"] - q["yb"]) * tw / (q["bft"] * q["tft"])
@@ -266,14 +313,13 @@ def beam_check(p, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL, compression=None):
         governs += f" ({side} flange in compression)"
     M_avail = 0.90 * Mn if method == "LRFD" else Mn / 1.67
     L.append(Line("phi_b Mn" if method == "LRFD" else "Mn / Omega_b", M_avail, "kip-in", "Sect. F1(a): phi_b = 0.90, Omega_b = 1.67", f"governs: {governs}"))
-    kv = 5.34                                            # G2.1(b)(2)(ii), no transverse stiffeners
-    lim_v = 1.10 * math.sqrt(kv * E / Fy)
-    Cv1 = 1.0 if h / tw <= lim_v else lim_v / (h / tw)
+    sp = shear_panel(p, Fy, st["a"] if st else None, False, E)              # the end panel: Sect. G2.1 (no tension field action)
+    kv, Cv1, Vn = sp["kv"], sp["Cv"], sp["Vn"]
     Aw = p["d"] * tw
-    Vn = 0.6 * Fy * Aw * Cv1
     V_avail = 0.90 * Vn if method == "LRFD" else Vn / 1.67
     vsrc = "Sect. G2.1(b), Eq. G2-3" if Cv1 == 1.0 else "Sect. G2.1(b), Eq. G2-4"
-    L.append(Line("Vn = 0.6 Fy Aw Cv1", Vn, "kip", "Eq. G2-1", f"Aw = d tw = {Aw:.2f} in2, kv = 5.34, Cv1 = {Cv1:.3f} ({vsrc})"))
+    L.append(Line("Vn = 0.6 Fy Aw Cv1" + (", end panel" if st else ""), Vn, "kip", "Eq. G2-1", f"Aw = d tw = {Aw:.2f} in2, kv = {kv:.2f}"
+                  + (f" (Eq. G2-5, a = {st['a']:g} in., a / h = {sp['ah']:.2f})" if st and sp["ah"] <= 3 else "") + f", Cv1 = {Cv1:.3f} ({vsrc})"))
     L.append(Line("phi_v Vn" if method == "LRFD" else "Vn / Omega_v", V_avail, "kip", vsrc, "phi_v = 0.90, Omega_v = 1.67"))
     lines = [SLine(l.label, l.value, l.unit, l.source, l.note) for l in L]
     return SteelBeamResult(Mn, M_avail, Vn, V_avail, governs, flange, lines)
