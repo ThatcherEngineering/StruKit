@@ -391,3 +391,8 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 - **Force-transfer wall deflection: the more conservative way** ("Whichever is more conservative is what I would like to use, and yes the 3D
   frame should match it"). Every pier over the full wall height in both directions, each at its own unit shear, averaged (APA's pier method
   otherwise). The 3D frame takes the wall's stiffness as V over that deflection. Built 0.252.1. This replaces the 09:05 entry.
+
+## 2026-11-26 11:30, end plate at a column top stiffened between the bolts, and stiffened built-up girders (0.253.0), applied (not ruled)
+- Design Guide 39 Table A-2(f) prints "dce" in the h1 term; de (column top to the outer bolt row) is used, as in Table A-4(e).
+- Stiffened built-up girder: one spacing along the girder; no tension field action in the end panel; the first interior panel checked at a
+  from each support.

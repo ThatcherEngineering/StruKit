@@ -3695,12 +3695,12 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
     from . import bolts, welds
     from .steel_beam import SteelInputError
     cont = bool(extended and col_side)
-    if cont and col_cfg not in ("continuous", "stiffened", "top", "top_cap"):
+    if cont and col_cfg not in ("continuous", "stiffened", "top", "top_cap", "top_stiff"):
         raise WorksheetError(f"{mark}: pick the column-side configuration of the four-bolt extended end plate")
-    top4 = cont and col_cfg in ("top", "top_cap")
+    top4 = cont and col_cfg in ("top", "top_cap", "top_stiff")
     if top4 and not de:
         raise WorksheetError(f"{mark}: give the distance from the column top to the outer bolt row")
-    if cont and col_cfg == "stiffened" and not stiff:
+    if cont and col_cfg in ("stiffened", "top_stiff") and not stiff:
         raise WorksheetError(f"{mark}: give the column stiffener sizes")
     for nm, v in (("the source of the beam and column steel", steel_source), ("the source of the plate Fy and Fu", plate_source)):
         if not (v or "").strip():
@@ -3904,7 +3904,12 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
             bcf_eff = min(2 * bs + tcw + max(tcf, 1.0), bcf)
             s5 = 0.5 * math.sqrt(bcf_eff * g)
             pso, psi = min(pfo, s5), min(pfi, s5)
-            Ycs = bcf_eff / 2 * (h1 * (1 / s5 + 1 / pso) + h2 * (1 / s5 + 1 / psi)) + 2 / g * (h1 * (s5 + pso) + h2 * (s5 + psi))
+            if col_cfg == "top_stiff":                                         # Table A-2(f): top of column stiffened between the bolts
+                Ycs = bcf_eff / 2 * (h1 / pso + h2 * (1 / psi + 1 / s5) - 0.5) + 2 / g * (h1 * (de + pso) + h2 * (s5 + psi)) + g / 4
+                ycs_src = "Table A-2(f)"
+            else:
+                Ycs = bcf_eff / 2 * (h1 * (1 / s5 + 1 / pso) + h2 * (1 / s5 + 1 / psi)) + 2 / g * (h1 * (s5 + pso) + h2 * (s5 + psi))
+                ycs_src = "Table A-2(c)"
             Rcs_a = av(col_Fy * tcf ** 2 * Ycs / (db_ - tbf), 0.90, 1.67)
             T_st = max(Ff - min(Rcu_a, Rwy_t), 0.0)
             C_st = max(Ff - min(Rwy_c, Rwc_c), 0.0)
@@ -3920,7 +3925,8 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
             Rwsw = av(4 * fil(wsw, lwt_w, 1.0), 0.75, 2.00)
             Rweb = av(2 * 0.60 * col_Fu * lwt_w * tcw, 0.75, 2.00)
             steps += [Ln("Stiffened column flange: bcf,eff = 2 bs + tcw + max(tcf, 1 in.)", bcf_eff, "in", f"{G39} Example 5.3-2 (from Eq. 4-3)", f"not over bcf = {bcf:g} in.; s = {s5:.3g} in."),
-                      Ln("Stiffened column flange yield line parameter, Ycs", Ycs, "in", f"{G39} Table A-2(c)", f"pso = {pso:.3g}, psi = {psi:.3g} in. (pfo and pfi, not over s)"),
+                      Ln("Stiffened column flange yield line parameter, Ycs", Ycs, "in", f"{G39} {ycs_src}", f"pso = {pso:.3g}, psi = {psi:.3g} in. (pfo and pfi, not over s)"
+                         + (f"; column top {de:g} in. above the outer bolts" if col_cfg == "top_stiff" else "")),
                       Ln("Stiffened column flange strength", Rcs_a, "kip", f"{G39} Eq. 3-42, 3-43", fac(0.90, 1.67)),
                       Ln("Stiffener force at the tension flange", T_st, "kip", f"{G39} Eq. 3-48", f"flange force less the least of flange flexure {Rcu_a:.1f} and web yielding {Rwy_t:.1f} kip"),
                       Ln("Stiffener force at the compression flange", C_st, "kip", f"{G39} Eq. 3-48", f"flange force less the least of web yielding {Rwy_c:.1f} and web crippling {Rwc_c:.1f} kip"),
@@ -3928,7 +3934,7 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
                       Ln("Stiffener to flange welds, 4 x (bs - clip)", av(Rwsf_n, 0.75, 2.00), "kip", "AISC 360-22 Eq. J2-4", f"{wsf:g} in. fillets, {lwt_f:.3g} in. each, x 1.5; sized for the stiffener yield strength"),
                       Ln("Stiffener to web welds, 4 x (ls - clip)", Rwsw, "kip", "AISC 360-22 Eq. J2-4", f"{wsw:g} in. fillets, {lwt_w:.3g} in. each; column web rupture along them {Rweb:.1f} kip")]
             dem_w = Pst if lrfd else Pst / 1.50
-            cs_rows += [Row("Column flange flexure (stiffened)", nm0, 1.10 * Ff, Rcs_a, "kip", f"{G39} Eq. 3-42, Table A-2(c)", "against 1.10 x the flange force"),
+            cs_rows += [Row("Column flange flexure (stiffened)", nm0, 1.10 * Ff, Rcs_a, "kip", f"{G39} Eq. 3-42, {ycs_src}", "against 1.10 x the flange force"),
                         Row("Stiffener yielding", nm0, Treq, av(Pst, 0.90, 1.67), "kip", "AISC 360-22 Eq. J4-1", "the larger of the tension and compression stiffener forces"),
                         Row("Stiffener width, bs + tcw / 2 at least bbf / 3", "", bbf / 3, bs + tcw / 2, "in", "AISC 360-22 Sect. J10.8(a)", ""),
                         Row("Stiffener thickness, at least tbf / 2 and bs / 16", "", max(tbf / 2, bs / 16), ts, "in", "AISC 360-22 Sect. J10.8(b)", ""),
@@ -3977,7 +3983,7 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
             ("Bolts", (f"(4) {d:g} in. {group}-{threads} at the tension flange, two outside (pfo = {pfo:g} in.) and two inside" if extended else
                        f"({2 * n_rows}) {d:g} in. {group}-{threads} at the tension flange" + (f" in two rows {pb:g} in. apart" if n_rows == 2 else "")) + f" and ({n_shear}) at the compression flange"),
             ("Welds", f"flange {w_flange:g} in., web {w_web:g} in. fillets both sides" + (f"; cap plate {tcap:g} x {bcp:g} in., {w_cap_flange:g} in. fillet to the column flange, {w_cap_web:g} in. fillets to the web" if (col_side and (not cont or col_cfg == "top_cap")) else "") + f"; E{FEXX:g}XX")]
-    if cont and col_cfg == "stiffened":
+    if cont and col_cfg in ("stiffened", "top_stiff"):
         info.append(("Column Stiffeners", f"two {stiff['ts']:g} x {stiff['bs']:g} in. plates in line with each beam flange, {stiff['ls']:g} in. along the web, {stiff['clip']:g} in. corner clip, "
                                           f"Fy {(stiff.get('Fy') or plate_Fy):g} ksi; {stiff['w_f']:g} in. fillets to the flange, {stiff['w_w']:g} in. to the web, both sides"))
     if cont and tdp:
@@ -3999,11 +4005,11 @@ def flush_end_plate_sheet(mark, beam, beam_Fy, beam_Fu, column, col_Fy, col_Fu, 
                            "The beam axial tension is added to the panel zone shear; the column shear Vc given is taken off it.") if cont else
                           "The beam's compression flange is at least a column depth below the column top (Ct = 1.0). The panel zone strength is Eq. J10-9: panel zone deformation is not in the analysis and the column axial load is small against its yield load."
                           if col_side else "Beam side only: the support the end plate bolts to (its flange bending, web and bearing at the bolt holes) is checked separately.")],
-                        ["bolt pretension and snug-tight requirements"] + ([] if (cont and col_cfg == "stiffened") else ["column web stiffeners where a web row fails"])
+                        ["bolt pretension and snug-tight requirements"] + ([] if (cont and col_cfg in ("stiffened", "top_stiff")) else ["column web stiffeners where a web row fails"])
                         + (["web compression buckling (a moment connection on the opposite flange)", "the doubler plate welds"] if cont else []) + ["the beam and the column themselves", "moment that puts the bottom flange in tension (reverse the connection or use bolts at both flanges for that moment)"])
     sheet.blocks.append(dict(title="Connection", head="Connection", picture=("flush_end_plate", dict(d=db_, bf=bbf, tf=tbf, bp=bp, tp=tp, g=g, pfi=pfi, db=d, dc=dc, tcf=tcf if col_side else 0.0, tcap=tcap or 0.0, pb=pb if n_rows == 2 else None, pfo=pfo if extended else None,
                                                                                                    beam=beam_name, column=shapes.normalize(column) if col_side else "",
-                                                                                                   cont=cont and not top4, nocap=col_cfg == "top", stiff=stiff if (cont and col_cfg == "stiffened") else None))))
+                                                                                                   cont=cont and not top4, nocap=col_cfg in ("top", "top_stiff"), stiff=stiff if (cont and col_cfg in ("stiffened", "top_stiff")) else None))))
     sheet.ep = dict(Vp=Vp, Rpy=Rpy, Rpr=Rpr, Tw=Tw, h2=h2, Meq=Meq, h1=h1, d_req=d_req, s=s_, Yp=Yp, t_req=t_req, Rbt=Rbt, Rbrg=Rbrg, Vn=Vn, Tcalc=Tcalc, Tyf=Tyf, Tf=Tf, lwf=lwf, Rwf=Rwf, lwt=lwt, Tyw=Tyw, Twd=Twd, Rwt=Rwt,
                     lwv=lwv, Rwv=Rwv, Rvr=Rvr, Rcf=Rcf, Rcw=Rcw, Rcr=Rcr, pcp=pcp, sc=sc_, Yc=Yc, Mcf=Mcf, Pfl=Pfl, lb=lb, Rwy=Rwy, Rwc=Rwc, Rpz=Rpz, col=cs)
     return sheet

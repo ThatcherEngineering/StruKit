@@ -127,8 +127,50 @@ def _signed(check, props, Fy, Lb_in, Cb, method, M_seg, M_abs):
     return [(M_abs, check(props, Fy, Lb_in, Cb, method))]
 
 
+def _bu_stiffeners(mark, sheet, props, Fy, method, results, span_ft):
+    """Built-up girder with transverse stiffener pairs at a clear spacing a (AISC 360-22 Sect. G2): the end panel is checked by Sect. G2.1 with
+    kv from a (the beam's shear row); with tension field action the first interior panel, from a beyond each support, by Sect. G2.2; the
+    stiffeners by Sect. G2.4 (Eq. G2-16, G2-17)."""
+    from . import builtup
+    st = props["stiff"]
+    a = st["a"]
+    lrfd = method == "LRFD"
+    av = lambda Vn: 0.90 * Vn if lrfd else Vn / 1.67
+    end = builtup.shear_panel(props, Fy, a, False)
+    Vc1_end, Vc2 = av(end["Vn"]), av(end["Vn2"])
+    if a / props["h"] > 3.0:
+        raise WorksheetError(f"{mark}: the stiffener spacing a / h = {a / props['h']:.2f} is over 3.0: the stiffeners do not raise kv (Sect. G2.1(b)(2))")
+    Vr_end = max((max(abs(float(r.V[0])), abs(float(r.V[-1]))), n) for n, r in results)
+    rows, lines = [], []
+    Vc1 = Vc1_end
+    if st.get("tfa"):
+        tf_ = builtup.shear_panel(props, Fy, a, True)
+        best = None
+        for n, r in results:
+            Vint = max(abs(float(np.interp(a / 12.0, r.x, r.V))), abs(float(np.interp(span_ft - a / 12.0, r.x, r.V))))
+            if best is None or Vint > best[0]:
+                best = (Vint, n)
+        Vc1 = av(tf_["Vn"])
+        rows.append(Row("shear, first interior panel (tension field action)", best[1], best[0], Vc1, "kip", f"AISC 360-22 Sect. G2.2, {tf_['eq']}",
+                        f"a = {a:g} in. beyond each end panel; kv = {tf_['kv']:.2f}, Cv2 = {tf_['Cv2']:.3f}"))
+        lines.append(steel_beam.Line("Vn, interior panel with tension field action", tf_["Vn"], "kip", f"AISC 360-22 {tf_['eq']}",
+                                     f"Cv2 = {tf_['Cv2']:.3f} (Eq. G2-9 to G2-11); 2 Aw / (Afc + Aft), h / bfc and h / bft by Sect. G2.2(b)(1)"))
+    rho_w = max((Vr_end[0] - Vc2) / (Vc1_end - Vc2), 0.0) if Vc1_end > Vc2 else 0.0
+    sc = builtup.stiffener_check(props, Fy, a, st["ts"], st["bs"], st["Fy"], rho_w)
+    rows += [Row("transverse stiffener width-to-thickness, (b / t)st", "", sc["bt"], sc["bt_lim"], "", "AISC 360-22 Eq. G2-16",
+                 f"{st['bs']:g} x {st['ts']:g} in. plates, one each side of the web, Fyst = {st['Fy']:g} ksi"),
+             Row("transverse stiffener moment of inertia, Ist", Vr_end[1], sc["need"], sc["Ist"], "in4", "AISC 360-22 Eq. G2-17 to G2-19",
+                 f"Ist1 = {sc['Ist1']:.1f}, Ist2 = {sc['Ist2']:.2f} in4, rho_w = {rho_w:.2f}")]
+    lines += [steel_beam.Line("Stiffener pair Ist about the web centre, ts (2 bs + tw)^3 / 12", sc["Ist"], "in4", "AISC 360-22 Sect. G2.4", ""),
+              steel_beam.Line("rho_w = (Vr - Vc2) / (Vc1 - Vc2) at the end panel", rho_w, "", "AISC 360-22 Sect. G2.4", f"Vr = {Vr_end[0]:.1f}, Vc1 = {Vc1_end:.1f}, Vc2 = {Vc2:.1f} kip")]
+    sheet.rows += rows
+    sheet.steps = list(sheet.steps) + lines
+    sheet.assumptions.append(f"Transverse stiffener pairs at a clear spacing of {a:g} in. along the girder; the end panel is designed without tension field action"
+                             + ("; tension field action in the interior panels." if st.get("tfa") else "."))
+
+
 def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
-        include_self_weight, self_weight_case="D", spans=None, overhang_left=0.0, overhang_right=0.0, fixed=False):
+        include_self_weight, self_weight_case="D", spans=None, overhang_left=0.0, overhang_right=0.0, fixed=False, bu_stiff=None):
     """bracing: "continuous", or a list of brace locations in ft (ends are added)."""
     if method not in ("ASD", "LRFD"):
         raise WorksheetError("method must be ASD or LRFD")
@@ -151,6 +193,10 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
                 hss_props = props = shapes.hss(shape)
             except shapes.ShapeError:
                 raise WorksheetError(f"{mark}: shape '{shape}' is not in the {shapes.SOURCE} I-shape, channel, HSS or pipe tables")
+    if bu_stiff:
+        if props.get("type") != "BU":
+            raise WorksheetError(f"{mark}: transverse stiffeners are for a built-up section (BU ...)")
+        props = dict(props, stiff=bu_stiff)
     if hss_props is not None:
         from . import hss
         def check(pr, Fy_, Lb_, Cb_, method_):
@@ -333,6 +379,8 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
     if not defl_checks:
         sheet.assumptions.append("No deflection limit was given; deflection is not checked.")
     _bu_welds(sheet, props, method)
+    if props.get("stiff"):
+        _bu_stiffeners(mark, sheet, props, Fy, method, [(cb.name, _solve(span_ft, EI, all_loads, cb.factors)) for cb in combos], span_ft)
     return sheet
 
 

@@ -170,3 +170,30 @@ def test_extended_column_top_unstiffened_and_with_cap_plate():
     assert ck["Yce"] == pytest.approx(Ye, rel=2e-3) and ck["Yce"] > c["Ycu"]
     assert ck["T_cap"] == pytest.approx(max(ck["Ff"] - min(ck["Rcu"], ck["Rwy_t"]), 0.0))
     assert {r.check for r in k.rows} >= {"Column flange flexure (cap plate)", "Cap plate yielding (as a stiffener)", "Cap plate to column flange weld"}
+
+
+def test_extended_column_top_stiffened_between_the_bolts(tmp_path):
+    """Four-bolt extended end plate at a column top with stiffeners at the beam flanges: Design Guide 39 Table A-2(f) (h1 (de + pso) in the
+    second term, the column top de above the outer bolts), Ct = 0.5. No published example: by hand against the table's formula, and the
+    stiffened top is stronger than the unstiffened top (A-2(d))."""
+    import math
+    from strukit.ws_more import flush_end_plate_sheet
+    from strukit.ws_steel_beam import Combo
+    from strukit import calcsheet
+    lr = [Combo("LRFD", {"M": 1.0}, "t")]
+    run = [dict(name="LRFD", M=300.0, T=0.0, V=40.0)]
+    base = ("EP", "W24X84", 50, 65, "W14X99", 50, 65, "ASTM A992", 9.0, 1.0, 50, 65, "A572 Gr. 50", 1.125, "A490", "N", 5.75, 2.0, 0.5, 0.25, 1.5)
+    stiff = dict(ts=0.5, bs=6.0, clip=1.375, ls=6.5, w_f=0.375, w_w=0.25, Fy=50.0)
+    t = flush_end_plate_sheet(*base, None, None, None, None, 70, [], lr, "LRFD", runs=run, extended=True, pfo=2.75, col_side=True, col_cfg="top_stiff",
+                              stiff=stiff, de=3.0)
+    u = flush_end_plate_sheet(*base, None, None, None, None, 70, [], lr, "LRFD", runs=run, extended=True, pfo=2.75, col_side=True, col_cfg="top", de=3.0)
+    c = t.ep["col"]
+    g, tbf, db = 5.75, 0.77, 24.1
+    bce = c["bcf_eff"]
+    s = 0.5 * math.sqrt(bce * g)
+    pso, psi = min(2.75, s), min(2.0, s)
+    h1, h2 = db - tbf / 2 + 2.75, db - tbf - 2.0 - tbf / 2
+    Yf = bce / 2 * (h1 / pso + h2 * (1 / psi + 1 / s) - 0.5) + 2 / g * (h1 * (3.0 + pso) + h2 * (s + psi)) + g / 4
+    assert c["Ycs"] == pytest.approx(Yf, rel=2e-3) and c["Ycs"] > u.ep["col"]["Ycu"] and c["Ct_t"] == 0.5
+    assert any("Table A-2(f)" in r.source for r in t.rows)
+    calcsheet.simple_pdf(t, str(tmp_path / "ts.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")

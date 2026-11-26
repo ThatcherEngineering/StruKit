@@ -81,3 +81,42 @@ def test_screens_and_frame_take_built_up_sections():
     p = shapes.get("BU 12x3/4 / 11x1/2 / 12x3/4")
     c = next(c for c in out["columns"] if c["mark"] == "CL")
     assert c["cap"]["Pc"] == pytest.approx(steel_column.check(p, 50, 240, 240, method="LRFD").P_avail)
+
+
+@pytest.mark.parametrize("method, end, interior, Vu", [("LRFD", 217, 185, 210), ("ASD", 144, 123, 140)])
+def test_g8_stiffened_girder_tension_field_action(method, end, interior, Vu, tmp_path):
+    """AISC Design Examples v16.0 Examples G.8A and G.8B: girder 36 in. deep, 16 x 1-1/2 flanges, 5/16 in. web, Fy 50, 56 ft span, 1.25 + 3.75
+    kip/ft. Unstiffened Vn 196 kips (Cv1 0.577); end panel a = 42 in.: kv 8.09, Cv1 0.710, Vn 241 (217 / 144); second panel a = 90 in. with
+    tension field action: kv 5.67, Cv2 0.442, Eq. G2-7, Vn 206 (185 / 123) kips. On the beam sheet the end panel is the shear row and the first
+    interior panel is checked at a from each support (here one spacing for every panel, 42 in.)."""
+    from strukit import calcsheet
+    p = builtup.props("BU 16x1-1/2 / 33x5/16 / 16x1-1/2")
+    assert builtup.shear_panel(p, 50)["Vn"] == pytest.approx(196, rel=0.003)
+    e = builtup.shear_panel(p, 50, 42.0)
+    assert e["kv"] == pytest.approx(8.09, abs=0.01) and e["Cv"] == pytest.approx(0.710, abs=0.005) and e["Vn"] == pytest.approx(241, rel=0.003)
+    t = builtup.shear_panel(p, 50, 90.0, True)
+    assert t["kv"] == pytest.approx(5.67, abs=0.01) and t["Cv2"] == pytest.approx(0.442, abs=0.004) and t["eq"] == "Eq. G2-7" and t["Vn"] == pytest.approx(206, rel=0.003)
+    f = 0.9 if method == "LRFD" else 1 / 1.67
+    assert f * e["Vn"] == pytest.approx(end, rel=0.005) and f * t["Vn"] == pytest.approx(interior, rel=0.006)
+    proj = dict(method=method, combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[dict(expr="D + L", source="t")], name="t", number="t", date="2026-11-26")
+    v = dict(mark="G1", shape="BU 16x1-1/2 / 33x5/16 / 16x1-1/2", Fy="50", span="56", more_spans="", oh_left="", oh_right="", bracing="continuous", brace_pts="",
+             self_weight="no", loads=[dict(case="D", kind="uniform", mag="1.25", x1="", x2="", label=""), dict(case="L", kind="uniform", mag="3.75", x1="", x2="", label="")],
+             defl=[], bu_a="42", bu_tfa="yes", bu_ts="0.3125", bu_bs="4", bu_Fyst="50")
+    s = calc.build("steel_beam", v, proj)[0]
+    r = {x.check: x for x in s.rows}
+    assert r["shear"].demand == pytest.approx(Vu, rel=1e-3) and r["shear"].capacity == pytest.approx(end, rel=0.005)
+    w = 7.5 if method == "LRFD" else 5.0
+    assert r["shear, first interior panel (tension field action)"].demand == pytest.approx(Vu - w * 42 / 12, rel=2e-3)
+    assert r["transverse stiffener width-to-thickness, (b / t)st"].demand == pytest.approx(4 / 0.3125)
+    ist = r["transverse stiffener moment of inertia, Ist"]
+    assert ist.capacity == pytest.approx(0.3125 * (8 + 0.3125) ** 3 / 12)
+
+
+def test_stiffened_girder_sheet_prints(tmp_path):
+    from strukit import calcsheet
+    proj = dict(method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[dict(expr="D + L", source="t")], name="t", number="t", date="2026-11-26")
+    v = dict(mark="G1", shape="BU 16x1-1/2 / 33x5/16 / 16x1-1/2", Fy="50", span="56", more_spans="", oh_left="", oh_right="", bracing="continuous", brace_pts="",
+             self_weight="no", loads=[dict(case="D", kind="uniform", mag="1.25", x1="", x2="", label=""), dict(case="L", kind="uniform", mag="3.75", x1="", x2="", label="")],
+             defl=[], bu_a="42", bu_tfa="yes", bu_ts="0.3125", bu_bs="4", bu_Fyst="50")
+    s, _, extra = calc.build("steel_beam", v, proj)
+    calcsheet.steel_beam_pdf(s, str(tmp_path / "g8.pdf"), "Job", "AISC 360-22", "Nov 26, 2026", combos=extra["combos"])

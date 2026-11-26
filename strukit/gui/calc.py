@@ -103,7 +103,11 @@ FORMS = {
                 F("bracing", "Compression flange braced", "select", options=["continuous", "at points"]),
                 F("brace_pts", "Brace points", "text", "ft", required=False,
                   help="distances from the left end, separated by commas; the ends are always braced"),
-                F("self_weight", "Add self-weight", "select", options=["yes", "no"])],
+                F("self_weight", "Add self-weight", "select", options=["yes", "no"]),
+                F("bu_a", "Built-up: transverse stiffener clear spacing, a", unit="in", required=False, help="blank = no transverse stiffeners"),
+                F("bu_tfa", "Built-up: tension field action in the interior panels", "select", options=["no", "yes"], required=False),
+                F("bu_ts", "Built-up: stiffener plate thickness", unit="in", required=False), F("bu_bs", "Built-up: stiffener plate width, each side", unit="in", required=False),
+                F("bu_Fyst", "Built-up: stiffener Fy", unit="ksi", required=False)],
         tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point"]),
                                      F("mag", "Load", unit="k/ft or k"),
                                      F("x1", "From / at", unit="ft", required=False),
@@ -375,7 +379,8 @@ FORMS = {
                 F("col_side", "Checks on the support", "select", options=["column flange with a cap plate (two-bolt only)", "beam side only",
                                                                          "continuous column, unstiffened (four-bolt extended)",
                                                                          "continuous column with stiffeners at the beam flanges (four-bolt extended)",
-                                                                         "column top, unstiffened (four-bolt extended)", "column top with a cap plate (four-bolt extended)"], required=False,
+                                                                         "column top, unstiffened (four-bolt extended)", "column top with a cap plate (four-bolt extended)",
+                                                                         "column top with stiffeners at the beam flanges (four-bolt extended)"], required=False,
                   help="blank = column flange with a cap plate (flush), beam side only (four-bolt extended)"),
                 F("column", "Column (the beam frames to its flange)", "shape", required=False), F("col_Fy", "Column Fy", unit="ksi", required=False),
                 F("col_Fu", "Column Fu", unit="ksi", required=False),
@@ -1804,9 +1809,14 @@ def _build(kind, values, project):
             r.miss.append("No loads are entered")
         dc = checks(r.rows("defl"), r.miss, "Deflection limits")
         cases_used([ld["case"] for ld in loads], cb, r.miss)
+        bus = None
+        if r.num("bu_a", False):
+            bus = dict(a=r.num("bu_a", False), tfa=str(values.get("bu_tfa") or "").startswith("y"), ts=r.num("bu_ts", True, label="Built-up: stiffener plate thickness"),
+                       bs=r.num("bu_bs", True, label="Built-up: stiffener plate width"), Fy=r.num("bu_Fyst", False) or Fy)
         r.done()
         s = ws_steel_beam.run(mark, shape, Fy, span, loads, cb, dc, "continuous" if br == "continuous" else pts, m, sw,
-                              spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0, overhang_right=r.num("oh_right", False) or 0.0, fixed=fixed)
+                              spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0, overhang_right=r.num("oh_right", False) or 0.0, fixed=fixed,
+                              bu_stiff=bus)
         return s, "steel_beam", dict(combos=cb)
     if kind == "steel_column":
         cb, m = combos(project, r.miss), method(project, r.miss)
@@ -2080,7 +2090,7 @@ def _build(kind, values, project):
         ext = str(values.get("config") or "").startswith("extended")
         csv = str(values.get("col_side") or "")
         ccfg = (("stiffened" if "stiffeners" in csv else "continuous") if csv.startswith("continuous") else
-                ("top_cap" if "cap plate" in csv else "top") if csv.startswith("column top") else None)
+                ("top_cap" if "cap plate" in csv else "top_stiff" if "stiffeners" in csv else "top") if csv.startswith("column top") else None)
         if ccfg and not ext:
             r.miss.append("Checks on the support: that choice is for the four-bolt extended end plate")
         if ext and csv.startswith("column flange"):
@@ -2094,7 +2104,7 @@ def _build(kind, values, project):
                 r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("g"), r.num("pfi"), r.num("w_flange"), r.num("w_web"),
                 r.num("below"), cpn("tcap"), cpn("bcp"), cpn("w_cap_flange"), cpn("w_cap_web"), r.num("FEXX"))
         stf = None
-        if ccfg == "stiffened":
+        if ccfg in ("stiffened", "top_stiff"):
             stf = {k: r.num(f, True, label=r.labels[f]) for k, f in (("ts", "st_ts"), ("bs", "st_bs"), ("ls", "st_ls"), ("w_f", "st_wf"), ("w_w", "st_ww"))}
             stf["clip"] = r.num("st_clip", False) or 0.0
             stf["Fy"] = r.num("st_Fy", False)
@@ -2106,7 +2116,7 @@ def _build(kind, values, project):
         r.done()
         return ws_more.flush_end_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or ""), n_rows=nrow, pb=pb_, col_side=cside, extended=ext, pfo=pfo_, n_shear=nsh_ or 2,
                                              col_cfg=ccfg, stiff=stf, tdp=(r.num("tdp", False) or 0.0) if ccfg else 0.0, Vc=(r.num("Vc", False) or 0.0) if ccfg else 0.0,
-                                             de=r.num("de", True, label=r.labels["de"]) if ccfg in ("top", "top_cap") else None), "simple", {}
+                                             de=r.num("de", True, label=r.labels["de"]) if ccfg in ("top", "top_cap", "top_stiff") else None), "simple", {}
     if kind == "cap_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], P=x["P"], M=x["M"]) for x in r.rows("runs")]
