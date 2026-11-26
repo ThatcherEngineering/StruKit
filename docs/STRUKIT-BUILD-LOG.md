@@ -1088,3 +1088,4 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   noted and not checked from the frame.
 - **Validation: by hand** on the 6 ft L4x4x1/4 pinned to two fixed-base columns: the frame gives Mw = Mz = (P L / 4) / 2^0.5 = 20.4 kip-in. and
   the ratio equals Mw / Mcw + Mz / Mcz (`tests/test_angle_beam.py`).
+- 0.267.1: the frame sheet's reference for an angle printed "Eq. Eq. H2-1"; now "Eq. H2-1".

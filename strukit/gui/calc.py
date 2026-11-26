@@ -5792,7 +5792,7 @@ def model_frame_sway(project, members):
                                     continue
                                 val = (Pn_ / S_["Pc"] if Pn_ > 0 else -Pn_ / S_["Pt"]) + abs(Mw_) / alpha / S_["Mcw"] + abs(Mz_) / alpha / S_["Mcz"]
                                 if cur["ratio"] is None or val > cur["ratio"]:
-                                    cur.update(ratio=val, eq="Eq. H2-1, principal axes, the terms added", ratio_combo=label,
+                                    cur.update(ratio=val, eq="H2-1, principal axes, the terms added", ratio_combo=label,
                                                at=dict(P=Pn_, Mx=abs(Mw_) / alpha, My=abs(Mz_) / alpha), cap=dict(Pc=S_["Pc"] or 0.0, Mcx=S_["Mcw"], Mcy=S_["Mcz"]))
                 elif S_:
                     cur["v_ratio"] = max(cur["v_ratio"] or 0.0, V / alpha / S_["V"])

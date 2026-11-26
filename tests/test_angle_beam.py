@@ -240,5 +240,5 @@ def test_angle_checked_from_the_3d_frame_forces():
     Mcw = 0.9 * min(ab.principal_strengths(a, g, 50, pts, s1, s2, 72.0, 1.0, neg_beta=True)["Mnw"] for s1 in (1, -1) for s2 in (1, -1))
     Mcz = 0.9 * min(ab.principal_strengths(a, g, 50, pts, s1, s2, 72.0, 1.0, neg_beta=True)["Mnz"] for s1 in (1, -1) for s2 in (1, -1))
     M = 1.6 * 72 / 4
-    assert b["ratio"] == pytest.approx(M / 2 ** 0.5 * (1 / Mcw + 1 / Mcz), rel=0.03) and "H2-1" in b["eq"]
+    assert b["ratio"] == pytest.approx(M / 2 ** 0.5 * (1 / Mcw + 1 / Mcz), rel=0.03) and "H2-1" in b["eq"] and not b["eq"].startswith("Eq.")
     assert b["at"]["Mx"] == pytest.approx(M / 2 ** 0.5, rel=0.03) and b["at"]["My"] == pytest.approx(M / 2 ** 0.5, rel=0.03)
