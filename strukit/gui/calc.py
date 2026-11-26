@@ -3102,6 +3102,19 @@ def model_links(project, members):
             cs, xs = carrier(pt, level, m, want_footing, skip_parallel=bool(hdr))
             if hdr and cs and cs[0][0] is hdr[0]:
                 cs = []
+            if hdr and len(cs) > 1:                           # at a corner the jack studs stand on the wall line the header is in
+                (hx1, hy1), (hx2, hy2) = hdr[1]["p1"], hdr[1]["p2"]
+                hl = math.hypot(hx2 - hx1, hy2 - hy1)
+                def same_way(c):
+                    q = c[1]
+                    if q.get("p2") is None:
+                        return False
+                    (cx1, cy1), (cx2, cy2) = q["p1"], q["p2"]
+                    cl = math.hypot(cx2 - cx1, cy2 - cy1)
+                    return cl > 0 and abs((hx2 - hx1) * (cy2 - cy1) - (hy2 - hy1) * (cx2 - cx1)) / (hl * cl) < 0.09
+                keep = [i for i, c in enumerate(cs) if same_way(c)]
+                if len(keep) == 1:
+                    cs, xs = [cs[keep[0]]], ([xs[keep[0]]] if xs else xs)
             if not cs:
                 problems.append(f"{mark}, {sup['name']}: nothing in the model is under it at ({pt[0]:g}, {pt[1]:g}) ft on level {level}")
                 continue

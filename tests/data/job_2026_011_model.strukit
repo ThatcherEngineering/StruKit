@@ -998,24 +998,6 @@
     "bearing": "3",
     "loads": [
      {
-      "case": "L",
-      "kind": "uniform",
-      "mag": "640",
-      "mag2": "",
-      "x1": "",
-      "x2": "",
-      "label": ""
-     },
-     {
-      "case": "D",
-      "kind": "uniform",
-      "mag": "320",
-      "mag2": "",
-      "x1": "",
-      "x2": "",
-      "label": ""
-     },
-     {
       "case": "D",
       "kind": "uniform",
       "mag": "10.68",
@@ -1032,7 +1014,12 @@
       "ratio": "240",
       "source": "project criteria, as in the sealed package"
      }
-    ]
+    ],
+    "at_level": "Roof",
+    "at_x1": "0",
+    "at_y1": "0",
+    "at_x2": "11.25",
+    "at_y2": "0"
    }
   },
   {

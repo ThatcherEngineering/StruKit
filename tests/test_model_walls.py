@@ -76,7 +76,7 @@ def test_job_2026_011_model_runs():
     the wall lines. The problems StruKit reports are the parts of the house it cannot represent (the existing house, posts on footing lines)."""
     d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
     out = calc.model_links(d["project"], d["members"])
-    assert out["placed"] == 24 and out["made"] >= 18
+    assert out["placed"] == 25 and out["made"] >= 18
     v = _by(out)
     assert float(v["Footing A"]["P_service"]) > 5000 and float(v["Footing Line 1"]["P_service"]) > 500
     g = calc.lateral_governing(d["project"], out["members"])
@@ -142,7 +142,8 @@ def test_post_on_footing_line_spread_over_typed_length():
 def test_header_in_a_wall_line():
     """A beam placed in a wall line at the wall's top level is a header: the joist row over its length goes onto it, the wall keeps the rest
     of the row, and the header's end reactions come down the jack studs onto what is under the wall (here the lower-story wall). Statics:
-    the roof live load reaching the lower wall is the same with and without the header; the main wall keeps 26.75 - 4 = 22.75 ft of row."""
+    the roof live load reaching the lower wall is the same with and without the header; with Roof Beam A over 0.5 to 11.25 ft of the row as
+    well, the main wall keeps 26.75 - 10.75 - 4 = 12 ft of row."""
     import copy
     d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
 
@@ -154,13 +155,13 @@ def test_header_in_a_wall_line():
     ms = copy.deepcopy(d["members"])
     _, lr0 = run(ms)
     h = next(m for m in ms if m["values"]["mark"] == "Header A LL")["values"]
-    h.update(at_level="Roof", at_x1="10", at_y1="0", at_x2="14", at_y2="0", loads=[])
+    h.update(at_level="Roof", at_x1="14", at_y1="0", at_x2="18", at_y2="0", loads=[])
     by, lr1 = run(ms)
     assert lr1 == pytest.approx(lr0, abs=2)
     row = [r for r in by["Header A LL"]["loads"] if r.get("case") == "Lr"]
     assert len(row) == 1 and row[0]["x1"] == "0" and row[0]["x2"] == "4"
     main = sum(float(r["P"]) for r in by["Line 1, main level"]["loads"] if r.get("case") == "Lr")
-    assert main == pytest.approx(float(row[0]["mag"]) * 22.75, rel=0.002)
+    assert main == pytest.approx(float(row[0]["mag"]) * 12.0, rel=0.002)
     jacks = [r for r in by["Line 1, lower level"]["loads"] if "Header A LL" in (r.get("label") or "") and r.get("case") == "Lr"]
     assert len(jacks) == 2 and sum(float(r["P"]) for r in jacks) == pytest.approx(float(row[0]["mag"]) * 4, abs=2)
 
@@ -183,3 +184,15 @@ def test_header_in_the_lower_wall_takes_the_wall_above():
     up = [r for r in by["Header B LL"]["loads"] if "Line 1, main level" in r.get("label", "") and r["case"] == "Lr"]
     assert len(up) == 1 and (up[0]["x1"], up[0]["x2"]) == ("0", "5")
     assert "Header B LL, left support, spread over 2 ft" in by["Footing Line 1"]["loads_from"]
+
+
+def test_header_at_a_wall_corner():
+    """Roof Beam A is a header in the Line 1 wall starting at the Line A corner: its left jack studs stand on the Line 1 lower wall (the
+    wall line the header is in), not reported as two walls under it; it takes the roof joist row from 0.5 to 11.25 ft."""
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+    out = calc.model_links(d["project"], d["members"])
+    assert not any("Roof Beam A" in p for p in out["problems"])
+    by = {m["values"]["mark"]: m["values"] for m in out["members"]}
+    row = [r for r in by["Roof Beam A"]["loads"] if r.get("case") == "Lr"]
+    assert len(row) == 1 and (row[0]["x1"], row[0]["x2"]) == ("0.5", "11.25")
+    assert any("Roof Beam A, left support" in r.get("label", "") for r in by["Line 1, lower level"]["loads"])

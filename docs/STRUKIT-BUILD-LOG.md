@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 18:25. Build **0.224.0**, 605 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 18:35. Build **0.225.0**, 606 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -680,4 +680,10 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation by statics** (2026-011 model): a 4 ft header in the upper Line 1 wall: the roof live load reaching the lower wall is unchanged (15,916 lb), the header takes the row over 0 to 4 ft and the wall keeps 22.75 of 26.75 ft; a 5 ft header in the lower wall: the floor live load is conserved between wall and header, the header takes the upper wall over 0 to 5 ft and its ends reach the footing line. Opened in a headless browser.
 - **Applied, not ruled (conservative; in the rulings file):** point loads on a footing line are all added to its per-foot load as if at one place; wall weight is over the whole length with openings not deducted; existing walls list both wind and seismic shear.
 - Not yet: king studs and jack studs as checked members; openings in the wall weight; headers in the plan drawn differently from beams.
+
+## 2026-11-25 18:35 local — 0.225.0 headers at wall corners; Roof Beam A placed (606 tests)
+- Zach 18:08: "Did you run the roof rafters also?" The roof joists were in the model (one row, Line 1 wall to the existing house wall, level as entered); Roof Beam A was not placed.
+- **Roof Beam A placed** in the 2026-011 model as the LVL header in the Line 1 wall at the roof, from the Line A corner, 11.25 ft (sheet S3 by scale; the length equals the span on its own sheet). Its typed loads were dropped except self-weight: it now takes the roof joist row over 0.5 to 11.25 ft from the load path, and the Line 1 wall keeps the rest.
+- **A header end at a wall corner:** where two walls are under a header's jack studs, the one on the header's own wall line takes it (it was reported as "more than one member under it").
+- Tests: the corner case and Roof Beam A's row on the model; the earlier header test moved to 14 to 18 ft (the main wall keeps 26.75 - 10.75 - 4 = 12 ft of row). Opened in a headless browser.
 

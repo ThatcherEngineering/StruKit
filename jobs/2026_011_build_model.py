@@ -80,7 +80,10 @@ for mk, p1, p2 in (("Footing Line 1", (0, 0), (27.25, 0)), ("Footing Line A", (0
 for mk in ("Wind", "Seismic"):
     put(Lm[mk])
 # unplaced, stand-alone checks kept in the project
-for mk in ("Roof Beam A", "Deck Column", "Header A LL", "Header B LL"):
+# Roof Beam A: the LVL header in the Line 1 wall at the roof, from the corner at Line A (sheet S3, by scale: 11.25 ft, the span of its sheet)
+rba = put(G["Roof Beam A"], at_level="Roof", at_x1=0, at_y1=0, at_x2=11.25, at_y2=0)
+rba["values"]["loads"] = [r for r in rba["values"]["loads"] if r.get("label") == "self-weight"]
+for mk in ("Deck Column", "Header A LL", "Header B LL"):
     put(G[mk])
 
 data = dict(format="strukit-project", version=1, project=proj, members=M)
