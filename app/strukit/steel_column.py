@@ -34,6 +34,9 @@ def check(props, Fy, Lcx, Lcy, Lcz=None, method="ASD", E=E_STEEL):
     if props.get("type") in ("HSS-RECT", "HSS-ROUND", "PIPE"):
         from . import hss
         return hss.column_check(props, Fy, Lcx, Lcy, method, E)
+    if props.get("type") == "BU":
+        from . import builtup
+        return builtup.column_check(props, Fy, Lcx, Lcy, Lcz, method, E)
     p = props
     missing = [k for k in REQUIRED if p.get(k) in (None, "")]
     if not p.get("bf_2tf") and not (p.get("bf") and p.get("tf")):

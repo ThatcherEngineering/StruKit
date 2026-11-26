@@ -39,7 +39,14 @@ def normalize(name):
 
 
 def get(name):
-    """Properties of a shape by its Manual label, e.g. 'W18x50'. Unknown names are refused."""
+    """Properties of a shape by its Manual label, e.g. 'W18x50', or of a built-up three-plate I ("BU 14x2 / 62x1/2 / 14x2", see builtup).
+    Unknown names are refused."""
+    from . import builtup
+    if builtup.is_builtup(name):
+        try:
+            return builtup.props(name)
+        except builtup.BuiltUpError as e:
+            raise ShapeError(str(e))
     table = _load()
     key = normalize(name)
     if key not in table:

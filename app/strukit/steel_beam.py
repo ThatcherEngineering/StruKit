@@ -54,7 +54,7 @@ def rts_from(Iy, Cw, Sx):
     return math.sqrt(math.sqrt(Iy * Cw) / Sx)
 
 
-def check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
+def check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL, compression=None):
     """Nominal and available flexural and shear strength of a rolled I-shape.
 
     props: d, tw, bf, tf, h_tw (h/tw), Zx, Sx, ry, J, ho, and either rts or Iy + Cw.
@@ -63,6 +63,9 @@ def check(props, Fy, Lb, Cb=1.0, method="ASD", E=E_STEEL):
     if props.get("type") in ("HSS-RECT", "HSS-ROUND", "PIPE"):
         from . import hss
         return hss.beam_check(props, Fy, Lb, Cb, method, E)
+    if props.get("type") == "BU":
+        from . import builtup
+        return builtup.beam_check(props, Fy, Lb, Cb, method, E, compression)
     missing = [k for k in REQUIRED if props.get(k) in (None, "")]
     if missing:
         raise SteelInputError("steel beam: missing section properties: " + ", ".join(missing))
