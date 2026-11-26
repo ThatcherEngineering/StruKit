@@ -119,3 +119,31 @@ def test_diaphragm_reaction_api_gives_the_line_length():
              G_source="SPF", L="40", W="24", load="wind", w="200", w_source="WM1")
     got = server.api("/api/diaphragm_reaction", dict(values=v, project=proj))
     assert got["reaction"] == pytest.approx(4000) and got["W"] == "24" and got["load"] == "wind"
+
+
+def test_cantilevered_diaphragm_sdpws_example(tmp_path):
+    """SDPWS-2021 Commentary Example C4.2.6.1-2: L' = 32 ft, W' = 136 ft, v = 1.4 x 144 = 201.6 plf, EA = 26,400,000 lb, Ga = 17 kips/in.,
+    a chord splice 16 ft from the line with 0.054 in. slip; Eq. 4.2-2: 0.006 + 0.190 + 0.006 = 0.20 in. (Ga 17 is the OSB value of 19/32 in.
+    10d, 3 in. face, 6 in. nailing in Table 4.2A; the example's plywood has the same Ga.) Statics: v = w L' / W', T = w L'^2 / (2 W'); limits of
+    Sect. 4.2.6.1 for seismic (L'/W' 1.5, 1.0 or 0.67 when torsionally irregular, L' 35 ft; not for L' of 6 ft or less)."""
+    from strukit import ws_more, calcsheet
+    w = 201.6 * 136 / 32
+    r = dp.blocked("Sheathing and Single-Floor, 19/32 in, 10d common", 3, 6, "OSB", 0.5, 32, 136, w, "seismic", "LRFD", 1.6e6, 16.5, [(16, 0.054)],
+                   cant=dict(irregular=False, stories=4))
+    assert r["Ga"] == 17 and r["v"] == pytest.approx(201.6) and r["chord"] == pytest.approx(w * 32 ** 2 / (2 * 136))
+    assert r["defl_bending"] == pytest.approx(0.006, abs=0.0005) and r["defl_shear"] == pytest.approx(0.190, abs=0.0005)
+    assert r["defl_splice"] == pytest.approx(0.006, abs=0.0005) and r["defl"] == pytest.approx(0.20, abs=0.005)
+    assert r["ratio_max"] == 1.5 and r["length_max"] == 35.0
+    irr = dp.blocked("Sheathing and Single-Floor, 19/32 in, 10d common", 3, 6, "OSB", 0.5, 20, 30, 300, "seismic", "ASD", cant=dict(irregular=True, stories=2))
+    assert irr["ratio_max"] == 0.67 and irr["ratio"] == pytest.approx(20 / 30)
+    one = dp.blocked("Sheathing and Single-Floor, 19/32 in, 10d common", 3, 6, "OSB", 0.5, 20, 30, 300, "seismic", "ASD", cant=dict(irregular=True, stories=1))
+    assert one["ratio_max"] == 1.0 and one["rigid_ok"]
+    short = dp.unblocked("Sheathing and Single-Floor, 15/32 in, 8d common", 2, 1, "OSB", 0.5, 5, 30, 300, "seismic", "ASD", cant=dict())
+    assert short["ratio_max"] == 3.0 and short["length_max"] is None                 # L' of 6 ft or less: Sect. 4.2.6.1 does not apply
+    s = ws_more.diaphragm_sheet("D1", "Sheathing and Single-Floor, 19/32 in, 10d common", 3, 1, "OSB", 0.5, "DF-L", 32, 136, w, "ELF", "seismic", "LRFD",
+                                1.6e6, 16.5, [(16, 0.054)], blocked=True, spacing=6, cant=dict(irregular=False, stories=4))
+    names = [x.check for x in s.rows]
+    assert "Aspect ratio L'/W'" in names and "Cantilever length L'" in names
+    u = ws_more.diaphragm_sheet("D2", "Sheathing and Single-Floor, 15/32 in, 8d common", 2, 1, "OSB", 0.5, "DF-L", 12, 20, 200, "ELF", "seismic", "ASD", cant=dict())
+    assert u.ok and u.diaphragm["v"] == pytest.approx(200 * 12 / 20) and "Aspect ratio L'/W'" in [x.check for x in u.rows]
+    calcsheet.simple_pdf(s, str(tmp_path / "cant.pdf"), "Job", "SDPWS-2021", "Nov 26, 2026")

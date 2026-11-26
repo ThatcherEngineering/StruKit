@@ -22,7 +22,7 @@ Read from the standard (pp. 18-19 and 27 of the document; tables read from the p
                  Eq. 4.2-1: 5 v L^3 / (8 E A W) + 0.25 v L / (1000 Ga) + sum(x Dc) / (2 W).
 Unit shear v = w L / (2 W); chord force T = C = w L^2 / (8 W) (statics).
 Not covered: high load diaphragms (Table 4.2B), lumber sheathed
-diaphragms, cantilevered and open front diaphragms (4.2.6), openings, collectors, torsion.
+diaphragms, openings, collectors, torsion. Cantilevered diaphragms of open front structures (4.2.6, Eq. 4.2-2) by _design(cant=...).
 """
 from .shearwall import FACTORS
 
@@ -73,7 +73,7 @@ def row(panel):
     raise DiaphragmError("diaphragm: the sheathing and nail choice is not a row of SDPWS Table 4.2C")
 
 
-def blocked(panel, face_in, spacing, panel_type, G, L, W, w, load, method, chord_E=None, chord_A=None, splice=()):
+def blocked(panel, face_in, spacing, panel_type, G, L, W, w, load, method, chord_E=None, chord_A=None, splice=(), cant=None):
     """Blocked diaphragm, Table 4.2A. spacing: nail spacing at the boundaries, 6, 4, 2.5 or 2 in."""
     key, _ = row(panel)
     if face_in not in (2, 3):
@@ -81,10 +81,10 @@ def blocked(panel, face_in, spacing, panel_type, G, L, W, w, load, method, chord
     if spacing not in OTHER_EDGES:
         raise DiaphragmError("diaphragm: the boundary nail spacing of a blocked diaphragm is 6, 4, 2-1/2 or 2 in.")
     vn_tab, g_osb, g_ply = BLOCKED[key][face_in][spacing]
-    return _design(key, vn_tab, g_osb, g_ply, MAX_RATIO_BLOCKED, panel_type, G, L, W, w, load, method, chord_E, chord_A, splice)
+    return _design(key, vn_tab, g_osb, g_ply, MAX_RATIO_BLOCKED, panel_type, G, L, W, w, load, method, chord_E, chord_A, splice, cant)
 
 
-def unblocked(panel, face_in, case, panel_type, G, L, W, w, load, method, chord_E=None, chord_A=None, splice=()):
+def unblocked(panel, face_in, case, panel_type, G, L, W, w, load, method, chord_E=None, chord_A=None, splice=(), cant=None):
     """L: span between the lines of resistance, ft; W: diaphragm width (depth) parallel to
     the load, ft; w: uniform load on the diaphragm, plf, at the level of `method`.
     case: 1, or 2 for Cases 2 to 6. splice: [(x ft from the nearest support, slip in)]."""
@@ -104,10 +104,13 @@ def unblocked(panel, face_in, case, panel_type, G, L, W, w, load, method, chord_
         raise DiaphragmError("diaphragm: the load is wind or seismic and the method ASD or LRFD")
     t = r[face_in]
     i = 0 if case == 1 else 3
-    return _design(key, t[i], t[i + 1], t[i + 2], MAX_RATIO_UNBLOCKED, panel_type, G, L, W, w, load, method, chord_E, chord_A, splice)
+    return _design(key, t[i], t[i + 1], t[i + 2], MAX_RATIO_UNBLOCKED, panel_type, G, L, W, w, load, method, chord_E, chord_A, splice, cant)
 
 
-def _design(key, vn_tab, g_osb, g_ply, ratio_max, panel_type, G, L, W, w, load, method, chord_E, chord_A, splice):
+def _design(key, vn_tab, g_osb, g_ply, ratio_max, panel_type, G, L, W, w, load, method, chord_E, chord_A, splice, cant=None):
+    """cant: None for a single span between two lines of resistance; or dict(irregular=bool, stories=int) for a diaphragm cantilevered L
+    (= L') past one line of resistance of width W (= W'), uniformly loaded (open front structure, Sect. 4.2.6): v = w L' / W' at the line,
+    chord T = C = w L'^2 / (2 W'), deflection at the free edge by Eq. 4.2-2."""
     if panel_type not in ("OSB", "plywood"):
         raise DiaphragmError("diaphragm: the panel is OSB or plywood")
     if G is None or not 0.3 <= G <= 0.75:
@@ -122,10 +125,29 @@ def _design(key, vn_tab, g_osb, g_ply, ratio_max, panel_type, G, L, W, w, load, 
     txt, fac = FACTORS[(load, method)]
     vn = vn_tab * sg
     cap = vn * fac
+    if cant is not None:
+        v, T, R = w * L / W, w * L * L / (2.0 * W), w * L
+        lim, lim_txt = ratio_max, "Table 4.2.2"
+        if load == "seismic" and L > 6.0:                                   # Sect. 4.2.6.1 (wood structural panels, 4.2.8.1); exception: L' of 6 ft or less
+            if cant.get("irregular"):
+                lim, lim_txt = (0.67, "Sect. 4.2.6.1 item 2, torsionally irregular, over one story") if (cant.get("stories") or 1) > 1 else \
+                    (1.0, "Sect. 4.2.6.1 item 2, torsionally irregular, one story")
+            else:
+                lim, lim_txt = min(1.5, ratio_max), "Sect. 4.2.6.1 item 2"
+        out = dict(key=key, vn_table=vn_tab, Ga=Ga, sg=sg, vn=vn, factor_text=txt, factor=fac, capacity=cap, v=v, reaction=R, chord=T,
+                   ratio=L / W, ratio_max=lim, ratio_src=lim_txt, defl=None, cant=True,
+                   length_max=(35.0 if (load == "seismic" and L > 6.0) else None),
+                   rigid_ok=(load == "seismic" and (cant.get("stories") or 1) == 1 and L <= 25.0 and L / W <= 1.0))
+        if chord_E and chord_A:
+            b = 3.0 * v * L ** 3 / (chord_E * chord_A * W)                  # Eq. 4.2-2
+            s_ = 0.5 * v * L / (1000.0 * Ga)
+            c = sum(x * d for x, d in splice) / W
+            out.update(defl=b + s_ + c, defl_bending=b, defl_shear=s_, defl_splice=c)
+        return out
     v = w * L / (2.0 * W)
     T = w * L * L / (8.0 * W)
     out = dict(key=key, vn_table=vn_tab, Ga=Ga, sg=sg, vn=vn, factor_text=txt, factor=fac, capacity=cap, v=v, reaction=w * L / 2.0, chord=T,
-               ratio=L / W, ratio_max=ratio_max, defl=None)
+               ratio=L / W, ratio_max=ratio_max, ratio_src="Table 4.2.2", defl=None, cant=False)
     if chord_E and chord_A:
         b = 5.0 * v * L ** 3 / (8.0 * chord_E * chord_A * W)
         s = 0.25 * v * L / (1000.0 * Ga)

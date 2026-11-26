@@ -1147,7 +1147,11 @@ FORMS = {
                 F("panel_type", "Panel", "select", options=["OSB", "plywood"], help="for the shear stiffness Ga"),
                 F("G", "Framing specific gravity, G", help="0.50 for Douglas Fir-Larch; NDS Table 12.3.3A"),
                 F("G_source", "Where G comes from", "text"),
-                F("L", "Span between the lines of resistance, L", unit="ft"),
+                F("layout", "Layout", "select", options=["single span between two lines of resistance", "cantilevered past one line (open front)"], required=False,
+                  help="cantilevered: L is the cantilever L' and W its width W' (SDPWS 4.2.6, Eq. 4.2-2)"),
+                F("torsion_irr", "Cantilevered: torsionally irregular (Sect. 4.2.5.1)", "select", options=["no", "yes"], required=False),
+                F("stories", "Cantilevered: stories in the structure", required=False, help="blank = one"),
+                F("L", "Span between the lines of resistance, L (or the cantilever L')", unit="ft"),
                 F("W", "Diaphragm width parallel to the load, W", unit="ft"),
                 F("load", "Load", "select", options=["wind", "seismic"]),
                 F("w", "Uniform load on the diaphragm", unit="plf", help="at the project's design method (ASD or LRFD)"),
@@ -2639,7 +2643,9 @@ def _build(kind, values, project):
         return ws_more.diaphragm_sheet(mark, panel, int(face), 1 if case == "Case 1" else 2, pt, G, gs, L_, W_, w, ws, load, m,
                                        r.num("chord_E", False), r.num("chord_A", False), [(x["x"], x["slip"]) for x in sp],
                                        r.num("defl_limit", False), r.text("defl_limit_source", False) or "", blocked=blk,
-                                       spacing=({"2-1/2": 2.5}.get(spc) or float(spc)) if blk else None), "simple", {}
+                                       spacing=({"2-1/2": 2.5}.get(spc) or float(spc)) if blk else None,
+                                       cant=(dict(irregular=str(values.get("torsion_irr") or "").startswith("y"), stories=int(float(values.get("stories") or 1)))
+                                             if str(values.get("layout") or "").startswith("cantilever") else None)), "simple", {}
     if kind == "nailed_connection":
         cb = combos(project, r.miss, "ASD")
         from .. import dowel as _dowel
