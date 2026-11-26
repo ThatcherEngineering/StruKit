@@ -436,3 +436,8 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 ## 2026-11-26 11:40, single-angle beam deflection (0.258.0), applied (not ruled)
 - An angle with lateral-torsional restraint at midspan only is taken to deflect as unrestrained (principal axes) for the deflection check.
 - The deflection limit is compared with the resultant of the vertical and sideways components (not the vertical component alone).
+
+## 2026-11-26 12:25, single angle with axial and transverse load (0.259.0), applied (not ruled)
+- Cm = 1.0 for both principal axes (Appendix 8 permits it for transverse loading); length for buckling and for Pe1 the span with K = 1.0.
+- Tension takes no reduction of the moments (B1 = 1.0) and is checked by yielding only in H2-1; rupture is left to the end connection.
+- An equal-leg angle with axial load is designed on the principal axes, not by the geometric axis provisions of Sect. F10.2(2).

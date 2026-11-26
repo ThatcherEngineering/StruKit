@@ -5229,15 +5229,31 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
         lds.append(dict(case="D", kind="uniform", w=a["W"] / 1000.0, dir="down", label="self-weight"))
     if not lds:
         raise WorksheetError(f"{mark}: no loads given")
+    axl = [x for x in lds if x.get("kind") == "axial"]
+    lds = [x for x in lds if x.get("kind") != "axial"]
     for x in lds:
         if x.get("dir", "down") not in ("down", "sideways") or x.get("kind") not in ("uniform", "point"):
-            raise WorksheetError(f"{mark}: each load is uniform or point, down or sideways")
+            raise WorksheetError(f"{mark}: each load is uniform or point, down or sideways, or axial")
         if x["kind"] == "point" and not (0 <= (x.get("x") or 0) <= L):
             raise WorksheetError(f"{mark}: a point load at {x.get('x')} ft is not on the {L:g} ft span")
+    if not lds and axl:
+        raise WorksheetError(f"{mark}: axial load alone: use the Steel Tension Member or Single-Angle Strut screen")
     side = any(x.get("dir") == "sideways" for x in lds)
     if restraint == "continuous" and side:
         raise WorksheetError(f"{mark}: sideways loads on an angle with continuous lateral-torsional restraint are not covered")
-    geometric = restraint == "continuous" or (g["equal"] and not side)
+    if restraint == "continuous" and axl:
+        raise WorksheetError(f"{mark}: axial load on an angle with continuous lateral-torsional restraint is not covered")
+    geometric = restraint == "continuous" or (g["equal"] and not side and not axl)
+    comp = None
+    if axl:                                                              # Sect. H2: axial strength by Sect. E3 / E7 (Lc = L, minor axis) and D2
+        try:
+            comp = ab.compression_strength(a, Fy, L * 12.0)
+        except ab.AngleBeamError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        Pc_ = (0.90 if method == "LRFD" else 1 / 1.67) * comp["Pn"]
+        Tc_ = (0.90 if method == "LRFD" else 1 / 1.67) * Fy * a["A"]
+        Pe1w_, Pe1z_ = math.pi ** 2 * ab.E * a["Iw"] / (L * 12.0) ** 2, math.pi ** 2 * ab.E * a["Iz"] / (L * 12.0) ** 2
+    Pof = lambda fac: sum(fac.get(x["case"], 0.0) * x["P"] for x in axl)
     lrfd = method == "LRFD"
     fb, fv = (0.90, 0.90) if lrfd else (1 / 1.67, 1 / 1.67)
     xs = sorted(set([L * i / 96 for i in range(97)] + [x["x"] for x in lds if x["kind"] == "point"]))
@@ -5295,13 +5311,16 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
                     best = (ratio, cb.name, dict(M=mx, r=r, Cb=Cb, Lb=(s1 - s0)))
         else:
             for s0, s1 in segs:
+                Pr = Pof(fac)
+                if axl and Pr > 0 and (1.0 if method == "LRFD" else 1.6) * Pr >= min(Pe1w_, Pe1z_):
+                    raise WorksheetError(f"{mark}: under {cb.name} the axial load is over the elastic buckling load of the angle")
                 for x in xs:
                     if not (s0 - 1e-9 <= x <= s1 + 1e-9):
                         continue
                     w_hat, z_hat, pts = ab.principal_points(a, g)
                     B = (Ms[x], Mv[x])
                     Bw, Bz = B[0] * z_hat[0] + B[1] * z_hat[1], B[0] * w_hat[0] + B[1] * w_hat[1]
-                    if abs(Bw) < 1e-9 and abs(Bz) < 1e-9:
+                    if abs(Bw) < 1e-9 and abs(Bz) < 1e-9 and not (axl and Pr):
                         continue
                     def bw_fun(xx, fac=fac):
                         b_ = (MV(xx, fac, "sideways")[0], MV(xx, fac, "down")[0])
@@ -5312,10 +5331,20 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
                     except ab.AngleBeamError as e:
                         raise WorksheetError(f"{mark}: {e}")
                     cw, cz = fb * st["Mnw"] / 12, fb * st["Mnz"] / 12
-                    it = ab.interaction(pts, Bw, Bz, cw, cz)
+                    ax = None
+                    if axl and Pr:
+                        alpha = 1.0 if method == "LRFD" else 1.6
+                        B1w = max(1.0, 1.0 / (1 - alpha * Pr / Pe1w_)) if Pr > 0 else 1.0       # Appendix 8, Cm = 1.0; no amplification in tension
+                        B1z = max(1.0, 1.0 / (1 - alpha * Pr / Pe1z_)) if Pr > 0 else 1.0
+                        pa = Pr / Pc_ if Pr > 0 else Pr / Tc_
+                        it = {k_: pa + v_ for k_, v_ in ab.interaction(pts, B1w * Bw, B1z * Bz, cw, cz).items()} if (abs(Bw) > 1e-9 or abs(Bz) > 1e-9) else \
+                            {k_: pa for k_ in pts}
+                        ax = dict(P=Pr, pa=pa, B1w=B1w, B1z=B1z)
+                    else:
+                        it = ab.interaction(pts, Bw, Bz, cw, cz)
                     k = max(it, key=lambda q: abs(it[q]))
                     if best is None or abs(it[k]) > best[0]:
-                        best = (abs(it[k]), cb.name, dict(x=x, Mv=Mv[x], Ms=Ms[x], Bw=Bw, Bz=Bz, st=st, cw=cw, cz=cz, it=it, point=k, Cb=Cb, Lb=(s1 - s0), pts=pts))
+                        best = (abs(it[k]), cb.name, dict(x=x, Mv=Mv[x], Ms=Ms[x], Bw=Bw, Bz=Bz, st=st, cw=cw, cz=cz, it=it, point=k, Cb=Cb, Lb=(s1 - s0), pts=pts, ax=ax))
     if best is None:
         raise WorksheetError(f"{mark}: no combination puts a moment on the angle")
     ratio, worst, d = best
@@ -5343,9 +5372,20 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
             steps.append(Ln(f"z axis, {nm}: Mn", val, "kip-in", "AISC 360-22 Sect. F10", txt))
         steps.append(Ln("Available strengths", f"Mcw = {d['cw']:.3f}, Mcz = {d['cz']:.3f} kip-ft", "", "Sect. F1", f"Lb = {d['Lb']:g} ft, Cb = {d['Cb']:.2f}; phi = 0.90, Omega = 1.67; "
                         "no lateral-torsional buckling about the minor axis (Sect. F10 User Note)"))
+        if d.get("ax"):
+            x_ = d["ax"]
+            if x_["P"] > 0:
+                steps += [Ln("Axial compression strength, Pn = Fn Ae", comp["Pn"], "kip", "AISC 360-22 Sect. E3, E7",
+                             f"Lc / rz = {comp['Lc_r']:.1f} (Lc = {L:g} ft, K = 1.0), Fe = {comp['Fe']:.2f} ksi, Fn = {comp['Fn']:.2f} ksi, Ae = {comp['Ae']:.3f} in2"),
+                          Ln("Required and available axial strength", f"Pr = {x_['P']:.2f}, Pc = {Pc_:.2f} kip", "", worst, "phi = 0.90, Omega = 1.67"),
+                          Ln("Second-order factors B1 = Cm / (1 - alpha Pr / Pe1)", f"B1w = {x_['B1w']:.3f}, B1z = {x_['B1z']:.3f}", "", "AISC 360-22 Appendix 8, Eq. A-8-3",
+                             f"Cm = 1.0; Pe1w = {Pe1w_:.1f}, Pe1z = {Pe1z_:.1f} kip (pi^2 E I / L^2); alpha = {1.0 if lrfd else 1.6:g}")]
+            else:
+                steps += [Ln("Axial tension, yielding: Pn = Fy Ag", Fy * a["A"], "kip", "AISC 360-22 Eq. D2-1", f"Pr = {-x_['P']:.2f} kip, Pc = {Tc_:.2f} kip; no amplification of the moments")]
         steps.append(Ln("Eq. H2-1 at A, B, C", ", ".join(f"{k} {v:+.3f}" for k, v in sorted(d["it"].items())), "", "AISC 360-22 Eq. H2-1",
-                        "+ where the moment compresses the point, - where it puts it in tension"))
-        rows.append(Row("Flexure about both principal axes (Eq. H2-1)", worst, ratio, 1.0, "", "AISC 360-22 Sect. F10, Eq. H2-1", f"point {d['point']}"))
+                        ("axial term + in compression, - in tension; " if d.get("ax") else "") + "+ where the moment compresses the point, - where it puts it in tension"))
+        rows.append(Row("Axial and flexure, principal axes (Eq. H2-1)" if axl else "Flexure about both principal axes (Eq. H2-1)", worst, ratio, 1.0, "",
+                        "AISC 360-22 Sect. E3, F10, Eq. H2-1" if axl else "AISC 360-22 Sect. F10, Eq. H2-1", f"point {d['point']}"))
     for key, b, nm in (("v", g["Lv"], "vertical leg"), ("s", g["Lh"], "horizontal leg")):
         V, cbn = vmax[key]
         if key == "s" and not side:
@@ -5379,16 +5419,23 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
         where = "full span" if x["kind"] == "uniform" else f"at {x['x']:g} ft"
         val = f"{x['w']:.3f} kip/ft" if x["kind"] == "uniform" else f"{x['P']:.2f} kip"
         load_lines.append(f"{x['case']:<3} {val:>13}  {x.get('dir', 'down'):<9} {where}" + (f"   {x['label']}" if x.get("label") else ""))
+    for x in axl:
+        load_lines.append(f"{x['case']:<3} {abs(x['P']):>9.2f} kip  axial     {'compression' if x['P'] > 0 else 'tension'}, through the centroid" + (f"   {x['label']}" if x.get("label") else ""))
     assumptions = ["Down loads act vertically; sideways loads act horizontally, from the toe of the horizontal leg toward the heel when positive.",
                    "Loads act through the shear center (the heel); torsion is not considered."]
+    if axl:
+        assumptions.append("Axial load acts through the centroid; length for buckling and for the second-order factors the span, K = 1.0, both ends pinned; "
+                           "Cm = 1.0 (transverse loading).")
     if not geometric:
-        assumptions.append("Principal-axis section properties from the AISC Shapes Database v16.0; beta_w from " + ab.beta_w_source(g) + ".")
+        assumptions.append("Principal-axis section properties from the AISC Shapes Database v16.0; " + ("beta_w = 0 for equal legs." if g["equal"] else "beta_w from " + ab.beta_w_source(g) + "."))
     sheet = SimpleSheet(mark, "Single-Angle Beam", "Member", method, info, load_lines, [(cb.name, cb.source) for cb in combos], f"Calculation ({worst})", steps, rows,
-                        assumptions, (["deflection (no limit entered)"] if not defl else []) + ["axial load", "the end connections", "bearing at the supports"])
+                        assumptions, (["deflection (no limit entered)"] if not defl else []) + ([] if axl else ["axial load"]) + ["the end connections", "bearing at the supports"]
+                        + (["tensile rupture at the end connections"] if any(x["P"] < 0 for x in axl) else []))
     sheet.blocks.append(dict(title="Loading and Section", head="Loading and Section", picture=("angle_beam", dict(
         L=L, loads=[dict(kind="uniform", w=x["w"] * 1000, case=x["case"]) if x["kind"] == "uniform" else dict(kind="point", P=x["P"] * 1000, x_ft=x["x"], case=x["case"])
                     for x in lds if x.get("dir", "down") == "down"],
         side=[f"{x['case']} {x['w'] * 1000:,.0f} plf" if x["kind"] == "uniform" else f"{x['case']} {x['P'] * 1000:,.0f} lb at {x['x']:g} ft" for x in lds if x.get("dir") == "sideways"],
+        axial=[(f"{x['case']} {abs(x['P']):.2f} kip {'compression' if x['P'] > 0 else 'tension'}", x["P"] > 0) for x in axl],
         Lv=g["Lv"], Lh=g["Lh"], t=g["t"], toe=toe, shape=shapes.normalize(shape)))))
     fac = next(cb for cb in combos if cb.name == worst).factors
     dx = [L * i / 48 for i in range(49)]

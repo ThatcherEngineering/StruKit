@@ -969,3 +969,15 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   (`tests/test_angle_beam.py`). Sample sheet: the Example F.11C angle with live and wind deflection limits.
 - Applied (conservative, not ruled): with restraint at midspan only, the deflection is the unrestrained (principal axis) value; the limit is
   checked against the resultant, not the vertical component alone.
+
+## 2026-11-26 12:25 MST — 0.259.0 single angles with axial load and transverse load (Next 1, part)
+- **Single-Angle Beam screen, load "axial, through the centroid"** (compression positive, tension negative), with the transverse loads.
+  Sect. H2 on the principal axes at points A, B and C: compression by Sect. E3 / E7 (Lc = the span, K = 1.0, about the minor axis, the
+  `anglebeam.compression_strength` of the angle strut screen), tension by yielding (Eq. D2-1); the moments amplified by Appendix 8 B1 on each
+  principal axis with Cm = 1.0 in compression (none in tension). An equal-leg angle with axial load goes to the principal axes (the geometric
+  axis route of F10.2(2) is not used with axial load); continuous restraint with axial load is refused. The loading picture draws the axial
+  load at both ends; the load list prints it.
+- **Validation: by hand** (no published example combines the two): Example F.11A's angle with 5 kips live compression, every step (Fe, Fn,
+  Ae with the slender legs of E7, Pc, Pe1, B1, the H2-1 sum) and the tension case (`tests/test_angle_beam.py`). The compression strength
+  itself is validated against Example E.14B (`tests/test_angle_strut.py`).
+- Sample sheet sent. Browser check: no page errors.

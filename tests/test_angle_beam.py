@@ -121,3 +121,36 @@ def test_deflection_principal_axes_against_commentary():
     s, _, _ = calc.build("angle_beam", v, proj)
     row = [x for x in s.rows if x.check == "Deflection, dead"][0]
     assert row.demand == pytest.approx(r["d"], rel=1e-6) and row.capacity == pytest.approx(72 / 240)
+
+
+def test_axial_and_transverse_load_by_hand():
+    """Example F.11A angle (L4x4x1/4, A572 Gr. 50, 6 ft) with an axial load added, Sect. H2 on the principal axes. No published example
+    combines the two; checked by hand. 1.2D + 1.6L with 5 kips L compression: Pr = 8.0 kips.
+      Lc / rz = 72 / 0.783 = 91.95; Fe = pi^2 (29,000) / 91.95^2 = 33.85 ksi; Fn = 0.658^(50 / 33.85) 50 = 26.94 ksi (Eq. E3-2);
+      legs b / t = 16 over 0.45 (E / Fy)^0.5 (Fy / Fn)^0.5 = 14.77: Fel = (1.49 x 10.84 / 16)^2 50 = 50.95 ksi, be = 3.836 in. (Eq. E7-3),
+      Ae = 1.93 - 2 (0.25)(4 - 3.836) = 1.848 in2; Pn = 49.8 kips; Pc = 44.8 kips; Pr / Pc = 0.179.
+      Pe1z = pi^2 (29,000)(1.19) / 72^2 = 65.7 kips, B1z = 1 / (1 - 8 / 65.7) = 1.139; Pe1w (Iw 4.82) = 266 kips, B1w = 1.031.
+    The H2-1 value at the governing point is Pr / Pc plus the amplified moment terms; in tension there is no amplification and the axial term
+    is - Tr / (0.9 Fy Ag)."""
+    s = angle_beam_sheet("LB", "L4X4X1/4", 50, "A572 Gr. 50", 6, "", "up", "none", False, DL + [dict(case="L", kind="axial", P=5.0)], [LR], "LRFD")
+    d = s.angle_beam["detail"]
+    ax = d["ax"]
+    assert ax["P"] == pytest.approx(8.0) and ax["pa"] == pytest.approx(8.0 / (0.9 * 49.8), rel=0.004)
+    assert ax["B1z"] == pytest.approx(1.139, abs=0.002) and ax["B1w"] == pytest.approx(1.031, abs=0.001)
+    w_hat, z_hat, pts = ab.principal_points(shapes.angle("L4X4X1/4"), ab.geometry(shapes.angle("L4X4X1/4"), "", "up"))
+    expect = ax["pa"] + ab.interaction(pts, ax["B1w"] * d["Bw"], ax["B1z"] * d["Bz"], d["cw"], d["cz"])[d["point"]]
+    assert s.angle_beam["ratio"] == pytest.approx(abs(expect)) and s.rows[0].check == "Axial and flexure, principal axes (Eq. H2-1)"
+    t = angle_beam_sheet("LB", "L4X4X1/4", 50, "A572 Gr. 50", 6, "", "up", "none", False, DL + [dict(case="L", kind="axial", P=-5.0)], [LR], "LRFD")
+    tx = t.angle_beam["detail"]["ax"]
+    assert tx["B1w"] == tx["B1z"] == 1.0 and tx["pa"] == pytest.approx(-8.0 / (0.9 * 50 * 1.93))
+    assert t.angle_beam["ratio"] < s.angle_beam["ratio"]
+    with pytest.raises(WorksheetError):                              # continuous restraint with axial load is outside the check
+        angle_beam_sheet("LB", "L4X4X1/4", 50, "A36", 6, "", "up", "continuous", False, DL + [dict(case="L", kind="axial", P=5.0)], [LR], "LRFD")
+    with pytest.raises(WorksheetError):                              # over the elastic buckling load
+        angle_beam_sheet("LB", "L4X4X1/4", 50, "A36", 6, "", "up", "none", False, DL + [dict(case="L", kind="axial", P=60.0)], [LR], "LRFD")
+    v = dict(mark="LB1", shape="L4X4X1/4", Fy="50", steel_source="A572 Gr. 50", span="6", vertical="", toe="up", restraint="none between the ends", self_weight="no",
+             loads=[dict(case="D", kind="uniform, full span", value="0.05", x="", dir="down", label=""), dict(case="L", kind="uniform, full span", value="0.15", x="", dir="down", label=""),
+                    dict(case="L", kind="axial, through the centroid", value="5", x="", dir="", label="chord force")])
+    proj = dict(name="T", number="1", address="", method="LRFD", date="2026-11-26", combos=[dict(expr="1.2D + 1.6L", source="ASCE/SEI 7-22 Sect. 2.3.1")])
+    sc, _, _ = calc.build("angle_beam", v, proj)
+    assert sc.angle_beam["ratio"] == pytest.approx(s.angle_beam["ratio"]) and any("axial" in x for x in sc.load_lines)

@@ -2194,6 +2194,20 @@ def _angle_beam_picture(c, top, d):
     for k, t_ in enumerate(d["side"]):
         c.drawString(x0, yl - 9 * (k + 1), "sideways: " + t_)
     yl -= 9 * len(d["side"])
+    axl = d.get("axial") or []
+    for k, (t_, cmp_) in enumerate(axl):
+        c.drawString(x0, yl - 9 * (k + 1), "axial: " + t_)
+    yl -= 9 * len(axl)
+    if axl:                                                  # axial arrows at both ends: toward the member in compression, away in tension
+        cmp_ = any(q[1] for q in axl)
+        c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+        yy = yb - 3
+        if cmp_:
+            _arrow(c, x0 - 30, yy, x0 - 2, yy, head=3); _arrow(c, x1 + 30, yy, x1 + 2, yy, head=3)
+        else:
+            _arrow(c, x0 - 2, yy, x0 - 30, yy, head=3); _arrow(c, x1 + 2, yy, x1 + 30, yy, head=3)
+        c.setFont(FR, 6); c.drawCentredString(x1 + 16, yy + 4, "P")
+        c.drawCentredString(x0 - 16, yy + 4, "P")
     Lv, Lh, t = d["Lv"], d["Lh"], d["t"]
     sc = min(90.0 / max(Lv, Lh), 20.0)
     hx = RM - 150                                            # heel, outside corner
