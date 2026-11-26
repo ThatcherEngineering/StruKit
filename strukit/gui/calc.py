@@ -501,9 +501,12 @@ FORMS = {
                 F("fweld", "Fillet weld, flange plate to the HSS face (each side of the plate)", unit="in", required=False),
                 F("fFEXX", "Electrode strength", unit="ksi", required=False)],
         tables=[T("loads", "Loads at the joint", [CASE, F("M", "Beam end moment", unit="kip-ft"), F("P", "Column axial load at the joint", unit="kip", required=False),
-                                                  F("Mc", "Column moment at the joint", unit="kip-ft", required=False), F("label", "Note", "text", required=False)]),
+                                                  F("Mc", "Column moment at the joint", unit="kip-ft", required=False),
+                                                  F("Mc2", "Column moment about its other axis", unit="kip-ft", required=False, help="from a beam framing into the joint in the other direction"),
+                                                  F("label", "Note", "text", required=False)]),
                 T("runs", "Or: combined loads (for example from the 3D frame), used in place of the table above",
-                  [F("name", "Combination or run", "text"), F("M", "Beam end moment", unit="kip-ft"), F("P", "Column axial load", unit="kip", required=False), F("Mc", "Column moment", unit="kip-ft", required=False)])]),
+                  [F("name", "Combination or run", "text"), F("M", "Beam end moment", unit="kip-ft"), F("P", "Column axial load", unit="kip", required=False), F("Mc", "Column moment", unit="kip-ft", required=False),
+                   F("Mc2", "Column moment, other axis", unit="kip-ft", required=False)])]),
     "end_plate": dict(
         title="Shear End-Plate Connection", code="AISC 360-22", mark="EP",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
@@ -1785,7 +1788,7 @@ def _build(kind, values, project):
         br, sw = r.text("bracing"), yes(r.text("self_weight"))
         pts = []
         if br == "at points":
-            pts = ((r.nums("brace_pts") or []) if r.text("brace_pts", False) else []) if fixed else (r.nums("brace_pts") or [])
+            pts = (r.nums("brace_pts") or []) if r.text("brace_pts", False) else []      # blank: braced at the ends (and supports) only
         loads = []
         more = (r.nums("more_spans") or []) if (r.text("more_spans", False) and not fixed) else []
         total = (span or 0.0) + sum(more) + (r.num("oh_left", False) or 0.0) + (r.num("oh_right", False) or 0.0)
@@ -2184,8 +2187,8 @@ def _build(kind, values, project):
     if kind == "beam_hss_moment":
         cb, m = combos(project, r.miss), method(project, r.miss)
         z = lambda v: v if v is not None else 0.0
-        runs = [dict(name=x["name"], M=x["M"], P=z(x.get("P")), Mc=z(x.get("Mc"))) for x in r.rows("runs")]
-        loads = [] if runs else [dict(case=x["case"], M=x["M"], P=z(x.get("P")), Mc=z(x.get("Mc")), **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        runs = [dict(name=x["name"], M=x["M"], P=z(x.get("P")), Mc=z(x.get("Mc")), Mc2=z(x.get("Mc2"))) for x in r.rows("runs")]
+        loads = [] if runs else [dict(case=x["case"], M=x["M"], P=z(x.get("P")), Mc=z(x.get("Mc")), Mc2=z(x.get("Mc2")), **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
         if not loads and not runs:
             r.miss.append("No load is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
@@ -5836,9 +5839,10 @@ def frame_beam_hss(project, members, mark, end):
         return dict(rows=[], messages=[f"No frame column of {bp['level']} stands at the {end} end of {mark} ({pt[0]:g}, {pt[1]:g})"])
     web_x = not str((cplace.get("values") or {}).get("at_web") or "X").strip().upper().startswith("Y")
     face = "B" if along_x == web_x else "H"        # the beam runs along the column's depth: it frames into the B face; the column bends about its strong axis
-    key = "Ms" if face == "B" else "Mw"
+    key, key2 = ("Ms", "Mw") if face == "B" else ("Mw", "Ms")
     tops = {t["run"]: t for t in col["top"]}
-    joined = [dict(name=b["run"], M=b["M"] / 12.0, P=tops[b["run"]]["P"], Mc=tops[b["run"]][key] / 12.0) for b in bm["ends"][end] if b["run"] in tops]
+    joined = [dict(name=b["run"], M=b["M"] / 12.0, P=tops[b["run"]]["P"], Mc=tops[b["run"]][key] / 12.0, Mc2=abs(tops[b["run"]].get(key2) or 0.0) / 12.0)
+              for b in bm["ends"][end] if b["run"] in tops]
     picks = []
     for chooser in (lambda r: r["M"], lambda r: r["P"], lambda r: r["Mc"]):
         r = max(joined, key=chooser)
@@ -6061,6 +6065,7 @@ def bent_building(project, members, spec):
     # beams along the building at the column tops: moment-connected in the portal bays, pinned struts in the others
     eave, strut = str(sp.get("eave_shape") or "").strip(), str(sp.get("strut_shape") or "").strip()
     eFy = num("eave_Fy", "Eave beam Fy", bool(eave), 1)
+    etrib = num("eave_trib", "Roof width carried by each eave beam or strut", False, 0) or 0.0
     sFy = num("strut_Fy", "Eave strut Fy", bool(strut), 1)
     portal = set()
     bays_txt = str(sp.get("eave_bays") or "").strip().lower()
@@ -6138,8 +6143,10 @@ def bent_building(project, members, spec):
                 continue
             n_eave, n_strut = n_eave + (2 if rigid else 0), n_strut + (0 if rigid else 2)
             for line, y, dz in (("A", 0.0, 0.0), ("B", cs, zB)):
+                erows = [dict(case=c, kind="uniform", mag=f"{q * etrib / 1000:.5f}", x1="", x2="", label=f"roof {dict(D='dead', S='snow', Lr='live')[c]} load {q:g} psf x {etrib:g} ft")
+                         for c, q in loads if q and etrib]
                 v = dict(mark=f"{pre}{'E' if rigid else 'ES'}{j}{line}", shape=sec, Fy=g(fy), support_type="", span=g(xs[j] - xs[j - 1]), more_spans="", oh_left="", oh_right="",
-                         bracing="at points", brace_pts="", self_weight="yes", loads=[], defl=[], at_level="Roof", at_x1=g(xs[j - 1]), at_y1=g(y), at_x2=g(xs[j]), at_y2=g(y))
+                         bracing="at points", brace_pts="", self_weight="yes", loads=erows, defl=[], at_level="Roof", at_x1=g(xs[j - 1]), at_y1=g(y), at_x2=g(xs[j]), at_y2=g(y))
                 if dz:
                     v.update(at_dz1=g(round(dz, 4)), at_dz2=g(round(dz, 4)))
                 if rigid:
@@ -6164,9 +6171,12 @@ def bent_building(project, members, spec):
     if n_eave:
         extra.append(f"{n_eave} eave beams ({eave}) at the column tops with moment connections at both ends, in bay{'s' if len(portal) > 1 else ''} "
                      + ", ".join(str(j) for j in sorted(portal)) + " of each column line: with the columns they are the portal frames along the building. "
-                     "Their own sheets carry only their weight, braced at the ends; the 3D frame run is their check. The beam-to-column moment connection is not checked.")
+                     + (f"Each carries the roof load on a {etrib:g} ft strip as well as its weight, braced at the ends; the rafters keep their full tributary load. "
+                        if etrib else "Their own sheets carry only their weight, braced at the ends; ")
+                     + "the 3D frame run is their check. The beam-to-column moment connection is checked on the Beam to HSS Column Moment Connection screen.")
     if n_strut:
-        extra.append(f"{n_strut} eave struts ({strut}) with pinned ends in the other bays; they carry axial force between the bents in the 3D frame run.")
+        extra.append(f"{n_strut} eave struts ({strut}) with pinned ends in the other bays; they carry axial force between the bents in the 3D frame run"
+                     + (f" and the roof load on a {etrib:g} ft strip." if etrib else "."))
     if base_txt != "pinned" and "only" in base_txt:
         extra.append("Column bases: " + base_txt + " (free to turn in the other direction).")
     if pitched:

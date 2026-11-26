@@ -396,3 +396,7 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 - Design Guide 39 Table A-2(f) prints "dce" in the h1 term; de (column top to the outer bolt row) is used, as in Table A-4(e).
 - Stiffened built-up girder: one spacing along the girder; no tension field action in the end panel; the first interior panel checked at a
   from each support.
+
+## 2026-11-26 12:10, carport (0.254.0), applied (not ruled)
+- Eave beams and struts carry a roof strip of the width typed; the rafters keep their full tributary load (the strip is counted twice).
+- At a portal-bay knee the HSS column's moment about its other axis is added to U (Eq. K1-6 is written for one axis).

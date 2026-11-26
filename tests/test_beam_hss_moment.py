@@ -119,3 +119,19 @@ def test_welded_flange_plates_on_the_sheet(tmp_path):
     from strukit import calcsheet
     calcsheet.simple_pdf(s, str(tmp_path / "bhm_welded.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")
     calcsheet.simple_pdf(s2, str(tmp_path / "bhm_welded2.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")
+
+
+def test_column_moment_about_the_other_axis():
+    """A portal-bay knee: the eave beam frames into one face and the rafter makes the column bend about its other axis. The frame fill takes
+    that moment too (same run), and the utilization U of Eq. K1-6 adds it: U = P / (Fc A) + M / (Fc S) + M2 / (Fc S2)."""
+    import json, os
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "carport_eave_portals.strukit")))
+    g = calc.frame_beam_hss(d["project"], d["members"], "E3A", "left")
+    assert all("Mc2" in r for r in g["rows"]) and max(r["Mc2"] for r in g["rows"]) > 1.0
+    base = dict(V, loads=[dict(case="D", M="15", P="65", Mc="15", label=""), dict(case="L", M="45", P="195", Mc="45", label="")])
+    two = dict(V, loads=[dict(case="D", M="15", P="65", Mc="15", Mc2="5", label=""), dict(case="L", M="45", P="195", Mc="45", Mc2="0", label="")])
+    a = calc.build("beam_hss_moment", base, dict(PROJ, method="LRFD"))[0].conn
+    b = calc.build("beam_hss_moment", two, dict(PROJ, method="LRFD"))[0].conn
+    from strukit import shapes
+    S2 = shapes.hss("HSS10X10X1/2")["Sy"]
+    assert b["U"] == pytest.approx(a["U"] + 1.2 * 5 * 12 / (50 * S2), rel=1e-6) and b["Qf"] < a["Qf"]

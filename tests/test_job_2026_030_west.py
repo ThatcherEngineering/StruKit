@@ -255,3 +255,29 @@ def test_eave_portal_bays_carry_the_building_lengthwise():
     assert calc.model_frame_sway(bare["project"], bare["members"])["problems"]
     # input checks
     assert calc.bent_building(proj, [], dict(spec, eave_bays="9"))["problems"] and calc.bent_building(proj, [], dict(spec, eave_bays=""))["problems"]
+
+
+def test_eave_beams_take_a_roof_strip():
+    """Eave beams and struts can carry the roof load on a strip of given width (D, S, Lr x the strip), on their own sheets and in the 3D frame;
+    the rafters keep their full tributary load."""
+    src = json.load(open(os.path.join(HERE, "data", "job_2026_030_west.strukit")))
+    proj = {k: v for k, v in src["project"].items() if k != "model"}
+    spec = dict(n="4", spacing="20", end_start="0.5", end_end="0.5", col_spacing="18.5", cant_low="1", cant_high="2.25", height="11", slope="1",
+                col_shape="HSS8X8X1/2", col_Fy="46", raf_shape="HSS10X6X3/8", raf_Fy="46", base="fixed for sway in Y only", D="6.1", S="36.12", Lr="",
+                eave_shape="W12X26", eave_Fy="50", eave_bays="2", strut_shape="C8X11.5", strut_Fy="36", eave_trib="2.5")
+    out = calc.bent_building(proj, [src["members"][0]], spec)
+    assert out["problems"] == []
+    eb = {m["values"]["mark"]: m["values"] for m in out["members"] if m["values"].get("mark", "")[:1] == "E"}
+    rows = {r["case"]: float(r["mag"]) for r in eb["E2A"]["loads"]}
+    assert rows == {"D": pytest.approx(6.1 * 2.5 / 1000), "S": pytest.approx(36.12 * 2.5 / 1000)}
+    assert {r["case"] for r in eb["ES1B"]["loads"]} == {"D", "S"}
+    raf = next(m["values"] for m in out["members"] if m["values"]["mark"] == "R2")
+    assert float(next(r["mag"] for r in raf["loads"] if r["case"] == "S")) == pytest.approx(36.12 * 20 / 1000)
+    assert any("2.5 ft strip" in n_ for n_ in out["notes"])
+    plain = calc.bent_building(proj, [src["members"][0]], dict(spec, eave_trib=""))
+    r0 = calc.model_frame_sway(plain["project"], plain["members"])
+    r1 = calc.model_frame_sway(out["project"], out["members"])
+    m0 = {b["mark"]: float(b["M"]) for b in r0["beams"]}; m1 = {b["mark"]: float(b["M"]) for b in r1["beams"]}
+    assert m1["ES1A"] > m0["ES1A"] + 12 and r1["problems"] == []
+    s = calc.build("steel_beam", eb["ES1A"], out["project"])[0]
+    assert s.rows[0].demand > 1.0                                       # the strut's own sheet: w L^2 / 8 with the strip, kip-ft

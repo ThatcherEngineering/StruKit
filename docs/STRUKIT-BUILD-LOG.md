@@ -917,3 +917,11 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 
 ## 2026-11-26 11:45 local — 0.253.1 fix: cap plate no-prying citation (666 tests)
 - Found while working on the carport knee: the edition pass of 0.248.0 turned the cap plate sheet's "Eq. 9-34" into "Eq. 9-74" (a text replacement of the old "Eq. 9-3" also caught "Eq. 9-34"). Builds 0.248.0 to 0.253.0 printed the wrong number on the Cap Plate sheet; the calculation was not affected. Now "AISC Manual (16th Ed.) Eq. 9-34a / 9-34b" (as Design Guide 24 Example 6.1 cites it). New test `tests/test_citations.py`: every AISC Manual citation in the code names its edition, and the renumbered equations are as confirmed.
+
+## 2026-11-26 12:10 local — 0.254.0 carport: eave beams taking roof load; the portal-bay knee in both directions (Next item 8) (669 tests)
+- **Eave beams and struts take a roof strip** (bent quick start, new box "Roof width on each eave beam or strut, ft"): each eave beam and strut gets the roof dead, snow and roof live loads times that width, on its own sheet and in the 3D frame; the rafters keep their full tributary load. The quick-start note says so.
+- **Portal-bay knee, both directions** (Beam to HSS Column Moment Connection): new column "column moment about its other axis" in both load tables; the 3D frame fill takes it from the same run (the moment from the rafter at a portal-bay knee when the eave beam is the beam on this sheet). The column utilization U of AISC 360-22 Eq. K1-6 adds M2 / (Fc S2), which lowers Qf for the face plastification and crippling checks.
+- Steel Beam screen: bracing "at points" with the brace points left blank now means braced at the ends and supports only (as the form's help says); before, the sheet stopped. The quick start's eave beams and struts use it.
+- **Validation:** the strip loads and their effect in the frame, and U with the second moment, by hand (`tests/test_job_2026_030_west.py`, `tests/test_beam_hss_moment.py`). Eq. K1-6 is written for one axis; there is no published example of the two-axis chord stress at an HSS face.
+- **Applied, not ruled (conservative):** the rafters are not relieved of the strip the eave beams carry (that load is counted twice); the column moment about the other axis is added to U.
+- Opened in a headless browser (eave portal carport): no page errors.
