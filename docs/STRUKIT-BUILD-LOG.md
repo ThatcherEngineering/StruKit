@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 18:05. Build **0.223.0**, 603 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 18:25. Build **0.224.0**, 605 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -26,7 +26,7 @@ Updated 2026-11-25 18:05. Build **0.223.0**, 603 tests passing; `main` and `rele
 
 **Needed from Zach (do not build without it):** AISC Design Guide 7 (Industrial Buildings) and, for underhung cranes and monorails, MHI MH27.1 or CMAA 74 (crane runway lateral load method, deflection limits, bottom flange bending); AISC Design Guide 9 (torsion of W shapes and channels); ASCE 7-16 text; AISI S100; a reference or his own method for an HSS rafter on an HSS column cap plate; a readable TMS 402 for CMU walls; ASABE EP484 / EP486 for post-frame embedment; his wind drift limit and its source.
 
-**Next, in order**
+**Next, in order** (Zach 18:01: finish item 8 before going back to the rest of the list)
 1. (Done 0.211.0: beam to HSS column moment connection filled from the frame; bolted flange plates.) Still open on that joint: welded (not bolted) flange plates to the beam flange; the web shear tab filled from the same frame run.
 2. (Stiffened seats, welded to the support, done 0.214.0.) Still open: all-bolted stiffened seats (Table 10-7), column web punching limits for seats on a web, the top angle.
 3. (Bottom-only cope done 0.215.0.) Still open: Manual equation citations name no edition, and StruKit mixes 15th Ed. numbers (Eq. 9-2, 9-3, seats) with the Design Examples v16 / 16th Ed. numbers (coped beams, Eq. 9-8); put the edition on each, or move all to one edition when a 16th Ed. Manual is on file.
@@ -35,7 +35,7 @@ Updated 2026-11-25 18:05. Build **0.223.0**, 603 tests passing; `main` and `rele
 6. (Single angles in bending done 0.217.0.) Still open: angles over more than one span or with overhangs, axial load with bending (Sect. H2), deflection of unrestrained angles, unequal angles not in Commentary Table C-F10.1, the Steel Beam screen and the 3D frame taking angles.
 7. (Top-running crane runway beam, simple span, done 0.218.0.) Still open and waiting on documents: underhung cranes and monorails (bottom flange local bending), fatigue (AISC 360-22 Appendix 3 is on file; needs the number of cycles by service class), web yielding and crippling under the wheels, continuous runway beams, cap channels; AISC Design Guide 7 would let the lateral load and deflection limits be cited.
 8. (Dropped 2026-11-25 16:51, Zach: he no longer uses StruCalc and StruKit replaces it. No more StruCalc import work. The steel .vtx reader of 0.165.0 stays as it is.)
-8. **From the 2026-011 whole-house model run (0.220.0), in order:** (a) (existing walls done 0.221.0; still open: existing beams, posts and footings as carriers); (b) (post on a footing line spread over a typed length done 0.223.0; still open: the footing checked as an isolated pad under the post); (c) (wall weight done 0.222.0; still open: openings in bearing walls, headers taking the loads over an opening, jack studs to the footing); (d) seismic weights and story forces from the model (today the seismic sheet's weights are typed); (e) diaphragm sheets filled from the model; (f) wood beams, posts and shear walls in the 3D frame.
+8. **From the 2026-011 whole-house model run (0.220.0), in order:** (a) (existing walls done 0.221.0; still open: existing beams, posts and footings as carriers); (b) (post on a footing line spread over a typed length done 0.223.0; still open: the footing checked as an isolated pad under the post); (c) (wall weight 0.222.0, headers in wall lines 0.224.0; still open: wall weight less the openings, king and jack studs checked); (d) seismic weights and story forces from the model (today the seismic sheet's weights are typed); (e) diaphragm sheets filled from the model; (f) wood beams, posts and shear walls in the 3D frame.
 9. (Shear lugs done 0.219.0.) Still open: anchorage in the concrete on the uplift base plate and the four-rod biaxial base plate; concrete breakout of the rods on the shear lug screen; shear lugs with net uplift or two-way shear.
 10. Built-up three-plate sections as beams and columns; the column side of the extended end plate.
 11. Through-plate and diaphragm beam-to-HSS moment connections (Design Guide 24 Examples 6.2, 6.4).
@@ -668,4 +668,16 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - Same hour. Next item 8(b).
 - Continuous footing placement card: "Footing line: a point load (post, column) spreads over" (ft) and where that length comes from. With both, a post or column whose base lands on that footing line is linked to it and its load by case divided by that length is added per foot, with the other loads on the footing, before the governing combinations are picked; the load path line reads "reaction of Column A, base, spread over 4 ft of footing". Without them the post is reported as before (now naming the box). The length is the engineer's, typed with its source; StruKit picks none.
 - Validation by statics (twice the length gives half the load per foot); the report without the length. Test on the 2026-011 model. Opened in a headless browser.
+
+## 2026-11-25 18:25 local — 0.224.0 headers in bearing walls (605 tests)
+- Zach 18:01: work through the model-gap list (Next item 8) before returning to the main list.
+- **A beam placed in a wall line at the wall's top level is a header** (any beam screen: wood, LVL, glulam, Weyerhaeuser, I-joist, steel). In the load path:
+  - a row of joists or rafters landing on that wall line is split along the line: the length over each header goes onto the header as a load per foot over the overlap (header's own coordinates), and the wall keeps the rest of the row's length;
+  - a wall standing on a wall line with headers: the part of the upper wall over each header goes onto the header as a uniform load (upper wall load / its length) over the overlap; the lower wall takes the share not over headers (shown on the load path line as a percentage);
+  - a beam or post landing over the opening lands on the header (beams are searched before walls, as before);
+  - the header's end reactions go down its jack studs to what is under the wall at that point: the wall below, a beam, a footing line (spread over the typed length, 0.223.0) or an existing wall; never onto the wall it sits in.
+- Placement card help on beam screens says so.
+- **Validation by statics** (2026-011 model): a 4 ft header in the upper Line 1 wall: the roof live load reaching the lower wall is unchanged (15,916 lb), the header takes the row over 0 to 4 ft and the wall keeps 22.75 of 26.75 ft; a 5 ft header in the lower wall: the floor live load is conserved between wall and header, the header takes the upper wall over 0 to 5 ft and its ends reach the footing line. Opened in a headless browser.
+- **Applied, not ruled (conservative; in the rulings file):** point loads on a footing line are all added to its per-foot load as if at one place; wall weight is over the whole length with openings not deducted; existing walls list both wind and seismic shear.
+- Not yet: king studs and jack studs as checked members; openings in the wall weight; headers in the plan drawn differently from beams.
 

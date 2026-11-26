@@ -2689,7 +2689,8 @@ def link_tag(lk):
     if lk.get("spread"):
         return f"reaction of {lk['src']}, {lk['support']}, spread over {float(lk.get('per_ft') or 0):g} ft of footing"
     if lk.get("mode") == "wall":
-        return f"load down wall {lk['src']}, spread over its {float(lk.get('length_ft') or 0):g} ft"
+        return (f"load down wall {lk['src']}, spread over its {float(lk.get('length_ft') or 0):g} ft"
+                + (f", the {float(lk['share']) * 100:.0f}% of it not over headers" if "share" in lk and float(lk["share"]) < 1 else ""))
     return f"reaction of {lk['src']}, {lk['support']}" + (f" x {n:g}" if n != 1 else "")
 
 
@@ -2762,7 +2763,7 @@ def takedown(project, members):
                         sp = float(lk.get("spacing_in") or 0)
                         tot = val * 12.0 / sp * float(lk.get("cover_ft") or 0) if sp > 0 else 0.0
                     else:
-                        tot = val * n
+                        tot = val * n * float(lk.get("share", 1.0))
                     rows.append(dict(case=c, P=str(round(tot)), label=link_tag(lk), link=dict(lk)))
                 v["loads"] = rows
                 line.update(total=sum(float(r["P"]) for r in rows if r.get("link") == lk), unit="lb, all cases")
@@ -2957,7 +2958,7 @@ def model_links(project, members):
         off = abs((pt[0] - ax) * (by - ay) - (pt[1] - ay) * (bx - ax)) / L
         return (t, off) if -MODEL_TOL <= t <= L + MODEL_TOL else None
 
-    def carrier(pt, level, me, want_footing):
+    def carrier(pt, level, me, want_footing, skip_parallel=False):
         posts = [(m, pl) for m, pl in placed if m is not me and m["kind"] in TAKEDOWN_POSTS and pl["level"] == level and dist(pl["p1"], pt) <= MODEL_TOL]
         if posts:
             return posts, None
@@ -2971,7 +2972,7 @@ def model_links(project, members):
             u_, w_ = math.hypot(bx_ - ax_, by_ - ay_), math.hypot(dx_ - cx_, dy_ - cy_)
             return u_ > 0 and w_ > 0 and abs((bx_ - ax_) * (dy_ - cy_) - (by_ - ay_) * (dx_ - cx_)) / (u_ * w_) < 0.09
         for m, pl in placed:
-            if m is me or m["kind"] not in TAKEDOWN_BEAMS or pl["level"] != level or parallel(pl):
+            if m is me or m["kind"] not in TAKEDOWN_BEAMS or pl["level"] != level or (parallel(pl) and not skip_parallel):
                 continue
             a = along(pt, pl)
             if a and a[1] <= MODEL_TOL:
@@ -3003,6 +3004,30 @@ def model_links(project, members):
                 return foots, None
         return [], None
 
+    headers, wall_headers = {}, {}                           # a beam lying in a wall line at the wall's top level is a header over an opening
+    for hm, hpl in placed:
+        if hm["kind"] not in TAKEDOWN_BEAMS or hpl.get("p2") is None:
+            continue
+        for wm, wpl in placed:
+            if wm["kind"] not in MODEL_WALLS or wpl["level"] != hpl["level"]:
+                continue
+            a1, a2 = along(hpl["p1"], wpl), along(hpl["p2"], wpl)
+            if a1 and a2 and a1[1] <= MODEL_TOL and a2[1] <= MODEL_TOL:
+                headers[id(hm)] = (wm, wpl, a1[0], a2[0])
+                wall_headers.setdefault(id(wm), []).append((hm, hpl, a1[0], a2[0]))
+                break
+
+    def split_on_wall(wm, lo, hi):
+        """The part of [lo, hi] (ft along wall wm) over each of its headers: [(header, x from the header's left end, x2)], and the rest."""
+        parts, rest = [], hi - lo
+        for hm, hpl, h1, h2 in wall_headers.get(id(wm), []):
+            a, b = max(lo, min(h1, h2)), min(hi, max(h1, h2))
+            if b - a > 1e-6:
+                parts.append((hm, abs(a - h1), abs(b - h1)))
+                rest -= b - a
+        return parts, max(0.0, rest)
+
+    fmt = lambda x: f"{x:.3f}".rstrip("0").rstrip(".") or "0"
     existing = model_existing(project)
     on_existing = []
     made = 0
@@ -3040,7 +3065,14 @@ def model_links(project, members):
                 tv.setdefault("links", []).append(lk)
             elif tgt["kind"] in MODEL_WALLS:
                 lk.update(mode="wall", length_ft=round(wl, 4))
-                tv.setdefault("loads", []).append(dict(case="D", P="0", label="", link=lk))
+                parts, rest = split_on_wall(tgt, min(t1, t2), max(t1, t2))
+                for hm, x1_, x2_ in parts:
+                    lkh = dict(lk, x=fmt(x1_), x2=fmt(x2_))
+                    hm["values"].setdefault("loads", []).append(dict(case="D", kind="uniform", mag="0", mag2="", x1=lkh["x"], x2=lkh["x2"], label="", link=lkh))
+                if parts:
+                    lk["share"] = round(rest / wl, 5) if wl > 0 else 1.0
+                if rest > 1e-6:
+                    tv.setdefault("loads", []).append(dict(case="D", P="0", label="", link=lk))
             else:
                 lk.update(mode="wall", length_ft=round(wl, 4), x=f"{min(t1, t2):.3f}".rstrip("0").rstrip("."), x2=f"{max(t1, t2):.3f}".rstrip("0").rstrip("."))
                 tv.setdefault("loads", []).append(dict(case="D", kind="uniform", mag="0", mag2="", x1=lk["x"], x2=lk["x2"], label="", link=lk))
@@ -3063,8 +3095,13 @@ def model_links(project, members):
             pts = [(s_, (ax + (bx - ax) * s_["x_ft"] / Lm, ay + (by - ay) * s_["x_ft"] / Lm), pl["level"], True) for s_ in got["supports"]]
         else:
             pts = [(got["supports"][0], pl["p1"], pl["base"], True)]
+        hdr = headers.get(id(m))
+        if hdr:                                               # a header: its ends come down the jack studs to what is under the wall
+            pts = [(s_, p_, hdr[1]["base"], True) for s_, p_, _, _ in pts]
         for sup, pt, level, want_footing in pts:
-            cs, xs = carrier(pt, level, m, want_footing)
+            cs, xs = carrier(pt, level, m, want_footing, skip_parallel=bool(hdr))
+            if hdr and cs and cs[0][0] is hdr[0]:
+                cs = []
             if not cs:
                 problems.append(f"{mark}, {sup['name']}: nothing in the model is under it at ({pt[0]:g}, {pt[1]:g}) ft on level {level}")
                 continue
@@ -3080,6 +3117,38 @@ def model_links(project, members):
                                         unit="lb/ft" if sp > 0 else "lb"))
                 continue
             lk = dict(src=v["mark"], support=sup["name"], count=1, auto=True)
+            sp_ = num("spacing") if kind in TAKEDOWN_BEAMS else 0
+            on_line = None
+            if sp_ > 0 and tgt["kind"] in MODEL_WALLS and id(tgt) in wall_headers:
+                on_line = (tgt, cs[0][1])
+            elif sp_ > 0 and id(tgt) in headers:
+                on_line = headers[id(tgt)][:2]
+            if on_line:                                       # a row on a wall line with headers: the length over each header goes to the header
+                wm, wpl = on_line
+                (wx1, wy1), (wx2, wy2) = wpl["p1"], wpl["p2"]
+                wl_ = math.hypot(wx2 - wx1, wy2 - wy1)
+                a0 = along(pt, wpl)[0]
+                lo, hi = 0.0, wl_
+                rw = str(v.get("at_row") or "").strip()
+                if rw:
+                    try:
+                        W = float(rw)
+                    except ValueError:
+                        problems.append(f"{mark}: the row width '{rw}' is not a number"); continue
+                    (jx1, jy1), (jx2, jy2) = pl["p1"], pl["p2"]
+                    jl = math.hypot(jx2 - jx1, jy2 - jy1)
+                    right = ((jy2 - jy1) / jl, -(jx2 - jx1) / jl)
+                    proj = (right[0] * (wx2 - wx1) + right[1] * (wy2 - wy1)) / wl_
+                    lo, hi = max(0.0, min(a0, a0 + W * proj)), min(wl_, max(a0, a0 + W * proj))
+                parts, rest = split_on_wall(wm, lo, hi)
+                for hm, x1_, x2_ in parts:
+                    lkh = dict(lk, mode="line", spacing_in=sp_, x=fmt(x1_), x2=fmt(x2_))
+                    hm["values"].setdefault("loads", []).append(dict(case="D", kind="uniform", mag="0", mag2="", x1=lkh["x"], x2=lkh["x2"], label="", link=lkh))
+                if rest > 1e-6:
+                    lkw = dict(lk, mode="line", spacing_in=sp_, cover_ft=round(rest, 4))
+                    wm["values"].setdefault("loads", []).append(dict(case="D", P="0", label="", link=lkw))
+                made += 1
+                continue
             if tgt["kind"] in TAKEDOWN_FOOTINGS and tgt["kind"] == "footing_cont" and cs[0][1].get("p2") is not None:
                 sp = num("spacing") if kind in TAKEDOWN_BEAMS else 0
                 if sp <= 0:

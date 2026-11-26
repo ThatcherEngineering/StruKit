@@ -204,3 +204,9 @@ replaces the "start building on its own" setting of 10:47 the same day.
 Zach: "I don't use StruCalc anymore and would like to move away from it. That's what StruKit is for." Item 8 of the Next list (reading wood, LVL,
 I-joist, post and footing members from StruCalc files) is dropped. Do not propose StruCalc import or StruCalc comparisons as work items. The
 existing steel .vtx reader (0.165.0) and the tests that use past StruCalc output as a comparison stay as they are.
+
+## 2026-11-25 18:00 to 18:30, building model readings applied (conservative; tell Zach at the check-in; not ruled)
+- **Point loads on a continuous footing line (0.223.0, 0.224.0):** every post, column or header end on a footing line is spread over the length typed on the footing, and all such per-foot loads are added to the footing's per-foot load as if they sat at one place, with the walls and joist rows on it. Point loads at different places along the line are not kept apart.
+- **Wall weight (0.222.0):** psf x story height x the whole placed length; openings in the wall are not deducted.
+- **Existing walls (0.221.0):** both the wind and the seismic shear on an existing wall line are listed (no governing load picked).
+

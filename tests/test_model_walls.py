@@ -137,3 +137,49 @@ def test_post_on_footing_line_spread_over_typed_length():
         assert "spread over " + L + " ft of footing" in f["loads_from"]
         got.append(float(f["P_service"]))
     assert got[1] == pytest.approx(got[0] / 2, abs=1.0)
+
+
+def test_header_in_a_wall_line():
+    """A beam placed in a wall line at the wall's top level is a header: the joist row over its length goes onto it, the wall keeps the rest
+    of the row, and the header's end reactions come down the jack studs onto what is under the wall (here the lower-story wall). Statics:
+    the roof live load reaching the lower wall is the same with and without the header; the main wall keeps 26.75 - 4 = 22.75 ft of row."""
+    import copy
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+
+    def run(ms):
+        out = calc.model_links(d["project"], ms)
+        by = {m["values"]["mark"]: m["values"] for m in out["members"]}
+        return by, sum(float(r["P"]) for r in by["Line 1, lower level"]["loads"] if r.get("case") == "Lr")
+
+    ms = copy.deepcopy(d["members"])
+    _, lr0 = run(ms)
+    h = next(m for m in ms if m["values"]["mark"] == "Header A LL")["values"]
+    h.update(at_level="Roof", at_x1="10", at_y1="0", at_x2="14", at_y2="0", loads=[])
+    by, lr1 = run(ms)
+    assert lr1 == pytest.approx(lr0, abs=2)
+    row = [r for r in by["Header A LL"]["loads"] if r.get("case") == "Lr"]
+    assert len(row) == 1 and row[0]["x1"] == "0" and row[0]["x2"] == "4"
+    main = sum(float(r["P"]) for r in by["Line 1, main level"]["loads"] if r.get("case") == "Lr")
+    assert main == pytest.approx(float(row[0]["mag"]) * 22.75, rel=0.002)
+    jacks = [r for r in by["Line 1, lower level"]["loads"] if "Header A LL" in (r.get("label") or "") and r.get("case") == "Lr"]
+    assert len(jacks) == 2 and sum(float(r["P"]) for r in jacks) == pytest.approx(float(row[0]["mag"]) * 4, abs=2)
+
+
+def test_header_in_the_lower_wall_takes_the_wall_above():
+    """A header in the lower-story wall takes the part of the upper wall over it (uniform over its length) and the joist rows over it; the
+    lower wall keeps the rest; the jack studs bring the header ends to the footing line. Statics: the floor live load is the same in total."""
+    import copy
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+    ms = copy.deepcopy(d["members"])
+    next(m for m in ms if m["values"]["mark"] == "Footing Line 1")["values"].update(at_spread="2", at_spread_source="test value")
+    L = lambda rows: sum(float(r["P"]) for r in rows if r.get("case") == "L")
+    out = calc.model_links(d["project"], ms)
+    l0 = L(next(m for m in out["members"] if m["values"]["mark"] == "Line 1, lower level")["values"]["loads"])
+    next(m for m in ms if m["values"]["mark"] == "Header B LL")["values"].update(at_level="Main floor", at_x1="5.0", at_y1="0", at_x2="10", at_y2="0", loads=[])
+    out = calc.model_links(d["project"], ms)
+    by = {m["values"]["mark"]: m["values"] for m in out["members"]}
+    hl = sum(float(r["mag"]) * (float(r["x2"]) - float(r["x1"])) for r in by["Header B LL"]["loads"] if r.get("case") == "L")
+    assert L(by["Line 1, lower level"]["loads"]) + hl == pytest.approx(l0, abs=2)
+    up = [r for r in by["Header B LL"]["loads"] if "Line 1, main level" in r.get("label", "") and r["case"] == "Lr"]
+    assert len(up) == 1 and (up[0]["x1"], up[0]["x2"]) == ("0", "5")
+    assert "Header B LL, left support, spread over 2 ft" in by["Footing Line 1"]["loads_from"]
