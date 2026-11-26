@@ -55,8 +55,7 @@ def test_axial_compression_and_refusals():
     s = shear_lug_sheet("SL", *GEOM, [dict(case="W", V=25.0, P=0.0), dict(case="D", V=0.0, P=50.0)], lr, lr, "LRFD")
     c = s.shear_lug["concrete"][0]["c"]
     assert c["psi_brg"] == pytest.approx(min(1 + 4 * 60 / (225 * 4), 2.0))                            # Eq. 17.11.2.2.1c
-    with pytest.raises(WorksheetError):
-        shear_lug_sheet("SL", *GEOM, [dict(case="W", V=25.0, P=-10.0)], lr, lr, "LRFD")
+    # net uplift (allowed since 0.237.0): see test_net_uplift
 
 
 def test_screen():
@@ -99,3 +98,35 @@ def test_lug_on_a_footing():
     v = calc.link_foundations([foot, lug])[1]["values"]
     assert (v["fc"], v["ha"], v["ca1"], v["ca2"], v["rod_back"], v["A2A1"]) == ("4000", "30", "29.5", "26", "25.75", "4")
     assert "plate_x" not in calc.link_foundations([foot, lug])[0]["values"]          # the lug does not size the footing's plate boxes
+
+
+def test_net_uplift():
+    """Net uplift on the base. Small moment: no bearing, rows Tu/2 +/- V e / (2 f) by statics. Larger moment: the bearing block (DG 1 Eq. 4-32)
+    with P negative. Bearing on the lug reduced by ACI 318-19 Eq. 17.11.2.2.1a, psi = 1 + Pu / (n Nsa), n the rods in tension."""
+    import math
+    from strukit import anchorage as an, shearlug as sl
+    lr = [Combo("1.0W", {"W": 1.0}, "t")]
+    # V 5 kips, e 3 in. -> V e 15 kip-in.; uplift 20 kips x f 4.25 = 85 > 15: no bearing, all four rods in tension
+    s = shear_lug_sheet("SL", *GEOM, [dict(case="W", V=5.0, P=-20.0)], lr, lr, "LRFD")
+    d, c = s.shear_lug["steel"][0], s.shear_lug["concrete"][0]
+    assert d["T"] == pytest.approx(10 + 15 / 8.5) and d["Tf"] == pytest.approx(10 - 15 / 8.5) and d["Y"] == 0
+    Nsa = an.ase(0.75, 10) * 58
+    assert c["n"] == 4 and c["c"]["psi_brg"] == pytest.approx(1 - 20 / (4 * Nsa))
+    assert _rows(s)["Anchor rod tension, most loaded rod"].demand == pytest.approx((10 + 15 / 8.5) / 2)
+    # V 25 kips (V e 75) with uplift 10 kips (x 4.25 = 42.5 < 75): bearing block with P = -10, the two back rods only
+    s = shear_lug_sheet("SL", *GEOM, [dict(case="W", V=25.0, P=-10.0)], lr, lr, "LRFD")
+    d, c = s.shear_lug["steel"][0], s.shear_lug["concrete"][0]
+    q = 0.65 * min(0.85 * 4 * 2, 1.7 * 4) * 15
+    Y = (4.25 + 7.5) - math.sqrt((4.25 + 7.5) ** 2 - 2 * (-10 * 4.25 + 75) / q)
+    assert d["Y"] == pytest.approx(Y) and d["T"] == pytest.approx(q * Y + 10) and d["Tf"] == 0
+    assert q * Y * (11.75 - Y / 2) == pytest.approx(-10 * 4.25 + 75)           # moments about the back rods
+    assert c["n"] == 2 and c["c"]["psi_brg"] == pytest.approx(1 - 10 / (2 * Nsa))
+
+
+def test_shear_across_the_lug_is_refused():
+    v = dict(mark="SL1", bsl="8", tsl="1", hsl="2", t_grout="2", lug_Fy="50", lug_Fu="65", lug_source="ASTM A572 Gr. 50", weld="0.3125", FEXX="70", N="15", B="15", tbp="1",
+             bp_Fy="50", s_rod="8.5", rod_d="0.75", rod_Fu="58", rod_source="ASTM F1554 Gr. 36", fc="4000", A2A1="4", ca1="14.5", ca2="99", ha="99",
+             psi_c="cracked, no supplementary reinforcement (1.0)", loads=[dict(case="W", V="40", Vt="5", P="", label="")])
+    proj = dict(name="T", number="1", address="", method="LRFD", date="2026-11-25", combos_lrfd=[dict(expr="1.2D + 1.0W", source="ASCE/SEI 7-22 Sect. 2.3.1")])
+    r = calc.results("shear_lug", v, proj)
+    assert r["state"] == "incomplete" and any("cruciform" in m for m in r["messages"])

@@ -5029,31 +5029,33 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
     for cb in combos:
         V, P = tot(cb)
         V = abs(V)
-        if P < -1e-9:
-            raise WorksheetError(f"{mark}: {cb.name} puts the base in net tension; a shear lug with net uplift is not covered")
         try:
-            ec = sl.eccentric(V, P, e, N, B, fp, f)
+            ec = sl.rods(V, P, e, N, B, fp, f)
         except sl.ShearLugError as ex:
             raise WorksheetError(f"{mark}: {ex}")
         M = V * e
         rv, rm = V / (2 * bsl), M / (st["a"] * bsl)
-        Mpl = max(ec["T"] * f, ec["q"] * ec["Y"] * (N / 2 - ec["Y"] / 2))
-        res.append(dict(cb=cb.name, V=V, P=P, M=M, inter=M / My_c + (V / Vy_c) ** 4, rw=math.hypot(rv, rm), rv=rv, rm=rm, T=ec["T"], Y=ec["Y"], q=ec["q"], rod=ec["T"] / 2, Mpl=Mpl))
+        Mpl = max(ec["Tb"] * f, ec["Tf"] * f, ec["q"] * ec["Y"] * (N / 2 - ec["Y"] / 2))
+        res.append(dict(cb=cb.name, V=V, P=P, M=M, inter=M / My_c + (V / Vy_c) ** 4, rw=math.hypot(rv, rm), rv=rv, rm=rm, T=ec["Tb"], Tf=ec["Tf"], Y=ec["Y"], q=ec["q"],
+                        rod=max(ec["Tb"], ec["Tf"]) / 2, Mpl=Mpl))
     Abp = N * B
+    from . import anchorage as _anc, anchor_rods as _arods
+    _nt = (anchorage or {}).get("nt") or ((_arods.size(rod_d) or (None,))[0])
+    _fya = (anchorage or {}).get("fya")
+    Nsa_rod = _anc.ase(rod_d, _nt) * min(rod_Fu, 1.9 * _fya if _fya else rod_Fu, 125.0) if _nt else None
     conc = []
     for cb in combos_lrfd:
         V, P = tot(cb)
         V = abs(V)
-        if P < -1e-9:
-            raise WorksheetError(f"{mark}: {cb.name} puts the base in net tension; a shear lug with net uplift is not covered")
-        c = sl.concrete(fc, V, P, bsl, tsl, hsl, ca1, ca2, ha, psi_c, Abp=Abp)
-        Tu = 0.0
-        if anchorage:
-            try:
-                Tu = sl.eccentric(V, P, e, N, B, 0.65 * fp_n, f)["T"]
-            except sl.ShearLugError as ex:
-                raise WorksheetError(f"{mark}: {ex}")
-        conc.append(dict(cb=cb.name, V=V, P=P, c=c, Tu=Tu))
+        try:
+            ru = sl.rods(V, P, e, N, B, 0.65 * fp_n, f)
+        except sl.ShearLugError as ex:
+            raise WorksheetError(f"{mark}: {ex}")
+        if P < -1e-9 and Nsa_rod is None:
+            raise WorksheetError(f"{mark}: {cb.name} puts the base in net uplift; ACI 318-19 Eq. 17.11.2.2.1a needs the rod threads per inch "
+                                 "(the rod diameter is not in the Design Guide 1 table): give them under the anchorage boxes")
+        c = sl.concrete(fc, V, P, bsl, tsl, hsl, ca1, ca2, ha, psi_c, Abp=Abp, n_tension=ru["n"], Nsa=Nsa_rod)
+        conc.append(dict(cb=cb.name, V=V, P=P, c=c, Tu=ru["Tb"], Tf=ru["Tf"], n=ru["n"]))
     pick = lambda lst, key: max(lst, key=lambda r: r[key])
     rows = []
     g = pick(res, "V")
@@ -5070,13 +5072,14 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
     wmin = 0.125 if tmin <= 0.25 else 0.1875 if tmin <= 0.5 else 0.25 if tmin <= 0.75 else 0.3125
     rows.append(Row("Minimum fillet weld size", "", wmin, weld, "in", "AISC 360-22 Table J2.4", f"thinner part {tmin:g} in."))
     gr = pick(res, "rod")
-    rows.append(Row("Anchor rod tension (two rods)", gr["cb"], gr["rod"], rod_c, "kip", "AISC 360-22 Table J3.2", f"{rod_d:g} in. rods, 0.75 Fu Ab"))
+    rows.append(Row("Anchor rod tension, most loaded rod", gr["cb"], gr["rod"], rod_c, "kip", "AISC 360-22 Table J3.2", f"{rod_d:g} in. rods, 0.75 Fu Ab"))
     gp = pick(res, "Mpl")
     rows.append(Row("Base plate bending at the lug", gp["cb"], gp["Mpl"], plate_c, "kip-in", "AISC Design Guide 1 Example 4.7-5; AISC 360-22 Sect. J4.5", f"width = lug width {bsl:g} in."))
     rows.append(Row("Base plate thickness, at least the lug thickness", "", tsl, tbp, "in", "AISC Design Guide 1 Sect. 4.3.3", "recommended"))
     gb = max(conc, key=lambda r: r["V"] / r["c"]["phiVbrg"] if r["c"]["phiVbrg"] else 9e9)
     gc = max(conc, key=lambda r: r["V"] / r["c"]["phiVcb"])
-    rows += [Row("Concrete bearing on the lug", gb["cb"], gb["V"], gb["c"]["phiVbrg"], "kip", "ACI 318-19 Eq. 17.11.2.1", "phi = 0.65"),
+    rows += [Row("Concrete bearing on the lug", gb["cb"], gb["V"], gb["c"]["phiVbrg"], "kip", "ACI 318-19 Eq. 17.11.2.1",
+                 "phi = 0.65" + (f"; psi_brg = {gb['c']['psi_brg']:.2f} (Eq. 17.11.2.2.1a, {gb['n']} rods in tension, Nsa = {Nsa_rod:.2f} kip)" if gb["P"] < -1e-9 else "")),
              Row("Concrete breakout of the lug", gc["cb"], gc["V"], gc["c"]["phiVcb"], "kip", "ACI 318-19 17.11.3, Eq. 17.7.2.1a", "phi = 0.65")]
     hmin = max(2.5 * hsl, 2.5 * f)
     if hef_rod:
@@ -5090,8 +5093,9 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
         cy = ca2 + bsl / 2 - s_rod / 2
         if cx_front <= 0 or cy <= 0 or cx_back <= 0:
             raise WorksheetError(f"{mark}: the anchor rods lie outside the concrete edges given")
-        runs = [(r_["cb"], {(0, 0): r_["Tu"] / 2, (0, 1): r_["Tu"] / 2, (1, 0): 0.0, (1, 1): 0.0}) for r_ in conc if r_["Tu"] > 1e-9]
-        anc_lines = [f"{r_['cb']:<26} Vu = {r_['V']:>7.2f} kip   Pu = {r_['P']:>7.2f} kip   rods behind the lug: {r_['Tu']:.2f} kip total" for r_ in conc]
+        runs = [(r_["cb"], {(0, 0): r_["Tu"] / 2, (0, 1): r_["Tu"] / 2, (1, 0): r_["Tf"] / 2, (1, 1): r_["Tf"] / 2}) for r_ in conc if r_["Tu"] > 1e-9]
+        anc_lines = [f"{r_['cb']:<26} Vu = {r_['V']:>7.2f} kip   Pu = {r_['P']:>7.2f} kip   rods behind the lug: {r_['Tu']:.2f} kip total"
+                     + (f"; toward the edge: {r_['Tf']:.2f} kip total" if r_["Tf"] > 1e-9 else "") for r_ in conc]
         if runs:
             sh0 = SimpleSheet(mark, "", "", method, [], [], [], "", [], [], [], [])
             anc_res = (sh0, _anchorage_grid(mark, sh0, rod_d, rod_Fu, anchorage, 2, s_rod, 2, s_rod, (cx_back, cx_front, cy, cy), runs, anc_lines))
@@ -5103,7 +5107,9 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
              Ln("Concrete bearing stress limit fp", fp, "ksi", "AISC 360-22 Eq. J8-2", f"0.85 f'c (A2/A1)^0.5 not over 1.7 f'c = {fp_n:.2f} ksi; " + ("phi = 0.65" if lrfd else "Omega = 2.31")),
              Ln("qmax = fp B", gp["q"], "kip/in", "DG 1 Eq. 4-37", f"B = {B:g} in."),
              Ln("Bearing length Y", gp["Y"], "in", "DG 1 Eq. 4-32", f"f = s / 2 = {f:g} in., N = {N:g} in.; {gp['cb']}: V = {gp['V']:.2f} kip, P = {gp['P']:.2f} kip"),
-             Ln("Total rod tension T = qmax Y - P", gp["T"], "kip", "DG 1 Sect. 4.3.6", "two rods in tension"),
+             (Ln("Total rod tension T = qmax Y - P", gp["T"], "kip", "DG 1 Sect. 4.3.6", "two rods in tension") if gp["Y"] > 0 else
+              Ln("Rod rows: Tu / 2 +/- V e / (2 f)", f"{gp['T']:.2f} and {gp['Tf']:.2f}", "kip", "statics",
+                 f"net uplift {-gp['P']:.2f} kip; V e = {gp['M']:.2f} kip-in. not over uplift x f, so no bearing")),
              Ln("Base plate moment at the lug", gp["Mpl"], "kip-in", "DG 1 Example 4.7-5", "the larger of T f and qmax Y (N/2 - Y/2)"),
              Ln("Lug: Agv = bsl tsl, Z = bsl tsl^2 / 4", f"{bsl * tsl:.2f} in2, {st['Z']:.3f} in3", "", "section properties", f"lug {bsl:g} x {tsl:g} in."),
              Ln("Weld lever arm a = tsl + 2w / 3", st["a"], "in", "DG 1 Example 4.7-5", ""),
@@ -5125,7 +5131,7 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
                          "Concrete checks with the LRFD combinations (ACI 318-19 Chapter 17); the lug is loaded toward the free edge at ca1.",
                          "The stiffening of the base plate by the column is not counted in the plate bending check."],
                         ["concrete breakout of the anchor rods in tension and pullout (see the anchorage on the base plate screens)", "the column to base plate weld",
-                         "the 1 in. grout holes beside the lug (DG 1 Sect. 4.3.3 item 4)", "net tension at the base", "shear in both directions at once"])
+                         "the 1 in. grout holes beside the lug (DG 1 Sect. 4.3.3 item 4)"])
     if anchorage:
         sheet.not_checked = [x for x in sheet.not_checked if not x.startswith("concrete breakout of the anchor rods")]
         if anc_res:

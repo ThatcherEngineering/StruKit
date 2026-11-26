@@ -274,3 +274,18 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - That T is from Design Guide 1's large-moment procedure at 0.65 fp under the LRFD combinations (the same procedure the lug's steel checks use).
 - The rods take no shear (the lug takes it all), so no tension-shear interaction for the rods.
 
+## 2026-11-25 22:20 — Zach's rulings (do not ask again)
+- **"Agree"** to the 0.236.0 shear lug readings: the two rods behind the lug share the bearing-block tension equally (the rods toward the edge
+  take none); that tension is from Design Guide 1's large-moment procedure at 0.65 fp under the LRFD combinations; the lug takes all the shear,
+  so the rods take none and no tension-shear interaction is checked on them.
+- **Overnight run:** "I vote you do 1-5 even if you run past the 4 hour time frame": (1) shear lug with net uplift and two-way shear, (2) wall
+  weight less the openings, (3) built-up three-plate beams and columns, (4) the column side of the extended end plate, (5) the through-plate
+  beam-to-HSS moment connection (Design Guide 24 Example 6.2). Unattended: no questions; conservative readings applied and recorded here.
+
+## 2026-11-25 22:45, shear lug with net uplift (0.237.0), applied (not ruled; tell Zach in the morning)
+- Net uplift with the lug moment V e not over uplift x f: no bearing; the two rod rows take Tu/2 +/- V e/(2f) (rigid plate, statics).
+  Above that, the Design Guide 1 bearing block with the axial load negative.
+- Eq. 17.11.2.2.1a: n = the rods in tension under that combination; Nsa = Ase futa per rod, futa not over 1.9 fya or 125 ksi (fya from the
+  rod grade when given, otherwise Fu is used uncapped by 1.9 fya; for F1554 grades the cap does not bind).
+- Shear across a single plate lug is not carried by the lug (refused, not checked as a resultant).
+
