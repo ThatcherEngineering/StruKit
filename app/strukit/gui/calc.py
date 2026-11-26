@@ -935,7 +935,8 @@ FORMS = {
                   "all other structures", "masonry cantilever shear walls", "other masonry shear walls"], help="Table 12.12-1"),
                 F("de_source", "Drift: where the elastic displacements come from", "text", required=False, help="for example: shear wall sheets SW1 to SW4, or the frame analysis"),
                 F("rho", "Wall lines: redundancy factor", "select", options=["1.0", "1.3"], required=False, help="ASCE 7-22 Sect. 12.3.4; needed when wall lines are listed"),
-                F("rho_source", "Wall lines: basis of the redundancy factor", "text", required=False)],
+                F("rho_source", "Wall lines: basis of the redundancy factor", "text", required=False),
+                F("w_source", "Where the seismic weights come from", "text", required=False, help="printed on the sheet; filled by the building model's weight takeoff")],
         tables=[T("levels", "Levels", [F("name", "Level", "text"), F("w", "Effective seismic weight", unit="kips"),
                                        F("h", "Height above the base", unit="ft"),
                                        F("wp", "Diaphragm weight, wpx", unit="kips", required=False, help="blank = the level weight"),
@@ -2177,7 +2178,8 @@ def build(kind, values, project):
         return ws_more.seismic_elf_sheet(mark, SDS, SD1, S1, TL, gs, R, Rs, Ie, Is, st, hn, [(x["name"], x["w"], x["h"], x.get("wp")) for x in lv],
                                          r.num("T", False), r.text("T_source", False) or "", risk=rk, drift=dr,
                                          wall_lines=[(x["name"], x["level"], x["share"]) for x in wl] or None, rho=float(rho) if rho else None,
-                                         rho_source=rho_s or "", system=sysn), "simple", {}
+                                         rho_source=rho_s or "", system=sysn, w_source=r.text("w_source", False) or "",
+                                         w_parts=[str(t) for t in (r.v.get("w_parts") or []) if str(t).strip()]), "simple", {}
     if kind == "live_load":
         fl, rf = r.rows("floors"), r.rows("roofs")
         if not fl and not rf:
@@ -2865,6 +2867,99 @@ def _wall_weight(project, v):
     h = el[pl["level"]] - el[pl["base"]]
     L = math.hypot(pl["p2"][0] - pl["p1"][0], pl["p2"][1] - pl["p1"][1])
     return psf * h * L, f"its own weight {psf:g} psf x {h:g} ft x {L:.2f} ft = {psf * h * L:,.0f} lb dead ({src})"
+
+
+def model_seismic_weights(project, members):
+    """Effective seismic weight at each level of the building model (ASCE/SEI 7-22 Sect. 12.7.2), from the placed members: the dead load each
+    placed beam, joist row and wall carries of its own (typed dead loads and self-weight, not loads brought to it by links), a joist row
+    counted over the length it covers on its carriers; each wall's typed weight half to the level at its top and half to the level below
+    (the half above the lowest level goes to the foundation); 20 percent of the snow load on the members where a Roof Snow Load sheet gives
+    a flat roof snow load over 30 psf (Sect. 12.7.2 item 4). Returns dict(levels={name: lb}, parts={name: [lines]}, notes, problems)."""
+    import math
+    lk_out = model_links(project, members)
+    ms = lk_out["members"]
+    mdl = (project or {}).get("model") or {}
+    names = [str(l.get("name") or "").strip() for l in mdl.get("levels") or []]
+    levels = {n: 0.0 for n in names if n}
+    parts = {n: [] for n in levels}
+    problems, notes = [], []
+    pf = None
+    for m in ms:
+        if m.get("kind") == "snow":
+            try:
+                sh, _, _ = build("snow", m["values"], project)
+                pf = max(pf or 0.0, float(sh.snow.pf))
+            except Exception:
+                pass
+    snow_f = 0.2 if (pf or 0) > 30 else 0.0
+    if snow_f:
+        notes.append(f"20% of the snow load is included (flat roof snow load {pf:g} psf, over 30 psf; Sect. 12.7.2 item 4)")
+    else:
+        notes.append("no snow is included" + (f" (flat roof snow load {pf:g} psf, not over 30 psf; Sect. 12.7.2 item 4)" if pf is not None else
+                                              " (no Roof Snow Load sheet in the project; Sect. 12.7.2 item 4 includes 20% of the snow where pf is over 30 psf)"))
+    notes.append("partitions (Sect. 12.7.2 item 2), equipment and other items of Sect. 12.7.2 count only where typed as dead load on the members")
+    by_src = {}
+    for m in ms:
+        for lk in _links(m):
+            by_src.setdefault(lk["src"], []).append((m, lk))
+    no_wt = []
+    for m in ms:
+        v, kind = m.get("values") or {}, m.get("kind")
+        try:
+            pl = model_place(project, m)
+        except ValueError:
+            continue
+        if not pl or pl.get("level") not in levels:
+            continue
+        mark = v.get("mark") or "?"
+        if kind in MODEL_WALLS:
+            ww = _wall_weight(project, v)
+            if ww is None:
+                no_wt.append(mark); continue
+            if isinstance(ww, str):
+                problems.append(f"{mark}: {ww}"); continue
+            levels[pl["level"]] += ww[0] / 2
+            parts[pl["level"]].append(f"{mark}: half its weight, {ww[0] / 2:,.0f} lb")
+            if pl["base"] in levels and names.index(pl["base"]) > 0:
+                levels[pl["base"]] += ww[0] / 2
+                parts[pl["base"]].append(f"{mark}: half its weight, {ww[0] / 2:,.0f} lb")
+            continue
+        if kind not in TAKEDOWN_BEAMS:
+            continue
+        own = dict(v, loads=[r for r in (v.get("loads") or []) if not (isinstance(r, dict) and isinstance(r.get("link"), dict))])
+        got = case_reactions(kind, own, project)
+        if "error" in got:
+            continue
+        tot = {c: sum(s_["cases"].get(c, 0.0) for s_ in got["supports"]) for c in ("D", "S")}
+        sp = 0.0
+        try:
+            sp = float(str(v.get("spacing") or 0).replace(",", "") or 0)
+        except ValueError:
+            pass
+        mult, how = 1.0, ""
+        if sp > 0:                                           # a row: per member x members over the length it covers
+            first = got["supports"][0]["name"]
+            cover = 0.0
+            for tm, lk in by_src.get(mark, []):
+                if lk.get("support") != first:
+                    continue
+                if lk.get("cover_ft"):
+                    cover += float(lk["cover_ft"])
+                elif str(lk.get("x2") or "").strip():
+                    cover += abs(float(lk["x2"]) - float(lk.get("x") or 0))
+                else:
+                    tp = model_place(project, tm)
+                    if tp and tp.get("p2") is not None:
+                        cover += math.hypot(tp["p2"][0] - tp["p1"][0], tp["p2"][1] - tp["p1"][1])
+            if cover <= 0:
+                problems.append(f"{mark}: a row of members with no carrier in the model; its weight is not counted"); continue
+            mult, how = cover * 12.0 / sp, f" x {cover:.2f} ft x 12 / {sp:g} in."
+        W_ = (tot["D"] + snow_f * tot["S"]) * mult
+        levels[pl["level"]] += W_
+        parts[pl["level"]].append(f"{mark}: {tot['D']:,.0f} lb dead" + (f" + 0.2 x {tot['S']:,.0f} lb snow" if snow_f and tot["S"] else "") + how + f" = {W_:,.0f} lb")
+    if no_wt:
+        problems.append("No wall weight is typed on " + ", ".join(no_wt) + " (placement card); their weight is not counted")
+    return dict(levels=levels, parts=parts, notes=notes, problems=problems)
 
 
 PAD_STEP_FT = 0.25                                           # pad sizes go up in 3 in. steps
