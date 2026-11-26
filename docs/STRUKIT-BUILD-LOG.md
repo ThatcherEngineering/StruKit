@@ -925,3 +925,10 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation:** the strip loads and their effect in the frame, and U with the second moment, by hand (`tests/test_job_2026_030_west.py`, `tests/test_beam_hss_moment.py`). Eq. K1-6 is written for one axis; there is no published example of the two-axis chord stress at an HSS face.
 - **Applied, not ruled (conservative):** the rafters are not relieved of the strip the eave beams carry (that load is counted twice); the column moment about the other axis is added to U.
 - Opened in a headless browser (eave portal carport): no page errors.
+
+## 2026-11-26 12:45 local — 0.255.0 end plates and coped beam ends drawn as the real connections (Zach's addition (a), with the stiffened seat of 0.249.0) (669 tests)
+- Zach 07:30: finish the 0.247.0 drawing upgrade (flush and extended end plates, stiffened seat, coped beam end) with the real support shape behind them, to the high visual detail standard.
+- **Flush and extended end plates:** face view with the beam cut in front of the plate (cut surfaces darker, flanges and web at thickness), the flange fillets drawn along both faces of each flange, the bolt heads as hexagons; side view with the column as a W seen at its web (flanges at thickness) broken off with break lines, the end plate cut, the beam with its flanges broken off, the flange fillets in profile, every bolt with its head, washer, nut and thread (`memberart.bolt_side`), stiffeners and cap plate as before.
+- **Coped beam end:** the support drawn as the real member (an HSS column in elevation, a W column flange seen from the side, or a girder cut with its top flush with the beam), the beam with its flanges cut to the cope outline and broken off, the shear plate dashed on the far side of the web, the nuts as hexagons; the support's name moves above the drawing where it would run past the margin.
+- The stiffened seat was redrawn in 0.249.0. Every new picture rendered and looked at; the overlap audit passes.
+- Still drawn more simply: the HSS column screen and the wood connections (as listed at 0.247.0).
