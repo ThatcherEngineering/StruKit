@@ -747,7 +747,7 @@ const MODEL_KINDS = () => TD_BEAMS.concat(TD_POSTS, ["footing_iso", "footing_con
 function modelOf() { const p = S.project; p.model = p.model || {}; ["levels", "grids_x", "grids_y", "existing"].forEach(k => { p.model[k] = p.model[k] || []; }); return p.model; }
 
 // Placement boxes on a member screen: where the member sits in the building model. Optional; a member works without them.
-const PLATE_KINDS = ["base_plate", "base_plate_uplift", "base_plate_biaxial", "base_plate_moment"];
+const PLATE_KINDS = ["base_plate", "base_plate_uplift", "base_plate_biaxial", "base_plate_moment", "shear_lug"];
 const PLATE_FOOTINGS = ["footing_iso", "footing_moment"];
 // The footing a base plate sits on: optional. Linked, the footing's plan, thickness and f'c fill the plate's concrete boxes, and the plate's
 // size fills the footing's base plate boxes; stand-alone, both screens keep what is typed on them.
@@ -767,7 +767,7 @@ function linkFootingOf(m, colMark) {
 function foundationCard(m, changed) {
   const foots = S.members.filter(x => PLATE_FOOTINGS.includes(x.kind) && (x.values.mark || "").trim());
   const marks = foots.map(x => x.values.mark.trim());
-  const box = el("div", {}, el("h2", {}, "Foundation under this plate (optional)"));
+  const box = el("div", {}, el("h2", {}, m.kind === "shear_lug" ? "Foundation under the plate and lug (optional)" : "Foundation under this plate (optional)"));
   if (!marks.length && !m.values.on_footing) return el("div", {}, box, el("div", { class: "help" }, "Stand-alone: the concrete is as typed above. Once the project has an Isolated Footing or a Footing with Moment, this plate can be linked to it."));
   const redraw = () => { changed(); drawMain(); };
   const opts = marks.slice(); if (m.values.on_footing && !opts.includes(m.values.on_footing)) opts.push(m.values.on_footing);
@@ -779,9 +779,10 @@ function foundationCard(m, changed) {
     f && !square && !fixed ? field({ key: "on_footing_N", label: "Plate length N runs along the footing's", type: "select", options: ["x", "y"], required: true,
       help: "x = the footing width B, y = the footing length L" + (f.kind === "footing_moment" ? " (B is the direction of the footing's moment)" : "") }, m.values, changed) : null);
   const filled = { base_plate: "f'c, the support size", base_plate_moment: "f'c, the support size and the concrete thickness at the rods",
-    base_plate_biaxial: "f'c, A2/A1 and the concrete size and thickness at the rods", base_plate_uplift: "the concrete f'c, size and thickness at the rods" }[m.kind];
+    base_plate_biaxial: "f'c, A2/A1 and the concrete size and thickness at the rods", base_plate_uplift: "the concrete f'c, size and thickness at the rods",
+    shear_lug: "f'c, A2/A1, the member depth and the edge distances of the lug and rods" }[m.kind];
   return el("div", {}, box, grid, el("div", { class: "help" }, m.values.on_footing
-    ? "Linked: " + filled + " come from footing " + m.values.on_footing + " (the plate centred on it) and replace what is typed above; the footing's base plate size comes from this plate."
+    ? "Linked: " + filled + " come from footing " + m.values.on_footing + " (the plate centred on it) and replace what is typed above" + (m.kind === "shear_lug" ? "." : "; the footing's base plate size comes from this plate.")
     : "Stand-alone: the concrete is as typed above."));
 }
 function placementCard(m, changed) {

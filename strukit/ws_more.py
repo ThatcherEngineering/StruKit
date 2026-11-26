@@ -4992,8 +4992,10 @@ def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note
 
 
 def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, weld, FEXX, N, B, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod,
-                    fc, A2A1, ca1, ca2, ha, psi_c, loads, combos, combos_lrfd, method):
-    """Shear lug under a base plate (see shearlug). loads: dict(case, V kips, P kips compression +). Steel checks at the project's method;
+                    fc, A2A1, ca1, ca2, ha, psi_c, loads, combos, combos_lrfd, method, anchorage=None, rod_back=None):
+    """Shear lug under a base plate (see shearlug). anchorage (as for _anchorage_grid, hef = hef_rod): the two rods behind the lug in
+    tension from the moment V e (Design Guide 1 large-moment procedure at the factored bearing stress) checked in the concrete, ACI 318-19
+    17.6; rod_back: from those rods to the concrete edge behind (None = 1.5 hef or more). loads: dict(case, V kips, P kips compression +). Steel checks at the project's method;
     concrete checks with the LRFD combinations (ACI 318-19 is strength design). Four anchor rods in a square of side s_rod, the lug centred."""
     from . import shearlug as sl
     for nm, v in (("where the lug's Fy and Fu come from", lug_source), ("where the anchor rod Fu comes from", rod_source)):
@@ -5045,7 +5047,13 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
         if P < -1e-9:
             raise WorksheetError(f"{mark}: {cb.name} puts the base in net tension; a shear lug with net uplift is not covered")
         c = sl.concrete(fc, V, P, bsl, tsl, hsl, ca1, ca2, ha, psi_c, Abp=Abp)
-        conc.append(dict(cb=cb.name, V=V, P=P, c=c))
+        Tu = 0.0
+        if anchorage:
+            try:
+                Tu = sl.eccentric(V, P, e, N, B, 0.65 * fp_n, f)["T"]
+            except sl.ShearLugError as ex:
+                raise WorksheetError(f"{mark}: {ex}")
+        conc.append(dict(cb=cb.name, V=V, P=P, c=c, Tu=Tu))
     pick = lambda lst, key: max(lst, key=lambda r: r[key])
     rows = []
     g = pick(res, "V")
@@ -5073,7 +5081,22 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
     hmin = max(2.5 * hsl, 2.5 * f)
     if hef_rod:
         rows.append(Row("Anchor rod embedment", "", hmin, hef_rod, "in", "ACI 318-19 17.11.1.1.8", f"not less than 2.5 hsl = {2.5 * hsl:g} and 2.5 csl = {2.5 * f:g} in."))
-    worst = max(rows, key=lambda r: (r.demand / r.capacity) if r.capacity else 0).combo or combos[0].name
+    anc_res, anc_lines = None, []
+    if anchorage:
+        # rods i = 0 behind the lug (tension side of V e), i = 1 toward the edge the shear faces; rows j = 0, 1 across
+        far = 1.5 * anchorage["hef"] + 1.0
+        cx_back = rod_back if rod_back else far
+        cx_front = ca1 + tsl / 2 - s_rod / 2
+        cy = ca2 + bsl / 2 - s_rod / 2
+        if cx_front <= 0 or cy <= 0 or cx_back <= 0:
+            raise WorksheetError(f"{mark}: the anchor rods lie outside the concrete edges given")
+        runs = [(r_["cb"], {(0, 0): r_["Tu"] / 2, (0, 1): r_["Tu"] / 2, (1, 0): 0.0, (1, 1): 0.0}) for r_ in conc if r_["Tu"] > 1e-9]
+        anc_lines = [f"{r_['cb']:<26} Vu = {r_['V']:>7.2f} kip   Pu = {r_['P']:>7.2f} kip   rods behind the lug: {r_['Tu']:.2f} kip total" for r_ in conc]
+        if runs:
+            sh0 = SimpleSheet(mark, "", "", method, [], [], [], "", [], [], [], [])
+            anc_res = (sh0, _anchorage_grid(mark, sh0, rod_d, rod_Fu, anchorage, 2, s_rod, 2, s_rod, (cx_back, cx_front, cy, cy), runs, anc_lines))
+    named = [r for r in rows + (anc_res[0].rows if anc_res else []) if r.combo and r.combo != "all"]
+    worst = max(named, key=lambda r: (r.demand / r.capacity) if r.capacity else 0).combo if named else combos[0].name
     Ln = footing_line
     c0 = gc["c"]
     steps = [Ln("Eccentricity of the shear, e = t grout + hsl / 2", e, "in", "AISC Design Guide 1 Example 4.7-5", f"grout {t_grout:g} in., lug embedment {hsl:g} in."),
@@ -5103,6 +5126,20 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
                          "The stiffening of the base plate by the column is not counted in the plate bending check."],
                         ["concrete breakout of the anchor rods in tension and pullout (see the anchorage on the base plate screens)", "the column to base plate weld",
                          "the 1 in. grout holes beside the lug (DG 1 Sect. 4.3.3 item 4)", "net tension at the base", "shear in both directions at once"])
+    if anchorage:
+        sheet.not_checked = [x for x in sheet.not_checked if not x.startswith("concrete breakout of the anchor rods")]
+        if anc_res:
+            sh0 = anc_res[0]
+            sheet.rows += sh0.rows
+            sheet.info += sh0.info
+            sheet.assumptions += sh0.assumptions + ["Anchorage: the rod tension under each factored combination comes from the large-moment bearing block of "
+                                                    "Design Guide 1 Sect. 4.3.6 at 0.65 fp, the two rods behind the lug sharing it equally."]
+            if not rod_back:
+                sheet.assumptions.append("Anchorage: the rods behind the lug are at least 1.5 hef from the concrete edge behind them.")
+        else:
+            sheet.assumptions.append("Anchorage: no factored combination puts the anchor rods in tension; their tension checks in the concrete do not govern.")
     sheet.blocks.append(dict(title="Shear Lug", head="Shear Lug", picture=("shear_lug", dict(bsl=bsl, tsl=tsl, hsl=hsl, tg=t_grout, tbp=tbp, N=N, ca1=ca1, weld=weld, s=s_rod))))
-    sheet.shear_lug = dict(steel=res, concrete=conc, e=e, fp=fp)
+    if anc_res:
+        sheet.blocks += anc_res[0].blocks
+    sheet.shear_lug = dict(steel=res, concrete=conc, e=e, fp=fp, anchor=anc_res[1] if anc_res else None)
     return sheet

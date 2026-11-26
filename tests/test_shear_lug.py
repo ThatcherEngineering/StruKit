@@ -62,8 +62,40 @@ def test_axial_compression_and_refusals():
 def test_screen():
     v = dict(mark="SL1", bsl="8", tsl="1", hsl="2", t_grout="2", lug_Fy="50", lug_Fu="65", lug_source="ASTM A572 Gr. 50", weld="0.3125", FEXX="70", N="15", B="15", tbp="1",
              bp_Fy="50", s_rod="8.5", rod_d="0.75", rod_Fu="58", rod_source="ASTM F1554 Gr. 36", hef_rod="12", fc="4000", A2A1="4", ca1="14.5", ca2="99", ha="99",
-             psi_c="cracked, no supplementary reinforcement (1.0)", loads=[dict(case="W", V="40", P="", label="")])
+             psi_c="cracked, no supplementary reinforcement (1.0)", anc_grade="F1554 Gr. 36", anc_supp="no", anc_sdc="A or B",
+             loads=[dict(case="W", V="40", P="", label="")])
     proj = dict(name="T", number="1", address="", method="ASD", date="2026-11-25", combos_asd=[dict(expr="D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1")],
                 combos_lrfd=[dict(expr="1.2D + 1.0W", source="ASCE/SEI 7-22 Sect. 2.3.1")])
     s, _, _ = calc.build("shear_lug", v, proj)
     assert s.title == "Shear Lug" and s.shear_lug["concrete"][0]["V"] == pytest.approx(40.0) and s.shear_lug["steel"][0]["V"] == pytest.approx(24.0)
+
+
+def test_rods_behind_the_lug_in_the_concrete():
+    """The two rods behind the lug carry the tension T of the large-moment procedure (Example 4.7-5: T = 6.41 kips, 3.21 per rod), checked by
+    ACI 318-19 17.6. Hand values: breakout of the back row (two rods at 8.5 in.) with the front edge 14.5 + 0.5 + 8.5 - 4.25 = 19.25 in. and the
+    back edge far: ANc = (18 + 18) x (18 + 8.5 + 18) = 1,602 in2, ANco = 9 hef^2 = 1,296 in2, Nb = 24 (4000)^0.5 12^1.5 = 63.1 kips."""
+    from strukit import anchor_rods as ar
+    lr = [Combo("1.0W", {"W": 1.0}, "t")]
+    a = dict(hef=12.0, ha=99.0, nt=10.0, fya=36.0, ductile=True, Abrg=ar.size(0.75)[1], head="heavy hex nut", cracked=True, supplementary=False,
+             sdc="A or B", fc=4000.0)
+    s = shear_lug_sheet("SL", *GEOM, [dict(case="W", V=25.0, P=0.0)], lr, lr, "LRFD", anchorage=a)
+    r = _rows(s)
+    assert r["ACI rod steel, tension"].demand == pytest.approx(3.21, abs=0.01)
+    assert r["ACI breakout, tension"].demand == pytest.approx(6.41, abs=0.01)
+    Nb = 24 * 4000 ** 0.5 * 12 ** 1.5 / 1000
+    assert r["ACI breakout, tension"].capacity == pytest.approx(0.70 * 1602 / 1296 * Nb, rel=1e-4)
+    assert not any(x.startswith("concrete breakout of the anchor rods") for x in s.not_checked)
+    # a near edge behind the rods (6 in.) lowers the breakout
+    near = shear_lug_sheet("SL", *GEOM, [dict(case="W", V=25.0, P=0.0)], lr, lr, "LRFD", anchorage=a, rod_back=6.0)
+    assert _rows(near)["ACI breakout, tension"].capacity < r["ACI breakout, tension"].capacity
+    # axial load large enough to keep the rods out of tension: no rod checks, said so
+    calm = shear_lug_sheet("SL", *GEOM, [dict(case="W", V=25.0, P=200.0)], lr, lr, "LRFD", anchorage=a)
+    assert "ACI breakout, tension" not in _rows(calm) and any("no factored combination puts the anchor rods in tension" in x for x in calm.assumptions)
+
+
+def test_lug_on_a_footing():
+    foot = dict(kind="footing_iso", values=dict(mark="F1", B="5", L="5", h="30", fc="4000"))
+    lug = dict(kind="shear_lug", values=dict(mark="SL1", bsl="8", tsl="1", N="15", B="15", s_rod="8.5", on_footing="F1"))
+    v = calc.link_foundations([foot, lug])[1]["values"]
+    assert (v["fc"], v["ha"], v["ca1"], v["ca2"], v["rod_back"], v["A2A1"]) == ("4000", "30", "29.5", "26", "25.75", "4")
+    assert "plate_x" not in calc.link_foundations([foot, lug])[0]["values"]          # the lug does not size the footing's plate boxes

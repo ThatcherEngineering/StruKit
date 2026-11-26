@@ -269,3 +269,8 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - **Anchor rod calcs link to the foundation or stand alone:** "The anchor rod calcs need to be able to link to a foundation system or be
   independent." Built 0.235.0: each base plate screen can name its footing (live link both ways) or stay stand-alone.
 
+## 2026-11-25 21:58, rods of the shear lug in the concrete (0.236.0), applied (not ruled; tell Zach at the check-in)
+- The two rods behind the lug share the bearing-block tension T equally; the rods toward the edge the shear faces take none.
+- That T is from Design Guide 1's large-moment procedure at 0.65 fp under the LRFD combinations (the same procedure the lug's steel checks use).
+- The rods take no shear (the lug takes it all), so no tension-shear interaction for the rods.
+
