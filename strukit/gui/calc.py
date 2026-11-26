@@ -104,9 +104,15 @@ FORMS = {
                 F("brace_pts", "Brace points", "text", "ft", required=False,
                   help="distances from the left end, separated by commas; the ends are always braced"),
                 F("self_weight", "Add self-weight", "select", options=["yes", "no"]),
-                F("bu_a", "Built-up: transverse stiffener clear spacing, a", unit="in", required=False, help="blank = no transverse stiffeners"),
+                F("bu_a", "Built-up: transverse stiffener clear spacing, a", "text", unit="in", required=False,
+                  help="blank = no transverse stiffeners; one spacing = stiffeners at a along the girder; a list (for example 42, 90) = panel by panel from each support, no stiffeners beyond"),
                 F("bu_tfa", "Built-up: tension field action in the interior panels", "select", options=["no", "yes"], required=False),
                 F("bu_ts", "Built-up: stiffener plate thickness", unit="in", required=False), F("bu_bs", "Built-up: stiffener plate width, each side", unit="in", required=False),
+                F("bu_lb", "Built-up: bearing length at the supports, lb", unit="in", required=False,
+                  help="the girder bears on its supports at its ends: web local yielding and crippling (J10.2, J10.3); blank = not checked"),
+                F("bu_brg_ts", "Built-up: bearing stiffener thickness", unit="in", required=False, help="blank = no bearing stiffeners"),
+                F("bu_brg_bs", "Built-up: bearing stiffener width, each side", unit="in", required=False),
+                F("bu_brg_clip", "Built-up: bearing stiffener corner clip", unit="in", required=False, help="clear of the flange-to-web weld"),
                 F("bu_Fyst", "Built-up: stiffener Fy", unit="ksi", required=False)],
         tables=[T("loads", "Loads", [CASE, F("kind", "Type", "select", options=["uniform", "point"]),
                                      F("mag", "Load", unit="k/ft or k"),
@@ -1827,13 +1833,24 @@ def _build(kind, values, project):
         dc = checks(r.rows("defl"), r.miss, "Deflection limits")
         cases_used([ld["case"] for ld in loads], cb, r.miss)
         bus = None
-        if r.num("bu_a", False):
-            bus = dict(a=r.num("bu_a", False), tfa=str(values.get("bu_tfa") or "").startswith("y"), ts=r.num("bu_ts", True, label="Built-up: stiffener plate thickness"),
+        if str(values.get("bu_a") or "").strip():
+            try:
+                a_l = [float(x) for x in re.split(r"[,;\s]+", str(values.get("bu_a")).strip()) if x]
+            except ValueError:
+                a_l = []
+                r.miss.append("Built-up: transverse stiffener spacing: give one spacing, or the spacings panel by panel from the support, for example 42, 90")
+            bus = dict(a=a_l if len(a_l) > 1 else (a_l[0] if a_l else 1.0), tfa=str(values.get("bu_tfa") or "").startswith("y"), ts=r.num("bu_ts", True, label="Built-up: stiffener plate thickness"),
                        bs=r.num("bu_bs", True, label="Built-up: stiffener plate width"), Fy=r.num("bu_Fyst", False) or Fy)
+        brg = None
+        if r.num("bu_lb", False):
+            brg = dict(lb=r.num("bu_lb", False))
+            if r.num("bu_brg_ts", False):
+                brg.update(ts=r.num("bu_brg_ts", False), bs=r.num("bu_brg_bs", True, label="Built-up: bearing stiffener width"),
+                           clip=r.num("bu_brg_clip", True, label="Built-up: bearing stiffener corner clip"), Fy=r.num("bu_Fyst", False) or Fy)
         r.done()
         s = ws_steel_beam.run(mark, shape, Fy, span, loads, cb, dc, "continuous" if br == "continuous" else pts, m, sw,
                               spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0, overhang_right=r.num("oh_right", False) or 0.0, fixed=fixed,
-                              bu_stiff=bus)
+                              bu_stiff=bus, bu_brg=brg)
         return s, "steel_beam", dict(combos=cb)
     if kind == "steel_column":
         cb, m = combos(project, r.miss), method(project, r.miss)

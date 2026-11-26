@@ -981,3 +981,17 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   Ae with the slender legs of E7, Pc, Pe1, B1, the H2-1 sum) and the tension case (`tests/test_angle_beam.py`). The compression strength
   itself is validated against Example E.14B (`tests/test_angle_strut.py`).
 - Sample sheet sent. Browser check: no page errors.
+
+## 2026-11-26 13:05 MST — 0.260.0 stiffened girders panel by panel; bearing at the supports and bearing stiffeners (Next 2, part)
+- **Steel Beam screen, built-up girders, "transverse stiffener clear spacing"** now takes a list, panel by panel from each support (for example
+  42, 90): the end panel by Sect. G2.1 (the shear row), each further panel for the largest shear within it at its own a (Sect. G2.2 with tension
+  field action when asked, else G2.1), and the web beyond the last stiffener as unstiffened (kv = 5.34). One value keeps the old meaning
+  (stiffeners at a along the girder). The stiffener Ist (Eq. G2-17) uses the smallest spacing and the largest rho_w of the stiffened panels,
+  with Vc1 by G2.1 or G2.2 as applicable to the panel.
+- **Bearing at the supports** (new boxes: bearing length lb; bearing stiffener thickness, width, corner clip): without bearing stiffeners, web
+  local yielding (Eq. J10-3, k = tf) and crippling (Eq. J10-5a / b) at the ends; with them, bearing on the stiffener ends (Eq. J7-1, 2 (bs -
+  clip) ts), the stiffeners plus a 12 tw web strip as a column of 0.75 h (Sect. J10.8, J4.4), and bs / ts (Table B4.1a Case 3). Simple spans
+  only; continuous built-up girders with these checks are refused.
+- Side view of the girder draws the transverse stiffeners at their positions and the bearing stiffeners at the supports.
+- **Validation:** AISC Design Examples G.8A / G.8B panel by panel, LRFD and ASD (end panel 217 / 144, second panel 185 / 123 against 184 /
+  123, web beyond 132 in. 176 / 117 against 128 / 85.0 kips); bearing checks by hand (no published example on file) (`tests/test_builtup.py`).

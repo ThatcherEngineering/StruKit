@@ -9,6 +9,8 @@ Units at this level: feet, kips, kip/ft, ksi. Output moments in kip-ft.
 """
 from dataclasses import dataclass, field
 
+import math
+
 import numpy as np
 
 from . import beam, shapes, steel_beam
@@ -128,49 +130,158 @@ def _signed(check, props, Fy, Lb_in, Cb, method, M_seg, M_abs):
 
 
 def _bu_stiffeners(mark, sheet, props, Fy, method, results, span_ft):
-    """Built-up girder with transverse stiffener pairs at a clear spacing a (AISC 360-22 Sect. G2): the end panel is checked by Sect. G2.1 with
-    kv from a (the beam's shear row); with tension field action the first interior panel, from a beyond each support, by Sect. G2.2; the
-    stiffeners by Sect. G2.4 (Eq. G2-16, G2-17)."""
+    """Built-up girder with transverse stiffener pairs (AISC 360-22 Sect. G2). One clear spacing a: stiffeners at a along the whole girder;
+    the end panel is checked by Sect. G2.1 with kv from a (the beam's shear row); with tension field action the first interior panel, from a
+    beyond each support, by Sect. G2.2. A list of spacings (panel by panel from each support, as AISC Design Examples G.8A / G.8B): the end
+    panel as above, each further panel for the largest shear in it at its own a (Sect. G2.2 with tension field action when asked and a / h
+    not over 3, else G2.1), and the web beyond the last stiffener as unstiffened (kv = 5.34). The stiffeners by Sect. G2.4 (Eq. G2-16,
+    G2-17) at the smallest spacing and the largest rho_w of the stiffened panels."""
     from . import builtup
     st = props["stiff"]
     a = st["a"]
+    panels = st.get("panels")
     lrfd = method == "LRFD"
     av = lambda Vn: 0.90 * Vn if lrfd else Vn / 1.67
+    h = props["h"]
+    for ai in (panels or [a]):
+        if ai / h > 3.0:
+            raise WorksheetError(f"{mark}: a stiffener spacing a / h = {ai / h:.2f} is over 3.0: the stiffeners do not raise kv (Sect. G2.1(b)(2))")
     end = builtup.shear_panel(props, Fy, a, False)
     Vc1_end, Vc2 = av(end["Vn"]), av(end["Vn2"])
-    if a / props["h"] > 3.0:
-        raise WorksheetError(f"{mark}: the stiffener spacing a / h = {a / props['h']:.2f} is over 3.0: the stiffeners do not raise kv (Sect. G2.1(b)(2))")
     Vr_end = max((max(abs(float(r.V[0])), abs(float(r.V[-1]))), n) for n, r in results)
     rows, lines = [], []
-    Vc1 = Vc1_end
-    if st.get("tfa"):
+    rho = [max((Vr_end[0] - Vc2) / (Vc1_end - Vc2), 0.0) if Vc1_end > Vc2 else 0.0]
+
+    def vmax_in(x0_in, x1_in):
+        """Largest shear between x0 and x1 (in. from each support, mirrored), over the combinations."""
+        best_ = (0.0, "")
+        for n, r in results:
+            for lo, hi in ((x0_in / 12.0, x1_in / 12.0), (span_ft - x1_in / 12.0, span_ft - x0_in / 12.0)):
+                xs_ = [lo + (hi - lo) * k / 40 for k in range(41)] + [float(x) for x in r.x if lo + 1e-6 < x < hi - 1e-6]
+                v_ = max(abs(float(np.interp(x, r.x, r.V))) for x in xs_)
+                if v_ > best_[0]:
+                    best_ = (v_, n)
+        return best_
+
+    if panels:
+        x = panels[0]
+        for i, ai in enumerate(panels[1:], 2):
+            if x >= span_ft * 6.0 - 1e-6:
+                break
+            x1 = min(x + ai, span_ft * 6.0)
+            Vr = vmax_in(x, x1)
+            tfa = bool(st.get("tfa"))
+            pn = builtup.shear_panel(props, Fy, ai, tfa)
+            Vc = av(pn["Vn"])
+            rows.append(Row(f"shear, panel {i} ({x:g} to {x + ai:g} in. from each support)", Vr[1], Vr[0], Vc, "kip",
+                            f"AISC 360-22 Sect. {'G2.2' if pn['eq'] in ('Eq. G2-6', 'Eq. G2-7', 'Eq. G2-8') else 'G2.1'}, {pn['eq']}",
+                            f"a = {ai:g} in., kv = {pn['kv']:.2f}" + (f", Cv2 = {pn['Cv2']:.3f}" if tfa else f", Cv1 = {pn['Cv']:.3f}")))
+            lines.append(steel_beam.Line(f"Vn, panel {i}", pn["Vn"], "kip", f"AISC 360-22 {pn['eq']}", f"a = {ai:g} in., a / h = {ai / h:.2f}"
+                                         + ("; tension field action, 2 Aw / (Afc + Aft), h / bfc and h / bft by Sect. G2.2(b)(1)" if tfa else "")))
+            c1, c2 = Vc, av(pn["Vn2"])                                   # Vc1 by Sect. G2.1 or G2.2 as applicable (Sect. G2.4)
+            rho.append(max((Vr[0] - c2) / (c1 - c2), 0.0) if c1 > c2 else 0.0)
+            x += ai
+        if x < span_ft * 6.0 - 1e-6:
+            Vr = vmax_in(x, span_ft * 6.0)
+            un = builtup.shear_panel(props, Fy, None, False)
+            rows.append(Row(f"shear, web beyond the last stiffener ({x:g} in. from each support)", Vr[1], Vr[0], av(un["Vn"]), "kip",
+                            f"AISC 360-22 Sect. G2.1, {un['eq']}", f"no stiffeners, kv = 5.34, Cv1 = {un['Cv']:.3f}"))
+    elif st.get("tfa"):
         tf_ = builtup.shear_panel(props, Fy, a, True)
         best = None
         for n, r in results:
             Vint = max(abs(float(np.interp(a / 12.0, r.x, r.V))), abs(float(np.interp(span_ft - a / 12.0, r.x, r.V))))
             if best is None or Vint > best[0]:
                 best = (Vint, n)
-        Vc1 = av(tf_["Vn"])
-        rows.append(Row("shear, first interior panel (tension field action)", best[1], best[0], Vc1, "kip", f"AISC 360-22 Sect. G2.2, {tf_['eq']}",
+        rows.append(Row("shear, first interior panel (tension field action)", best[1], best[0], av(tf_["Vn"]), "kip", f"AISC 360-22 Sect. G2.2, {tf_['eq']}",
                         f"a = {a:g} in. beyond each end panel; kv = {tf_['kv']:.2f}, Cv2 = {tf_['Cv2']:.3f}"))
         lines.append(steel_beam.Line("Vn, interior panel with tension field action", tf_["Vn"], "kip", f"AISC 360-22 {tf_['eq']}",
                                      f"Cv2 = {tf_['Cv2']:.3f} (Eq. G2-9 to G2-11); 2 Aw / (Afc + Aft), h / bfc and h / bft by Sect. G2.2(b)(1)"))
-    rho_w = max((Vr_end[0] - Vc2) / (Vc1_end - Vc2), 0.0) if Vc1_end > Vc2 else 0.0
-    sc = builtup.stiffener_check(props, Fy, a, st["ts"], st["bs"], st["Fy"], rho_w)
+    rho_w = max(rho)
+    a_min = min(panels or [a])
+    sc = builtup.stiffener_check(props, Fy, a_min, st["ts"], st["bs"], st["Fy"], rho_w)
     rows += [Row("transverse stiffener width-to-thickness, (b / t)st", "", sc["bt"], sc["bt_lim"], "", "AISC 360-22 Eq. G2-16",
                  f"{st['bs']:g} x {st['ts']:g} in. plates, one each side of the web, Fyst = {st['Fy']:g} ksi"),
              Row("transverse stiffener moment of inertia, Ist", Vr_end[1], sc["need"], sc["Ist"], "in4", "AISC 360-22 Eq. G2-17 to G2-19",
-                 f"Ist1 = {sc['Ist1']:.1f}, Ist2 = {sc['Ist2']:.2f} in4, rho_w = {rho_w:.2f}")]
+                 f"Ist1 = {sc['Ist1']:.1f}, Ist2 = {sc['Ist2']:.2f} in4, rho_w = {rho_w:.2f}" + (f", b = {a_min:g} in. (smallest spacing)" if panels else ""))]
     lines += [steel_beam.Line("Stiffener pair Ist about the web centre, ts (2 bs + tw)^3 / 12", sc["Ist"], "in4", "AISC 360-22 Sect. G2.4", ""),
-              steel_beam.Line("rho_w = (Vr - Vc2) / (Vc1 - Vc2) at the end panel", rho_w, "", "AISC 360-22 Sect. G2.4", f"Vr = {Vr_end[0]:.1f}, Vc1 = {Vc1_end:.1f}, Vc2 = {Vc2:.1f} kip")]
+              steel_beam.Line("rho_w = (Vr - Vc2) / (Vc1 - Vc2), largest of the stiffened panels", rho_w, "", "AISC 360-22 Sect. G2.4",
+                              f"end panel: Vr = {Vr_end[0]:.1f}, Vc1 = {Vc1_end:.1f}, Vc2 = {Vc2:.1f} kip")]
     sheet.rows += rows
     sheet.steps = list(sheet.steps) + lines
-    sheet.assumptions.append(f"Transverse stiffener pairs at a clear spacing of {a:g} in. along the girder; the end panel is designed without tension field action"
-                             + ("; tension field action in the interior panels." if st.get("tfa") else "."))
+    if panels:
+        sheet.assumptions.append("Transverse stiffener pairs at clear spacings of " + ", ".join(f"{x:g}" for x in panels) + " in. from each support, panel by panel; "
+                                 "the end panel is designed without tension field action" + ("; tension field action in the other stiffened panels" if st.get("tfa") else "")
+                                 + "; the web beyond the last stiffener is unstiffened.")
+    else:
+        sheet.assumptions.append(f"Transverse stiffener pairs at a clear spacing of {a:g} in. along the girder; the end panel is designed without tension field action"
+                                 + ("; tension field action in the interior panels." if st.get("tfa") else "."))
+
+
+def _bu_bearing(mark, sheet, props, Fy, method, results):
+    """Built-up girder bearing on its supports at its ends (bottom flange on the support, bearing length lb): web local yielding (AISC 360-22
+    Eq. J10-3, k = the flange thickness, the flange-to-web welds not counted) and web local crippling (Eq. J10-5a / J10-5b); with a pair of
+    full-depth bearing stiffeners: bearing on their ends (Sect. J7, Eq. J7-1, contact area 2 (bs - clip) ts), and the stiffeners with a 12 tw
+    strip of web as a column of effective length 0.75 h (Sect. J10.8, J4.4; Chapter E where Lc / r is over 25), and their width-to-thickness
+    (Table B4.1a Case 3, 0.56 (E / Fyst)^0.5)."""
+    b = props["brg"]
+    lrfd = method == "LRFD"
+    f = (lambda Rn, phi, om: phi * Rn if lrfd else Rn / om)
+    d, tw, h = props["d"], props["tw"], props["h"]
+    tf = props.get("tfb") or props.get("tf")
+    lb = b["lb"]
+    R = max((max(abs(float(r.V[0])), abs(float(r.V[-1]))), n) for n, r in results)
+    E_ = 29000.0
+    Ry = Fy * tw * (2.5 * tf + lb)
+    root = math.sqrt(E_ * Fy * tf / tw)
+    if lb / d <= 0.2:
+        Rc, eqc = 0.40 * tw ** 2 * (1 + 3 * (lb / d) * (tw / tf) ** 1.5) * root, "Eq. J10-5a"
+    else:
+        Rc, eqc = 0.40 * tw ** 2 * (1 + (4 * lb / d - 0.2) * (tw / tf) ** 1.5) * root, "Eq. J10-5b"
+    rows, lines = [], []
+    lines += [steel_beam.Line("Support reaction, largest", R[0], "kip", R[1], ""),
+              steel_beam.Line("Web local yielding at the end, Rn = Fy tw (2.5 k + lb)", Ry, "kip", "AISC 360-22 Eq. J10-3",
+                              f"lb = {lb:g} in., k = tf = {tf:g} in. (flange-to-web welds not counted); phi = 1.00, Omega = 1.50"),
+              steel_beam.Line("Web local crippling at the end", Rc, "kip", f"AISC 360-22 {eqc}", f"lb / d = {lb / d:.3f}; phi = 0.75, Omega = 2.00")]
+    if not b.get("ts"):
+        rows += [Row("web local yielding at the supports", R[1], R[0], f(Ry, 1.0, 1.5), "kip", "AISC 360-22 Eq. J10-3", f"lb = {lb:g} in., no bearing stiffeners"),
+                 Row("web local crippling at the supports", R[1], R[0], f(Rc, 0.75, 2.0), "kip", f"AISC 360-22 {eqc}", f"lb = {lb:g} in., no bearing stiffeners")]
+    else:
+        ts, bs, clip, Fyst = b["ts"], b["bs"], b["clip"], b["Fy"]
+        if clip >= bs:
+            raise WorksheetError(f"{mark}: the bearing stiffener corner clip is as wide as the stiffener")
+        Apb = 2 * (bs - clip) * ts
+        Rb = 1.8 * Fyst * Apb
+        A = 2 * bs * ts + 12 * tw * tw
+        I = ts * (2 * bs + tw) ** 3 / 12.0 + 12 * tw * tw ** 3 / 12.0
+        r_ = math.sqrt(I / A)
+        Lc = 0.75 * h
+        slr = Lc / r_
+        Fyc = min(Fy, Fyst)
+        if slr <= 25:
+            Pn, eqp = Fyc * A, "Sect. J4.4(a), Lc / r not over 25: Pn = Fy Ag"
+        else:
+            Fe = math.pi ** 2 * E_ / slr ** 2
+            Fn = 0.658 ** (Fyc / Fe) * Fyc if Fyc / Fe <= 2.25 else 0.877 * Fe
+            Pn, eqp = Fn * A, f"Sect. J4.4(b), Chapter E: Fe = {Fe:.1f} ksi, Fn = {Fn:.1f} ksi (Eq. E3-2 / E3-3)"
+        bt, bt_lim = bs / ts, 0.56 * math.sqrt(E_ / Fyst)
+        lines += [steel_beam.Line("Bearing stiffeners: contact area Apb = 2 (bs - clip) ts", Apb, "in2", "AISC 360-22 Sect. J7", f"{bs:g} x {ts:g} in. pair, {clip:g} in. corner clips"),
+                  steel_beam.Line("Bearing, Rn = 1.8 Fy Apb", Rb, "kip", "AISC 360-22 Eq. J7-1", f"Fy = {Fyst:g} ksi; phi = 0.75, Omega = 2.00"),
+                  steel_beam.Line("Stiffener column: A = 2 bs ts + 12 tw^2", A, "in2", "AISC 360-22 Sect. J10.8", f"12 tw web strip at the end of the member; I = {I:.1f} in4, r = {r_:.2f} in."),
+                  steel_beam.Line("Lc / r, Lc = 0.75 h", slr, "", "AISC 360-22 Sect. J10.8", f"Lc = {Lc:.2f} in."),
+                  steel_beam.Line("Stiffener column, Pn", Pn, "kip", eqp, f"Fy = {Fyc:g} ksi (the lower of web and stiffener); phi = 0.90, Omega = 1.67")]
+        rows += [Row("bearing stiffeners, bearing on the ends", R[1], R[0], f(Rb, 0.75, 2.0), "kip", "AISC 360-22 Sect. J7, Eq. J7-1", f"Apb = {Apb:.2f} in2"),
+                 Row("bearing stiffeners as a column", R[1], R[0], f(Pn, 0.90, 1.67), "kip", "AISC 360-22 Sect. J10.8, J4.4", f"Lc / r = {slr:.1f}"),
+                 Row("bearing stiffener width-to-thickness, bs / ts", "", bt, bt_lim, "", "AISC 360-22 Table B4.1a Case 3", f"0.56 (E / Fy)^0.5, Fy = {Fyst:g} ksi")]
+        sheet.assumptions.append(f"A pair of full-depth bearing stiffeners {bs:g} x {ts:g} in. at each support, fitted to the bearing flange, corner clips {clip:g} in.; "
+                                 "the web is not counted on for yielding or crippling at the supports.")
+    sheet.rows += rows
+    sheet.steps = list(sheet.steps) + lines
+    sheet.assumptions.append(f"The girder bears on its supports at its ends through the bottom flange over {lb:g} in.")
 
 
 def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
-        include_self_weight, self_weight_case="D", spans=None, overhang_left=0.0, overhang_right=0.0, fixed=False, bu_stiff=None):
+        include_self_weight, self_weight_case="D", spans=None, overhang_left=0.0, overhang_right=0.0, fixed=False, bu_stiff=None, bu_brg=None):
     """bracing: "continuous", or a list of brace locations in ft (ends are added)."""
     if method not in ("ASD", "LRFD"):
         raise WorksheetError("method must be ASD or LRFD")
@@ -196,7 +307,16 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
     if bu_stiff:
         if props.get("type") != "BU":
             raise WorksheetError(f"{mark}: transverse stiffeners are for a built-up section (BU ...)")
-        props = dict(props, stiff=bu_stiff)
+        st_ = dict(bu_stiff)
+        aa = st_["a"] if isinstance(st_["a"], (list, tuple)) else [st_["a"]]
+        if not aa or min(aa) <= 0:
+            raise WorksheetError(f"{mark}: the stiffener spacings must be positive")
+        st_.update(a=float(aa[0]), panels=[float(x) for x in aa] if len(aa) > 1 else None)
+        props = dict(props, stiff=st_)
+    if bu_brg:
+        if props.get("type") != "BU":
+            raise WorksheetError(f"{mark}: the bearing checks at the supports are for a built-up section (BU ...)")
+        props = dict(props, brg=bu_brg)
     if hss_props is not None:
         from . import hss
         def check(pr, Fy_, Lb_, Cb_, method_):
@@ -251,6 +371,8 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
             segs = list(zip(pts[:-1], pts[1:]))
             btxt = "braced at " + ", ".join(f"{x:g}" for x in pts) + " ft (supports and brace points)"
             brace_pts = pts
+        if props.get("brg") or props.get("stiff"):
+            raise WorksheetError(f"{mark}: transverse and bearing stiffener checks are for a single simple span")
         return _run_continuous(mark, shape, Fy, lay, all_loads, combos, defl_checks, segs, btxt, brace_pts, method, include_self_weight,
                                props, check, assumptions)
     EI = E * props["Ix"] / 144.0                                   # kip-ft^2
@@ -381,6 +503,8 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
     _bu_welds(sheet, props, method)
     if props.get("stiff"):
         _bu_stiffeners(mark, sheet, props, Fy, method, [(cb.name, _solve(span_ft, EI, all_loads, cb.factors)) for cb in combos], span_ft)
+    if props.get("brg"):
+        _bu_bearing(mark, sheet, props, Fy, method, [(cb.name, _solve(span_ft, EI, all_loads, cb.factors)) for cb in combos])
     return sheet
 
 

@@ -441,3 +441,9 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 - Cm = 1.0 for both principal axes (Appendix 8 permits it for transverse loading); length for buckling and for Pe1 the span with K = 1.0.
 - Tension takes no reduction of the moments (B1 = 1.0) and is checked by yielding only in H2-1; rupture is left to the end connection.
 - An equal-leg angle with axial load is designed on the principal axes, not by the geometric axis provisions of Sect. F10.2(2).
+
+## 2026-11-26 13:05, stiffened girders and bearing (0.260.0), applied (not ruled)
+- With a list of stiffener spacings, the web beyond the last listed stiffener is taken as unstiffened, and the stiffener Ist is checked at the
+  smallest spacing with the largest rho_w of all the stiffened panels.
+- Web local yielding at a girder end uses k = the flange thickness (the flange-to-web weld size not counted).
+- With bearing stiffeners the web is not counted on for yielding or crippling at the supports; the stiffener column takes the lower Fy of web and stiffener.

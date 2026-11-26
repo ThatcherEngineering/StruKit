@@ -5,6 +5,7 @@ import pytest
 
 from strukit import builtup, shapes, steel_beam, steel_column
 from strukit.gui import calc
+from strukit.ws_steel_beam import WorksheetError
 
 
 def test_f14_plate_girder():
@@ -120,3 +121,48 @@ def test_stiffened_girder_sheet_prints(tmp_path):
              defl=[], bu_a="42", bu_tfa="yes", bu_ts="0.3125", bu_bs="4", bu_Fyst="50")
     s, _, extra = calc.build("steel_beam", v, proj)
     calcsheet.steel_beam_pdf(s, str(tmp_path / "g8.pdf"), "Job", "AISC 360-22", "Nov 26, 2026", combos=extra["combos"])
+
+
+@pytest.mark.parametrize("method, end, second, unst, Vu", [("LRFD", 217, 185, 176, 210), ("ASD", 144, 123, 117, 140)])
+def test_g8_panel_by_panel(method, end, second, unst, Vu):
+    """AISC Design Examples v16.0 Examples G.8A and G.8B, panel by panel: end panel 42 in. (no tension field action, 217 / 144 kips against
+    210 / 140), second panel 90 in. with tension field action (185 / 123 against 184 / 123 at its start, 42 in. from the support), and the web
+    beyond 132 in. unstiffened (176 / 117 kips against 128 / 85.0 at 132 in.)."""
+    proj = dict(method=method, combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[dict(expr="D + L", source="t")], name="t", number="t", date="2026-11-26")
+    v = dict(mark="G1", shape="BU 16x1-1/2 / 33x5/16 / 16x1-1/2", Fy="50", span="56", more_spans="", oh_left="", oh_right="", bracing="continuous", brace_pts="",
+             self_weight="no", loads=[dict(case="D", kind="uniform", mag="1.25", x1="", x2="", label=""), dict(case="L", kind="uniform", mag="3.75", x1="", x2="", label="")],
+             defl=[], bu_a="42, 90", bu_tfa="yes", bu_ts="0.3125", bu_bs="4", bu_Fyst="50")
+    s = calc.build("steel_beam", v, proj)[0]
+    r = {x.check: x for x in s.rows}
+    assert r["shear"].demand == pytest.approx(Vu, rel=1e-3) and r["shear"].capacity == pytest.approx(end, rel=0.005)
+    p2 = r["shear, panel 2 (42 to 132 in. from each support)"]
+    w = 7.5 if method == "LRFD" else 5.0
+    assert p2.demand == pytest.approx(Vu - w * 42 / 12, rel=2e-3) and p2.capacity == pytest.approx(second, rel=0.006) and "G2-7" in p2.source
+    u = r["shear, web beyond the last stiffener (132 in. from each support)"]
+    assert u.demand == pytest.approx(Vu - w * 132 / 12, rel=2e-3) and u.capacity == pytest.approx(unst, rel=0.006)
+    assert "42, 90" in " ".join(s.assumptions)
+
+
+def test_bearing_at_supports_by_hand():
+    """Example G.8A girder (16 x 1-1/2 flanges, 33 x 5/16 web, Fy 50, 56 ft, LRFD Vu = 210 kips) on 6 in. of bearing; checked by hand.
+      Eq. J10-3: 50 (0.3125)(2.5 x 1.5 + 6) = 152.3 kips (phi 1.0). Eq. J10-5a (lb / d = 0.167): 0.40 (0.3125)^2 [1 + 3 (0.167)(0.3125 / 1.5)^1.5]
+      (29,000 x 50 x 1.5 / 0.3125)^0.5 = 108.0 kips; 0.75 x = 81.0. Both under 210: bearing stiffeners needed.
+      Pair 7 x 3/4 in., 1 in. clips: Apb = 2 (6)(0.75) = 9.0 in2, Eq. J7-1 1.8 (50)(9.0) = 810, 0.75 x = 607.5 kips. Column: A = 2 (7)(0.75)
+      + 12 (0.3125)^2 = 11.67 in2, I = 0.75 (14.3125)^3 / 12 = 183.2 in4, r = 3.96 in., 0.75 h / r = 24.75 / 3.96 = 6.25 not over 25: Pn = 50 (11.67)
+      = 583.6, 0.9 x = 525.2 kips. bs / ts = 9.33 against 0.56 (29,000 / 50)^0.5 = 13.49."""
+    proj = dict(method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[dict(expr="D + L", source="t")], name="t", number="t", date="2026-11-26")
+    v = dict(mark="G1", shape="BU 16x1-1/2 / 33x5/16 / 16x1-1/2", Fy="50", span="56", more_spans="", oh_left="", oh_right="", bracing="continuous", brace_pts="",
+             self_weight="no", loads=[dict(case="D", kind="uniform", mag="1.25", x1="", x2="", label=""), dict(case="L", kind="uniform", mag="3.75", x1="", x2="", label="")],
+             defl=[], bu_a="42, 90", bu_tfa="yes", bu_ts="0.3125", bu_bs="4", bu_Fyst="50", bu_lb="6")
+    r = {x.check: x for x in calc.build("steel_beam", v, proj)[0].rows}
+    assert r["web local yielding at the supports"].capacity == pytest.approx(152.3, abs=0.05) and r["web local yielding at the supports"].demand == pytest.approx(210)
+    assert r["web local crippling at the supports"].capacity == pytest.approx(81.0, abs=0.1)
+    r = {x.check: x for x in calc.build("steel_beam", dict(v, bu_brg_ts="0.75", bu_brg_bs="7", bu_brg_clip="1"), proj)[0].rows}
+    assert "web local yielding at the supports" not in r
+    assert r["bearing stiffeners, bearing on the ends"].capacity == pytest.approx(607.5)
+    assert r["bearing stiffeners as a column"].capacity == pytest.approx(0.9 * 50 * (10.5 + 12 * 0.3125 ** 2), rel=1e-6)
+    assert r["bearing stiffener width-to-thickness, bs / ts"].capacity == pytest.approx(13.49, abs=0.01)
+    with pytest.raises(calc.Missing):
+        calc.build("steel_beam", dict(v, bu_brg_ts="0.75"), proj)
+    with pytest.raises(WorksheetError):                                  # continuous beams: not covered
+        calc.build("steel_beam", dict(v, more_spans="40"), proj)
