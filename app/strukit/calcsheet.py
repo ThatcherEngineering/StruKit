@@ -2720,7 +2720,7 @@ def _flush_end_plate_picture(c, top, d):
     up = 14 if d.get("cont") else 0                    # a continuous column runs on above the plate
     c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xs, yb - 14, dc * sc, Hp * sc + 14 + up, fill=1, stroke=1)
     c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xs, yb - 14, tcf * sc, Hp * sc + 14 + up, fill=1, stroke=0); c.rect(xs + (dc - tcf) * sc, yb - 14, tcf * sc, Hp * sc + 14 + up, fill=1, stroke=0)
-    if not d.get("cont"):
+    if not d.get("cont") and not d.get("nocap"):
         c.rect(xs, yt, dc * sc, max(tcap * sc, 2), fill=1, stroke=1)                                     # cap plate
     st = d.get("stiff")
     if st:                                                                                              # stiffeners in line with both beam flanges
@@ -2736,7 +2736,7 @@ def _flush_end_plate_picture(c, top, d):
         c.line(xs - tp * sc - 5, yy, xs + tcf * sc + 5, yy)
     c.setLineWidth(0.9); c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawString(xs - tp * sc - 66, y_top - D * sc / 2, d["beam"]); c.drawString(xs + tcf * sc + 8, yb + Hp * sc / 2, d["column"])
-    if not d.get("cont"):
+    if not d.get("cont") and not d.get("nocap"):
         c.drawString(xs + 4, yt + max(tcap * sc, 2) + 4, f"cap plate {tcap:g} in")
     elif st:
         c.drawString(xs + dc * sc + 6, y_top - tf / 2 * sc - 2, f"stiffeners {st['ts']:g} x {st['bs']:g} in")
@@ -2760,7 +2760,11 @@ def _through_plate_picture(c, top, d):
         x0 = xc + sg * (H / 2 + L1 - lef) * sc
         x1 = xc + sg * (Lp / 2 + 18 / sc) * sc
         c.rect(min(x0, x1), yc - bf / 2 * sc, abs(x1 - x0), bf * sc, fill=1, stroke=1)
-    c.setDash(3, 2); c.rect(xc - H / 2 * sc, yc - B / 2 * sc, H * sc, B * sc, fill=0, stroke=1); c.setDash()                                  # HSS, dashed
+    if d.get("cut"):                                                                                                                     # HSS runs through the cut-out
+        c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xc - H / 2 * sc, yc - B / 2 * sc, H * sc, B * sc, fill=1, stroke=1)
+        memberart._dim_v(c, yc + B / 2 * sc, yc + bp / 2 * sc, xc + H / 2 * sc - 10, f"ws = {d['ws']:g}", FR, ext_from=xc + H / 2 * sc)
+    else:
+        c.setDash(3, 2); c.rect(xc - H / 2 * sc, yc - B / 2 * sc, H * sc, B * sc, fill=0, stroke=1); c.setDash()                         # HSS, dashed
     c.setFillColorRGB(*INK)
     for sg in (-1, 1):
         for i in range(n):
@@ -2777,9 +2781,13 @@ def _through_plate_picture(c, top, d):
     memberart._dim_v(c, yc - bp / 2 * sc, yc + bp / 2 * sc, xc - Lp / 2 * sc - 30, f"bp = {bp:g} in", FR, ext_from=xc - Lp / 2 * sc)
     memberart._dim_v(c, yc - g / 2 * sc, yc + g / 2 * sc, xc + Lp / 2 * sc + 30, f"g = {g:g} in", FR, ext_from=xc + (H / 2 + L1 + (n - 1) * s_) * sc)
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
-    c.drawCentredString(xc, yc - 3, d["column"])
+    if c.stringWidth(d["column"], FR, 6.5) < H * sc - 6:
+        c.drawCentredString(xc, yc - 3, d["column"])
+    else:                                                                # too wide for the HSS: below it, clear of the flanges
+        c.drawCentredString(xc, yc - B / 2 * sc - 9, d["column"])
     yb = yc - max(bp, B, bf) / 2 * sc - 44
-    _small(c, xc, yb, f"plan of a through plate {d['tp']:g} x {bp:g} in. on the HSS (dashed), {d['beam']} flanges bolted each side; to scale; dimensions in inches")
+    _small(c, xc, yb, (f"plan of a cut-out plate {d['tp']:g} x {bp:g} in. wrapping the HSS, {d['beam']} flanges bolted each side; to scale; dimensions in inches" if d.get("cut") else
+                       f"plan of a through plate {d['tp']:g} x {bp:g} in. on the HSS (dashed), {d['beam']} flanges bolted each side; to scale; dimensions in inches"))
     return yb - 10
 
 
