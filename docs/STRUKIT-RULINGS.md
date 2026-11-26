@@ -470,3 +470,18 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 - Overhang deflection against 2 x the overhang / ratio (as the Steel Beam screen).
 - In the 3D frame the horizontal leg is taken toward the member's local y (the plan direction of the leg is not on the screen); the gravity run
   holds every frame joint sideways (the level's diaphragm), so an angle's lateral deflection shows only in the sway run.
+
+## 2026-11-26, reply to the 0.262.0 to 0.264.0 check-in — Zach's ruling (do not ask again)
+- **"I agree with your conservative rules. Keep going."** Ruled as applied: the 0.257.0 to 0.264.0 readings above (diaphragm opening: larger end
+  shear, corner zones, typed extensions, deflection term; single-angle deflection: midspan restraint as unrestrained, the resultant against the
+  limit; angle axial plus bending: Cm = 1.0, K = 1.0, no B1 in tension, equal legs on the principal axes; stiffened girders: web beyond the last
+  stiffener unstiffened, Ist at the smallest spacing and largest rho_w, k = tf at the ends, web not counted with bearing stiffeners, G2.3 only at
+  girder ends, Mpf from the smaller flange, tension flange stress with the smaller S; two flange plates: lever arm d + (tp top + tp bottom) / 2;
+  stiffened seat on an HSS face by DG24 Eq. 2-6 with R x 0.8 W and Manual Eq. 10-10, angle legs by Table B4.1a Case 3; continuous angles: each
+  span one unbraced length, Cb not over 1.5, negative beta_w where the moment reverses, overhang deflection 2 x the overhang, the horizontal leg
+  toward local y in the frame).
+
+## 2026-11-26 15:30, flange-to-web welds (0.265.0), applied (not ruled)
+- A concentrated load on the top flange without a bearing stiffener is taken by the top flange welds over lb + 5 tf (the J10.2 spread) and
+  added to the shear flow as a vector, with the largest shear on the member (not the shear at the load); the weld's directional strength
+  increase (kds) is not taken.

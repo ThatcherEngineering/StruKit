@@ -513,6 +513,17 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     if hss_kind is None:
         if pr.get("type") == "BU":
             memberart.steel_section(c, sx, top - 38, 40, 46, pr["d"], pr["bft"], pr["tft"], pr["tw"], None, pr["bfb"], pr["tfb"])
+            wd_ = (sheet.props or {}).get("weld")
+            if wd_:                                              # the flange-to-web fillets, both sides at each flange
+                k_ = min(40.0 / max(pr["bft"], pr["bfb"]), 46.0 / pr["d"])
+                ws_ = max(2.2, wd_["w"] * k_)
+                tw2 = pr["tw"] * k_ / 2
+                yt_, yb_ = top - 38 + pr["d"] * k_ / 2 - pr["tft"] * k_, top - 38 - pr["d"] * k_ / 2 + pr["tfb"] * k_
+                c.setFillColorRGB(0.20, 0.22, 0.25)
+                for yy, sg in ((yt_, -1), (yb_, 1)):
+                    for sx_ in (-1, 1):
+                        t_ = c.beginPath(); t_.moveTo(sx + sx_ * tw2, yy); t_.lineTo(sx + sx_ * (tw2 + ws_), yy); t_.lineTo(sx + sx_ * tw2, yy + sg * ws_); t_.close()
+                        c.drawPath(t_, fill=1, stroke=0)
         else:
             (memberart.channel_section if pr.get("type") in ("C", "MC") else memberart.steel_section)(
                 c, sx, top - 38, 40, 46, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))

@@ -112,6 +112,11 @@ FORMS = {
                   help="blank = no transverse stiffeners; one spacing = stiffeners at a along the girder; a list (for example 42, 90) = panel by panel from each support, no stiffeners beyond"),
                 F("bu_tfa", "Built-up: tension field action in the interior panels", "select", options=["no", "yes"], required=False),
                 F("bu_ts", "Built-up: stiffener plate thickness", unit="in", required=False), F("bu_bs", "Built-up: stiffener plate width, each side", unit="in", required=False),
+                F("bu_weld", "Built-up: flange-to-web fillet weld size (both sides)", unit="in", required=False, help="blank = the welds are not checked (the shear flow is stated)"),
+                F("bu_FEXX", "Built-up: electrode strength", unit="ksi", required=False, help="blank = 70"),
+                F("bu_Fu", "Built-up: plate Fu", unit="ksi", required=False, help="for the base metal at the welds"),
+                F("bu_weld_l", "Built-up: intermittent weld length", unit="in", required=False, help="blank = continuous welds"),
+                F("bu_weld_s", "Built-up: intermittent weld spacing, on centres", unit="in", required=False),
                 F("bu_lb", "Built-up: bearing length at the supports, lb", unit="in", required=False,
                   help="the girder bears on its supports at its ends: web local yielding and crippling (J10.2, J10.3); blank = not checked"),
                 F("bu_brg_ts", "Built-up: bearing stiffener thickness", unit="in", required=False, help="blank = no bearing stiffeners"),
@@ -1906,10 +1911,15 @@ def _build(kind, values, project):
                 brg.update(ts=r.num("bu_brg_ts", False), bs=r.num("bu_brg_bs", True, label="Built-up: bearing stiffener width"),
                            clip=r.num("bu_brg_clip", True, label="Built-up: bearing stiffener corner clip"), Fy=r.num("bu_Fyst", False) or Fy,
                            e=r.num("bu_brg_e", False))
+        bwd = None
+        if r.num("bu_weld", False):
+            bwd = dict(w=r.num("bu_weld", False), FEXX=r.num("bu_FEXX", False) or 70.0, Fu=r.num("bu_Fu", True, label="Built-up: plate Fu"))
+            if r.num("bu_weld_l", False):
+                bwd.update(l=r.num("bu_weld_l", False), s=r.num("bu_weld_s", True, label="Built-up: intermittent weld spacing"))
         r.done()
         s = ws_steel_beam.run(mark, shape, Fy, span, loads, cb, dc, "continuous" if br == "continuous" else pts, m, sw,
                               spans=[span] + more if more else None, overhang_left=r.num("oh_left", False) or 0.0, overhang_right=r.num("oh_right", False) or 0.0, fixed=fixed,
-                              bu_stiff=bus, bu_brg=brg)
+                              bu_stiff=bus, bu_brg=brg, bu_weld=bwd)
         return s, "steel_beam", dict(combos=cb)
     if kind == "steel_column":
         cb, m = combos(project, r.miss), method(project, r.miss)

@@ -106,14 +106,42 @@ def _cb(res, a, b):
 
 
 def _bu_welds(sheet, props, method):
-    """Built-up section: the flange-to-web weld shear flow at the largest shear, stated (the welds are not checked on the beam sheet)."""
+    """Built-up section: the flange-to-web welds (builtup.flange_web_weld, as Design Examples F.14) when their size is given; otherwise the shear
+    flow they carry at the largest shear is stated and the welds are listed as not checked."""
     if props.get("type") != "BU":
         return
+    from . import builtup
     d, yb, Ix = props["d"], props["yb"], props["Ix"]
     Q = max(props["bft"] * props["tft"] * (d - yb - props["tft"] / 2), props["bfb"] * props["tfb"] * (yb - props["tfb"] / 2))
     V = max((r.demand for r in sheet.rows if r.check == "shear"), default=0.0)
-    sheet.assumptions.append(f"Built-up section: flanges welded continuously to the web. The welds are not checked on this sheet; the shear flow they carry at "
-                             f"the largest shear is V Q / Ix = {V:.2f} x {Q:.1f} / {Ix:,.0f} = {V * Q / Ix:.2f} kip/in. ({method} level, both welds together).")
+    wd = props.get("weld")
+    if not wd:
+        sheet.assumptions.append(f"Built-up section: flanges welded continuously to the web. The welds are not checked on this sheet; the shear flow they carry at "
+                                 f"the largest shear is V Q / Ix = {V:.2f} x {Q:.1f} / {Ix:,.0f} = {V * Q / Ix:.2f} kip/in. ({method} level, both welds together).")
+        return
+    brg = props.get("brg") or {}
+    P = None
+    if brg.get("lbp") and not brg.get("at_loads"):
+        pts = [ld for ld in getattr(sheet, "loads", []) if ld.get("kind") == "point" and not str(ld.get("dir") or "").startswith("side")]
+        if pts and getattr(sheet, "_combos", None):
+            P = max(sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in pts if abs(ld["x_ft"] - x_) < 1e-6)
+                    for cb in sheet._combos for x_ in {round(l_["x_ft"], 6) for l_ in pts})
+    r = builtup.flange_web_weld(props, V, wd["w"], wd["FEXX"], wd["Fu"], method, wd.get("l"), wd.get("s"), P, brg.get("lbp"))
+    inter = f"intermittent, {wd['l']:g} in. at {wd['s']:g} in. on centres" if wd.get("l") else "continuous"
+    rows = [Row("flange-to-web welds", "", r["demand"], r["R_w"], "kip/in", "AISC 360-22 Eq. J2-4; AISC Manual (16th Ed.) Eq. 8-2" + ("a" if method == "LRFD" else "b"),
+                f"{wd['w']:g} in. fillets both sides, E{wd['FEXX']:g}XX, {inter}"),
+            Row("web base metal at the flange welds", "", r["demand"], r["R_web"], "kip/in", "AISC 360-22 Eq. J4-4 (Sect. J2.4, J4.2)", f"0.60 Fu tw, Fu = {wd['Fu']:g} ksi"),
+            Row("flange base metal at the welds", "", r["demand"], r["R_fl"], "kip/in", "AISC 360-22 Eq. J4-4", "two weld lines, 0.60 Fu tf"),
+            Row("flange-to-web weld, minimum size", "", r["wmin"], wd["w"], "in", "AISC 360-22 Table J2.4", "thinner part joined")]
+    if wd.get("l"):
+        rows.append(Row("intermittent weld length", "", r["lmin"], wd["l"], "in", "AISC 360-22 Sect. J2.2b(e)", "at least 4 w and 1-1/2 in."))
+    sheet.rows += rows
+    sheet.steps = list(sheet.steps) + [
+        steel_beam.Line("Q of the flange about the neutral axis, larger of top and bottom", r["Q"], "in3", "statics", f"top {r['Qt']:.1f}, bottom {r['Qb']:.1f} in3"),
+        steel_beam.Line("Shear flow, q = V Q / Ix", r["q"], "kip/in", "AISC Design Examples v16.0 Example F.14", f"V = {V:.2f} kip (the largest), Ix = {Ix:,.0f} in4; both welds together")] + (
+        [steel_beam.Line("With the concentrated load on the top flange, (q^2 + (P / (lb + 5 tf))^2)^0.5", r["q_top"], "kip/in", "statics",
+                         f"P = {P:.2f} kip over lb + 5 tf = {brg['lbp'] + 5 * props['tft']:.3g} in.")] if r["fv"] else [])
+    sheet.assumptions.append(f"Built-up section: flanges welded to the web with {wd['w']:g} in. fillets on both sides ({inter}).")
 
 
 def _signed(check, props, Fy, Lb_in, Cb, method, M_seg, M_abs):
@@ -425,7 +453,7 @@ def _bu_bearing(mark, sheet, props, Fy, method, results, combos_=None, span_=Non
 
 
 def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
-        include_self_weight, self_weight_case="D", spans=None, overhang_left=0.0, overhang_right=0.0, fixed=False, bu_stiff=None, bu_brg=None):
+        include_self_weight, self_weight_case="D", spans=None, overhang_left=0.0, overhang_right=0.0, fixed=False, bu_stiff=None, bu_brg=None, bu_weld=None):
     """bracing: "continuous", or a list of brace locations in ft (ends are added)."""
     if method not in ("ASD", "LRFD"):
         raise WorksheetError("method must be ASD or LRFD")
@@ -457,6 +485,10 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
             raise WorksheetError(f"{mark}: the stiffener spacings must be positive")
         st_.update(a=float(aa[0]), panels=[float(x) for x in aa] if len(aa) > 1 else None)
         props = dict(props, stiff=st_)
+    if bu_weld:
+        if props.get("type") != "BU":
+            raise WorksheetError(f"{mark}: the flange-to-web welds are for a built-up section (BU ...)")
+        props = dict(props, weld=bu_weld)
     if bu_brg:
         if props.get("type") != "BU":
             raise WorksheetError(f"{mark}: the bearing checks at the supports are for a built-up section (BU ...)")
@@ -642,6 +674,7 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
             f"{E:.0f} x {props['Ix']:.0f}"))
     if not defl_checks:
         sheet.assumptions.append("No deflection limit was given; deflection is not checked.")
+    sheet._combos = combos
     _bu_welds(sheet, props, method)
     if props.get("stiff"):
         _bu_stiffeners(mark, sheet, props, Fy, method, [(cb.name, _solve(span_ft, EI, all_loads, cb.factors)) for cb in combos], span_ft)
@@ -740,6 +773,7 @@ def _run_continuous(mark, shape, Fy, lay, all_loads, combos, defl_checks, segs, 
             "of live and snow load on one cantilever or both (ASCE/SEI 7-22 Sect. 4.3.3, 7.5.1).",
             "The bottom flange is braced at the support and at the listed brace points only; Cb = 1.0 for a segment that reaches a free end (AISC 360-22 Sect. F1).",
             "Reactions shown are for both cantilevers loaded. The connection to the column and the column are checked separately."]
+    sheet._combos = combos
     _bu_welds(sheet, props, method)
     if props.get("stiff"):
         _bu_stiffeners(mark, sheet, props, Fy, method, bu_res, L_ft, supports=list(lay.supports), total=L_ft)

@@ -231,3 +231,36 @@ def test_continuous_stiffened_girder_by_hand():
     assert r["web local yielding at the interior supports"].capacity == pytest.approx(210.94, abs=0.01)
     assert r["web local crippling at the interior supports"].capacity == pytest.approx(0.75 * 0.80 * 0.3125 ** 2 * (1 + 3 * (6 / 36) * (0.3125 / 1.5) ** 1.5)
                                                                                      * (29000 * 50 * 1.5 / 0.3125) ** 0.5, rel=1e-6)
+
+
+@pytest.mark.parametrize("method, V, q, Rw", [("LRFD", 281, 3.74, 1.392 * 3 * 2), ("ASD", 207, 2.76, 0.928 * 3 * 2)])
+def test_f14_flange_to_web_welds(method, V, q, Rw):
+    """AISC Design Examples v16.0 Example F.14, flange-to-web welds: Q = 14 (2)(62 / 2 + 2 / 2) = 896 in3, Ix = 67,300 in4; Vu = 281 / Va = 207 kips,
+    q = 3.74 / 2.76 kip/in.; 3/16 in. fillets both sides (Table J2.4 minimum for the 1/2 in. web): 1.392 / 0.928 x 3 x 2 = 8.35 / 5.57 kip/in.;
+    web rupture 0.75 (0.60)(65)(0.5) = 14.6 / 9.75 kip/in.; intermittent 3/16 in., 6 in. at 12 in.: 4.18 / 2.78 kip/in. (the example needs 5.37 /
+    5.95 in. of every 12 in.)."""
+    proj = dict(method=method, combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[dict(expr="D + L", source="t")], name="t", number="t", date="2026-11-26")
+    v = dict(mark="G14", shape="BU 14x2 / 62x1/2 / 14x2", Fy="50", span="50", more_spans="", oh_left="", oh_right="", bracing="at points", brace_pts="12.5, 25, 37.5",
+             self_weight="yes", loads=[dict(case="D", kind="point", mag="240", x1="25", x2="", label=""), dict(case="L", kind="point", mag="160", x1="25", x2="", label="")],
+             defl=[], bu_weld="0.1875", bu_FEXX="70", bu_Fu="65")
+    s = calc.build("steel_beam", v, proj)[0]
+    r = {x.check: x for x in s.rows}
+    w = r["flange-to-web welds"]
+    assert r["shear"].demand == pytest.approx(V, rel=0.005) and w.demand == pytest.approx(q, abs=0.015) and w.capacity == pytest.approx(Rw, rel=0.001)
+    assert r["web base metal at the flange welds"].capacity == pytest.approx((0.75 if method == "LRFD" else 0.5) * 0.6 * 65 * 0.5, rel=1e-6)
+    assert r["flange-to-web weld, minimum size"].demand == pytest.approx(0.1875)
+    s2 = calc.build("steel_beam", dict(v, bu_weld_l="6", bu_weld_s="12"), proj)[0]
+    r2 = {x.check: x for x in s2.rows}
+    assert r2["flange-to-web welds"].capacity == pytest.approx(Rw / 2, rel=0.001) and r2["flange-to-web welds"].status != "FLAG"
+    assert r2["intermittent weld length"].demand == pytest.approx(1.5)
+    with pytest.raises(calc.Missing):
+        calc.build("steel_beam", dict(v, bu_Fu=""), proj)
+
+
+def test_flange_welds_under_a_concentrated_load_by_hand():
+    """A point load on the top flange with no stiffener adds P / (lb + 5 tf) to the top welds, added to the shear flow as a vector (by hand):
+    G.8A girder, 40 kips live at 20 ft on 8 in.: LRFD P = 64 kips over 8 + 5 (1.5) = 15.5 in. = 4.13 kip/in."""
+    p = builtup.props("BU 16x1-1/2 / 33x5/16 / 16x1-1/2")
+    r = builtup.flange_web_weld(p, 100.0, 0.25, 70, 65, "LRFD", P=64.0, lb=8.0)
+    q = 100.0 * r["Qt"] / p["Ix"]
+    assert r["fv"] == pytest.approx(64 / 15.5) and r["demand"] == pytest.approx((q ** 2 + (64 / 15.5) ** 2) ** 0.5)

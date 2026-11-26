@@ -1055,3 +1055,14 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation:** statics and Table 3-23 by hand (two-span support moment w L^2 / 8, shear 5 w L / 8, Cb 2.27 from the quarter-point moments,
   overhang span moment 1.218 kip-ft, two-span deflection with live on one span 0.0092 w L^4 / E I); the F10 / H2 sum at the governing station;
   the negative beta_w; the 3D frame against the Commentary F10.2 ratios (1.572 down, 0.949 sideways) (`tests/test_angle_beam.py`).
+
+## 2026-11-26 15:30 MST — 0.265.0 built-up beams: flange-to-web welds checked (Next 1)
+- (Zach 15:05: "I agree with your conservative rules. Keep going." The 0.257.0 to 0.264.0 readings are ruled; see the rulings file.)
+- **Steel Beam screen, built-up sections: flange-to-web fillet weld size, electrode, plate Fu, and intermittent length / spacing** (blank weld
+  = the shear flow is only stated, as before). Checks (`builtup.flange_web_weld`): shear flow V Q / Ix at the flange with the larger Q; weld
+  strength both sides (Eq. J2-4, Manual Eq. 8-2a / 8-2b); web base metal 0.60 Fu tw; flange base metal; minimum size (Table J2.4); intermittent
+  welds by l / s with l at least 4 w and 1-1/2 in. (Sect. J2.2b(e)); a point load on the top flange without a stiffener adds P / (lb + 5 tf)
+  to the top welds as a vector. The section picture shows the four fillets.
+- **Validation: AISC Design Examples v16.0 Example F.14**, LRFD and ASD on the Steel Beam screen with the example's loads (V 281 / 207 kips, q
+  3.74 / 2.76 kip/in., 3/16 in. welds 8.35 / 5.57 kip/in., web rupture 14.6 / 9.75 kip/in., 6 in. at 12 in. intermittent) (`tests/test_builtup.py`);
+  the concentrated load term by hand.
