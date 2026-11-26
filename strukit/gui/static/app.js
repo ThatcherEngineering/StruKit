@@ -745,9 +745,13 @@ function placementCard(m, changed) {
   if (post) fs.push({ key: "at_base", label: brace ? "Level at its lower end" : "Level at its base", type: "select", options: levels, required: false, help: "blank = " + levels[0] });
   fs.push({ key: "at_x1", label: brace ? "Lower end, X" : beam ? "Left end, X" : "Position, X", type: "text", required: false, help: pos }, { key: "at_y1", label: brace ? "Lower end, Y" : beam ? "Left end, Y" : "Position, Y", type: "text", required: false, help: pos });
   if (beam) fs.push({ key: "at_x2", label: brace ? "Upper end, X" : "Right end, X", type: "text", required: false, help: pos }, { key: "at_y2", label: brace ? "Upper end, Y" : "Right end, Y", type: "text", required: false, help: pos });
+  if (m.kind === "footing_cont") fs.push({ key: "at_x2", label: "Other end of the footing, X", type: "text", required: false, help: "blank = a point; with both ends the footing is a line that walls and joist rows bear on" },
+    { key: "at_y2", label: "Other end of the footing, Y", type: "text", required: false, help: pos });
   if (brace) fs.push({ key: "at_brace", label: "In the 3D frame this brace takes", type: "select", options: ["tension only", "tension and compression"], required: false, help: m.kind === "tension_member" ? "blank = tension only" : "blank = tension and compression" });
   if (TD_BEAMS.includes(m.kind)) fs.push({ key: "at_dz1", label: "Left end above the level (sloped member)", unit: "ft", type: "text", required: false, help: "blank = at the level, or following the sloped beam it sits on" },
     { key: "at_dz2", label: "Right end above the level", unit: "ft", type: "text", required: false });
+  if (TD_BEAMS.includes(m.kind)) fs.push({ key: "at_row", label: "Joists or rafters: the row runs on, to its left or right, for", unit: "ft", type: "text", required: false,
+    help: "for a member with a spacing; + to the right of its line looking from the left end to the right end, - to the left; blank = the row covers the whole beam it lands on" });
   if (m.kind === "steel_beam") fs.push({ key: "at_fix_i", label: "Left end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false, help: "blank = pinned (shear connection)" },
     { key: "at_fix_j", label: "Right end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false });
   if (m.kind === "steel_column" || m.kind === "hss_column") fs.push({ key: "at_base_fix", label: "Base (3D frame)", type: "select", options: ["pinned", "fixed", "fixed for sway in X only", "fixed for sway in Y only"], required: false, help: "blank = pinned" },
@@ -778,7 +782,9 @@ function planSvg(plan, level) {
   items.forEach(i => {
     if (i.p2) {
       const joist = false;
-      add("line", { x1: X(i.p1[0]), y1: Y(i.p1[1]), x2: X(i.p2[0]), y2: Y(i.p2[1]), stroke: i.wall ? "#8A5A2B" : "#213651", "stroke-width": fsz * (i.wall ? 0.7 : 0.28), "stroke-linecap": i.wall ? "butt" : "round" });
+      const ftg = i.kind === "footing_cont";
+      add("line", Object.assign({ x1: X(i.p1[0]), y1: Y(i.p1[1]), x2: X(i.p2[0]), y2: Y(i.p2[1]), stroke: i.wall ? "#8A5A2B" : ftg ? "#3A4756" : "#213651",
+        "stroke-width": fsz * (i.wall ? 0.7 : ftg ? 0.9 : 0.28), "stroke-linecap": i.wall || ftg ? "butt" : "round" }, ftg ? { "stroke-opacity": 0.35 } : {}));
       const horiz = Math.abs(i.p2[0] - i.p1[0]) >= Math.abs(i.p2[1] - i.p1[1]);
       add("text", { x: (X(i.p1[0]) + X(i.p2[0])) / 2 + (horiz ? 0 : fsz * 0.4), y: (Y(i.p1[1]) + Y(i.p2[1])) / 2 - (horiz ? fsz * 0.4 : 0), "font-size": fsz, fill: "#1B2430", "text-anchor": horiz ? "middle" : "start" }, i.mark);
     } else if (i.kind === "footing_iso" || i.kind === "footing_cont") {
@@ -804,6 +810,8 @@ function view3dSvg(view) {
   const segs = [];
   items.forEach(i => {
     if (i.type === "wall") { const a2 = [i.a[0], i.a[1], i.zb], b2 = [i.b[0], i.b[1], i.zb]; segs.push({ poly: [i.a, i.b, b2, a2], item: i }); }
+    else if (i.type === "footing" && i.b) { const z = i.a[2], dx = i.b[0] - i.a[0], dy = i.b[1] - i.a[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, s = 1.0;
+      segs.push({ poly: [[i.a[0] + nx * s, i.a[1] + ny * s, z], [i.b[0] + nx * s, i.b[1] + ny * s, z], [i.b[0] - nx * s, i.b[1] - ny * s, z], [i.a[0] - nx * s, i.a[1] - ny * s, z]], item: i }); }
     else if (i.type === "footing") { const s = 1.5, z = i.a[2]; segs.push({ poly: [[i.a[0] - s, i.a[1] - s, z], [i.a[0] + s, i.a[1] - s, z], [i.a[0] + s, i.a[1] + s, z], [i.a[0] - s, i.a[1] + s, z]], item: i }); }
     else segs.push({ line: [i.a, i.b], item: i });
   });

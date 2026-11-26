@@ -2593,6 +2593,22 @@ def case_reactions(kind, values, project):
         if not tot:
             return dict(error="That member has no loads yet.")
         return _governing(dict(supports=[dict(name="base", x_ft=0.0, cases=tot)], notes=notes), project)
+    if kind in MODEL_WALLS:                                   # a bearing wall in the building model: the loads that bear on it, by case
+        tot = {}
+        for row in v.get("loads") or []:
+            if not (isinstance(row, dict) and isinstance(row.get("link"), dict)):
+                continue
+            try:
+                P = float(str(row.get("P", "")).replace(",", ""))
+            except ValueError:
+                continue
+            c = str(row.get("case") or "").strip()
+            if c:
+                tot[c] = tot.get(c, 0.0) + P
+        if not tot:
+            return dict(error="Nothing in the building model bears on that wall.")
+        return _governing(dict(supports=[dict(name="base", x_ft=0.0, cases=tot)],
+                               notes=["a wall passes down what bears on it; its own weight is not included"]), project)
     if kind not in TAKEDOWN_BEAMS:
         return dict(error="Reactions can be taken from a beam, a joist, a post or a column.")
     cases = []
@@ -2647,6 +2663,9 @@ def _links(member):
     if member.get("kind") in TAKEDOWN_FOOTINGS:
         if isinstance(v.get("link"), dict) and v["link"].get("src"):
             out.append(v["link"])
+        for lk in v.get("links") or []:
+            if isinstance(lk, dict) and lk.get("src") and lk not in out:
+                out.append(lk)
         return out
     for row in v.get("loads") or []:
         lk = row.get("link") if isinstance(row, dict) else None
@@ -2659,6 +2678,8 @@ def link_tag(lk):
     n = float(lk.get("count") or 1)
     if lk.get("mode") == "line":
         return f"reaction of {lk['src']}, {lk['support']}, as a line at {float(lk.get('spacing_in') or 0):g} in. o.c."
+    if lk.get("mode") == "wall":
+        return f"load down wall {lk['src']}, spread over its {float(lk.get('length_ft') or 0):g} ft"
     return f"reaction of {lk['src']}, {lk['support']}" + (f" x {n:g}" if n != 1 else "")
 
 
@@ -2692,6 +2713,7 @@ def takedown(project, members):
     if problems:
         return dict(members=members, links=[], problems=problems)
     report = []
+    foot_acc = {}
     for m in order:
         v, kind = m.get("values") or {}, m.get("kind")
         mark = v.get("mark") or "(no mark)"
@@ -2714,9 +2736,26 @@ def takedown(project, members):
                 if not sup.get("service") or not sup.get("strength"):
                     problems.append(f"{mark}: both ASD and LRFD load combinations are needed on the Project page to fill a footing")
                     continue
-                v.update(P_service=str(round(sup["service"]["P"] * n)), service_combo=sup["service"]["name"], Pu=str(round(sup["strength"]["P"] * n)),
-                         strength_combo=sup["strength"]["name"], loads_from=link_tag(lk))
-                line.update(total=sup["service"]["P"] * n, unit="lb service")
+                per = float(lk.get("per_ft") or 0)                  # a wall or joist row on a continuous footing: load per foot
+                k_ = n / per if per else n
+                acc = foot_acc.setdefault(id(m), dict(cases={}, tags=[], per=bool(per)))
+                for c, val in sup["cases"].items():
+                    acc["cases"][c] = acc["cases"].get(c, 0.0) + val * k_
+                acc["tags"].append(link_tag(lk) + (f", per foot" if per else ""))
+                line.update(total=sup["service"]["P"] * k_, unit="lb/ft service" if per else "lb service")
+            elif kind in MODEL_WALLS:
+                rows = [r for r in (v.get("loads") or []) if not (isinstance(r, dict) and r.get("link") == lk)]
+                for c, val in sup["cases"].items():
+                    if abs(val) < 0.5:
+                        continue
+                    if lk.get("mode") == "line":                     # a row of joists: per joist x 12 / spacing x the length it covers on the wall
+                        sp = float(lk.get("spacing_in") or 0)
+                        tot = val * 12.0 / sp * float(lk.get("cover_ft") or 0) if sp > 0 else 0.0
+                    else:
+                        tot = val * n
+                    rows.append(dict(case=c, P=str(round(tot)), label=link_tag(lk), link=dict(lk)))
+                v["loads"] = rows
+                line.update(total=sum(float(r["P"]) for r in rows if r.get("link") == lk), unit="lb, all cases")
             else:
                 kip = kind in TAKEDOWN_KIP
                 f = (0.001 if kip else 1.0) * n
@@ -2726,7 +2765,11 @@ def takedown(project, members):
                     if abs(val) < 0.5:
                         continue
                     amt = str(round(val * f, 3)) if kip else str(round(val * f))
-                    if beam and lk.get("mode") == "line":
+                    if beam and lk.get("mode") == "wall":
+                        w = val / float(lk.get("length_ft") or 1) * (0.001 if kip else 1.0)
+                        rows.append(dict(case=c, kind="uniform", mag=(str(round(w, 4)) if kip else str(round(w, 1))), mag2="", x1=str(lk.get("x", "")), x2=str(lk.get("x2", "")),
+                                         label=link_tag(lk), link=dict(lk)))
+                    elif beam and lk.get("mode") == "line":
                         sp = float(lk.get("spacing_in") or 0)
                         if sp <= 0:
                             problems.append(f"{mark}: the joist spacing of {lk['src']} is missing")
@@ -2741,6 +2784,12 @@ def takedown(project, members):
                 v["loads"] = rows
                 line.update(total=sum(sup["cases"].values()) * n, unit="lb, all cases")
             report.append(line)
+        acc = foot_acc.get(id(m))
+        if acc and kind in TAKEDOWN_FOOTINGS:                  # everything on the footing together, then the governing combinations
+            g = _governing(dict(supports=[dict(name="base", x_ft=0.0, cases=acc["cases"])], notes=[]), project)["supports"][0]
+            if g.get("service") and g.get("strength"):
+                v.update(P_service=str(round(g["service"]["P"])), service_combo=g["service"]["name"], Pu=str(round(g["strength"]["P"])),
+                         strength_combo=g["strength"]["name"], loads_from="; ".join(acc["tags"]))
     return dict(members=ms, links=report, problems=problems)
 
 
@@ -2778,6 +2827,11 @@ def _coord(text, grids):
     return None
 
 
+def _lvl_index(project, name):
+    lv = [str(l.get("name") or "").strip() for l in ((project or {}).get("model") or {}).get("levels") or []]
+    return lv.index(name) if name in lv else 0
+
+
 def model_place(project, member):
     """Where a member sits in the building model, from its placement boxes: dict(level, base, p1=(x, y), p2=(x, y) or None), or None
     when it is not placed. Raises ValueError with a plain message when the boxes are filled but cannot be read."""
@@ -2796,6 +2850,11 @@ def model_place(project, member):
         if x2 is None or y2 is None:
             raise ValueError(f"{mark}: a beam, joist, wall or brace needs the position of both ends")
         p2 = (x2, y2)
+    elif member.get("kind") == "footing_cont" and str(v.get("at_x2") or "").strip():
+        x2, y2 = _coord(v.get("at_x2"), gx), _coord(v.get("at_y2"), gy)
+        if x2 is None or y2 is None:
+            raise ValueError(f"{mark}: the other end of the continuous footing cannot be read")
+        p2 = (x2, y2)
     levels = [str(l.get("name") or "").strip() for l in mdl.get("levels") or []]
     lvl = str(v.get("at_level") or "").strip()
     if member.get("kind") in TAKEDOWN_FOOTINGS:
@@ -2803,6 +2862,8 @@ def model_place(project, member):
     elif lvl not in levels:
         raise ValueError(f"{mark}: its level, '{lvl}', is not in the list of levels on the Project page")
     base = str(v.get("at_base") or "").strip() or (levels[0] if levels else "")
+    if member.get("kind") in MODEL_WALLS and lvl in levels and levels.index(lvl) > 0:
+        base = levels[levels.index(lvl) - 1]                 # a wall stands on the level below its top
     return dict(level=lvl, base=base, p1=(x1, y1), p2=p2)
 
 
@@ -2826,6 +2887,8 @@ def model_links(project, members):
         v = m.get("values") or {}
         if isinstance(v.get("link"), dict) and v["link"].get("auto"):
             v.pop("link", None)
+        if isinstance(v.get("links"), list):
+            v["links"] = [lk for lk in v["links"] if not (isinstance(lk, dict) and lk.get("auto"))]
         if isinstance(v.get("loads"), list):
             v["loads"] = [r for r in v["loads"] if not (isinstance(r, dict) and isinstance(r.get("link"), dict) and r["link"].get("auto"))]
     dist = lambda a, b: math.hypot(a[0] - b[0], a[1] - b[1])
@@ -2844,27 +2907,82 @@ def model_links(project, members):
         if posts:
             return posts, None
         beams = []
+        mine = next((p_ for m_, p_ in placed if m_ is me), None)
+        def parallel(pl):                                    # a member running the same way does not carry this one (two joists end to end)
+            if not mine or mine.get("p2") is None or pl.get("p2") is None:
+                return False
+            (ax_, ay_), (bx_, by_) = mine["p1"], mine["p2"]
+            (cx_, cy_), (dx_, dy_) = pl["p1"], pl["p2"]
+            u_, w_ = math.hypot(bx_ - ax_, by_ - ay_), math.hypot(dx_ - cx_, dy_ - cy_)
+            return u_ > 0 and w_ > 0 and abs((bx_ - ax_) * (dy_ - cy_) - (by_ - ay_) * (dx_ - cx_)) / (u_ * w_) < 0.09
         for m, pl in placed:
-            if m is me or m["kind"] not in TAKEDOWN_BEAMS or pl["level"] != level:
+            if m is me or m["kind"] not in TAKEDOWN_BEAMS or pl["level"] != level or parallel(pl):
                 continue
             a = along(pt, pl)
             if a and a[1] <= MODEL_TOL:
                 beams.append((m, pl, max(0.0, a[0])))
         if beams:
             return [(m, pl) for m, pl, _ in beams], [x for _, _, x in beams]
+        walls = []
+        for m, pl in placed:
+            if m is me or m["kind"] not in MODEL_WALLS or pl["level"] != level:
+                continue
+            a = along(pt, pl)
+            if a and a[1] <= MODEL_TOL:
+                walls.append((m, pl, max(0.0, a[0])))
+        if walls:
+            return [(m, pl) for m, pl, _ in walls], [x for _, _, x in walls]
         if want_footing:
-            foots = [(m, pl) for m, pl in placed if m["kind"] in TAKEDOWN_FOOTINGS and dist(pl["p1"], pt) <= MODEL_TOL]
+            foots = [(m, pl) for m, pl in placed if m["kind"] in TAKEDOWN_FOOTINGS and pl.get("p2") is None and pl["level"] == level and dist(pl["p1"], pt) <= MODEL_TOL]
+            for m, pl in placed:
+                if m["kind"] == "footing_cont" and pl.get("p2") is not None and pl["level"] == level:
+                    a = along(pt, pl)
+                    if a and a[1] <= MODEL_TOL:
+                        foots.append((m, pl))
             if foots:
                 return foots, None
         return [], None
 
     made = 0
+    placed.sort(key=lambda t: (t[0]["kind"] in MODEL_WALLS, -_lvl_index(project, t[1]["level"]) if t[0]["kind"] in MODEL_WALLS else 0))
     for m, pl in placed:
         v, kind = m["values"], m["kind"]
         mark = v.get("mark") or "(no mark)"
         if not str(v.get("mark") or "").strip():
             problems.append("A placed member has no mark; links are kept by mark"); continue
-        if kind in TAKEDOWN_FOOTINGS or kind in MODEL_WALLS:
+        if kind in TAKEDOWN_FOOTINGS:
+            continue
+        if kind in MODEL_WALLS:
+            if not any(isinstance(r, dict) and isinstance(r.get("link"), dict) for r in (v.get("loads") or [])):
+                continue                                         # nothing bears on this wall: it passes nothing down
+            (wx1, wy1), (wx2, wy2) = pl["p1"], pl["p2"]
+            wl = math.hypot(wx2 - wx1, wy2 - wy1)
+            under = []
+            for m2, pl2 in placed:
+                if m2 is m:
+                    continue
+                if ((m2["kind"] in TAKEDOWN_BEAMS + MODEL_WALLS and pl2["level"] == pl["base"] and pl["base"] != pl["level"])
+                        or (m2["kind"] == "footing_cont" and pl2.get("p2") is not None and pl2["level"] == pl["base"])):
+                    a1, a2 = along(pl["p1"], pl2), along(pl["p2"], pl2)
+                    if a1 and a2 and a1[1] <= MODEL_TOL and a2[1] <= MODEL_TOL:
+                        under.append((m2, pl2, a1[0], a2[0]))
+            if not under:
+                continue                                        # a wall with nothing modelled under it keeps its loads; reported below if it carries any
+            if len(under) > 1:
+                problems.append(f"{mark}: more than one member is under the wall ({', '.join(u[0]['values'].get('mark') or '?' for u in under)}); link it by hand"); continue
+            tgt, tpl, t1, t2 = under[0]
+            tv = tgt["values"]
+            lk = dict(src=v["mark"], support="base", count=1, auto=True)
+            if tgt["kind"] == "footing_cont":
+                lk["per_ft"] = round(wl, 4)
+                tv.setdefault("links", []).append(lk)
+            elif tgt["kind"] in MODEL_WALLS:
+                lk.update(mode="wall", length_ft=round(wl, 4))
+                tv.setdefault("loads", []).append(dict(case="D", P="0", label="", link=lk))
+            else:
+                lk.update(mode="wall", length_ft=round(wl, 4), x=f"{min(t1, t2):.3f}".rstrip("0").rstrip("."), x2=f"{max(t1, t2):.3f}".rstrip("0").rstrip("."))
+                tv.setdefault("loads", []).append(dict(case="D", kind="uniform", mag="0", mag2="", x1=lk["x"], x2=lk["x2"], label="", link=lk))
+            made += 1
             continue
         if kind in TAKEDOWN_POSTS:
             got = dict(supports=[dict(name="base", x_ft=0.0)])   # its loads come down the path; only the position is needed here
@@ -2880,7 +2998,7 @@ def model_links(project, members):
             Lt_all = Lt + num("oh_right")
             if abs(Lm - Lt_all) > max(0.1, 0.005 * Lt_all):
                 problems.append(f"{mark}: placed {Lm:.2f} ft long in the model, but its spans add up to {Lt_all:.2f} ft"); continue
-            pts = [(s_, (ax + (bx - ax) * s_["x_ft"] / Lm, ay + (by - ay) * s_["x_ft"] / Lm), pl["level"], False) for s_ in got["supports"]]
+            pts = [(s_, (ax + (bx - ax) * s_["x_ft"] / Lm, ay + (by - ay) * s_["x_ft"] / Lm), pl["level"], True) for s_ in got["supports"]]
         else:
             pts = [(got["supports"][0], pl["p1"], pl["base"], True)]
         for sup, pt, level, want_footing in pts:
@@ -2894,13 +3012,54 @@ def model_links(project, members):
             tgt = cs[0][0]
             tv = tgt["values"]
             lk = dict(src=v["mark"], support=sup["name"], count=1, auto=True)
-            if tgt["kind"] in TAKEDOWN_FOOTINGS:
-                tv["link"] = lk
+            if tgt["kind"] in TAKEDOWN_FOOTINGS and tgt["kind"] == "footing_cont" and cs[0][1].get("p2") is not None:
+                sp = num("spacing") if kind in TAKEDOWN_BEAMS else 0
+                if sp <= 0:
+                    problems.append(f"{mark}, {sup['name']}: a point load on continuous footing {tv.get('mark')} is not spread along it; check it as an isolated footing or link it by hand")
+                    continue
+                lk["per_ft"] = round(sp / 12.0, 4)           # a row of joists straight onto a footing line: per foot = per joist x 12 / spacing
+                tv.setdefault("links", []).append(lk)
+            elif tgt["kind"] in TAKEDOWN_FOOTINGS:
+                tv.setdefault("links", []).append(lk)
+            elif tgt["kind"] in MODEL_WALLS:
+                sp = num("spacing") if kind in TAKEDOWN_BEAMS else 0
+                if sp > 0:
+                    (wx1, wy1), (wx2, wy2) = cs[0][1]["p1"], cs[0][1]["p2"]
+                    wl_ = math.hypot(wx2 - wx1, wy2 - wy1)
+                    cover = wl_
+                    rw = str(v.get("at_row") or "").strip()
+                    try:
+                        cover = min(abs(float(rw)), wl_) if rw else wl_
+                    except ValueError:
+                        pass
+                    lk.update(mode="line", spacing_in=sp, cover_ft=round(cover, 4))
+                rows = tv.setdefault("loads", [])
+                if not any(isinstance(r, dict) and isinstance(r.get("link"), dict) and r["link"].get("src") == lk["src"] and r["link"].get("support") == lk["support"] for r in rows):
+                    rows.append(dict(case="D", P="0", label="", link=lk))
             else:
                 if tgt["kind"] in TAKEDOWN_BEAMS:
                     sp = num("spacing") if kind in TAKEDOWN_BEAMS else 0
                     if sp > 0:
                         lk.update(mode="line", spacing_in=sp, x="")
+                        rw = str(v.get("at_row") or "").strip()
+                        if rw:                                       # the row covers only part of the beam it lands on
+                            try:
+                                W = float(rw)
+                            except ValueError:
+                                problems.append(f"{mark}: the row width '{rw}' is not a number"); W = None
+                            if W:
+                                (jx1, jy1), (jx2, jy2) = pl["p1"], pl["p2"]
+                                jl = math.hypot(jx2 - jx1, jy2 - jy1)
+                                right = ((jy2 - jy1) / jl, -(jx2 - jx1) / jl)      # to the right of the joist, looking from p1 to p2
+                                tp = cs[0][1]
+                                (bx1, by1), (bx2, by2) = tp["p1"], tp["p2"]
+                                bl = math.hypot(bx2 - bx1, by2 - by1)
+                                proj = (right[0] * (bx2 - bx1) + right[1] * (by2 - by1)) / bl
+                                a0 = xs[0]
+                                a1 = a0 + W * proj
+                                lo, hi = max(0.0, min(a0, a1)), min(bl, max(a0, a1))
+                                if hi - lo > 1e-6:
+                                    lk.update(x=f"{lo:.3f}".rstrip("0").rstrip("."), x2=f"{hi:.3f}".rstrip("0").rstrip("."))
                     else:
                         lk["x"] = f"{xs[0]:.3f}".rstrip("0").rstrip(".")
                 rows = tv.setdefault("loads", [])
@@ -2910,6 +3069,11 @@ def model_links(project, members):
                 rows.append(dict(case="D", kind="point", mag="0", mag2="", x1=lk.get("x", ""), x2="", label="", link=lk) if tgt["kind"] in TAKEDOWN_BEAMS
                             else dict(case="D", P="0", label="", link=lk))
             made += 1
+    for m, pl in placed:                                     # a wall that carries something but stands on nothing modelled
+        if m["kind"] in MODEL_WALLS and any(isinstance(r, dict) and isinstance(r.get("link"), dict) for r in (m["values"].get("loads") or [])):
+            mk = m["values"].get("mark")
+            if not any(lk2.get("src") == mk for m2, _ in placed for lk2 in _links(m2)):
+                problems.append(f"{mk}: loads bear on this wall but nothing in the model is under it (a footing line or a beam on level {pl['base']}); its loads stop here")
     out = takedown(project, ms)
     out["problems"] = problems + out["problems"]
     out["placed"] = len(placed)
@@ -2997,7 +3161,7 @@ def lateral_wind(project, members, wind_mark=None, load="wind"):
             w = None
         else:
             try:
-                w = max(_wind.line_load(r, z_lo, z_hi)["w"] for r in cases)
+                w = max(_wind.line_load(r, z_lo, min(z_hi, max(r["top_w"], r["top_l"])))["w"] for r in cases)   # each wind case to its own wall top
             except Exception as e:
                 problems.append(f"Level {name}: {e}"); continue
         here = [(m, pl) for m, pl in placed if pl["level"] == name]
@@ -3151,7 +3315,7 @@ def model_view(project, members):
         mark = (m.get("values") or {}).get("mark") or ""
         if kind in TAKEDOWN_FOOTINGS:
             z = el.get(pl["base"], levels[0][1] if levels else 0.0)
-            items.append(dict(mark=mark, kind=kind, type="footing", a=(*pl["p1"], z), b=None))
+            items.append(dict(mark=mark, kind=kind, type="footing", a=(*pl["p1"], z), b=(*pl["p2"], z) if pl.get("p2") else None))
             continue
         if pl["level"] not in el:
             continue

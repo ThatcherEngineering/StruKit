@@ -1,0 +1,1213 @@
+{
+ "format": "strukit-project",
+ "version": 1,
+ "project": {
+  "name": "Humbargar Residence Addition, building model (test)",
+  "number": "2026-011",
+  "address": "441 Senter Drive, Castle Rock, CO 80104",
+  "date": "2026-11-23",
+  "method": "ASD",
+  "combos_asd": [
+   {
+    "expr": "D + L",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 2"
+   },
+   {
+    "expr": "D + Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 3"
+   },
+   {
+    "expr": "D + 0.75L + 0.75Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.4.1, combination 4"
+   }
+  ],
+  "combos_lrfd": [
+   {
+    "expr": "1.2D + 1.6L + 0.5Lr",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 2"
+   },
+   {
+    "expr": "1.2D + 1.6Lr + 1.0L",
+    "source": "ASCE/SEI 7-22 Sect. 2.3.1, combination 3"
+   }
+  ],
+  "model": {
+   "levels": [
+    {
+     "name": "Foundation",
+     "elev": "0"
+    },
+    {
+     "name": "Main floor",
+     "elev": "9.5"
+    },
+    {
+     "name": "Roof",
+     "elev": "19"
+    }
+   ],
+   "grids_x": [
+    {
+     "name": "1",
+     "at": "0"
+    },
+    {
+     "name": "2",
+     "at": "9.0833"
+    },
+    {
+     "name": "3",
+     "at": "11.2"
+    },
+    {
+     "name": "4",
+     "at": "18.1667"
+    },
+    {
+     "name": "5",
+     "at": "27.25"
+    }
+   ],
+   "grids_y": [
+    {
+     "name": "A",
+     "at": "0"
+    },
+    {
+     "name": "B",
+     "at": "4.5"
+    },
+    {
+     "name": "C",
+     "at": "14.896"
+    },
+    {
+     "name": "D",
+     "at": "29.75"
+    }
+   ]
+  }
+ },
+ "members": [
+  {
+   "kind": "lvl_beam",
+   "values": {
+    "grade": "2.1E 2800",
+    "thickness": "1.75",
+    "depth": "11.875",
+    "bracing": "supported throughout",
+    "repetitive": "no",
+    "unit_weight": "",
+    "mark": "Floor Beam A",
+    "plies": "2",
+    "span": "9.0833",
+    "more_spans": "9.0833, 9.0833",
+    "lu_neg": "9.0833",
+    "bearing": "3",
+    "bearing_int": "3",
+    "snow_partial": "apply",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "10.68",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "self-weight"
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "project criteria, as in the sealed package"
+     }
+    ],
+    "at_level": "Main floor",
+    "at_x1": "0",
+    "at_y1": "14.896",
+    "at_x2": "27.25",
+    "at_y2": "14.896"
+   }
+  },
+  {
+   "kind": "lvl_beam",
+   "values": {
+    "grade": "2.1E 2800",
+    "thickness": "1.75",
+    "depth": "11.875",
+    "bracing": "supported throughout",
+    "repetitive": "no",
+    "unit_weight": "",
+    "mark": "Floor Beam B",
+    "plies": "3",
+    "span": "11.2",
+    "bearing": "3",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "315",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "wall dead"
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "16.02",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "self-weight"
+     }
+    ],
+    "defl": [
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "project criteria, as in the sealed package"
+     }
+    ],
+    "at_level": "Main floor",
+    "at_x1": "0",
+    "at_y1": "4.5",
+    "at_x2": "11.2",
+    "at_y2": "4.5"
+   }
+  },
+  {
+   "kind": "lvl_beam",
+   "values": {
+    "grade": "2.1E 2800",
+    "thickness": "1.75",
+    "depth": "11.875",
+    "bracing": "supported throughout",
+    "repetitive": "no",
+    "unit_weight": "",
+    "mark": "Floor Beam C",
+    "plies": "3",
+    "span": "14.896",
+    "bearing": "3",
+    "loads": [
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "16.02",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "self-weight"
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "project criteria, as in the sealed package"
+     }
+    ],
+    "at_level": "Main floor",
+    "at_x1": "11.2",
+    "at_y1": "0",
+    "at_x2": "11.2",
+    "at_y2": "14.896"
+   }
+  },
+  {
+   "kind": "ijoist",
+   "values": {
+    "mark": "FJ-left",
+    "name": "BCI 4500S-1.8",
+    "depth": "11.875",
+    "span": "10.396",
+    "spacing": "16",
+    "bearing": "3",
+    "stiffeners": "no",
+    "flange": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "area",
+      "mag": "40",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "floor live"
+     },
+     {
+      "case": "D",
+      "kind": "area",
+      "mag": "15",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "floor dead"
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "project criteria, as in the sealed package"
+     }
+    ],
+    "at_level": "Main floor",
+    "at_x1": "0.5",
+    "at_y1": "4.5",
+    "at_x2": "0.5",
+    "at_y2": "14.896",
+    "at_row": "10.7"
+   }
+  },
+  {
+   "kind": "ijoist",
+   "values": {
+    "mark": "FJ-right",
+    "name": "BCI 4500S-1.8",
+    "depth": "11.875",
+    "span": "14.896",
+    "spacing": "16",
+    "bearing": "3",
+    "stiffeners": "no",
+    "flange": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "area",
+      "mag": "40",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "floor live"
+     },
+     {
+      "case": "D",
+      "kind": "area",
+      "mag": "15",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "floor dead"
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "project criteria, as in the sealed package"
+     }
+    ],
+    "at_level": "Main floor",
+    "at_x1": "11.7",
+    "at_y1": "0",
+    "at_x2": "11.7",
+    "at_y2": "14.896",
+    "at_row": "15.55"
+   }
+  },
+  {
+   "kind": "ijoist",
+   "values": {
+    "mark": "FJ-lower",
+    "name": "BCI 4500S-1.8",
+    "depth": "11.875",
+    "span": "14.854",
+    "spacing": "16",
+    "bearing": "3",
+    "stiffeners": "no",
+    "flange": "yes",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "area",
+      "mag": "40",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "floor live"
+     },
+     {
+      "case": "D",
+      "kind": "area",
+      "mag": "15",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "floor dead"
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "project criteria, as in the sealed package"
+     }
+    ],
+    "at_level": "Main floor",
+    "at_x1": "0.5",
+    "at_y1": "14.896",
+    "at_x2": "0.5",
+    "at_y2": "29.75",
+    "at_row": "21"
+   }
+  },
+  {
+   "kind": "wood_beam",
+   "values": {
+    "species": "DOUGLAS FIR-LARCH",
+    "grade": "No. 2",
+    "service": "dry service",
+    "incised": "no",
+    "mark": "Deck Joist",
+    "size": "2x10",
+    "plies": "1",
+    "span": "4.5",
+    "spacing": "16",
+    "bracing": "supported throughout",
+    "bearing": "3",
+    "repetitive": "yes",
+    "unit_weight": "",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "area",
+      "mag": "60",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "deck live"
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "3.16",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "self-weight"
+     }
+    ],
+    "defl": [
+     {
+      "label": "live",
+      "expr": "L",
+      "ratio": "360",
+      "source": "project criteria, as in the sealed package"
+     }
+    ],
+    "at_level": "Main floor",
+    "at_x1": "0.5",
+    "at_y1": "0",
+    "at_x2": "0.5",
+    "at_y2": "4.5",
+    "at_row": "10.7"
+   }
+  },
+  {
+   "kind": "builtup_post",
+   "values": {
+    "species": "DOUGLAS FIR-LARCH",
+    "grade": "No. 2",
+    "service": "dry service",
+    "incised": "no",
+    "mark": "Column A",
+    "size": "2x6",
+    "plies": "3",
+    "fastening": "nailed",
+    "height": "9.5",
+    "lu_d": "9.5",
+    "lu_stack": "9",
+    "Ke_d": "1",
+    "Ke_stack": "1",
+    "k_source": "pinned top and bottom",
+    "unit_weight": "",
+    "loads": [
+     {
+      "case": "D",
+      "P": "54",
+      "label": "self-weight"
+     }
+    ],
+    "at_level": "Main floor",
+    "at_base": "Foundation",
+    "at_x1": "0",
+    "at_y1": "14.896"
+   }
+  },
+  {
+   "kind": "builtup_post",
+   "values": {
+    "species": "DOUGLAS FIR-LARCH",
+    "grade": "No. 2",
+    "service": "dry service",
+    "incised": "no",
+    "mark": "Column B",
+    "size": "2x6",
+    "plies": "3",
+    "fastening": "nailed",
+    "height": "9.5",
+    "lu_d": "9.5",
+    "lu_stack": "9",
+    "Ke_d": "1",
+    "Ke_stack": "1",
+    "k_source": "pinned top and bottom",
+    "unit_weight": "",
+    "loads": [
+     {
+      "case": "D",
+      "P": "54",
+      "label": "self-weight"
+     }
+    ],
+    "at_level": "Main floor",
+    "at_base": "Foundation",
+    "at_x1": "27.25",
+    "at_y1": "14.896"
+   }
+  },
+  {
+   "kind": "builtup_post",
+   "values": {
+    "species": "DOUGLAS FIR-LARCH",
+    "grade": "No. 2",
+    "service": "dry service",
+    "incised": "no",
+    "mark": "Post under Beam B",
+    "size": "2x6",
+    "plies": "4",
+    "fastening": "nailed",
+    "height": "9",
+    "lu_d": "9",
+    "lu_stack": "9",
+    "Ke_d": "1",
+    "Ke_stack": "1",
+    "k_source": "pinned top and bottom",
+    "unit_weight": "",
+    "loads": [],
+    "at_level": "Main floor",
+    "at_base": "Foundation",
+    "at_x1": "0",
+    "at_y1": "4.5"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "Pipe Column 1",
+    "shape": "PIPE3STD",
+    "Fy": "35",
+    "Fy_source": "ASTM A53 Gr. B, 3 in. Sch. 40 pipe (sheet S2)",
+    "height": "9.5",
+    "Kx": "1",
+    "Ky": "1",
+    "k_source": "pinned top and bottom",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Main floor",
+    "at_base": "Foundation",
+    "at_x1": "9.0833",
+    "at_y1": "14.896"
+   }
+  },
+  {
+   "kind": "hss_column",
+   "values": {
+    "mark": "Pipe Column 2",
+    "shape": "PIPE3STD",
+    "Fy": "35",
+    "Fy_source": "ASTM A53 Gr. B, 3 in. Sch. 40 pipe (sheet S2)",
+    "height": "9.5",
+    "Kx": "1",
+    "Ky": "1",
+    "k_source": "pinned top and bottom",
+    "self_weight": "yes",
+    "loads": [],
+    "moments": [],
+    "at_level": "Main floor",
+    "at_base": "Foundation",
+    "at_x1": "18.1667",
+    "at_y1": "14.896"
+   }
+  },
+  {
+   "kind": "footing_iso",
+   "values": {
+    "mark": "Footing A",
+    "B": "2.5",
+    "L": "2.5",
+    "h": "10",
+    "fc": "3000",
+    "fy": "60000",
+    "conc_pcf": "145",
+    "col_x": "4",
+    "col_y": "4",
+    "supported": "steel",
+    "plate_x": "6",
+    "plate_y": "6",
+    "bar": "5",
+    "n_x": "3",
+    "n_y": "3",
+    "cover": "3",
+    "bottom": "x",
+    "P_service": "7600",
+    "service_combo": "D + L",
+    "Pu": "12160",
+    "strength_combo": "1.2D + 1.6L + 0.5Lr",
+    "q_allow": "1500",
+    "soil_source": "presumptive value, as in the sealed package",
+    "at_x1": "9.0833",
+    "at_y1": "14.896"
+   }
+  },
+  {
+   "kind": "footing_iso",
+   "values": {
+    "mark": "Footing A2",
+    "B": "2.5",
+    "L": "2.5",
+    "h": "10",
+    "fc": "3000",
+    "fy": "60000",
+    "conc_pcf": "145",
+    "col_x": "4",
+    "col_y": "4",
+    "supported": "steel",
+    "plate_x": "6",
+    "plate_y": "6",
+    "bar": "5",
+    "n_x": "3",
+    "n_y": "3",
+    "cover": "3",
+    "bottom": "x",
+    "P_service": "7600",
+    "service_combo": "D + L",
+    "Pu": "12160",
+    "strength_combo": "1.2D + 1.6L + 0.5Lr",
+    "q_allow": "1500",
+    "soil_source": "presumptive value, as in the sealed package",
+    "at_x1": "18.1667",
+    "at_y1": "14.896"
+   }
+  },
+  {
+   "kind": "ijoist",
+   "values": {
+    "mark": "Roof joists",
+    "name": "BCI 90-2.0",
+    "depth": "16",
+    "span": "29.75",
+    "spacing": "24",
+    "bearing": "3.5",
+    "stiffeners": "no",
+    "rise": "0.25",
+    "flange": "yes",
+    "loads": [
+     {
+      "case": "Lr",
+      "kind": "area",
+      "mag": "40",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "roof live"
+     },
+     {
+      "case": "D",
+      "kind": "area",
+      "mag": "20",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead"
+     }
+    ],
+    "defl": [
+     {
+      "label": "total",
+      "expr": "D + Lr",
+      "ratio": "180",
+      "source": "project criteria, as in the sealed package"
+     }
+    ],
+    "at_level": "Roof",
+    "at_x1": "0.5",
+    "at_y1": "0",
+    "at_x2": "0.5",
+    "at_y2": "29.75",
+    "at_row": "26.75"
+   }
+  },
+  {
+   "kind": "ftao_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "mark": "Line 1, main level",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "h": "9",
+    "L1": "2.17",
+    "Lo": "3",
+    "L2": "2.67",
+    "ho": "1.5",
+    "sill": "5.17",
+    "load": "wind",
+    "V": "1523",
+    "v_source": "roof diaphragm 1523 lb, half the diaphragm load to each line",
+    "at_level": "Roof",
+    "at_x1": "0",
+    "at_y1": "0",
+    "at_x2": "27.25",
+    "at_y2": "0"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line A, main level",
+    "lengths": "7.58, 5.33, 4.67",
+    "V": "1417",
+    "v_source": "roof diaphragm 1417 lb, half the diaphragm load to each line",
+    "at_level": "Roof",
+    "at_x1": "0",
+    "at_y1": "0",
+    "at_x2": "0",
+    "at_y2": "29.75"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line B, main level",
+    "lengths": "5.33, 7.08, 4.17",
+    "V": "1417",
+    "v_source": "roof diaphragm 1417 lb, half the diaphragm load to each line",
+    "at_level": "Roof",
+    "at_x1": "27.25",
+    "at_y1": "0",
+    "at_x2": "27.25",
+    "at_y2": "22.58"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line 1, lower level",
+    "lengths": "16.75",
+    "V": "3982",
+    "v_source": "roof diaphragm 1523 lb + main floor diaphragm 2459 lb, half the diaphragm load to each line",
+    "hd_model": "STHD14",
+    "hd_stem": "8",
+    "hd_position": "end wall",
+    "hd_cracked": "cracked",
+    "above_T": "1748",
+    "above_source": "largest chord force of shear wall Line 1, main level, wind, ASD",
+    "at_level": "Main floor",
+    "at_x1": "0",
+    "at_y1": "0",
+    "at_x2": "27.25",
+    "at_y2": "0",
+    "hd_sdc": "A or B"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line A, lower level",
+    "lengths": "22.58, 4.67",
+    "V": "3650",
+    "v_source": "roof diaphragm 1417 lb + main floor diaphragm 2232 lb, half the diaphragm load to each line",
+    "hd_model": "STHD14",
+    "hd_stem": "8",
+    "hd_position": "end wall",
+    "hd_cracked": "cracked",
+    "above_T": "725",
+    "above_source": "largest chord force of shear wall Line A, main level, wind, ASD",
+    "at_level": "Main floor",
+    "at_x1": "0",
+    "at_y1": "0",
+    "at_x2": "0",
+    "at_y2": "29.75",
+    "hd_sdc": "A or B"
+   }
+  },
+  {
+   "kind": "shear_wall",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing, 7/16 in, 8d common",
+    "spacing": "6",
+    "panel_type": "OSB",
+    "sides": "one side",
+    "blocking": "blocked",
+    "h": "9",
+    "load": "wind",
+    "holddown": "no",
+    "mark": "Line B, lower level",
+    "lengths": "5.33, 14.75",
+    "V": "3650",
+    "v_source": "roof diaphragm 1417 lb + main floor diaphragm 2232 lb, half the diaphragm load to each line",
+    "hd_model": "STHD14",
+    "hd_stem": "8",
+    "hd_position": "end wall",
+    "hd_cracked": "cracked",
+    "above_T": "784",
+    "above_source": "largest chord force of shear wall Line B, main level, wind, ASD",
+    "at_level": "Main floor",
+    "at_x1": "27.25",
+    "at_y1": "0",
+    "at_x2": "27.25",
+    "at_y2": "22.58",
+    "hd_sdc": "A or B"
+   }
+  },
+  {
+   "kind": "footing_cont",
+   "values": {
+    "mark": "Footing Line 1",
+    "W": "2",
+    "h": "10",
+    "fc": "3000",
+    "fy": "60000",
+    "conc_pcf": "145",
+    "wall": "8",
+    "wall_kind": "concrete",
+    "stem_h": "36",
+    "stem_pcf": "145",
+    "bar_t": "5",
+    "spacing_t": "12",
+    "bar_l": "5",
+    "n_l": "2",
+    "cover": "3",
+    "P_service": "1932",
+    "service_combo": "D + L",
+    "Pu": "2675",
+    "strength_combo": "1.2D + 1.6L + 0.5Lr",
+    "dead_factor": "1.2",
+    "q_allow": "1500",
+    "soil_source": "presumptive value, as in the sealed package",
+    "soil_depth": "3.5",
+    "soil_pcf": "110",
+    "at_x1": "0",
+    "at_y1": "0",
+    "at_x2": "27.25",
+    "at_y2": "0"
+   }
+  },
+  {
+   "kind": "footing_cont",
+   "values": {
+    "mark": "Footing Line A",
+    "W": "2",
+    "h": "10",
+    "fc": "3000",
+    "fy": "60000",
+    "conc_pcf": "145",
+    "wall": "8",
+    "wall_kind": "concrete",
+    "stem_h": "36",
+    "stem_pcf": "145",
+    "bar_t": "5",
+    "spacing_t": "12",
+    "bar_l": "5",
+    "n_l": "2",
+    "cover": "3",
+    "P_service": "1932",
+    "service_combo": "D + L",
+    "Pu": "2675",
+    "strength_combo": "1.2D + 1.6L + 0.5Lr",
+    "dead_factor": "1.2",
+    "q_allow": "1500",
+    "soil_source": "presumptive value, as in the sealed package",
+    "soil_depth": "3.5",
+    "soil_pcf": "110",
+    "at_x1": "0",
+    "at_y1": "0",
+    "at_x2": "0",
+    "at_y2": "29.75"
+   }
+  },
+  {
+   "kind": "footing_cont",
+   "values": {
+    "mark": "Footing Line B",
+    "W": "2",
+    "h": "10",
+    "fc": "3000",
+    "fy": "60000",
+    "conc_pcf": "145",
+    "wall": "8",
+    "wall_kind": "concrete",
+    "stem_h": "36",
+    "stem_pcf": "145",
+    "bar_t": "5",
+    "spacing_t": "12",
+    "bar_l": "5",
+    "n_l": "2",
+    "cover": "3",
+    "P_service": "1932",
+    "service_combo": "D + L",
+    "Pu": "2675",
+    "strength_combo": "1.2D + 1.6L + 0.5Lr",
+    "dead_factor": "1.2",
+    "q_allow": "1500",
+    "soil_source": "presumptive value, as in the sealed package",
+    "soil_depth": "3.5",
+    "soil_pcf": "110",
+    "at_x1": "27.25",
+    "at_y1": "0",
+    "at_x2": "27.25",
+    "at_y2": "22.58"
+   }
+  },
+  {
+   "kind": "wind_mwfrs",
+   "values": {
+    "mark": "Wind",
+    "V": "115",
+    "V_source": "sheet S0, Design Criteria",
+    "exposure": "C",
+    "exposure_basis": "sheet S0, Design Criteria",
+    "enclosure": "enclosed",
+    "enclosure_basis": "sheet S0, Design Criteria, internal pressure coefficient +/-0.18",
+    "across": "27.25",
+    "along": "29.6",
+    "roof": "gable or flat",
+    "eave": "20.5",
+    "h": "20.5",
+    "theta": "1.2",
+    "Kzt": "1.0",
+    "Kzt_source": "no hill, ridge or escarpment noted on the drawings",
+    "overhang": "2"
+   }
+  },
+  {
+   "kind": "seismic_elf",
+   "values": {
+    "mark": "Seismic",
+    "SDS": "0.225",
+    "SD1": "0.093",
+    "S1": "0.058",
+    "TL": "4",
+    "ground_source": "sheet S0, Design Criteria (Site Class D, Risk Category II); TL: ASCE 7-22 Figure 22-14, to be confirmed on the Hazard Tool",
+    "risk": "II",
+    "system": "Bearing wall: light-frame (wood) walls sheathed with wood structural panels",
+    "Ie": "1.0",
+    "Ie_source": "Risk Category II, Table 1.5-2",
+    "structure": "all other structural systems",
+    "hn": "20",
+    "rho": "1.0",
+    "rho_source": "Seismic Design Category B, Sect. 12.3.4.1",
+    "levels": [
+     {
+      "name": "Roof",
+      "w": "37.4",
+      "h": "20"
+     },
+     {
+      "name": "Main floor",
+      "w": "47.9",
+      "h": "10"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "lvl_beam",
+   "values": {
+    "grade": "2.1E 2800",
+    "thickness": "1.75",
+    "depth": "11.875",
+    "bracing": "supported throughout",
+    "repetitive": "no",
+    "unit_weight": "",
+    "mark": "Roof Beam A",
+    "plies": "2",
+    "span": "11.25",
+    "bearing": "3",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "640",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "320",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "10.68",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "self-weight"
+     }
+    ],
+    "defl": [
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "project criteria, as in the sealed package"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "wood_post",
+   "values": {
+    "species": "DOUGLAS FIR-LARCH",
+    "grade": "No. 2",
+    "service": "dry service",
+    "incised": "no",
+    "mark": "Deck Column",
+    "size": "6x6",
+    "height": "9",
+    "lu1": "",
+    "lu2": "",
+    "Ke1": "1",
+    "Ke2": "1",
+    "k_source": "pinned top and bottom",
+    "unit_weight": "",
+    "loads": [
+     {
+      "case": "L",
+      "P": "6000",
+      "label": ""
+     },
+     {
+      "case": "D",
+      "P": "62",
+      "label": "self-weight"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "wood_beam",
+   "values": {
+    "species": "DOUGLAS FIR-LARCH",
+    "grade": "No. 2",
+    "service": "dry service",
+    "incised": "no",
+    "mark": "Header A LL",
+    "size": "2x8",
+    "plies": "3",
+    "span": "4",
+    "bracing": "supported throughout",
+    "bearing": "3",
+    "repetitive": "no",
+    "unit_weight": "",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "297",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "floor live"
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "112",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "floor dead"
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "315",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "wall dead"
+     },
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "598",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "roof live"
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "298",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead"
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "7.44",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "self-weight"
+     }
+    ],
+    "defl": [
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "project criteria, as in the sealed package"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "wood_beam",
+   "values": {
+    "species": "DOUGLAS FIR-LARCH",
+    "grade": "No. 2",
+    "service": "dry service",
+    "incised": "no",
+    "mark": "Header B LL",
+    "size": "2x10",
+    "plies": "3",
+    "span": "5",
+    "bracing": "supported throughout",
+    "bearing": "3",
+    "repetitive": "no",
+    "unit_weight": "",
+    "loads": [
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "297",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "floor live"
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "112",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "floor dead"
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "315",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "wall dead"
+     },
+     {
+      "case": "L",
+      "kind": "uniform",
+      "mag": "598",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "roof live"
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "298",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "roof dead"
+     },
+     {
+      "case": "D",
+      "kind": "uniform",
+      "mag": "9.49",
+      "mag2": "",
+      "x1": "",
+      "x2": "",
+      "label": "self-weight"
+     }
+    ],
+    "defl": [
+     {
+      "label": "total",
+      "expr": "D + L",
+      "ratio": "240",
+      "source": "project criteria, as in the sealed package"
+     }
+    ]
+   }
+  }
+ ]
+}
