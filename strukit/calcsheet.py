@@ -2280,11 +2280,16 @@ def _crane_runway_picture(c, top, d):
     yb = top - 18 - hl - 8
     memberart.steel_elevation(c, x0, yb - 10, x1 - x0, 10, d["d"], d["tf"])
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.6)
-    for xx in (x0, x1):
+    sx = [x0 + (x1 - x0) * s_ / L for s_ in d["supports"]] if d.get("supports") else (x0, x1)
+    for xx in sx:
         p_ = c.beginPath(); p_.moveTo(xx, yb - 10); p_.lineTo(xx - 5, yb - 18); p_.lineTo(xx + 5, yb - 18); p_.close()
         c.drawPath(p_, fill=0, stroke=1)
     _beam_loads(c, x0, x1, yb, L, loads)
-    memberart._dim_h(c, x0, x1, yb - 28, f"span {L:g} ft", FR, ext_from=yb - 18)
+    if d.get("supports") and len(d["supports"]) > 2:
+        for a_, b_ in zip(sx[:-1], sx[1:]):
+            memberart._dim_h(c, a_, b_, yb - 28, f"{(b_ - a_) / (x1 - x0) * L:g} ft", FR, ext_from=yb - 18)
+    else:
+        memberart._dim_h(c, x0, x1, yb - 28, f"span {L:g} ft", FR, ext_from=yb - 18)
     _small(c, (x0 + x1) / 2, yb - 46, "wheels with impact at the position of the largest moment; not to scale")
     cx, cy = RM - 100, top - 70
     s_ = memberart.steel_section(c, cx, cy, 70, 80, d["d"], d["bf"], d["tf"], d["tw"])

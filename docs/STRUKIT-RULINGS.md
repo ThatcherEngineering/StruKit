@@ -381,3 +381,8 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
   it to the top of the wall; away from the openings, the full height; the average of the pier values. The 3D frame stiffness (0.232.0) still
   takes every pier at the full height (softer). 20 ft two-window test wall: 0.47 in. (APA) against 0.60 in. (full height). Not the more
   conservative of the two on the sheet: asked.
+
+## 2026-11-26 10:30, crane runway (0.252.0), applied (not ruled)
+- Web local yielding and crippling under a wheel: the wheel taken at the beam end (Eq. J10-3, J10-5a / b); no bearing length unless typed with
+  its source.
+- Continuous runway beam: Mcx with Lb = the longest span and Cb = 1.0 for positive and negative moment; deflection limit over the shortest span.
