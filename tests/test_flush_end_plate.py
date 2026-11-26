@@ -142,3 +142,31 @@ def test_extended_column_side_design_guide_39_example_5_3_2():
                               extended=True, pfo=2.75, col_side=True, col_cfg="continuous")
     ur = {r.check: r for r in u.rows}
     assert ur["Column flange flexure (unstiffened)"].status != "OK" and any("stiffeners" in t for t in u.not_checked)
+
+
+def test_extended_column_top_unstiffened_and_with_cap_plate():
+    """Four-bolt extended end plate at a column top: Design Guide 39 Table A-2(d) (unstiffened) and A-2(e) (cap plate), Ct = 0.5 in Eq. 3-46
+    when the tension flange is within a column depth of the top (Sect. 3.7.6). W24x84 to W14x99 as Example 5.3-2, de = 3 in. No published
+    example of these two cases: checked against the table's formulas by hand."""
+    import math
+    from strukit.ws_more import flush_end_plate_sheet
+    from strukit.ws_steel_beam import Combo
+    lr = [Combo("LRFD", {"M": 1.0}, "t")]
+    run = [dict(name="LRFD", M=300.0, T=0.0, V=40.0)]
+    base = ("EP", "W24X84", 50, 65, "W14X99", 50, 65, "ASTM A992", 9.0, 1.0, 50, 65, "A572 Gr. 50", 1.125, "A490", "N", 5.75, 2.0, 0.5, 0.25, 1.5)
+    u = flush_end_plate_sheet(*base, None, None, None, None, 70, [], lr, "LRFD", runs=run, extended=True, pfo=2.75, col_side=True, col_cfg="top", de=3.0)
+    c = u.ep["col"]
+    bcf, g, tbf, db = 14.6, 5.75, 0.77, 24.1
+    s = 0.5 * math.sqrt(bcf * g)
+    cc = 2.75 + tbf + 2.0
+    h1, h2 = db - tbf / 2 + 2.75, db - tbf - 2.0 - tbf / 2
+    Yd = bcf / 2 * (h2 / s - 0.5) + 2 / g * (h1 * (3.0 + 0.75 * cc) + h2 * (s + 0.25 * cc)) + 0.75 * g
+    assert c["Ycu"] == pytest.approx(Yd, rel=2e-3) and c["Ct_t"] == 0.5
+    assert c["Rwy_t"] == pytest.approx((6 * 0.5 * 1.38 + tbf + 2 * 0.5 + 2 * 1.0) * 50 * 0.485, rel=1e-3)
+    k = flush_end_plate_sheet(*base, 0.75, 14.6, 0.375, 0.3125, 70, [], lr, "LRFD", runs=run, extended=True, pfo=2.75, col_side=True, col_cfg="top_cap", de=3.0)
+    ck = k.ep["col"]
+    pcp = min(3.0 - 0.75, s)
+    Ye = bcf / 2 * (h1 / pcp + h2 / s) + 2 / g * (h1 * (pcp + 0.75 * cc) + h2 * (s + 0.25 * cc)) + g / 2
+    assert ck["Yce"] == pytest.approx(Ye, rel=2e-3) and ck["Yce"] > c["Ycu"]
+    assert ck["T_cap"] == pytest.approx(max(ck["Ff"] - min(ck["Rcu"], ck["Rwy_t"]), 0.0))
+    assert {r.check for r in k.rows} >= {"Column flange flexure (cap plate)", "Cap plate yielding (as a stiffener)", "Cap plate to column flange weld"}

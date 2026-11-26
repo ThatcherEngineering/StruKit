@@ -328,3 +328,7 @@ design log" rule. Unattended: no questions; conservative readings applied and re
   example has balanced moments and checks no weld); the weld on the HSS face toward the beams is not counted on.
 - Beam flexure at the holes uses the larger beam moment and Mn = Fy Zx where F13.1 does not apply (no lateral-torsional buckling at the joint).
 
+## 2026-11-26 01:52, four-bolt extended end plate at a column top (0.243.0), applied (not ruled)
+- Ct = 0.5 when the column top is less than a column depth above the beam's tension flange face (de + pfo < dc).
+- The cap plate is checked as a stiffener on its area outside the column web, for the force by Eq. 3-48; its welds for the same force.
+

@@ -2720,7 +2720,7 @@ def _flush_end_plate_picture(c, top, d):
     up = 14 if d.get("cont") else 0                    # a continuous column runs on above the plate
     c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(xs, yb - 14, dc * sc, Hp * sc + 14 + up, fill=1, stroke=1)
     c.setFillColorRGB(0.62, 0.68, 0.76); c.rect(xs, yb - 14, tcf * sc, Hp * sc + 14 + up, fill=1, stroke=0); c.rect(xs + (dc - tcf) * sc, yb - 14, tcf * sc, Hp * sc + 14 + up, fill=1, stroke=0)
-    if not d.get("cont"):
+    if not d.get("cont") and not d.get("nocap"):
         c.rect(xs, yt, dc * sc, max(tcap * sc, 2), fill=1, stroke=1)                                     # cap plate
     st = d.get("stiff")
     if st:                                                                                              # stiffeners in line with both beam flanges
@@ -2736,7 +2736,7 @@ def _flush_end_plate_picture(c, top, d):
         c.line(xs - tp * sc - 5, yy, xs + tcf * sc + 5, yy)
     c.setLineWidth(0.9); c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawString(xs - tp * sc - 66, y_top - D * sc / 2, d["beam"]); c.drawString(xs + tcf * sc + 8, yb + Hp * sc / 2, d["column"])
-    if not d.get("cont"):
+    if not d.get("cont") and not d.get("nocap"):
         c.drawString(xs + 4, yt + max(tcap * sc, 2) + 4, f"cap plate {tcap:g} in")
     elif st:
         c.drawString(xs + dc * sc + 6, y_top - tf / 2 * sc - 2, f"stiffeners {st['ts']:g} x {st['bs']:g} in")
