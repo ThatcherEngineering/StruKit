@@ -186,6 +186,11 @@ FORMS = {
                   help="ACI 318-19 17.7.2.5.1"),
                 F("rod_back", "Anchorage: rods to the concrete edge behind (opposite the shear)", unit="in", required=False,
                   help="blank = 1.5 hef or more"),
+                F("lug_shape", "Lug", "select", options=["single plate", "cruciform (two plates crossing, shear in both directions)"], required=False,
+                  help="blank = single plate (shear along N only)"),
+                F("ca1_t", "Cruciform: lug face to the edge in the direction of the shear along B", unit="in", required=False),
+                F("ca2_t", "Cruciform: lug side to the side edges for the shear along B", unit="in", required=False),
+                F("rod_back_t", "Cruciform: rods to the concrete edge behind (opposite the shear along B)", unit="in", required=False, help="blank = 1.5 hef or more"),
                 F("anc_grade", "Anchorage: rod grade (for Fy and ductility)", "select", required=False,
                   options=["F1554 Gr. 36", "F1554 Gr. 55", "F1554 Gr. 105", "other"])]
                + [f for f in GRID_ANCHORAGE_FIELDS if f["key"] in ("anc_F", "anc_abrg", "anc_tpi", "anc_fy", "anc_ductile", "anc_supp", "anc_sdc")],
@@ -422,6 +427,22 @@ FORMS = {
                 T("runs", "Or: combined loads, used in place of the table above", [F("name", "Combination or run", "text"), F("ML", "Left beam moment", unit="kip-ft"),
                                                                                      F("VL", "Left beam shear", unit="kip", required=False), F("MR", "Right beam moment", unit="kip-ft"),
                                                                                      F("VR", "Right beam shear", unit="kip", required=False), F("P", "Column compression from above", unit="kip", required=False)])]),
+    "wt_flange": dict(
+        title="Welded WT Flange Moment Connection (beam to a rectangular HSS column)", code="AISC 360-22, AISC Design Guide 24", mark="WTF",
+        fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
+                F("column", "Column (rectangular or square HSS)", "hss_shape"), F("col_Fy", "Column Fy", unit="ksi"), F("col_source", "Source of the column Fy", "text"),
+                F("face", "HSS face the beam frames into", "select", options=["B", "H"], required=False,
+                  help="B = the face named second in the size (HSS12x8: the 8 in. face), H the first; blank = B"),
+                F("wt", "WT at each beam flange", "text", help="for example WT8x28.5"), F("L", "WT length across the HSS face", unit="in", help="at least the face width, for the flare-bevel welds at the corners"),
+                F("wt_Fy", "WT Fy", unit="ksi"), F("wt_Fu", "WT Fu", unit="ksi"), F("wt_source", "Source of the WT Fy and Fu", "text"),
+                F("d", "Bolt diameter", unit="in"), F("group", "Bolt type", "select", options=["A325", "A490", "F3148"]), F("threads", "Threads", "select", options=["N", "X"]),
+                F("n", "Bolts in each line (two lines)"), F("s", "Bolt spacing", unit="in"), F("g", "Gage across the flange", unit="in"),
+                F("leh", "Last bolt to the WT stem end", unit="in"), F("le_b", "First bolt to the beam end", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
+        tables=[T("loads", "Loads at the joint", [CASE, F("M", "Beam end moment", unit="kip-ft"), F("P", "Column compression at the joint", unit="kip", required=False),
+                                                  F("Mc", "Column moment at the joint", unit="kip-ft", required=False, help="blank = the beam moment"), F("label", "Note", "text", required=False)]),
+                T("runs", "Or: combined loads, used in place of the table above", [F("name", "Combination or run", "text"), F("M", "Beam end moment", unit="kip-ft"),
+                                                                                     F("P", "Column compression at the joint", unit="kip", required=False),
+                                                                                     F("Mc", "Column moment at the joint", unit="kip-ft", required=False)])]),
     "stiffened_seat": dict(
         title="Stiffened Seated Connection (welded to the support, bolted to the beam)", code="AISC 360-22", mark="SS",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_source", "Source of the beam Fy", "text"),
@@ -1624,6 +1645,13 @@ def _plate_on_footing(kind, pv, foot):
             v.update(ca2=f"{sB / 2 - bsl / 2:g}")
         if s_:
             v.update(rod_back=f"{sN / 2 - s_ / 2:g}")
+        if str(pv.get("lug_shape") or "").startswith("cruciform"):
+            if tsl:
+                v.update(ca1_t=f"{sB / 2 - tsl / 2:g}")
+            if bsl:
+                v.update(ca2_t=f"{sN / 2 - bsl / 2:g}")
+            if s_:
+                v.update(rod_back_t=f"{sB / 2 - s_ / 2:g}")
     along = ("width B" if o == "x" else "length L") if fk == "footing_iso" else ("width B" if o == "x" else "length L")
     note = (f"Concrete under the plate: footing {fm}, {B:g} ft x {L:g} ft, {h:g} in. thick, f'c {fc:g} psi; the plate is centred on the footing "
             f"with its length N along the footing {along}.")
@@ -1872,9 +1900,13 @@ def _build(kind, values, project):
         cb, m = combos(project, r.miss), method(project, r.miss)
         cbl = cb if m == "LRFD" else combos(project, r.miss, "LRFD")
         loads = [dict(case=x["case"], V=x["V"], P=x.get("P") or 0.0, **({"label": x["label"]} if x.get("label") else {})) for x in r.rows("loads")]
-        if any(abs(x.get("Vt") or 0.0) > 1e-9 for x in r.rows("loads")):
+        cruci = str(values.get("lug_shape") or "").startswith("cruciform")
+        if cruci:
+            for x, row in zip(loads, r.rows("loads")):
+                x["Vt"] = row.get("Vt") or 0.0
+        if not cruci and any(abs(x.get("Vt") or 0.0) > 1e-9 for x in r.rows("loads")):
             r.miss.append("Shear across the lug (along B): a single plate lug bears only on its face, against shear along N. Shear in the other direction "
-                          "needs a second lug at right angles (a cruciform lug, not built yet) or another path (friction, the rods in shear); "
+                          "needs a second lug at right angles (pick the cruciform lug) or another path (friction, the rods in shear); "
                           "leave the column blank once that direction is carried elsewhere")
         if not loads:
             r.miss.append("No load is entered")
@@ -1893,7 +1925,12 @@ def _build(kind, values, project):
                              anc_cracked="uncracked" if pc.startswith("uncracked") else "cracked"))
             anc, _ = _read_grid_anchorage(ra, args[14], _ar.grade(r.text("anc_grade", False) or ""))
             r.miss += ra.miss
+        if cruci:
+            ct = (r.num("ca1_t", True, label=r.labels["ca1_t"]), r.num("ca2_t", True, label=r.labels["ca2_t"]))
         r.done()
+        if cruci:
+            return ws_more.shear_lug_cruciform_sheet(mark, *args, loads, cb, cbl, m, anchorage=anc, rod_back=r.num("rod_back", False),
+                                                     ca1_t=ct[0], ca2_t=ct[1], rod_back_t=r.num("rod_back_t", False)), "simple", {}
         return ws_more.shear_lug_sheet(mark, *args, loads, cb, cbl, m, anchorage=anc, rod_back=r.num("rod_back", False)), "simple", {}
     if kind == "crane_runway":
         cb, m = combos(project, r.miss), method(project, r.miss)
@@ -2047,6 +2084,18 @@ def _build(kind, values, project):
                 r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.num("s"), r.num("g"), r.num("weld"), r.num("FEXX"))
         r.done()
         return ws_more.cap_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
+    if kind == "wt_flange":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        runs = [dict(name=x["name"], M=x["M"], P=x["P"] or 0.0, Mc=x["Mc"]) for x in r.rows("runs")]
+        loads = [] if runs else [dict(case=x["case"], M=x["M"], P=x["P"] or 0.0, Mc=x["Mc"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads and not runs:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), r.text("beam_source"), r.text("column"), r.num("col_Fy"), r.text("col_source"),
+                "H" if str(r.text("face", False) or "B").upper() == "H" else "B", r.text("wt"), r.num("wt_Fy"), r.num("wt_Fu"), r.text("wt_source"), r.num("L"),
+                r.num("d"), r.text("group"), r.text("threads"), r.num("n"), r.num("s"), r.num("g"), r.num("leh"), r.num("le_b"), r.num("FEXX"))
+        r.done()
+        return ws_more.wt_flange_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
     if kind in ("through_plate", "cutout_plate"):
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], ML=x["ML"], VL=x["VL"] or 0.0, MR=x["MR"], VR=x["VR"] or 0.0, P=x["P"] or 0.0) for x in r.rows("runs")]

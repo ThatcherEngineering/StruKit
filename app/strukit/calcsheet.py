@@ -1673,6 +1673,8 @@ def _block_picture(c, top, pic):
         return _cap_plate_picture(c, top - 6, d)
     if name == "through_plate":
         return _through_plate_picture(c, top - 6, d)
+    if name == "wt_flange":
+        return _wt_flange_picture(c, top - 6, d)
     if name == "stiffened_seat":
         return _stiffened_seat_picture(c, top - 6, d)
     if name == "beam_hss_moment":
@@ -2743,6 +2745,43 @@ def _flush_end_plate_picture(c, top, d):
     c.drawRightString(xs - tp * sc - 2, yb - 9, f"end plate {tp:g} in")
     _small(c, xs + dc * sc / 2 - 30, yb - 30, "side view, same scale; bolts shown as lines")
     return yb - 38
+
+
+def _wt_flange_picture(c, top, d):
+    """Plan of the welded WT flange connection, to scale: the HSS, the WT flange across its face welded at the corners, the WT stem bolted to the
+    beam flange; WT length, gage, spacing and edge distances dimensioned."""
+    Bw, Hc, L, tf, dt, n, s_, g, leh, leb, db_, bf = d["Bw"], d["Hc"], d["L"], d["tf_t"], d["d_t"], d["n"], d["s"], d["g"], d["leh"], d["le_b"], d["db"], d["bf"]
+    span = Hc + dt + 14
+    sc = min(5.0, (RM - LM - 120) / span, 90.0 / max(L, Bw))
+    x0 = LM + 60
+    yc = top - 26 - max(L, Bw) / 2 * sc
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
+    c.setFillColorRGB(0.82, 0.85, 0.89); c.rect(x0, yc - Bw / 2 * sc, Hc * sc, Bw * sc, fill=1, stroke=1)                          # HSS
+    xf = x0 + Hc * sc
+    c.setFillColorRGB(0.62, 0.68, 0.76)
+    c.rect(xf, yc - L / 2 * sc, tf * sc, L * sc, fill=1, stroke=1)                                                                  # WT flange
+    c.rect(xf + tf * sc, yc - L / 2 * sc, (dt - tf) * sc, L * sc, fill=1, stroke=1)                                                 # WT stem (plan)
+    xb0 = xf + dt * sc - (leh + (n - 1) * s_ + leb) * sc
+    c.setFillColorRGB(0.90, 0.92, 0.95); c.rect(xb0, yc - bf / 2 * sc, (RM - 20) - xb0, bf * sc, fill=1, stroke=1)                  # beam flange
+    c.setFillColorRGB(*INK)
+    for i in range(n):
+        xb = xf + dt * sc - (leh + i * s_) * sc
+        for gy in (-1, 1):
+            c.circle(xb, yc + gy * g / 2 * sc, max(db_ / 2 * sc, 1.5), fill=1, stroke=0)
+    for gy in (-1, 1):                                                                                                               # flare-bevel welds
+        c.circle(xf, yc + gy * Bw / 2 * sc, 2.2, fill=1, stroke=0)
+    memberart._dim_v(c, yc - L / 2 * sc, yc + L / 2 * sc, x0 - 14, f"L = {L:g} in", FR, ext_from=xf)
+    memberart._dim_v(c, yc - g / 2 * sc, yc + g / 2 * sc, RM - 50, f"g = {g:g} in", FR, ext_from=xf + dt * sc - leh * sc)
+    xl = xf + dt * sc - (leh + (n - 1) * s_) * sc
+    ylow = yc - max(L, bf) / 2 * sc - 14
+    memberart._dim_h(c, xl, xf + dt * sc - leh * sc, ylow, f"{n - 1} @ {s_:g}" if n > 1 else "", FR, ext_from=yc - g / 2 * sc)
+    memberart._dim_h(c, xf + dt * sc - leh * sc, xf + dt * sc, ylow - 16, f"{leh:g}", FR, ext_from=yc - L / 2 * sc)
+    memberart._dim_h(c, xb0, xl, yc + max(L, bf) / 2 * sc + 14, f"{leb:g}", FR, ext_from=yc + bf / 2 * sc)
+    c.setFont(FR, 6.5); c.setFillColorRGB(*INK)
+    c.drawCentredString(x0 + Hc * sc / 2, yc - 3, d["column"])
+    yb = ylow - 34
+    _small(c, (LM + RM) / 2, yb, f"plan of the {d['wt']} at a beam flange: the WT flange flare-bevel welded at the HSS corners (dots), the stem bolted to the beam flange; to scale; dimensions in inches")
+    return yb - 10
 
 
 def _through_plate_picture(c, top, d):

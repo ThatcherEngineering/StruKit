@@ -5484,3 +5484,225 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
     sheet.tp = dict(R=R, Ag=Ag, An=An, Ry=Ry, Rr=Rr, KLr=KLr, Rc=Rc, rv=rv, per=per, Rb=Rb, Rbs_p=Rbs_p, Rbs_f=Rbs_f, Agv=Agv, Anv=Anv, Ant=Ant, Agv_f=Agv_f, Anv_f=Anv_f,
                     Ant_f=Ant_f, q=wq["q"], Pc=wq["Pc"], Mc=wq["Mc"], rw=rw, tmin=tmin, lw=lw, bs_cases=bs_cases, Mn_b=Mn_b, Mb=Mb, Afn=Afn, Runb=Runb, Rc_n=Pc_n)
     return sheet
+
+
+def shear_lug_cruciform_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, weld, FEXX, N, B, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod,
+                              fc, A2A1, ca1, ca2, ha, psi_c, loads, combos, combos_lrfd, method, anchorage=None, rod_back=None,
+                              ca1_t=None, ca2_t=None, rod_back_t=None):
+    """Cruciform shear lug: two plates bsl x tsl crossing at the centre of the base plate, each bearing against the concrete for the shear
+    across its face. loads: dict(case, V along N, Vt along B, P). Each direction is checked as the single plate lug (shear_lug_sheet) with the
+    geometry turned for the B direction (ca1_t, ca2_t its edge distances); the concrete bearing and breakout ratios of the two directions under
+    the same combination are added (ACI 318-19 gives no rule for shear in two directions on a lug). With the anchorage, each rod takes the
+    sum of its tensions from the two directions."""
+    from dataclasses import replace
+    if ca1_t is None or ca2_t is None:
+        raise WorksheetError(f"{mark}: give the edge distances for the shear along B (ca1 and ca2 in that direction)")
+    lx = [dict(x, V=x.get("V") or 0.0) for x in loads]
+    ly = [dict(x, V=x.get("Vt") or 0.0) for x in loads]
+    args = (bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, weld, FEXX)
+    sx = shear_lug_sheet(mark, *args, N, B, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod, fc, A2A1, ca1, ca2, ha, psi_c, lx, combos, combos_lrfd, method)
+    sy = shear_lug_sheet(mark, *args, B, N, tbp, bp_Fy, s_rod, rod_d, rod_Fu, rod_source, hef_rod, fc, A2A1, ca1_t, ca2_t, ha, psi_c, ly, combos, combos_lrfd, method)
+    sh = sx
+    sh.title = "Shear Lug, Cruciform"
+    sh.rows = [replace(r, check="Along N: " + r.check) for r in sx.rows] + [replace(r, check="Along B: " + r.check) for r in sy.rows if r.combo]
+    sh.steps = [replace(l, label="Along N: " + l.label) for l in sx.steps] + [replace(l, label="Along B: " + l.label) for l in sy.steps if not l.label.startswith(("Eccentricity", "Concrete bearing stress limit", "Lug:", "Weld lever"))]
+    rx = next(r for r in sh.rows if "Anchor rod tension" in r.check)
+    sh.rows = [r for r in sh.rows if "Anchor rod tension" not in r.check]
+    both = [(a["cb"], max(a["T"], a["Tf"]) / 2 + max(b["T"], b["Tf"]) / 2) for a, b in zip(sx.shear_lug["steel"], sy.shear_lug["steel"])]
+    wr = max(both, key=lambda t: t[1])
+    sh.rows.append(Row("Anchor rod tension, corner rod (both directions)", wr[0], wr[1], rx.capacity, "kip", rx.source, rx.note + "; half the rod tension of each direction added"))
+    cx, cy = sx.shear_lug["concrete"], sy.shear_lug["concrete"]
+    best_b = best_c = None
+    for a, b in zip(cx, cy):
+        rb = a["V"] / a["c"]["phiVbrg"] + b["V"] / b["c"]["phiVbrg"] if a["c"]["phiVbrg"] > 0 and b["c"]["phiVbrg"] > 0 else float("inf")
+        rc = a["V"] / a["c"]["phiVcb"] + b["V"] / b["c"]["phiVcb"]
+        if best_b is None or rb > best_b[0]:
+            best_b = (rb, a["cb"])
+        if best_c is None or rc > best_c[0]:
+            best_c = (rc, a["cb"])
+    sh.rows += [Row("Concrete bearing, both directions", best_b[1], best_b[0], 1.0, "", "ACI 318-19 17.11.2.1", "sum of Vu / phi Vbrg along N and along B"),
+                Row("Concrete breakout, both directions", best_c[1], best_c[0], 1.0, "", "ACI 318-19 17.11.3.1", "sum of Vu / phi Vcb along N and along B")]
+    sh.info[0] = ("Shear Lug", f"cruciform: two PL {tsl:g} x {bsl:g} in. crossing at the centre, {hsl:g} in. into the concrete below {t_grout:g} in. of grout; "
+                               f"Fy {lug_Fy:g}, Fu {lug_Fu:g} ksi ({lug_source.strip()})")
+    sh.info[-1] = ("Concrete", f"f'c = {fc * 1000:,.0f} psi; A2/A1 = {A2A1:g}; along N: ca1 = {ca1:g}, ca2 = {ca2:g} in.; along B: ca1 = {ca1_t:g}, ca2 = {ca2_t:g} in.; "
+                               f"member depth {ha:g} in.")
+    sh.load_lines = [f"{x["case"]:<3} V along N {x.get('V') or 0:>7.2f}   along B {x.get('Vt') or 0:>7.2f} kip" + (f"   P {x['P']:>7.2f} kip" if x.get("P") else "")
+                + (f"   {x['label']}" if x.get("label") else "") for x in loads]
+    sh.assumptions = [a for a in sh.assumptions if "shear acts along" not in a.lower()] + [
+        "Each plate takes the shear across its face; the plate along the shear is not counted on. The concrete bearing and breakout ratios of the two directions under "
+        "the same combination are added."]
+    if anchorage:
+        far = 1.5 * anchorage["hef"] + 1.0
+        e_x = (rod_back if rod_back else far, ca1 + tsl / 2 - s_rod / 2)
+        e_y = (rod_back_t if rod_back_t else far, ca1_t + tsl / 2 - s_rod / 2)
+        if min(e_x + e_y) <= 0:
+            raise WorksheetError(f"{mark}: the anchor rods lie outside the concrete edges given")
+        runs, lines = [], []
+        for a, b in zip(cx, cy):
+            t = {(i, j): 0.0 for i in (0, 1) for j in (0, 1)}
+            for j in (0, 1):
+                t[(0, j)] += a["Tu"] / 2; t[(1, j)] += a["Tf"] / 2
+            for i in (0, 1):
+                t[(i, 0)] += b["Tu"] / 2; t[(i, 1)] += b["Tf"] / 2
+            lines.append(f"{a['cb']:<26} rods behind the lug along N {a['Tu']:.2f}, along B {b['Tu']:.2f} kip total; most loaded rod {max(t.values()):.2f} kip")
+            if max(t.values()) > 1e-9:
+                runs.append((a["cb"], t))
+        if runs:
+            sh0 = SimpleSheet(mark, "", "", method, [], [], [], "", [], [], [], [])
+            _anchorage_grid(mark, sh0, rod_d, rod_Fu, anchorage, 2, s_rod, 2, s_rod, (e_x[0], e_x[1], e_y[0], e_y[1]), runs, lines)
+            sh.rows += sh0.rows; sh.info += sh0.info; sh.blocks += sh0.blocks
+            sh.assumptions += sh0.assumptions + ["Anchorage: each rod takes the sum of its tensions from the bearing blocks along N and along B (uplift counted in both)."]
+            sh.not_checked = [x for x in sh.not_checked if not x.startswith("concrete breakout of the anchor rods")]
+    sh.shear_lug_y = sy.shear_lug
+    return sh
+
+
+def wt_flange_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, col_source, face, wt, wt_Fy, wt_Fu, wt_source, L,
+                    d, group, threads, n, s, g, leh, le_b, FEXX, loads, combos, method, runs=None, runs_from=""):
+    """Welded WT flange moment connection: a WT at each beam flange, its flange flare-bevel welded to the corners of a rectangular HSS column
+    and its stem bolted to the beam flange (AISC Design Guide 24, 2nd Ed., Sect. 6.3 as worked in Example 6.5). face: "B" or "H", the HSS
+    face the beam frames into. L: the WT length across that face. n bolts in each of two lines (gage g), spacing s; leh from the last bolt to
+    the stem end, le_b from the first bolt to the beam end. loads: dict(case, M beam end moment kip-ft, P column compression at the joint kips,
+    Mc column moment at the joint kip-ft; blank Mc = the beam moment, as the example)."""
+    from . import bolts
+    from .steel_beam import SteelInputError
+    for nm_, v in (("the source of the beam Fy and Fu", beam_source), ("the source of the column Fy", col_source), ("the source of the WT Fy and Fu", wt_source)):
+        if not (v or "").strip():
+            raise WorksheetError(f"{mark}: {nm_} is blank")
+    if not runs and (not combos or not loads):
+        raise WorksheetError(f"{mark}: loads and load combinations are needed")
+    try:
+        bm, col, t_ = shapes.get(beam), shapes.hss(column), shapes.tee(wt)
+    except shapes.ShapeError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    if col.get("type") != "HSS-RECT":
+        raise WorksheetError(f"{mark}: the column is a square or rectangular HSS")
+    if min(L, d, s, g, leh, le_b, FEXX) <= 0 or n < 1:
+        raise WorksheetError(f"{mark}: sizes must be positive, with at least one bolt in each line")
+    Bw, Hc = (col["B"], col["Ht"]) if face == "B" else (col["Ht"], col["B"])        # face width; HSS dimension along the beam
+    t = col["tdes"]
+    if L < Bw:
+        raise WorksheetError(f"{mark}: the WT ({L:g} in. long) must reach both corners of the {Bw:g} in. HSS face for the flare-bevel welds")
+    if t_.get("k1") is None:
+        raise WorksheetError(f"{mark}: k1 of {wt} is not in the shapes table")
+    S_c = col["Sx"] if face == "B" else col["Sy"]
+    db_, tbf, bbf = bm["d"], bm["tf"], bm["bf"]
+    tw_t, tf_t, bf_t, kdes_t, k1_t = t_["tw"], t_["tf"], t_["bf"], t_["kdes"], t_["k1"]
+    lrfd = method == "LRFD"
+    E = 29000.0
+    av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
+    fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
+    try:
+        key, (Fnt, FnvN, FnvX) = bolts._group(group)
+        dh = bolts.standard_hole(d)
+    except SteelInputError as ex:
+        raise WorksheetError(f"{mark}: {ex}")
+    Fnv = FnvN if threads == "N" else FnvX
+    Ab = math.pi * d ** 2 / 4
+    dn = dh + 1 / 16
+    src = [(r_["name"], r_["M"], r_.get("P") or 0.0, r_.get("Mc")) for r_ in runs] if runs else \
+        [(cb.name, sum(cb.factors.get(ld["case"], 0.0) * (ld.get("M") or 0.0) for ld in loads), sum(cb.factors.get(ld["case"], 0.0) * (ld.get("P") or 0.0) for ld in loads),
+          (sum(cb.factors.get(ld["case"], 0.0) * (ld.get("Mc") or 0.0) for ld in loads) if any(ld.get("Mc") not in (None, "") for ld in loads) else None)) for cb in combos]
+    cases = []
+    beta = Bw / Hc
+    Fc = col_Fy if lrfd else 0.6 * col_Fy
+    for nm_, M, P, Mc in src:
+        Mro = abs(M) if Mc is None else abs(Mc)
+        U = min(max(P, 0.0) / (Fc * col["A"]) + Mro * 12 / (Fc * S_c), 1.0)
+        Qf = min(max(1.3 - 0.4 * U / beta, 0.4), 1.0)
+        cases.append(dict(name=nm_, M=M, P=P, Mro=Mro, U=U, Qf=Qf, R1=abs(M) * 12 / (db_ + tw_t), R2=abs(M) * 12 / db_))
+    w1 = max(cases, key=lambda c_: c_["R1"])
+    wq = max(cases, key=lambda c_: c_["R1"] / max(c_["Qf"], 1e-9))
+    R1, R2 = w1["R1"], w1["R2"]
+    # WT flange local bending (J10-1), within 10 tf of the end at each side wall; the length shorter than 2 x 10 tf in proportion
+    Rflb = 2 * 0.5 * 6.25 * wt_Fy * tf_t ** 2 * min(1.0, L / (2 * 10 * tf_t))
+    lb_w = 2 * t                                                    # flare-bevel weld size: the corner radius 2t
+    Rwly = 2 * wt_Fy * tw_t * (2.5 * kdes_t + lb_w)                 # J10-3, within d of the end
+    k_s = 1.5 * t + tf_t
+    lb_s = 2 * k1_t
+    Rsly = 2 * col_Fy * t * (5 * k_s + lb_s)                        # J10-2 at each HSS side wall
+    Rcr = lambda Qf: 2 * 1.6 * t ** 2 * (1 + 3 * lb_s / Hc) * math.sqrt(E * col_Fy) * Qf      # DG 24 Eq. 2-19, two walls
+    Rfw = 0.60 * FEXX * (5 / 16) * (2 * t) * bf_t * 2               # flare-bevel welds, throat 5/16 R, R = 2t (Table J2.2)
+    # bolts, bolt by bolt (bolt 1 nearest the HSS)
+    rv = Fnv * Ab
+    per = []
+    for i in range(1, int(n) + 1):
+        lc_t = (leh - dh / 2) if i == n else (s - dh)
+        lc_b = (le_b - dh / 2) if i == 1 else (s - dh)
+        cand = dict(shear=rv, stem_bearing=2.4 * d * tw_t * wt_Fu, stem_tearout=1.2 * lc_t * tw_t * wt_Fu,
+                    flange_bearing=2.4 * d * tbf * beam_Fu, flange_tearout=1.2 * lc_b * tbf * beam_Fu)
+        k_ = min(cand, key=cand.get)
+        per.append((i, cand[k_], k_, cand))
+    Rb = av(2 * sum(p_[1] for p_ in per), 0.75, 2.00)
+    beff = min(bbf, L)
+    Ag_s = beff * tw_t
+    An_s = Ag_s - 2 * dn * tw_t
+    lev = (L - g) / 2
+    bs = lambda Agv_, Anv_, Ant_, Fy_, Fu_: min(0.60 * Fu_ * Anv_, 0.60 * Fy_ * Agv_) + Fu_ * Ant_
+    Agv = 2 * (leh + (n - 1) * s) * tw_t
+    Anv = Agv - 2 * (n - 0.5) * dn * tw_t
+    bs_cases = {"1, tension to both stem edges": bs(Agv, Anv, 2 * (lev - 0.5 * dn) * tw_t, wt_Fy, wt_Fu),
+                "2, tension between the bolt lines": bs(Agv, Anv, (g - dn) * tw_t, wt_Fy, wt_Fu),
+                "3, one line, tension to the far edge": bs(Agv / 2, Anv / 2, (g + lev - 1.5 * dn) * tw_t, wt_Fy, wt_Fu)}
+    Rbs_t = min(bs_cases.values())
+    Agv_f = 2 * (le_b + (n - 1) * s) * tbf
+    Rbs_f = bs(Agv_f, Agv_f - 2 * (n - 0.5) * dn * tbf, (bbf - g - dn) * tbf, beam_Fy, beam_Fu)
+    Afg, Afn = bbf * tbf, (bbf - 2 * dn) * tbf
+    Yt = 1.0 if beam_Fy / beam_Fu <= 0.8 else 1.1
+    f13 = beam_Fu * Afn < Yt * beam_Fy * Afg
+    Mn_b = min(beam_Fy * bm["Zx"], beam_Fu * Afn / Afg * bm["Sx"]) if f13 else beam_Fy * bm["Zx"]
+    Ln = footing_line
+    G24 = "AISC Design Guide 24 (2nd Ed.)"
+    nm, nq = w1["name"], wq["name"]
+    steps = [Ln("Force in each WT, R = M / (d + tw)", R1, "kip", f"{G24} Example 6.5", f"{nm}: M = {abs(w1['M']):.1f} kip-ft; d = {db_:g} in., WT stem tw = {tw_t:g} in."),
+             Ln("Force at the bolts, M / d", R2, "kip", f"{G24} Example 6.5", ""),
+             Ln("WT flange local bending, 2 x 0.5 x 6.25 Fy tf^2 x L / (20 tf)", Rflb, "kip", "AISC 360-22 Eq. J10-1", f"within 10 tf of the end at each side wall; L = {L:g} in. against 20 tf = {20 * tf_t:.3g} in."),
+             Ln("WT web local yielding, 2 Fy tw (2.5 kdes + lb)", Rwly, "kip", "AISC 360-22 Eq. J10-3", f"lb = 2t = {lb_w:.3g} in. (the flare-bevel weld)"),
+             Ln("HSS side wall local yielding, 2 Fy t (5k + lb)", Rsly, "kip", "AISC 360-22 Eq. J10-2", f"k = 1.5t + tf = {k_s:.3g} in., lb = 2 k1 = {lb_s:.3g} in." + (f" (k1 of the parent {t_['k1_from']})" if t_.get("k1_from") else "")),
+             Ln("U = Pro / (Fc Ag) + Mro / (Fc S)", wq["U"], "", "AISC 360-22 Eq. K1-6", f"{nq}: Pro = {wq['P']:.1f} kip, Mro = {wq['Mro']:.1f} kip-ft, Fc = {Fc:g} ksi, S = {S_c:g} in3"),
+             Ln("Qf = 1.3 - 0.4 U / beta", wq["Qf"], "", "AISC 360-22 Eq. K1-4", f"beta = {Bw:g} / {Hc:g} = {beta:.3f}; 0.4 to 1.0"),
+             Ln("HSS wall local crippling, two walls", Rcr(wq["Qf"]), "kip", f"{G24} Eq. 2-19", "1.6 t^2 (1 + 3 lb / H) (E Fy)^0.5 Qf per wall"),
+             Ln("Flare-bevel welds, 0.60 FEXX (5/16)(2t) bf x 2", Rfw, "kip", "AISC 360-22 Eq. J2-3, Table J2.2", f"two lines of {bf_t:g} in.; " + fac(0.80, 1.88)),
+             Ln("Bolt shear, Fnv Ab", rv, "kip", "AISC 360-22 Eq. J3-1", f"{d:g} in. {group}-{threads}, Fnv = {Fnv:g} ksi")]
+    for i, val, k_, cand in per:
+        steps.append(Ln(f"Bolt {i} from the HSS, nominal", val, "kip", "AISC 360-22 Sect. J3.7, J3.11", f"governs: {k_.replace('_', ' ')}"))
+    steps += [Ln("WT stem: beff = min(bf beam, L), Ag, An", f"{beff:g}, {Ag_s:.3g}, {An_s:.3g}", "in, in2", "AISC 360-22 Sect. J4.1", "U = 1.0")]
+    steps += [Ln(f"Block shear, stem, case {k_}", v_, "kip", "AISC 360-22 Eq. J4-5", "nominal") for k_, v_ in bs_cases.items()]
+    rows = [Row("Beam flexure at the bolt holes", nm, abs(w1["M"]), av(Mn_b, 0.90, 1.67) / 12, "kip-ft", "AISC 360-22 Sect. F13.1" if f13 else "AISC 360-22 Eq. F2-1", ""),
+            Row("WT flange local bending", nm, R1, av(Rflb, 0.90, 1.67), "kip", "AISC 360-22 Eq. J10-1", "both side walls, length reduced"),
+            Row("WT web local yielding", nm, R1, av(Rwly, 1.00, 1.50), "kip", "AISC 360-22 Eq. J10-3", ""),
+            Row("HSS side wall local yielding", nm, R1, av(Rsly, 1.00, 1.50), "kip", "AISC 360-22 Eq. J10-2", ""),
+            Row("HSS wall local crippling", nq, R1, av(Rcr(wq["Qf"]), 0.75, 2.00), "kip", f"{G24} Eq. 2-19", f"Qf = {wq['Qf']:.3f}"),
+            Row("Flare-bevel welds, WT to HSS", nm, R1, av(Rfw, 0.80, 1.88), "kip", "AISC 360-22 Eq. J2-3", "the HSS corners, R = 2t"),
+            Row("Bolts", nm, R2, Rb, "kip", "AISC 360-22 Sect. J3.7, J3.11", f"({2 * n:g}) {d:g} in. {group}-{threads}"),
+            Row("WT stem tensile yielding", nm, R1, av(wt_Fy * Ag_s, 0.90, 1.67), "kip", "AISC 360-22 Eq. J4-1", f"beff = {beff:g} in."),
+            Row("WT stem tensile rupture", nm, R1, av(wt_Fu * An_s, 0.75, 2.00), "kip", "AISC 360-22 Eq. J4-2", ""),
+            Row("Block shear, WT stem", nm, R1, av(Rbs_t, 0.75, 2.00), "kip", "AISC 360-22 Eq. J4-5", "the least of three cases"),
+            Row("Block shear, beam flange", nm, R2, av(Rbs_f, 0.75, 2.00), "kip", "AISC 360-22 Eq. J4-5", ""),
+            Row("Bolt spacing, at least 3 d", "", 3 * d, s, "in", "AISC 360-22 Sect. J3.3", "")]
+    for nm_e, le_ in (("WT stem end", leh), ("beam end", le_b), ("WT stem side", lev)):
+        rows.append(Row(f"Edge distance, {nm_e}", "", bolts.min_edge(d), le_, "in", "AISC 360-22 Table J3.4", ""))
+    info = [("Beam", f"{shapes.normalize(beam)}, d = {db_:g} in., bf = {bbf:g} in., tf = {tbf:g} in., Fy = {beam_Fy:g} ksi, Fu = {beam_Fu:g} ksi ({beam_source.strip()})"),
+            ("Column", f"{shapes.normalize(column)}, the beam frames into the {Bw:g} in. face ({Hc:g} in. along the beam); design wall {t:g} in., Fy = {col_Fy:g} ksi ({col_source.strip()})"),
+            ("WT Flanges", f"{shapes.normalize(wt)} x {L:g} in. long at each beam flange (tw {tw_t:g}, tf {tf_t:g}, bf {bf_t:g}, kdes {kdes_t:g} in.), Fy = {wt_Fy:g} ksi, Fu = {wt_Fu:g} ksi ({wt_source.strip()}); "
+                           "flange flare-bevel welded to the HSS corners"),
+            ("Bolts", f"two lines at {g:g} in. gage, {n:g} bolts in each at {s:g} in.; {leh:g} in. to the stem end, {le_b:g} in. to the beam end; {d:g} in. {group}-{threads} in standard holes; E{FEXX:g}XX")]
+    if runs:
+        load_lines = [f"M = {r_['M']:>7.2f} kip-ft   P = {(r_.get('P') or 0):>7.2f} kip" + (f"   Mc = {r_['Mc']:>7.2f} kip-ft" if r_.get("Mc") is not None else "") + f"   {r_['name']}" for r_ in runs]
+        combo_lines = [(f"Combined loads at the {method} level" + (f": {runs_from.strip()}" if (runs_from or "").strip() else ""), "")]
+    else:
+        load_lines = [f"{x_['case']:<3} M = {x_.get('M') or 0:>7.2f} kip-ft   P = {x_.get('P') or 0:>7.2f} kip" + (f"   Mc = {x_['Mc']:>7.2f} kip-ft" if x_.get("Mc") not in (None, "") else "")
+                      + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
+        combo_lines = [(cb.name, cb.source) for cb in combos]
+    sheet = SimpleSheet(mark, "Welded WT Flange Moment Connection to an HSS Column", "Connection", method, info,
+                        ["M beam end moment and Mc column moment in kip-ft, P column compression in kips (Mc blank = the beam moment)"] + load_lines, combo_lines,
+                        "Calculation", steps, rows,
+                        ["The same WT, bolts and welds at both beam flanges; the HSS checks use the compression flange force (Qf), the others the tension flange force.",
+                         "The WT flange bears on the HSS side walls through the flare-bevel welds at the corners; the WT flange is within 10 tf of its ends at each wall (Eq. J10-1 halved).",
+                         "Bolt strengths are summed bolt by bolt (AISC 360-22 Sect. J3.11); deformation at the bolt holes at service load is a design consideration."],
+                        ["the beam web shear connection", "the HSS column itself", "a reinforcing fillet on the flare-bevel welds"])
+    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("wt_flange", dict(Bw=Bw, Hc=Hc, t=t, L=L, bf_t=bf_t, tf_t=tf_t, d_t=t_["d"], tw_t=tw_t, n=int(n), s=s,
+                                                                                               g=g, leh=leh, le_b=le_b, bf=bbf, db=d, wt=shapes.normalize(wt), column=shapes.normalize(column)))))
+    sheet.wt = dict(R1=R1, R2=R2, Rflb=Rflb, Rwly=Rwly, Rsly=Rsly, Rcr=Rcr(wq["Qf"]), Qf=wq["Qf"], U=wq["U"], Rfw=Rfw, Rb=Rb, per=per, Ag_s=Ag_s, An_s=An_s,
+                    bs_cases=bs_cases, Rbs_f=Rbs_f, Mn_b=Mn_b)
+    return sheet
