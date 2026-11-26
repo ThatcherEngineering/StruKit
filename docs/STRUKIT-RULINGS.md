@@ -227,3 +227,10 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - King studs take the wind on the wall (strength-level pressure typed with its source) over half the opening plus half a stud space, shared
   equally among the king studs at that side, as a uniform load over their height; no axial load.
 
+## 2026-11-25 19:55, wood members in the 3D frame (0.231.0), applied (not ruled; tell Zach at the check-in)
+- Stiffness of a wood member in the frame: the reference E of its grade (NDS Supplement Tables 4A-4D, 5A; ESR-1040 / ESR-1387), not adjusted;
+  glulam columns take Emin (StruKit's Table 5B file has no E). Gross section b x d. Torsion: J of the rectangle, G = E / 16 (approximate).
+- In the sway run the frame's 0.8 stiffness reduction (AISC direct analysis method) applies to wood members too.
+- Rows of joists or rafters (members with a spacing) and I-joists are not frame members; their loads reach the frame through the load path.
+- Wood members are not checked from the frame forces; their own sheets (NDS) are the check.
+

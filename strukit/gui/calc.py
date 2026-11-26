@@ -3853,11 +3853,64 @@ def model_view(project, members):
     return dict(items=items, levels=levels, problems=problems)
 
 
-FRAME_BEAMS, FRAME_COLS = ("steel_beam",), ("steel_column", "hss_column")
+WOOD_FRAME_BEAMS = ("wood_beam", "lvl_beam", "glulam_beam", "wey_beam")
+WOOD_FRAME_COLS = ("wood_post", "builtup_post", "lvl_post", "wey_post", "glulam_post")
+FRAME_BEAMS, FRAME_COLS = ("steel_beam",) + WOOD_FRAME_BEAMS, ("steel_column", "hss_column") + WOOD_FRAME_COLS
+WOOD_G_OVER_E = 1.0 / 16.0                                     # shear modulus of wood for the frame's torsion stiffness, G = E / 16
+
+
+def _wood_frame_section(kind, v):
+    """Section and stiffness of a wood member for the 3D frame (kips, inches): b x d from the member's screen (dressed sizes, NDS Supplement
+    Table 1B / 4D; laminations side by side), E the reference modulus of elasticity of its grade (Supplement Tables 4A-4D, 5A; the composite
+    lumber code reports); glulam columns take Emin (StruKit's Table 5B file lists no E). J of the rectangle, G = E / 16. W from the screen's
+    unit weight (pcf), else 0."""
+    num = lambda k, d=None: (float(str(v.get(k)).replace(",", "")) if str(v.get(k) or "").strip() else d)
+    E_note = ""
+    if kind in ("wood_beam", "wood_post", "builtup_post"):
+        sp, gr, size = v.get("species"), v.get("grade"), v.get("size")
+        plies = int(float(v.get("plies") or 1)) if kind != "wood_post" else 1
+        if size in wood.SIZES:
+            t_, w_ = wood.SIZES[size]
+            E = wood.values(sp, gr, size)[0]["E"]
+        else:
+            ref, _, dims, _, _ = wood.post_values(sp, gr, size)
+            t_, w_ = dims; E = ref["E"]
+        b, d = t_ * plies, w_
+    elif kind in ("lvl_beam", "wey_beam"):
+        gr = str(v.get("grade") or "")
+        prod = "Versa-Lam LVL"
+        if kind == "wey_beam":
+            prod = next(p_ for p_ in scl.WEY if gr.startswith(p_ + " ")); gr = gr[len(prod) + 1:]
+        b, d = num("thickness") * int(float(v.get("plies") or 1)), num("depth")
+        E = scl.beam_spec(prod, gr, num("thickness"), int(float(v.get("plies") or 1)), d)["E"]
+    elif kind in ("lvl_post", "wey_post"):
+        gr = str(v.get("grade") or "")
+        prod = "Versa-Lam LVL"
+        if kind == "wey_post":
+            prod = next(p_ for p_ in scl.WEY if gr.startswith(p_ + " ")); gr = gr[len(prod) + 1:]
+        b, d = num("b") * int(float(v.get("plies") or 1)), num("d")
+        E = scl.beam_spec(prod, gr, num("b"), int(float(v.get("plies") or 1)), d)["E"]
+    elif kind == "glulam_beam":
+        b, d = num("b"), num("d")
+        E = glulam.values(v.get("stress_class"))["E"]
+    elif kind == "glulam_post":
+        b, d = num("b"), num("d")
+        E = glulam.column_values(v.get("combination"), num("lams"))["Emin"]; E_note = "Emin"
+    else:
+        raise ValueError(f"{kind} is not a wood frame member")
+    if not b or not d:
+        raise ValueError("its size is not complete")
+    lo, hi = min(b, d), max(b, d)
+    J = hi * lo ** 3 * (1 / 3 - 0.21 * lo / hi * (1 - lo ** 4 / (12 * hi ** 4)))
+    Ek = E / 1000.0
+    uw = num("unit_weight", 0.0) or 0.0
+    return dict(A=b * d, Ix=b * d ** 3 / 12, Iy=d * b ** 3 / 12, J=J, W=uw * b * d / 144.0, E=Ek, G=Ek * WOOD_G_OVER_E, wood=True, E_note=E_note)
 FRAME_BRACES = ("tension_member", "angle_strut")
 
 
 def _frame_section(kind, v):
+    if kind in WOOD_FRAME_BEAMS + WOOD_FRAME_COLS:
+        return _wood_frame_section(kind, v)
     name = v.get("shape") or ""
     sec = None
     for get in ((shapes.hss, shapes.get, shapes.channel) if kind == "hss_column" else (shapes.get, shapes.channel, shapes.hss)):
@@ -3868,7 +3921,7 @@ def _frame_section(kind, v):
             continue
     if sec is None:
         raise ValueError(f"'{name}' is not in the shapes table")
-    return dict(A=sec["A"], Ix=sec["Ix"], Iy=sec["Iy"], J=max(sec.get("J") or 0.0, 1e-3), W=sec.get("W") or 0.0)
+    return dict(A=sec["A"], Ix=sec["Ix"], Iy=sec["Iy"], J=max(sec.get("J") or 0.0, 1e-3), W=sec.get("W") or 0.0, E=29000.0, G=11200.0, wood=False)
 
 
 def _model_frame_build(project, members, sway=False):
@@ -3890,6 +3943,11 @@ def _model_frame_build(project, members, sway=False):
         if m.get("kind") not in FRAME_BEAMS + FRAME_COLS + (FRAME_BRACES if sway else ()):
             continue
         try:
+            if m.get("kind") in FRAME_BEAMS and float(str((m.get("values") or {}).get("spacing") or 0).replace(",", "") or 0) > 0:
+                continue                                     # a row of joists or rafters: its loads reach the frame through the takedown
+        except ValueError:
+            pass
+        try:
             pl = model_place(project, m)
         except ValueError as e:
             problems.append(str(e)); continue
@@ -3898,12 +3956,15 @@ def _model_frame_build(project, members, sway=False):
         if pl["level"] not in elev or (m["kind"] in FRAME_COLS + FRAME_BRACES and pl["base"] not in elev):
             problems.append(f"{(m.get('values') or {}).get('mark')}: its level needs an elevation on the Project page"); continue
         placed.append((m, pl))
-    left_out = sorted({(m.get("values") or {}).get("mark") or "(no mark)" for m in members or []
-                       if m.get("kind") in TAKEDOWN_BEAMS + TAKEDOWN_POSTS and m.get("kind") not in FRAME_BEAMS + FRAME_COLS and (m.get("values") or {}).get("at_x1")})
-    if left_out:
-        notes.append("Wood members are not in the frame yet: " + ", ".join(left_out) + ". Loads they put on steel members stay as the takedown loads.")
+    in_rows = {(m.get("values") or {}).get("mark") for m in members or [] if m.get("kind") in TAKEDOWN_BEAMS and (m.get("values") or {}).get("at_x1")} - {
+        (m.get("values") or {}).get("mark") for m, _ in placed}
+    if in_rows:
+        notes.append("Rows of joists or rafters and I-joists are not frame members: " + ", ".join(sorted(x or "(no mark)" for x in in_rows)) + ". Their loads reach the frame through the load path.")
+    if any(m["kind"] in WOOD_FRAME_BEAMS + WOOD_FRAME_COLS for m, _ in placed):
+        notes.append("Wood members are in the frame with E of their grade (glulam columns Emin), the gross section b x d, J of the rectangle and G = E / 16; "
+                     "the frame gives their forces, and they are checked on their own sheets (NDS).")
     if not any(m["kind"] in FRAME_COLS for m, _ in placed) or not any(m["kind"] in FRAME_BEAMS for m, _ in placed):
-        return dict(problems=problems + ["The frame needs at least one placed steel beam and one placed steel or HSS column"], notes=notes)
+        return dict(problems=problems + ["The frame needs at least one placed beam and one placed column (steel or wood)"], notes=notes)
     in_frame = {(m.get("values") or {}).get("mark") for m, _ in placed}
     E_, G_, FT = 29000.0, 11200.0, 12.0
     fr = Frame3D()
@@ -3963,7 +4024,7 @@ def _model_frame_build(project, members, sway=False):
             problems.append(f"{v.get('mark')}: its top is not above its base"); continue
         nb, nt = node(*pl["p1"], elev[pl["base"]]), node(*pl["p1"], ztop)
         web_y = str(v.get("at_web") or "").strip().upper().startswith("Y")
-        fr.member("col:" + v["mark"], nb, nt, E_, G_, sec["A"], sec["Ix"], sec["Iy"], sec["J"], up=(0.0, 1.0, 0.0) if web_y else None)
+        fr.member("col:" + v["mark"], nb, nt, sec["E"], sec["G"], sec["A"], sec["Ix"], sec["Iy"], sec["J"], up=(0.0, 1.0, 0.0) if web_y else None)
         col_nodes[v["mark"]] = (nb, nt, sec, ztop - elev[pl["base"]])
         col_fixed[v["mark"]] = _base_flags(v.get("at_base_fix"))
         held.add(nt)
@@ -3992,11 +4053,11 @@ def _model_frame_build(project, members, sway=False):
             if isinstance(lk, dict) and lk.get("src") in in_frame:
                 continue                                     # the member above is in the frame; it brings this load itself
             try:
-                mag = float(str(r.get("mag", "")).replace(",", ""))
+                mag = float(str(r.get("mag", "")).replace(",", "")) * (0.001 if sec.get("wood") else 1.0)
             except ValueError:
                 continue
             c = str(r.get("case") or "").strip()
-            if not c:
+            if not c or r.get("kind") == "area":
                 continue
             f_ = lambda key, dflt: (float(str(r.get(key)).replace(",", "")) if str(r.get(key) or "").strip() else dflt)
             if r.get("kind") == "point":
@@ -4007,7 +4068,7 @@ def _model_frame_build(project, members, sway=False):
             else:
                 x1, x2 = f_("x1", 0.0), f_("x2", Lm)
                 cuts.update((min(max(x1, 0.0), Lm), min(max(x2, 0.0), Lm))); rows.append((c, "uniform", mag, x1, x2))
-        if str(v.get("self_weight", "")).lower() == "yes":
+        if str(v.get("self_weight", "")).lower() == "yes" or (sec.get("wood") and sec["W"] > 0):
             rows.append(("D", "uniform", sec["W"] / 1000.0, 0.0, Lm))
         cl = sorted(cuts)
         cl = [c_ for i, c_ in enumerate(cl) if i == 0 or c_ - cl[i - 1] > 0.02]
@@ -4021,7 +4082,7 @@ def _model_frame_build(project, members, sway=False):
             nm = f"bm:{v['mark']}:{i}"
             mom_i = str(v.get("at_fix_i") or "").strip().lower().startswith("moment") or sup_x[0] > 1e-6       # an overhang tip is a free end, not a pin
             mom_j = str(v.get("at_fix_j") or "").strip().lower().startswith("moment") or Lm - sup_x[-1] > 1e-6
-            fr.member(nm, names[i], names[i + 1], E_, G_, sec["A"], sec["Ix"], sec["Iy"], sec["J"],
+            fr.member(nm, names[i], names[i + 1], sec["E"], sec["G"], sec["A"], sec["Ix"], sec["Iy"], sec["J"],
                       release_i=("my", "mz") if (i == 0 and not mom_i) else (), release_j=("my", "mz") if (i == len(cl) - 2 and not mom_j) else ())
             beam_elems.setdefault(v["mark"], []).append(nm)
             for c, kind_, mag, x1, x2 in rows:
@@ -4045,7 +4106,7 @@ def _model_frame_build(project, members, sway=False):
             if isinstance(lk, dict) and lk.get("src") in in_frame:
                 continue
             try:
-                P = float(str(r.get("P", "")).replace(",", ""))
+                P = float(str(r.get("P", "")).replace(",", "")) * (0.001 if sec.get("wood") else 1.0)
             except ValueError:
                 continue
             c = str(r.get("case") or "").strip()
@@ -4053,7 +4114,7 @@ def _model_frame_build(project, members, sway=False):
                 joint_loads[(nt, c)] = joint_loads.get((nt, c), 0.0) + P
                 if c not in cases:
                     cases.append(c)
-        if str(v.get("self_weight", "")).lower() == "yes":
+        if str(v.get("self_weight", "")).lower() == "yes" or (sec.get("wood") and sec["W"] > 0):
             joint_loads[(nt, "D")] = joint_loads.get((nt, "D"), 0.0) + sec["W"] * h / 1000.0
             if "D" not in cases:
                 cases.append("D")
@@ -4155,12 +4216,13 @@ def model_frame(project, members):
         v = next(m["values"] for m, _ in placed if m["values"].get("mark") == mark)
         kip = True
         td = {}
+        wd = col_nodes[mark][2].get("wood")
         for r in v.get("loads") or []:
             try:
-                td[str(r.get("case")).strip()] = td.get(str(r.get("case")).strip(), 0.0) + float(str(r.get("P", "")).replace(",", "")) * 1000.0
+                td[str(r.get("case")).strip()] = td.get(str(r.get("case")).strip(), 0.0) + float(str(r.get("P", "")).replace(",", "")) * (1.0 if wd else 1000.0)
             except ValueError:
                 pass
-        if str(v.get("self_weight", "")).lower() == "yes":
+        if str(v.get("self_weight", "")).lower() == "yes" or (wd and col_nodes[mark][2]["W"] > 0):
             td["D"] = td.get("D", 0.0) + col_nodes[mark][2]["W"] * col_nodes[mark][3]
         cols.append(dict(mark=mark, cases={c: (by_case.get(c, 0.0), td.get(c, 0.0)) for c in cases}))
     return dict(columns=cols, supports=[dict(mark=k[0], x=k[1], cases=vv) for k, vv in sup_out.items()], notes=notes, problems=problems, cases=cases,
@@ -4474,6 +4536,7 @@ def model_frame_sway(project, members):
                 out[nd] = out.get(nd, 0.0) + total * share / len(rows[k_])
         return out
 
+    wood_marks = {m["values"].get("mark") for m, _ in B["placed"] if m["kind"] in WOOD_FRAME_BEAMS + WOOD_FRAME_COLS}
     # member strengths for the checks from the frame's forces (kips, kip-in.)
     from .. import steel_column as _sc, steel_beam as _sb, steel_beamcol as _bc
     strength, kinds = {}, {}
@@ -4481,6 +4544,8 @@ def model_frame_sway(project, members):
         v = m["values"]; mark = v.get("mark")
         if not (mark in col_nodes or mark in B["beam_elems"]):
             continue
+        if m["kind"] in WOOD_FRAME_BEAMS + WOOD_FRAME_COLS:
+            continue                                         # wood: forces from the frame, checked on its own sheet
         try:
             Fy = float(v.get("Fy") or 0)
             if Fy <= 0:
@@ -4646,7 +4711,8 @@ def model_frame_sway(project, members):
                 P = st_[0][0][0]                             # compression at the base end
                 Ms = max(max(abs(a_[4]), abs(b_[4])) for a_, b_ in st_)
                 Mw = max(max(abs(a_[5]), abs(b_[5])) for a_, b_ in st_)
-                cur = col_res.setdefault(mark, dict(mark=mark, T=0.0, T_combo="", P=0.0, P_combo="", Ms=0.0, Ms_combo="", Mw=0.0, Mw_combo="", ratio=None, eq="", ratio_combo=""))
+                cur = col_res.setdefault(mark, dict(mark=mark, T=0.0, T_combo="", P=0.0, P_combo="", Ms=0.0, Ms_combo="", Mw=0.0, Mw_combo="", ratio=None, eq="", ratio_combo="",
+                                                    wood=bool(col_nodes[mark][2].get("wood"))))
                 S_ = strength.get(mark)
                 if S_:
                     for a_, b_ in st_:
@@ -4686,7 +4752,8 @@ def model_frame_sway(project, members):
                 M = max(max(abs(a_[4]), abs(b_[4])) for e_ in els for a_, b_ in r2.stations[e_])
                 V = max(max(abs(a_[2]), abs(b_[2])) for e_ in els for a_, b_ in r2.stations[e_])
                 Nax = max(max(abs(a_[0]), abs(b_[0])) for e_ in els for a_, b_ in r2.stations[e_])
-                cur = beam_res.setdefault(mark, dict(mark=mark, M=0.0, M_combo="", V=0.0, N=0.0, ratio=None, eq="", ratio_combo="", v_ratio=None))
+                cur = beam_res.setdefault(mark, dict(mark=mark, M=0.0, M_combo="", V=0.0, N=0.0, ratio=None, eq="", ratio_combo="", v_ratio=None,
+                                                     wood=mark in wood_marks))
                 a0, b1 = r2.stations[els[0]][0][0], r2.stations[els[-1]][-1][1]
                 cur.setdefault("ends", {"left": [], "right": []})
                 cur["ends"]["left"].append(dict(run=label, M=abs(float(a0[4])) / alpha, V=abs(float(a0[2])) / alpha, T=-float(a0[0]) / alpha))
