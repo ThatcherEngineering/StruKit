@@ -1078,3 +1078,13 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   side member standing with its grain vertical; a steel side plate cut and hatched.
 - **Single-Angle Beam:** the elevation shows the horizontal leg edge-on at the heel (bottom with the toe up, top with the toe down).
 - Every changed picture rendered and looked at; the overlap audit passes. The I-joist web stays the plain OSB colour (it is OSB).
+
+## 2026-11-26 16:45 MST — 0.267.0 single angles checked from the 3D frame forces (Next 3)
+- In the sway run (direct analysis, second order), an angle placed as a steel beam is checked at every station of every run by Eq. H2-1 on
+  its principal axes from the frame's own element forces (the element axes are the principal axes, 0.264.0): P / Pc (Sect. E3 / E7 with the
+  member length) or P / Pt (yielding) plus Mw / Mcw plus Mz / Mcz, the three terms added (the signs at the toes are not tracked); Mcw and Mcz
+  the smaller of the two moment signs, the negative beta_w, Cb = 1.0, Lb from the screen's brace points (else the whole member; continuous
+  bracing: no lateral-torsional buckling); shear on the legs (Sect. G3). Compression in an angle with slender legs (Sect. E4 not built) is
+  noted and not checked from the frame.
+- **Validation: by hand** on the 6 ft L4x4x1/4 pinned to two fixed-base columns: the frame gives Mw = Mz = (P L / 4) / 2^0.5 = 20.4 kip-in. and
+  the ratio equals Mw / Mcw + Mz / Mcz (`tests/test_angle_beam.py`).

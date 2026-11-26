@@ -485,3 +485,7 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 - A concentrated load on the top flange without a bearing stiffener is taken by the top flange welds over lb + 5 tf (the J10.2 spread) and
   added to the shear flow as a vector, with the largest shear on the member (not the shear at the load); the weld's directional strength
   increase (kds) is not taken.
+
+## 2026-11-26 16:45, angles from the 3D frame forces (0.267.0), applied (not ruled)
+- Eq. H2-1 with the axial and both moment terms added at full value (worst signs together), the smaller strength of the two moment signs,
+  the negative beta_w and Cb = 1.0, so no tracking of which toe is in compression.

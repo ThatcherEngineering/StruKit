@@ -218,3 +218,27 @@ def test_angle_in_the_3d_frame_and_on_the_steel_beam_screen():
     assert dz / geo == pytest.approx(1.5 * (1 / 4.82 + 1 / 1.19), rel=0.01) and dy / geo == pytest.approx(1.5 * (1 / 1.19 - 1 / 4.82), rel=0.02)
     s, kind, _ = calc.build("steel_beam", bm["values"], proj)
     assert s.title == "Single-Angle Beam" and kind == "simple"
+
+
+def test_angle_checked_from_the_3d_frame_forces():
+    """The angle beam in the sway run is checked by Eq. H2-1 on its principal axes from the frame's own element forces. L4x4x1/4, 6 ft,
+    pinned to two fixed-base W12x65 columns, 1 kip live at midspan, LRFD 1.6 kips: M = P L / 4 = 28.8 kip-in. about the geometric axis, which
+    the equal-leg angle carries as Mw = Mz = M / 2^0.5 = 20.4 kip-in. on its principal axes (frame axes along them); the ratio is
+    Mw / Mcw + Mz / Mcz with the principal strengths at Lb = 6 ft, Cb = 1.0, the negative beta_w (zero here), the weaker sign of each."""
+    from strukit import anglebeam as ab, shapes
+    proj = dict(method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[dict(expr="D + L", source="t")], name="t", number="t", date="2026-11-26",
+                model=dict(levels=[dict(name="Base", elev="0"), dict(name="Roof", elev="10")], grids_x=[], grids_y=[]))
+    bm = dict(kind="steel_beam", values=dict(mark="LB", shape="L4X4X1/4", Fy="50", span="6", more_spans="", oh_left="", oh_right="", bracing="at points", brace_pts="",
+              self_weight="no", angle_vertical="", angle_toe="up", angle_source="ASTM A572 Gr. 50",
+              loads=[dict(case="L", kind="point", mag="1", x1="3", x2="", label="")], defl=[],
+              at_level="Roof", at_x1="0", at_y1="0", at_x2="6", at_y2="0"))
+    col = lambda mark, x: dict(kind="steel_column", values=dict(mark=mark, shape="W12X65", Fy="50", at_level="Roof", at_base="Base", at_x1=str(x), at_y1="0",
+                                                                 at_base_fix="fixed", self_weight="no", loads=[]))
+    out = calc.model_frame_sway(proj, [bm, col("C1", 0), col("C2", 6)])
+    b = next(x for x in out["beams"] if x["mark"] == "LB")
+    a = shapes.angle("L4X4X1/4"); g = ab.geometry(a, "", "up"); _, _, pts = ab.principal_points(a, g)
+    Mcw = 0.9 * min(ab.principal_strengths(a, g, 50, pts, s1, s2, 72.0, 1.0, neg_beta=True)["Mnw"] for s1 in (1, -1) for s2 in (1, -1))
+    Mcz = 0.9 * min(ab.principal_strengths(a, g, 50, pts, s1, s2, 72.0, 1.0, neg_beta=True)["Mnz"] for s1 in (1, -1) for s2 in (1, -1))
+    M = 1.6 * 72 / 4
+    assert b["ratio"] == pytest.approx(M / 2 ** 0.5 * (1 / Mcw + 1 / Mcz), rel=0.03) and "H2-1" in b["eq"]
+    assert b["at"]["Mx"] == pytest.approx(M / 2 ** 0.5, rel=0.03) and b["at"]["My"] == pytest.approx(M / 2 ** 0.5, rel=0.03)
