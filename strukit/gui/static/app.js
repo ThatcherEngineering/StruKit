@@ -890,7 +890,21 @@ function modelCard(changed) {
     setDirty(); await recalcAll(); select("project");
     toast(out.lines.length ? "The walls now carry " + (which === "governing" ? "the governing load of wind and seismic" : "the " + which + " shear") + ", by tributary width, stacked from the top down." : "The load was not distributed. See the notes under the plan.", 12000);
   } }, text);
-  const lat = el("span", {}, latBtn("wind", "Send the wind to the wall lines"), latBtn("seismic", "Send the seismic forces"), latBtn("governing", "Use whichever governs each wall"));
+  const wtBtn = el("button", { class: "btn", onclick: async () => {
+    const eq = S.members.filter(m => m.kind === "seismic_elf");
+    if (!eq.length) { toast("Add a Seismic Base Shear sheet first; its Levels table names the levels to fill.", 10000); return; }
+    let out;
+    try { out = await post("/api/model_seismic_weights", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
+    let n = 0;
+    eq.forEach(m => { (m.values.levels || []).forEach(row => { const nm = (row.name || "").trim(); if (nm in out.levels && out.levels[nm] > 0) { row.w = (out.levels[nm] / 1000).toFixed(1); n++; } });
+      m.values.w_source = "building model weight takeoff (ASCE/SEI 7-22 Sect. 12.7.2): dead load of the placed members and walls; " + out.notes[0];
+      m.values.w_parts = Object.entries(out.parts).filter(([k, v]) => v.length).map(([k, v]) => k + ": " + Math.round(out.levels[k]).toLocaleString() + " lb").concat(
+        ...Object.entries(out.parts).filter(([k, v]) => v.length).map(([k, v]) => v.map(t => "  " + k + ", " + t))); });
+    MODEL_NOTES = out.problems.concat(out.notes);
+    setDirty(); await recalcAll(); select("project");
+    toast(n ? n + " level weight" + (n === 1 ? "" : "s") + " written to the seismic sheet." + (out.problems.length ? " See the notes under the plan." : "") : "No level of the seismic sheet matches a level of the model by name.", 12000);
+  } }, "Fill the seismic weights from the model");
+  const lat = el("span", {}, wtBtn, latBtn("wind", "Send the wind to the wall lines"), latBtn("seismic", "Send the seismic forces"), latBtn("governing", "Use whichever governs each wall"));
   const frameBtn = el("button", { class: "btn", onclick: async () => {
     let out;
     try { out = await post("/api/model_frame", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }

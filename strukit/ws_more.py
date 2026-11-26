@@ -1259,7 +1259,7 @@ def wind_cc_parapet_sheet(mark, V, V_source, exposure, exposure_basis, hp_top, h
 
 
 def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie_source, structure, hn, levels, T_analysis=None,
-                      T_source="", unit="kips", risk=None, drift=None, wall_lines=None, rho=None, rho_source="", system=None):
+                      T_source="", unit="kips", risk=None, drift=None, wall_lines=None, rho=None, rho_source="", system=None, w_source="", w_parts=None):
     """Seismic base shear and story forces, ASCE/SEI 7-22 Sect. 12.8 (see seismic.py).
     levels: [(name, weight, height above the base ft)]."""
     from . import seismic
@@ -1310,6 +1310,8 @@ def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie
             ("System", f"R = {R:g} ({R_source.strip()})"),
             ("Importance", f"Ie = {Ie:g} ({Ie_source.strip()})"),
             ("Structure", f"structural height hn = {hn:g} ft; period type: {structure}; {len(levels)} level" + ("s" if len(levels) != 1 else ""))]
+    if w_source.strip():
+        info.append(("Seismic Weights", w_source.strip()))
     sheet = SimpleSheet(
         mark, "Seismic Base Shear and Story Forces", "Site and Building", "Sect. 12.8", info, [], [],
         "Base Shear", steps, [],
@@ -1402,6 +1404,8 @@ def seismic_elf_sheet(mark, SDS, SD1, S1, TL, ground_source, R, R_source, Ie, Ie
     if cat:
         sheet.info.insert(3, ("Category", f"Risk Category {risk}; Seismic Design Category {cat[0]}"))
         r = dict(r, sdc=cat[0])
+    if w_parts:
+        sheet.blocks.append(dict(title="Seismic Weight Takeoff", lines=list(w_parts)))
     sheet.seismic = r
     return sheet
 

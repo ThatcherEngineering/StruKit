@@ -214,3 +214,31 @@ def test_header_at_a_wall_corner():
     row = [r for r in by["Roof Beam A"]["loads"] if r.get("case") == "Lr"]
     assert len(row) == 1 and (row[0]["x1"], row[0]["x2"]) == ("0.5", "11.25")
     assert any("Roof Beam A, left support" in r.get("label", "") for r in by["Line 1, lower level"]["loads"])
+
+
+def test_seismic_weights_from_the_model():
+    """Effective seismic weight by level from the placed members (Sect. 12.7.2): each member's own dead load (links not counted twice), a
+    joist row times the members over the length it covers, walls half up and half down by their typed weight. Statics on the 2026-011 model:
+    the roof joist row covers 26.75 ft (16 ft on the wall, 10.75 ft on Roof Beam A) at 24 in.; a 10 psf wall weight adds half of
+    10 x 9.5 x 27.25 lb to each of the two levels it spans, except the half that goes to the foundation."""
+    import copy
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+    ms = copy.deepcopy(d["members"])
+    w = calc.model_seismic_weights(d["project"], ms)
+    rj = next(m for m in ms if m["values"]["mark"] == "Roof joists")
+    own = dict(rj["values"], loads=[r for r in rj["values"]["loads"] if not isinstance(r.get("link"), dict)])
+    per = sum(s_["cases"].get("D", 0) for s_ in calc.case_reactions("ijoist", own, d["project"])["supports"])
+    rba = next(m for m in ms if m["values"]["mark"] == "Roof Beam A")
+    rb = sum(s_["cases"].get("D", 0) for s_ in calc.case_reactions("lvl_beam", rba["values"], d["project"])["supports"])
+    assert w["levels"]["Roof"] == pytest.approx(per * 26.75 * 12 / 24 + rb, rel=1e-4)
+    assert w["levels"]["Foundation"] == 0 and any("No wall weight" in p for p in w["problems"])
+    for mk in ("Line 1, main level", "Line 1, lower level"):
+        next(m for m in ms if m["values"]["mark"] == mk)["values"].update(at_wall_psf="10", at_wall_psf_source="test value")
+    w2 = calc.model_seismic_weights(d["project"], ms)
+    half = 10 * 9.5 * 27.25 / 2
+    assert w2["levels"]["Roof"] - w["levels"]["Roof"] == pytest.approx(half, abs=1)
+    assert w2["levels"]["Main floor"] - w["levels"]["Main floor"] == pytest.approx(2 * half, abs=1)
+    # the takeoff prints on the seismic sheet
+    eq = next(m for m in ms if m["kind"] == "seismic_elf")["values"]
+    sheet, _, _ = calc.build("seismic_elf", dict(eq, w_source="building model weight takeoff", w_parts=["Roof: 1 lb"]), d["project"])
+    assert any(b.get("title") == "Seismic Weight Takeoff" for b in sheet.blocks) and ("Seismic Weights", "building model weight takeoff") in sheet.info

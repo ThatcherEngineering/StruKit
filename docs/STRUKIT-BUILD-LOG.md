@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 18:45. Build **0.226.0**, 606 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 18:50. Build **0.227.0**, 607 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -35,7 +35,7 @@ Updated 2026-11-25 18:45. Build **0.226.0**, 606 tests passing; `main` and `rele
 6. (Single angles in bending done 0.217.0.) Still open: angles over more than one span or with overhangs, axial load with bending (Sect. H2), deflection of unrestrained angles, unequal angles not in Commentary Table C-F10.1, the Steel Beam screen and the 3D frame taking angles.
 7. (Top-running crane runway beam, simple span, done 0.218.0.) Still open and waiting on documents: underhung cranes and monorails (bottom flange local bending), fatigue (AISC 360-22 Appendix 3 is on file; needs the number of cycles by service class), web yielding and crippling under the wheels, continuous runway beams, cap channels; AISC Design Guide 7 would let the lateral load and deflection limits be cited.
 8. (Dropped 2026-11-25 16:51, Zach: he no longer uses StruCalc and StruKit replaces it. No more StruCalc import work. The steel .vtx reader of 0.165.0 stays as it is.)
-8. **From the 2026-011 whole-house model run (0.220.0), in order:** (a) (existing walls done 0.221.0; still open: existing beams, posts and footings as carriers); (b) (done 0.226.0: every point load on a footing line is checked as a pad, larger pads sized where needed); (c) (wall weight 0.222.0, headers in wall lines 0.224.0; still open: wall weight less the openings, king and jack studs checked); (d) seismic weights and story forces from the model (today the seismic sheet's weights are typed); (e) diaphragm sheets filled from the model; (f) wood beams, posts and shear walls in the 3D frame.
+8. **From the 2026-011 whole-house model run (0.220.0), in order:** (a) (existing walls done 0.221.0; still open: existing beams, posts and footings as carriers); (b) (done 0.226.0: every point load on a footing line is checked as a pad, larger pads sized where needed); (c) (wall weight 0.222.0, headers in wall lines 0.224.0; still open: wall weight less the openings, king and jack studs checked); (d) (seismic weights from the model done 0.227.0; still open: story forces spread by mass rather than evenly over the width); (e) diaphragm sheets filled from the model; (f) wood beams, posts and shear walls in the 3D frame.
 9. (Shear lugs done 0.219.0.) Still open: anchorage in the concrete on the uplift base plate and the four-rod biaxial base plate; concrete breakout of the rods on the shear lug screen; shear lugs with net uplift or two-way shear.
 10. Built-up three-plate sections as beams and columns; the column side of the extended end plate.
 11. Through-plate and diaphragm beam-to-HSS moment connections (Design Guide 24 Examples 6.2, 6.4).
@@ -687,7 +687,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **A header end at a wall corner:** where two walls are under a header's jack studs, the one on the header's own wall line takes it (it was reported as "more than one member under it").
 - Tests: the corner case and Roof Beam A's row on the model; the earlier header test moved to 14 to 18 ft (the main wall keeps 26.75 - 10.75 - 4 = 12 ft of row). Opened in a headless browser.
 
-## 2026-11-25 18:45 local — 0.226.0 point loads on continuous footings: pads (606 tests)
+## 2026-11-25 18:34 local — 0.226.0 point loads on continuous footings: pads (606 tests)
 - Zach 18:22: "Yes continue with that list" and: beams and headers generate point loads; where a point load exceeds the bearing capacity of the continuous footing, size a larger square or rectangular footing at that point.
 - **Every point load that lands on a continuous footing line** (a post, a column, a header end down its jack studs) is no longer added to the line's per-foot load. It becomes an **Isolated Footing member of its own, "<footing line> at <member>"**, placed at the point:
   - first the continuous footing itself is tried: its width x a length Le along the line (the length typed on the footing for point loads with its source, else the footing width), carrying the point load by case plus the line's own load by case (walls and joist rows on it) and the stem wall over Le, governing ASD and LRFD combinations picked on the total; soil bearing with footing and soil weight as the Isolated Footing sheet counts them;
@@ -698,4 +698,10 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - `tools/browser_check.py --click "button text"` presses a Project page button before reporting (repeatable).
 - Validation: soil bearing by hand (2026-011 model: the post under Floor Beam B needs 2.25 ft square; 2.0 ft fails, by the same formula as the Isolated Footing sheet); Column A and Column B carried by the footing over its 2 ft width; rectangular and typed-length cases; a second run makes no duplicates. "Link members by position" pressed twice in a headless browser: 3 pads, all OK, no page errors.
 - Not yet: pads when "Recalculate the load path" is pressed alone (pads come from the position link), two point loads close enough to share one pad, the continuous footing's own sheet showing the pad locations.
+
+## 2026-11-25 18:50 local — 0.227.0 seismic weights from the building model (607 tests)
+- Next item 8(d).
+- **`calc.model_seismic_weights`, Building Model card button "Fill the seismic weights from the model":** the effective seismic weight at each level (ASCE/SEI 7-22 Sect. 12.7.2) from the placed members after linking: each beam and joist's own dead load (its typed dead loads and self-weight; loads brought to it by links are not counted again), a joist or rafter row times the members over the length it covers on its carriers (cover_ft or the carrier length, headers included), each wall's typed weight half to the level at its top and half to the level below (the half above the lowest level goes to the foundation); 20 percent of the snow on the members where a Roof Snow Load sheet gives pf over 30 psf (Sect. 12.7.2 item 4), otherwise none, said in the notes. Partitions, equipment and the other items of Sect. 12.7.2 count only where typed as dead load. Walls with no weight typed are listed.
+- The button writes each level's weight (kips) into the Levels table of the project's Seismic Base Shear sheet by level name, its source line, and the takeoff (one line per member) which prints on the seismic sheet as a "Seismic Weight Takeoff" block. New optional field on the seismic screen: "Where the seismic weights come from" (printed as "Seismic Weights").
+- Validation by statics: the roof weight equals the roof joists' own dead load per joist x 26.75 ft x 12 / 24 plus Roof Beam A's; a 10 psf wall weight adds half its weight to each level it spans. Button pressed in a headless browser (Roof 17.8, Main floor 15.4 kips written; no page errors); printed sheet audited.
 
