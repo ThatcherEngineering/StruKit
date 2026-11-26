@@ -4089,8 +4089,8 @@ def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
     wmin = welds.min_fillet_size(min(t, tp))
     Ln = footing_line
     steps = [Ln("Bolt tension without prying, T", T, "kip", "AISC Design Guide 24 (2nd Ed.) Example 6.1", f"{wt['name']}: 2T = (M - P B / 2) / (B / 2 + s / 2); M = {wt['M'] / 12:.1f} kip-ft, P = {wt['P']:.1f} kip, B = {B:g} in., s = {s:g} in."),
-             Ln("Beam flange: thickness for no prying, tnp", t_f, "in", "AISC Manual (16th Ed.) Eq. 9-74", f"b = (g - tw) / 2 = {bf_:.3g} in., b' = {bf1:.3g} in., p = {pf:.3g} in.; " + fac(0.90, 1.67)),
-             Ln("Cap plate: thickness for no prying, tnp", t_c, "in", "AISC Manual (16th Ed.) Eq. 9-74", f"b = (s - B) / 2 = {bc_:.3g} in., b' = {bc1:.3g} in., p = {pc:.3g} in.; " + fac(0.90, 1.67)),
+             Ln("Beam flange: thickness for no prying, tnp", t_f, "in", "AISC Manual (16th Ed.) Eq. 9-34" + ("a" if lrfd else "b"), f"b = (g - tw) / 2 = {bf_:.3g} in., b' = {bf1:.3g} in., p = {pf:.3g} in.; " + fac(0.90, 1.67)),
+             Ln("Cap plate: thickness for no prying, tnp", t_c, "in", "AISC Manual (16th Ed.) Eq. 9-34" + ("a" if lrfd else "b"), f"b = (s - B) / 2 = {bc_:.3g} in., b' = {bc1:.3g} in., p = {pc:.3g} in.; " + fac(0.90, 1.67)),
              Ln("Bolt available tension", rt, "kip", "AISC 360-22 Sect. J3.7, Table J3.2", f"{d:g} in. {group}"),
              Ln("Compression at the column wall, C = 2T + P", C, "kip", "AISC Design Guide 24 Example 6.1", wc["name"]),
              Ln("Beam web local yielding", Ry, "kip", "AISC 360-22 Eq. J10-2", f"lb = 5 tp + t = {lb:.3g} in., k = {k:g} in.; " + fac(1.00, 1.50)),
@@ -4100,8 +4100,8 @@ def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
              Ln("Weld of the cap plate to the HSS, load per inch", per_in, "kip/in", "AISC Design Guide 24 Example 6.1", wtxt),
              Ln("Fillet weld strength per inch", Rw, "kip/in", "AISC 360-22 Eq. J2-4", f"0.60 FEXX x 0.707 w; " + fac(0.75, 2.00))]
     rows = [Row("Bolt tension", wt["name"], T, rt, "kip", "AISC 360-22 Sect. J3.7", f"({4}) {d:g} in. {group}, two in tension"),
-            Row("Beam flange thickness, no prying", wt["name"], t_f, tf, "in", "AISC Manual (16th Ed.) Eq. 9-74", "required against the flange thickness"),
-            Row("Cap plate thickness, no prying", wt["name"], t_c, tp, "in", "AISC Manual (16th Ed.) Eq. 9-74", "required against the plate thickness"),
+            Row("Beam flange thickness, no prying", wt["name"], t_f, tf, "in", "AISC Manual (16th Ed.) Eq. 9-34" + ("a" if lrfd else "b"), "required against the flange thickness"),
+            Row("Cap plate thickness, no prying", wt["name"], t_c, tp, "in", "AISC Manual (16th Ed.) Eq. 9-34" + ("a" if lrfd else "b"), "required against the plate thickness"),
             Row("Beam web local yielding", wc["name"], C, Ry, "kip", "AISC 360-22 Eq. J10-2", shapes.normalize(beam)),
             Row("Beam web local crippling", wc["name"], C, Rc, "kip", "AISC 360-22 Eq. J10-4", ""),
             Row("HSS wall local yielding", wc["name"], C, Rwy, "kip", "AISC 360-22 Eq. J10-2", shapes.normalize(column)),
@@ -4249,12 +4249,12 @@ def stiffened_seat_sheet(mark, beam, beam_Fy, beam_source, W, L, ts, stiff_Fy, s
             raise WorksheetError(f"{mark}: '{web_col}' is not a W shape")
         ok_shape = ser in LIST and LIST[ser][0] <= wt <= LIST[ser][1] and (ser not in ("W6", "W5") or wt in LIST[ser])
         if not ok_shape:
-            raise WorksheetError(f"{mark}: punching shear of the {cs} web is not covered by the simplified limits of AISC Manual Part 10 (W14x43 to 873, "
+            raise WorksheetError(f"{mark}: punching shear of the {cs} web is not covered by the simplified limits of AISC Manual (15th Ed.) Part 10 (W14x43 to 873, "
                                  "W12x40 to 336, W10x33 to 112, W8x24 to 67, W6x20 and 25, W5x16 and 19); it needs a detailed analysis (Sputo and Ellifritt, 1991)")
         if B is None:
             raise WorksheetError(f"{mark}: give the distance from the column web face to the centreline of the beam's seat bolts, B")
         if bolted:
-            raise WorksheetError(f"{mark}: the simplified column web limits of AISC Manual Part 10 are for seats welded to the web; an all-bolted stiffened seat "
+            raise WorksheetError(f"{mark}: the simplified column web limits of AISC Manual (15th Ed.) Part 10 are for seats welded to the web; an all-bolted stiffened seat "
                                  "on one side of a column web needs a detailed punching analysis")
         if W > 9 + 1e-9:
             raise WorksheetError(f"{mark}: the simplified column web limits cover W up to 9 in.; W = {W:g} in. needs a detailed punching analysis (Sputo and Ellifritt, 1991)")
@@ -4263,7 +4263,7 @@ def stiffened_seat_sheet(mark, beam, beam_Fy, beam_source, W, L, ts, stiff_Fy, s
         if cs == "W14X43" and W >= 7 - 1e-9 and W < 8 - 1e-9:
             Bmax = 3.0
         if (W >= 8 - 1e-9 and 3.5 < B <= W / 2) or (cs == "W14X43" and abs(W - 7) < 1e-9 and 3.0 < B <= W / 2):
-            raise WorksheetError(f"{mark}: W = {W:g} in. with B = {B:g} in. is outside the simplified column web limits (AISC Manual Part 10, Design Checks item 3); "
+            raise WorksheetError(f"{mark}: W = {W:g} in. with B = {B:g} in. is outside the simplified column web limits (AISC Manual (15th Ed.) Part 10, Design Checks item 3); "
                                  "refer to Sputo and Ellifritt (1991)")
         wl = dict(col=cs, B=B, Bmax=Bmax)
         rows.append(Row("Column web punching: seat bolts from the web face, B", "", B, Bmax, "in", "AISC Manual (15th Ed.) Part 10; (14th Ed.) Table 10-8",
