@@ -399,6 +399,7 @@ def ftao(panel, spacing, panel_type, G, h, L1, Lo, L2, ho, sill, V, load, method
              Line("corner force F2 = F L2 / (L1 + L2)", F2, "lb", "Diekmann technique (APA T555)", f"pier {L2:g} ft"),
              Line("unit shear in the corner zones, F1 / L1 = F2 / L2", vc1, "plf", "Diekmann technique (APA T555)", "")]
     return dict(h=h, L=L, L1=L1, Lo=Lo, L2=L2, ho=ho, sill=sill, ha=ha, H=H, vh=vh, vv=vv, F=F, F1=F1, F2=F2, vc=vc1, v_cap=v_cap, piers=piers,
+                Ga=(ga_osb if panel_type == "OSB" else ga_ply) * sides,
                 reduction=red, v_max=max(vh, vv, vc1), lines=lines, design_text=txt)
 
 
@@ -488,4 +489,24 @@ def ftao_multi(panel, spacing, panel_type, G, h, piers, openings, V, load, metho
                   Line(f"pier {i + 1}: corner zone (R - F) / L", p["vc"], "plf", "APA T555", f"F = {sum(p['F']):,.0f} lb; F / L = {p['vF']:.0f} plf")]
     lines.append(Line("shear lines: end lines equal H, lines at the openings net zero", "; ".join(f"{(0.0 if abs(c) < 0.5 else c):,.0f}" for c in checks) + " lb", "", "APA T555", ""))
     return dict(h=h, L=L, piers=out_piers, openings=ops, H=H, v_cap=v_cap, checks=checks, lines=lines, design_text=txt,
+                Ga=(ga_osb if panel_type == "OSB" else ga_ply) * sides,
                 v_max=max(max(p["v"] for p in out_piers), max(o["va"] for o in ops), max(max(abs(p["vc"]), p["vF"]) for p in out_piers)))
+
+
+def ftao_deflection(h, piers, Ga, EA, Da):
+    """Deflection of a force-transfer shear wall by its piers (APA: Beebe and Skaggs, SEAOC 2015; APA Technical Note T555): each pier by
+    SDPWS-2021 Eq. 4.3-1 with its own unit shear v and length b, once for each direction of load; the wall deflection is the average of the
+    pier values. Height of a pier for the direction in which it is pushed toward an opening: from the top of the sheathing below that opening
+    to the top of the wall (h - hb); pushed away from the openings, or toward a door, the full wall height h.
+    piers: dicts L (ft), v (plf), hb_left, hb_right (ft of sheathing below the opening at that side; None where there is no opening).
+    Ga kips/in.; EA lb (E psi x A in2); Da in. Returns dict(cases=[dict(pier, dir, h, b, v, bend, shear, anch, d)], delta)."""
+    if not (EA > 0 and Ga > 0 and Da >= 0):
+        raise ShearWallError("shear wall deflection: the end post area and E and the anchorage slip are needed")
+    cases = []
+    for i, p in enumerate(piers, 1):
+        for dr, hb in (("+", p.get("hb_right")), ("-", p.get("hb_left"))):
+            hp = h - (hb or 0.0) if hb is not None else h
+            b, v = p["L"], p["v"]
+            bend, shear, anch = 8 * v * hp ** 3 / (EA * b), v * hp / (1000.0 * Ga), hp * Da / b
+            cases.append(dict(pier=i, dir=dr, h=hp, b=b, v=v, bend=bend, shear=shear, anch=anch, d=bend + shear + anch))
+    return dict(cases=cases, delta=sum(c["d"] for c in cases) / len(cases))
