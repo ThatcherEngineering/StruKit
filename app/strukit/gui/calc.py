@@ -737,7 +737,10 @@ FORMS = {
                 F("hd_cracked", "Strap tie: concrete", "select", options=["cracked", "uncracked"], required=False),
                 F("hd_sdc", "Strap tie, seismic: Seismic Design Category", "select", options=["A or B", "C to F"], required=False),
                 F("above_T", "Stacked walls: chord force from the wall above", unit="lb", required=False),
-                F("above_source", "Stacked walls: where that force comes from", "text", required=False)],
+                F("above_source", "Stacked walls: where that force comes from", "text", required=False),
+                F("chord_A", "3D frame stiffness: end post area", unit="in2", required=False, help="with E and slip, the piers' SDPWS Eq. 4.3-1 deflection gives the wall's stiffness in the 3D frame"),
+                F("chord_E", "3D frame stiffness: end post E", unit="psi", required=False),
+                F("slip", "3D frame stiffness: anchorage slip at the design load", unit="in", required=False)],
         tables=[T("more", "More openings, left to right after the first (the pier at the right of the first opening is then the pier between openings 1 and 2)",
                   [F("w", "Opening width", unit="ft"), F("ho", "Opening clear height", unit="ft"), F("sill", "Sheathing height below (0 for a door)", unit="ft", required=False),
                    F("pier", "Pier at its right", unit="ft")],
@@ -3859,6 +3862,133 @@ FRAME_BEAMS, FRAME_COLS = ("steel_beam",) + WOOD_FRAME_BEAMS, ("steel_column", "
 WOOD_G_OVER_E = 1.0 / 16.0                                     # shear modulus of wood for the frame's torsion stiffness, G = E / 16
 
 
+def _wood_frame_strength(kind, v, L_in):
+    """NDS (ASD) values for checking a wood member from the 3D frame's forces: b, d, the reference values with the size or volume factor
+    (CD applied per run), Emin, the stability inputs. L_in: the member's length in the frame. Raises ValueError when it cannot be checked."""
+    num = lambda k, d=None: (float(str(v.get(k)).replace(",", "")) if str(v.get(k) or "").strip() else d)
+    sec = _wood_frame_section(kind, v)
+    if str(v.get("service") or "dry service") != "dry service" or str(v.get("incised") or "no") == "yes":
+        raise ValueError("wet service or incised members are checked on their own sheet only")
+    c, Kf, axial = 0.8, 1.0, True
+    if kind in ("wood_beam", "wood_post", "builtup_post"):
+        sp, gr, size = v.get("species"), v.get("grade"), v.get("size")
+        plies = int(float(v.get("plies") or 1)) if kind != "wood_post" else 1
+        ref, CFc, dims, _, _ = wood.post_values(sp, gr, size)
+        CFb = wood.values(sp, gr, size)[1] if size in wood.SIZES else 1.0
+        b, d = dims[0] * plies, dims[1]
+        F = dict(Fb=ref["Fb"] * CFb, Ft=ref["Ft"] * CFb, Fc=ref["Fc"] * CFc, Fv=ref["Fv"], Emin=ref["Emin"])
+        if kind == "builtup_post":
+            Kf = {"nailed": 0.6, "bolted": 0.75}.get(str(v.get("fastening") or "nailed"), 0.6)
+    elif kind in ("lvl_beam", "lvl_post", "wey_beam", "wey_post"):
+        gr = str(v.get("grade") or "")
+        t_ = num("thickness") if kind.endswith("beam") else num("b")
+        plies = int(float(v.get("plies") or 1))
+        b, d = t_ * plies, num("depth") if kind.endswith("beam") else num("d")
+        c = 0.9
+        if kind.startswith("lvl"):
+            ref = scl.values(gr)
+            F = dict(Fb=ref["Fb"] * scl.volume_factor(d, b), Ft=ref["Ft"], Fc=ref["Fc"], Fv=ref["Fv"], Emin=scl.emin(ref["E_app"]))
+        else:
+            prod = next(p_ for p_ in scl.WEY if gr.startswith(p_ + " ")); gr2 = gr[len(prod) + 1:]
+            sp_ = scl.beam_spec(prod, gr2, t_, plies, d)
+            F = dict(Fb=sp_["Fb"] * sp_["CV"], Ft=None, Fc=None, Fv=sp_["Fv"], Emin=sp_["Emin"]); axial = False
+    elif kind == "glulam_beam":
+        b, d, c = num("b"), num("d"), 0.9
+        ref = glulam.values(v.get("stress_class"))
+        F = dict(Fb=ref["Fb"] * glulam.volume_factor(max(L_in / 12.0, 1.0), d, b, str(v.get("species")) == "Southern Pine"), Ft=None, Fc=None, Fv=ref["Fv"],
+                 Emin=ref["Ey_min"]); axial = False
+    else:
+        raise ValueError("this column type is checked on its own sheet")
+    return dict(b=b, d=d, A=b * d, S1=b * d * d / 6.0, S2=d * b * b / 6.0, F=F, c=c, Kf=Kf, axial=axial)
+
+
+def _wood_frame_ratio(W, P, M1, M2, V, CD, le1, le2, lu):
+    """NDS (ASD) combined check of a rectangular wood member at one point: P kips (compression +), M1 strong-axis and M2 weak-axis moment
+    kip-in., V kips, CD of the run; le1 / le2 effective lengths (in.) for buckling about the strong / weak axis (0 = braced), lu the
+    unbraced length of the compression edge for CL (0 = braced throughout). Returns (ratio, equation)."""
+    F, b, d = W["F"], W["b"], W["d"]
+    fc, ft = max(P, 0.0) * 1000 / W["A"], max(-P, 0.0) * 1000 / W["A"]
+    fb1, fb2, fv = abs(M1) * 1000 / W["S1"], abs(M2) * 1000 / W["S2"], 1.5 * abs(V) * 1000 / W["A"]
+    Fb_s = F["Fb"] * CD
+    CL, det = 1.0, {}
+    if lu and d > b:
+        CL, det = wood.beam_stability(Fb_s, F["Emin"], lu, b, d)
+    Fb1, Fb2 = Fb_s * CL, Fb_s
+    FbE = det.get("FbE", float("inf"))
+    out = [(fv / (F["Fv"] * CD), "NDS 3.4 (shear)")]
+    if fc > 0 or ft > 0:
+        if not W["axial"]:
+            raise ValueError("the frame puts an axial force on it, and StruKit's tables for this product have no Fc or Ft")
+    if fc > 0:
+        cp = lambda le, dd: wood.column_stability(F["Fc"] * CD, F["Emin"], le, dd, 0.0, 1.0, W["c"]) if le > 0 else (1.0, dict(FcE=float("inf")))
+        cp1, d1 = cp(le1, d)
+        cp2, d2 = cp(le2, b)
+        CP = min(cp1, W["Kf"] * cp2)
+        Fc_ = F["Fc"] * CD * CP
+        FcE1, FcE2 = d1["FcE"], d2["FcE"]
+        if fc >= min(FcE1, FcE2):
+            return float("inf"), "NDS Eq. 3.9-3 (fc over FcE)"
+        t2 = 1 - fc / FcE2 - (fb1 / FbE) ** 2
+        val = (fc / Fc_) ** 2 + fb1 / (Fb1 * (1 - fc / FcE1)) + (fb2 / (Fb2 * t2) if fb2 > 0 else 0.0)
+        out.append((val, "NDS Eq. 3.9-3"))
+        out.append((fc / Fc_, "NDS 3.7 (compression)"))
+    elif ft > 0:
+        Ft_ = F["Ft"] * CD
+        out.append((ft / Ft_ + (fb1 + fb2) / Fb_s, "NDS Eq. 3.9-1"))
+        out.append(((fb1 + fb2 - ft) / Fb1 if Fb1 > 0 else 0.0, "NDS Eq. 3.9-2"))
+    else:
+        t2 = 1 - (fb1 / FbE) ** 2
+        out.append((fb1 / Fb1 + (fb2 / (Fb2 * t2) if fb2 > 0 else 0.0), "NDS Eq. 3.9-3 (bending)"))
+    return max(out)
+
+
+def _wall_stiffness(project, m):
+    """Lateral stiffness of a placed shear wall for the 3D frame, lb/in.: the design shear over the SDPWS Eq. 4.3-1 deflection of its sheet
+    (segments in parallel: the sum of V/delta of each); a force-transfer wall by its piers as full-height segments (the sheathing above and
+    below the openings not counted). Returns (k, text) or a message."""
+    v = m.get("values") or {}
+    kind, mark = m.get("kind"), v.get("mark") or "?"
+    need = "type the end post area, its E and the anchorage slip on the wall screen to put it in the 3D frame"
+    try:
+        if kind == "ftao_wall":
+            sh, _, _ = build("ftao_wall", v, project)
+            if not all(str(v.get(k_) or "").strip() for k_ in ("chord_A", "chord_E", "slip")):
+                return f"{mark}: {need}"
+            piers = [p_[0] for p_ in sh.wall["piers"]]
+            sv = dict(mark=mark, panel=v.get("panel"), spacing=v.get("spacing"), panel_type=v.get("panel_type"), sides=v.get("sides"), blocking="blocked", G=v.get("G"),
+                      G_source=v.get("G_source"), h=v.get("h"), lengths=", ".join(f"{b:g}" for b in piers), load=v.get("load"), V=v.get("V"), v_source="t",
+                      holddown=v.get("holddown") or "no", chord_A=v.get("chord_A"), chord_E=v.get("chord_E"), slip=v.get("slip"))
+            sv["lengths"] = f"{max(sum(piers), float(v.get('h')) / 2):g}"          # a wall of one segment, only to read Ga of the panel and nailing
+            sh2, _, _ = build("shear_wall", sv, project)
+            Ga = sh2.wall.Ga
+            h_, V_ = float(v.get("h")), float(v.get("V"))
+            EA, Da = float(v.get("chord_E")) * float(v.get("chord_A")), float(v.get("slip"))
+            vv = V_ / sum(piers)
+            k = 0.0
+            for b in piers:                                  # SDPWS Eq. 4.3-1 for each pier over the full wall height, v the same in every pier
+                dl = 8 * vv * h_ ** 3 / (EA * b) + vv * h_ / (1000.0 * Ga) + h_ * Da / b     # SDPWS units: plf, ft, psi, in2, kips/in.
+                k += vv * b / dl
+            return k, ("SDPWS Eq. 4.3-1 for each pier, " + " + ".join(f"{b:g}" for b in piers) + f" ft, over the full {h_:g} ft height "
+                       "(the sheathing above and below the openings not counted)")
+        elif kind == "perforated_wall":
+            sh, _, _ = build(kind, v, project)
+            if sh.wall.defl is None:
+                return f"{mark}: {need}"
+            return float(v.get("V")) / sh.wall.defl, f"V / delta = {float(v.get('V')):,.0f} / {sh.wall.defl:.3f} in. (SDPWS 4.3.4.2)"
+        else:
+            sh, _, _ = build(kind, v, project)
+            segs = sh.wall.segments
+            how = "segments " + " + ".join(f"{s_.b:g}" for s_ in segs) + " ft"
+        if any(s_.defl is None for s_ in segs):
+            return f"{mark}: {need}"
+        k = sum(s_.V / s_.defl for s_ in segs if s_.defl > 0)
+        return k, f"sum of V / delta (SDPWS Eq. 4.3-1) over {how}"
+    except Missing as e:
+        return f"{mark}: not complete: " + "; ".join(e.items)
+    except Exception as e:
+        return f"{mark}: {e}"
+
+
 def _wood_frame_section(kind, v):
     """Section and stiffness of a wood member for the 3D frame (kips, inches): b x d from the member's screen (dressed sizes, NDS Supplement
     Table 1B / 4D; laminations side by side), E the reference modulus of elasticity of its grade (Supplement Tables 4A-4D, 5A; the composite
@@ -3961,10 +4091,13 @@ def _model_frame_build(project, members, sway=False):
     if in_rows:
         notes.append("Rows of joists or rafters and I-joists are not frame members: " + ", ".join(sorted(x or "(no mark)" for x in in_rows)) + ". Their loads reach the frame through the load path.")
     if any(m["kind"] in WOOD_FRAME_BEAMS + WOOD_FRAME_COLS for m, _ in placed):
-        notes.append("Wood members are in the frame with E of their grade (glulam columns Emin), the gross section b x d, J of the rectangle and G = E / 16; "
-                     "the frame gives their forces, and they are checked on their own sheets (NDS).")
-    if not any(m["kind"] in FRAME_COLS for m, _ in placed) or not any(m["kind"] in FRAME_BEAMS for m, _ in placed):
-        return dict(problems=problems + ["The frame needs at least one placed beam and one placed column (steel or wood)"], notes=notes)
+        notes.append("Wood members are in the frame with E of their grade (glulam columns Emin), the gross section b x d, J of the rectangle and G = E / 16. "
+                     "In the sway run (ASD) each is checked from its frame forces at every station: NDS Eq. 3.9-1 to 3.9-3 and shear, CD from the combination, "
+                     "CF or CV, CL and CP from its own screen's bracing (a beam unbraced between frame joints unless its screen says otherwise), Kf for built-up "
+                     "columns; Cr, Cfu and the wet service and temperature factors are 1.0. Its own sheet remains the check of bearing and deflection.")
+    has_walls = sway and any(m.get("kind") in MODEL_WALLS and (m.get("values") or {}).get("at_x1") for m in members or [])
+    if not has_walls and (not any(m["kind"] in FRAME_COLS for m, _ in placed) or not any(m["kind"] in FRAME_BEAMS for m, _ in placed)):
+        return dict(problems=problems + ["The frame needs at least one placed beam and one placed column (steel or wood), or placed shear walls"], notes=notes)
     in_frame = {(m.get("values") or {}).get("mark") for m, _ in placed}
     E_, G_, FT = 29000.0, 11200.0, 12.0
     fr = Frame3D()
@@ -4118,6 +4251,104 @@ def _model_frame_build(project, members, sway=False):
             joint_loads[(nt, "D")] = joint_loads.get((nt, "D"), 0.0) + sec["W"] * h / 1000.0
             if "D" not in cases:
                 cases.append("D")
+    # a wood post, or any column under a wood beam, bears on it: its top is pinned (a post cap), not continuous with the beam
+    wood_beam_nodes = set()
+    for mm in fr.members:
+        if mm.name.startswith("bm:") and mm.name.split(":")[1] in {m_["values"].get("mark") for m_, _p in placed if m_["kind"] in WOOD_FRAME_BEAMS}:
+            wood_beam_nodes.update((mm.i, mm.j))
+    pinned_tops = []
+    for mm in fr.members:
+        if mm.name.startswith("col:"):
+            mk_ = mm.name[4:]
+            if col_nodes.get(mk_) and (col_nodes[mk_][2].get("wood") or mm.j in wood_beam_nodes):
+                mm.release_j = ("my", "mz"); pinned_tops.append(mk_)
+    if pinned_tops:
+        notes.append("Column tops bearing on or under wood beams are pinned (a post cap): " + ", ".join(sorted(pinned_tops)) + ".")
+    wall_top_nodes, truss_nodes, wall_rows = set(), set(), []
+    if sway:                                                 # shear walls as X-braced panels with the wall's stiffness; a stiff diaphragm ties each level
+        BIG = 100.0
+        def truss(nm, a_, b_, A):                            # pinned bars; I = A L^2 / 100 only so the second-order subdivision does not buckle them
+            Lb = math.dist(fr.nodes[a_], fr.nodes[b_])
+            Ib = A * Lb * Lb / 100.0
+            fr.member(nm, a_, b_, E_, G_, A, Ib, Ib, 1e-3, release_i=("my", "mz"), release_j=("my", "mz"), nsub=1)
+            truss_nodes.update((a_, b_))
+        wpl = []
+        for m in members or []:
+            if m.get("kind") not in MODEL_WALLS:
+                continue
+            try:
+                pl = model_place(project, m)
+            except ValueError:
+                continue
+            if not pl or pl["level"] not in elev or pl["base"] not in elev or pl["base"] == pl["level"]:
+                continue
+            got = _wall_stiffness(project, m)
+            if isinstance(got, str):
+                problems.append(got); continue
+            k_kip = got[0] / 1000.0
+            zt, zb = elev[pl["level"]], elev[pl["base"]]
+            t1, t2, b1, b2 = node(*pl["p1"], zt), node(*pl["p2"], zt), node(*pl["p1"], zb), node(*pl["p2"], zb)
+            wpl.append((m, pl, (t1, t2, b1, b2), k_kip, got[1], zt, zb))
+        for m, pl, (t1, t2, b1, b2), k_kip, how, zt, zb in wpl:
+            mk = m["values"]["mark"]
+            Lw = math.hypot(pl["p2"][0] - pl["p1"][0], pl["p2"][1] - pl["p1"][1]) * FT
+            H = (zt - zb) * FT
+            Ld = math.hypot(Lw, H)
+            Ad = k_kip * Ld / (2 * E_ * (Lw / Ld) ** 2)
+            truss(f"wd:{mk}:1", t1, b2, Ad); truss(f"wd:{mk}:2", t2, b1, Ad)
+            truss(f"wc:{mk}:1", t1, b1, BIG); truss(f"wc:{mk}:2", t2, b2, BIG)
+            wall_rows.append(dict(mark=mk, k=k_kip * 1000.0, how=how, level=pl["level"]))
+            level_tops.setdefault(pl["level"], []).extend([(t1, pl["p1"]), (t2, pl["p2"])])
+            level_of_node[t1] = level_of_node[t2] = pl["level"]
+        # top plates: along each wall top, through every joint lying on it (beam bearings, column tops, walls standing on it)
+        for m, pl, (t1, t2, b1, b2), k_kip, how, zt, zb in wpl:
+            mk = m["values"]["mark"]
+            (ax, ay), (bx, by) = pl["p1"], pl["p2"]
+            Lp = math.hypot(bx - ax, by - ay)
+            on = []
+            for (kx, ky, kz), nd in node_at.items():
+                x_, y_, z_ = kx * 0.05, ky * 0.05, kz * 0.05
+                if abs(z_ - zt) > 0.06:
+                    continue
+                t = ((x_ - ax) * (bx - ax) + (y_ - ay) * (by - ay)) / Lp
+                off = abs((x_ - ax) * (by - ay) - (y_ - ay) * (bx - ax)) / Lp
+                if off <= MODEL_TOL and -MODEL_TOL <= t <= Lp + MODEL_TOL:
+                    on.append((t, nd))
+            on = sorted(set(on))
+            for i_ in range(len(on) - 1):
+                if on[i_][1] != on[i_ + 1][1]:
+                    truss(f"wt:{mk}:{i_}", on[i_][1], on[i_ + 1][1], BIG)
+            wall_top_nodes.update(nd for _, nd in on)
+        if wpl:
+            for m, pl, (t1, t2, b1, b2), k_kip, how, zt, zb in wpl:     # wall bottoms at the lowest level are pinned; elsewhere they stand on what is there
+                if abs(zb - min(elev.values())) < 1e-6:
+                    fr.support(b1, (1, 1, 1, 0, 0, 0)); fr.support(b2, (1, 1, 1, 0, 0, 0))
+            # stiff diaphragm: the joints at each level elevation joined by a triangulated net of stiff bars
+            from scipy.spatial import Delaunay
+            by_z = {}
+            for (kx, ky, kz), nd in node_at.items():
+                by_z.setdefault(kz, []).append((kx * 0.05, ky * 0.05, nd))
+            nd_ = 0
+            for kz, pts_ in by_z.items():
+                z_ = kz * 0.05
+                if not any(abs(z_ - e_) < 0.06 for e_ in elev.values()) or abs(z_ - min(elev.values())) < 0.06 or len(pts_) < 3:
+                    continue
+                try:
+                    tri = Delaunay([(x_, y_) for x_, y_, _ in pts_])
+                except Exception:
+                    continue
+                edges = set()
+                for sx in tri.simplices:
+                    for i_, j_ in ((0, 1), (1, 2), (0, 2)):
+                        edges.add(tuple(sorted((int(sx[i_]), int(sx[j_])))))
+                for i_, j_ in sorted(edges):
+                    truss(f"dg:{nd_}", pts_[i_][2], pts_[j_][2], BIG); nd_ += 1
+            notes.append("Shear walls are in the frame as X-braced panels with the stiffness of their sheets ("
+                         + "; ".join(f"{w_['mark']} {w_['k']:,.0f} lb/in., {w_['how']}" for w_ in wall_rows)
+                         + "). Each level is tied by a stiff diaphragm. The walls' design shears come from the wall-line distribution (flexible diaphragm); "
+                         "the frame gives drift, second-order effects and member forces."
+                         + (" Existing walls are not in the frame (their stiffness is not known): the new walls take all the lateral load in the frame."
+                            if any(e_.get("kind", "wall") == "wall" for _, e_ in model_existing(project)) else ""))
     if problems:
         return dict(problems=problems, notes=notes)
     # supports: column bases pinned (twist held); levels held against sidesway; beam supports with nothing under them bear on a support
@@ -4137,7 +4368,18 @@ def _model_frame_build(project, members, sway=False):
         if nb in base_nodes:
             fr.support(nb, col_fixed[mark])
     for nd, mark, x in extra:
-        fr.support(nd, "fixed")
+        fr.support(nd, (0, 0, 1, 1, 1, 1) if nd in wall_top_nodes else "fixed")   # on a wall: the wall carries it down (beam ends there are pinned); the top plate holds it sideways
+    cont = set()                                             # joints where some member is continuous (not pinned) at its end
+    for mm in fr.members:
+        if mm.name.split(":")[0] in ("wd", "wc", "wt", "dg"):
+            continue
+        if not ({"my", "mz"} <= set(mm.release_i)):
+            cont.add(mm.i)
+        if not ({"my", "mz"} <= set(mm.release_j)):
+            cont.add(mm.j)
+    for nd in set(fr.nodes) - cont:                          # a joint where every member is pinned: its rotation is held (the members carry no moment there)
+        prev = fr.supports.get(nd, (0, 0, 0, 0, 0, 0))
+        fr.support(nd, tuple(prev[:3]) + (1, 1, 1))
     if extra:
         notes.append("Taken as bearing on a support (nothing in the frame is under them): " + "; ".join(f"{mark} at {x:g} ft" for nd, mark, x in extra) + ".")
     if sloped:
@@ -4181,7 +4423,7 @@ def _model_frame_build(project, members, sway=False):
         t_only = str(v.get("at_brace") or "").strip().lower()
         t_only = (m["kind"] == "tension_member") if not t_only else t_only.startswith("tension only")
         braces[mark] = dict(name="br:" + mark, A=A, pr=pr, kind=m["kind"], values=v, tension_only=t_only, L=math.dist(fr.nodes[na], fr.nodes[nb_]))
-    return dict(fr=fr, cases=cases, joint_loads=joint_loads, beam_loads=beam_loads, col_nodes=col_nodes, extra=extra, notes=notes, problems=problems, placed=placed, braces=braces,
+    return dict(fr=fr, walls=wall_rows, cases=cases, joint_loads=joint_loads, beam_loads=beam_loads, col_nodes=col_nodes, extra=extra, notes=notes, problems=problems, placed=placed, braces=braces,
                 level_tops=level_tops, beam_elems=beam_elems, level_of_node=level_of_node, elev=elev, FT=FT)
 
 
@@ -4280,7 +4522,7 @@ def model_frame_sway(project, members):
                         continue
                     z_lo = (lv_sorted[li - 1][1] + el_) / 2 - base_el if li > 0 else 0.0
                     z_hi = min(top, (el_ + lv_sorted[li + 1][1]) / 2 - base_el) if (li + 1 < len(lv_sorted) and lv_sorted[li + 1][0] in level_tops) else top
-                    w = max(_wind.line_load(r, z_lo, max(z_hi, z_lo + 0.01))["w"] for r in wcases) / 1000.0     # kip per ft of width
+                    w = max(_wind.line_load(r, z_lo, min(max(z_hi, z_lo + 0.01), max(r["top_w"], r["top_l"])))["w"] for r in wcases) / 1000.0     # kip per ft of width; each case to its own wall top
                     xs = [p_[0] for _, p_ in level_tops[nm]]; ys = [p_[1] for _, p_ in level_tops[nm]]
                     wind_F[nm] = (w * (max(ys) - min(ys)), w * (max(xs) - min(xs)))     # force in X (width in Y), force in Y
                 notes.append("Wind width at each level is the extent of the column lines; cladding beyond them is not counted.")
@@ -4537,6 +4779,7 @@ def model_frame_sway(project, members):
         return out
 
     wood_marks = {m["values"].get("mark") for m, _ in B["placed"] if m["kind"] in WOOD_FRAME_BEAMS + WOOD_FRAME_COLS}
+    wood_str = {}
     # member strengths for the checks from the frame's forces (kips, kip-in.)
     from .. import steel_column as _sc, steel_beam as _sb, steel_beamcol as _bc
     strength, kinds = {}, {}
@@ -4544,8 +4787,30 @@ def model_frame_sway(project, members):
         v = m["values"]; mark = v.get("mark")
         if not (mark in col_nodes or mark in B["beam_elems"]):
             continue
-        if m["kind"] in WOOD_FRAME_BEAMS + WOOD_FRAME_COLS:
-            continue                                         # wood: forces from the frame, checked on its own sheet
+        if m["kind"] in WOOD_FRAME_BEAMS + WOOD_FRAME_COLS:   # wood: NDS from the frame forces (ASD runs)
+            if method_ != "ASD":
+                notes.append(f"{mark}: wood members are checked from the frame forces in an ASD project only; it is checked on its own sheet.")
+                continue
+            try:
+                num_ = lambda k_: (float(str(v.get(k_)).replace(",", "")) if str(v.get(k_) or "").strip() else None)
+                if mark in col_nodes:
+                    L = col_nodes[mark][3] * 12.0
+                    W_ = _wood_frame_strength(m["kind"], v, L)
+                    if m["kind"] == "builtup_post":
+                        lu1, lu2, k1, k2 = num_("lu_d"), num_("lu_stack"), num_("Ke_d") or 1.0, num_("Ke_stack") or 1.0
+                    else:
+                        lu1, lu2, k1, k2 = num_("lu1"), num_("lu2"), num_("Ke1") or 1.0, num_("Ke2") or 1.0
+                    W_.update(le1=k1 * (lu1 * 12 if lu1 else L), le2=k2 * (lu2 * 12 if lu2 else L), lu=0.0)
+                else:
+                    Ltot = sum(mlen[e_] for e_ in B["beam_elems"][mark])
+                    W_ = _wood_frame_strength(m["kind"], v, Ltot)
+                    br = str(v.get("bracing") or "")
+                    lu_b = 0.0 if br.startswith("supported") else ((num_("lu") or 0.0) * 12 if br.startswith("braced") else None)
+                    W_.update(le2=lu_b, lu=lu_b)                  # None: unbraced between frame joints (set per element)
+                wood_str[mark] = W_
+            except Exception as e:
+                notes.append(f"{mark}: wood, not checked from the frame forces ({str(e) or type(e).__name__}); its own sheet is the check.")
+            continue
         try:
             Fy = float(v.get("Fy") or 0)
             if Fy <= 0:
@@ -4713,6 +4978,19 @@ def model_frame_sway(project, members):
                 Mw = max(max(abs(a_[5]), abs(b_[5])) for a_, b_ in st_)
                 cur = col_res.setdefault(mark, dict(mark=mark, T=0.0, T_combo="", P=0.0, P_combo="", Ms=0.0, Ms_combo="", Mw=0.0, Mw_combo="", ratio=None, eq="", ratio_combo="",
                                                     wood=bool(col_nodes[mark][2].get("wood"))))
+                W_ = wood_str.get(mark)
+                if W_:
+                    CDr = wood.load_duration([c_ for c_, f_ in cb.factors.items() if abs(f_) > 0 and c_ in wood.CD])[0]
+                    for a_, b_ in st_:
+                        for P_, Mx_, My_, V_ in ((a_[0], a_[4], a_[5], max(abs(a_[1]), abs(a_[2]))), (-b_[0], b_[4], b_[5], max(abs(b_[1]), abs(b_[2])))):
+                            try:
+                                val, eq = _wood_frame_ratio(W_, P_ / alpha, Mx_ / alpha, My_ / alpha, V_ / alpha, CDr, W_["le1"], W_["le2"], 0.0)
+                            except Exception as e:
+                                notes.append(f"{mark}: not checked from the frame forces ({e})"); wood_str.pop(mark, None); break
+                            if cur["ratio"] is None or val > cur["ratio"]:
+                                cur.update(ratio=val, eq=eq + f", CD {CDr:g}", ratio_combo=label, at=dict(P=P_ / alpha, Mx=abs(Mx_) / alpha, My=abs(My_) / alpha))
+                        if mark not in wood_str:
+                            break
                 S_ = strength.get(mark)
                 if S_:
                     for a_, b_ in st_:
@@ -4758,6 +5036,21 @@ def model_frame_sway(project, members):
                 cur.setdefault("ends", {"left": [], "right": []})
                 cur["ends"]["left"].append(dict(run=label, M=abs(float(a0[4])) / alpha, V=abs(float(a0[2])) / alpha, T=-float(a0[0]) / alpha))
                 cur["ends"]["right"].append(dict(run=label, M=abs(float(b1[4])) / alpha, V=abs(float(b1[2])) / alpha, T=float(b1[0]) / alpha))
+                W_ = wood_str.get(mark)
+                if W_:
+                    CDr = wood.load_duration([c_ for c_, f_ in cb.factors.items() if abs(f_) > 0 and c_ in wood.CD])[0]
+                    try:
+                        for e_ in els:
+                            le_ = mlen[e_]
+                            lu_ = W_["lu"] if W_["lu"] is not None else le_
+                            for a_, b_ in r2.stations[e_]:
+                                for P_, M1_, M2_, V_ in ((a_[0], a_[4], a_[5], abs(a_[2])), (-b_[0], b_[4], b_[5], abs(b_[2]))):
+                                    val, eq = _wood_frame_ratio(W_, P_ / alpha, M1_ / alpha, M2_ / alpha, V_ / alpha, CDr, le_, W_["le2"] if W_["le2"] is not None else le_,
+                                                                lu_ if M1_ != 0 else 0.0)
+                                    if cur["ratio"] is None or val > cur["ratio"]:
+                                        cur.update(ratio=val, eq=eq + f", CD {CDr:g}", ratio_combo=label, at=dict(P=P_ / alpha, Mx=M1_ / alpha, V=V_ / alpha))
+                    except Exception as e:
+                        notes.append(f"{mark}: not checked from the frame forces ({e})"); wood_str.pop(mark, None)
                 S_ = strength.get(mark)
                 if S_:
                     cur["v_ratio"] = max(cur["v_ratio"] or 0.0, V / alpha / S_["V"])
@@ -5341,11 +5634,19 @@ def frame_sheet(project, members):
     m_ = out["method"]
     rows = []
     for c in out["columns"]:
+        if c.get("ratio") is not None and c.get("wood"):
+            rows.append(Row(f"column {c['mark']} (wood), axial + bending", c["ratio_combo"], c["ratio"], 1.0, "", c["eq"],
+                            f"P = {c['at']['P']:.2f} kip, M strong = {c['at']['Mx'] / 12:.2f} kip-ft, M weak = {c['at']['My'] / 12:.2f} kip-ft"))
+            continue
         if c.get("ratio") is not None:
             rows.append(Row(f"column {c['mark']}, axial + bending", c["ratio_combo"], c["ratio"], 1.0, "", f"AISC 360-22 Eq. {c['eq']}",
                             f"Pr = {c['at']['P']:.1f} kip, Mrx = {c['at']['Mx'] / 12:.1f} kip-ft, Mry = {c['at']['My'] / 12:.1f} kip-ft; "
                             f"Pc = {c['cap']['Pc']:.1f} kip, Mcx = {c['cap']['Mcx'] / 12:.1f} kip-ft, Mcy = {c['cap']['Mcy'] / 12:.1f} kip-ft"))
     for b in out["beams"]:
+        if b.get("ratio") is not None and b.get("wood"):
+            rows.append(Row(f"beam {b['mark']} (wood), axial + bending and shear", b["ratio_combo"], b["ratio"], 1.0, "", b["eq"],
+                            f"P = {b['at']['P']:.2f} kip, M = {abs(b['at']['Mx']) / 12:.2f} kip-ft, V = {b['at']['V']:.2f} kip"))
+            continue
         if b.get("ratio") is not None:
             rows.append(Row(f"beam {b['mark']}, axial + bending", b["ratio_combo"], b["ratio"], 1.0, "", f"AISC 360-22 Eq. {b['eq']}",
                             f"Pr = {b['at']['P']:.1f} kip, Mr = {abs(b['at']['Mx']) / 12:.1f} kip-ft ({'top' if b['at']['Mx'] >= 0 else 'bottom'} flange in compression); "
