@@ -164,7 +164,9 @@ FORMS = {
         fields=[F("shape", "Angle", "shape_tension", help="single angle by its Manual label, for example L3x3x1/4"),
                 F("Fy", "Fy", unit="ksi"), F("steel_source", "Where Fy comes from", "text", help="for example: ASTM A36"),
                 F("length", "Length between the end connections", unit="ft"),
-                F("attached", "Attached leg", "select", options=["long", "short"], required=False, help="unequal-leg angles; either for an equal-leg angle")],
+                F("attached", "Attached leg", "select", options=["long", "short"], required=False, help="unequal-leg angles; either for an equal-leg angle"),
+                F("e_off", "Or design for the load's eccentricity: load line outside the back of the attached leg", unit="in", required=False,
+                  help="blank = Sect. E5 effective slenderness; a value = Sect. H2 with the moments of the eccentricity (for example half the gusset thickness)")],
         tables=[T("loads", "Axial compression", [CASE, F("P", "Compression", unit="kip"), F("label", "Note", "text", required=False)])]),
     "shear_lug": dict(
         title="Shear Lug (under a column base plate)", code="AISC 360-22, ACI 318-19", mark="SL",
@@ -1916,7 +1918,7 @@ def _build(kind, values, project):
         cases_used([x["case"] for x in loads], cb, r.miss)
         args = (r.text("shape"), r.num("Fy"), r.text("steel_source"), r.num("length"), r.text("attached", False) or "")
         r.done()
-        return ws_more.angle_strut_sheet(mark, *args, loads, cb, m), "simple", {}
+        return ws_more.angle_strut_sheet(mark, *args, loads, cb, m, e_off=r.num("e_off", False)), "simple", {}
     if kind == "shear_lug":
         cb, m = combos(project, r.miss), method(project, r.miss)
         cbl = cb if m == "LRFD" else combos(project, r.miss, "LRFD")
