@@ -73,6 +73,31 @@ def _load_hss():
     return _hss_cache
 
 
+_T = None
+
+
+def tee(name):
+    """Properties of a WT, MT or ST tee by its Manual label, e.g. 'WT8x28.5' (data/aisc_shapes_v16_T.csv, built by tools/parse_tees.py)."""
+    global _T
+    if _T is None:
+        with open(os.path.join(os.path.dirname(__file__), "data", "aisc_shapes_v16_T.csv"), newline="") as f:
+            rows = csv.DictReader(line for line in f if not line.startswith("#"))
+            _T = {r["label"]: {k: (r[k] if k in ("type", "label") else (float(r[k]) if r[k] not in ("", None) else None)) for k in r} for r in rows}
+    key = normalize(name)
+    if key not in _T:
+        raise ShapeError(f"shape '{name}' is not in the {SOURCE} tee table")
+    t = dict(_T[key])
+    if t.get("k1") is None:                                  # the database gives k1 for the parent shape only
+        typ = t["type"]
+        nom, w = key[len(typ):].split("X", 1)
+        parent = f"{typ[0]}{2 * float(nom):g}X{2 * float(w):g}"
+        try:
+            t["k1"], t["k1_from"] = get(parent)["k1"], parent
+        except (ShapeError, KeyError):
+            pass
+    return t
+
+
 def hss(name):
     """Properties of an HSS or pipe by its Manual label, e.g. 'HSS6x4x1/4', 'HSS1.900x0.145',
     'Pipe 3 STD'. type is HSS-RECT, HSS-ROUND or PIPE; tdes is the design wall thickness."""

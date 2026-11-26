@@ -427,6 +427,22 @@ FORMS = {
                 T("runs", "Or: combined loads, used in place of the table above", [F("name", "Combination or run", "text"), F("ML", "Left beam moment", unit="kip-ft"),
                                                                                      F("VL", "Left beam shear", unit="kip", required=False), F("MR", "Right beam moment", unit="kip-ft"),
                                                                                      F("VR", "Right beam shear", unit="kip", required=False), F("P", "Column compression from above", unit="kip", required=False)])]),
+    "wt_flange": dict(
+        title="Welded WT Flange Moment Connection (beam to a rectangular HSS column)", code="AISC 360-22, AISC Design Guide 24", mark="WTF",
+        fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"), F("beam_source", "Source of the beam Fy and Fu", "text"),
+                F("column", "Column (rectangular or square HSS)", "hss_shape"), F("col_Fy", "Column Fy", unit="ksi"), F("col_source", "Source of the column Fy", "text"),
+                F("face", "HSS face the beam frames into", "select", options=["B", "H"], required=False,
+                  help="B = the face named second in the size (HSS12x8: the 8 in. face), H the first; blank = B"),
+                F("wt", "WT at each beam flange", "text", help="for example WT8x28.5"), F("L", "WT length across the HSS face", unit="in", help="at least the face width, for the flare-bevel welds at the corners"),
+                F("wt_Fy", "WT Fy", unit="ksi"), F("wt_Fu", "WT Fu", unit="ksi"), F("wt_source", "Source of the WT Fy and Fu", "text"),
+                F("d", "Bolt diameter", unit="in"), F("group", "Bolt type", "select", options=["A325", "A490", "F3148"]), F("threads", "Threads", "select", options=["N", "X"]),
+                F("n", "Bolts in each line (two lines)"), F("s", "Bolt spacing", unit="in"), F("g", "Gage across the flange", unit="in"),
+                F("leh", "Last bolt to the WT stem end", unit="in"), F("le_b", "First bolt to the beam end", unit="in"), F("FEXX", "Electrode strength", unit="ksi")],
+        tables=[T("loads", "Loads at the joint", [CASE, F("M", "Beam end moment", unit="kip-ft"), F("P", "Column compression at the joint", unit="kip", required=False),
+                                                  F("Mc", "Column moment at the joint", unit="kip-ft", required=False, help="blank = the beam moment"), F("label", "Note", "text", required=False)]),
+                T("runs", "Or: combined loads, used in place of the table above", [F("name", "Combination or run", "text"), F("M", "Beam end moment", unit="kip-ft"),
+                                                                                     F("P", "Column compression at the joint", unit="kip", required=False),
+                                                                                     F("Mc", "Column moment at the joint", unit="kip-ft", required=False)])]),
     "stiffened_seat": dict(
         title="Stiffened Seated Connection (welded to the support, bolted to the beam)", code="AISC 360-22", mark="SS",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_source", "Source of the beam Fy", "text"),
@@ -2068,6 +2084,18 @@ def _build(kind, values, project):
                 r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.num("s"), r.num("g"), r.num("weld"), r.num("FEXX"))
         r.done()
         return ws_more.cap_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
+    if kind == "wt_flange":
+        cb, m = combos(project, r.miss), method(project, r.miss)
+        runs = [dict(name=x["name"], M=x["M"], P=x["P"] or 0.0, Mc=x["Mc"]) for x in r.rows("runs")]
+        loads = [] if runs else [dict(case=x["case"], M=x["M"], P=x["P"] or 0.0, Mc=x["Mc"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads and not runs:
+            r.miss.append("No load is entered")
+        cases_used([x["case"] for x in loads], cb, r.miss)
+        args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), r.text("beam_source"), r.text("column"), r.num("col_Fy"), r.text("col_source"),
+                "H" if str(r.text("face", False) or "B").upper() == "H" else "B", r.text("wt"), r.num("wt_Fy"), r.num("wt_Fu"), r.text("wt_source"), r.num("L"),
+                r.num("d"), r.text("group"), r.text("threads"), r.num("n"), r.num("s"), r.num("g"), r.num("leh"), r.num("le_b"), r.num("FEXX"))
+        r.done()
+        return ws_more.wt_flange_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or "")), "simple", {}
     if kind in ("through_plate", "cutout_plate"):
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], ML=x["ML"], VL=x["VL"] or 0.0, MR=x["MR"], VR=x["VR"] or 0.0, P=x["P"] or 0.0) for x in r.rows("runs")]

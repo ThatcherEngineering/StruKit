@@ -339,3 +339,8 @@ design log" rule. Unattended: no questions; conservative readings applied and re
   the uplift is counted in both directions.
 - The base plate bending at the lug is checked for each direction separately.
 
+## 2026-11-26 01:42, welded WT flange connection (0.245.0), applied (not ruled)
+- With the column moment at the joint left blank, U (Eq. K1-6) uses the beam moment, as Example 6.5 does.
+- The HSS crippling uses Qf of the combination with the largest force over Qf; the other checks use the largest force.
+- A reinforcing fillet on the flare-bevel welds is not counted on.
+

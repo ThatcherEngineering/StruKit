@@ -51,3 +51,21 @@ def test_cut_out_plate_example_6_2():
     a = through_plate_sheet("CO", *G, [], [], "ASD", runs=[dict(name="ASD", ML=1590 / 12, VL=0, MR=1590 / 12, VR=0, P=0)], ws=4.0).tp
     assert a["R"] == pytest.approx(86.2, abs=0.1) and a["Rc"] == pytest.approx(89.8, abs=0.1) and a["Rb"] == pytest.approx(119, rel=0.003)
     assert a["Mb"] == pytest.approx(133, rel=0.005)
+
+
+def test_wt_flange_example_6_5():
+    """Welded WT flange connection, Design Guide 24 Example 6.5: W16x36 to HSS12x8x1/2 (8 in. face), WT8x28.5 x 10 in., (4) 7/8 in.
+    Group 120-N bolts (two lines of two at 3 in., gage 3-1/2), 2 in. to the stem end and to the beam end; Mu 120 kip-ft, Pu 200 kips."""
+    from strukit.ws_more import wt_flange_sheet
+    G = ("W16X36", 50, 65, "ASTM A992", "HSS12X8X1/2", 50, "ASTM A500 Gr. C", "B", "WT8X28.5", 50, 65, "ASTM A992", 10, 0.875, "A325", "N", 2, 3, 3.5, 2, 2, 70)
+    w = wt_flange_sheet("WTF", *G, [], [], "LRFD", runs=[dict(name="LRFD", M=120, P=200)]).wt
+    assert w["R1"] == pytest.approx(88.2, abs=0.05) and w["R2"] == pytest.approx(90.6, abs=0.05)
+    assert w["Rflb"] == pytest.approx(112, rel=0.003) and w["Rwly"] == pytest.approx(160, rel=0.003) and w["Rsly"] == pytest.approx(410, rel=0.002)
+    assert w["U"] == pytest.approx(0.751, abs=0.001) and w["Qf"] == pytest.approx(0.850, abs=0.001) and w["Rcr"] == pytest.approx(1020, rel=0.003)
+    assert w["Rfw"] == pytest.approx(174, rel=0.002) and w["Rb"] == pytest.approx(97.2, rel=0.003)
+    assert w["Ag_s"] == pytest.approx(3.01, abs=0.005) and w["An_s"] == pytest.approx(2.15, abs=0.005)
+    assert w["bs_cases"]["2, tension between the bolt lines"] == pytest.approx(188, rel=0.004) and w["bs_cases"]["3, one line, tension to the far edge"] == pytest.approx(206, rel=0.004)
+    assert w["Rbs_f"] == pytest.approx(188, rel=0.006)                    # the example rounds lev to 1.75 in.
+    a = wt_flange_sheet("WTF", *G, [], [], "ASD", runs=[dict(name="ASD", M=80, P=133.3)]).wt
+    assert a["R1"] == pytest.approx(58.8, abs=0.05) and a["U"] == pytest.approx(0.833, abs=0.002) and a["Qf"] == pytest.approx(0.800, abs=0.002)
+    assert a["Rcr"] == pytest.approx(958, rel=0.003) and a["Rb"] == pytest.approx(64.8, rel=0.003)
