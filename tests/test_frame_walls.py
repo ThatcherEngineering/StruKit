@@ -97,3 +97,26 @@ def test_building_model_sheet_near_the_front():
     sh = calc.model_sheet(d["project"], d["members"])
     assert sh.mark == "BM" and sh.blocks[0]["picture"][0] == "model3d" and len(sh.blocks[0]["picture"][1]["items"]) > 20
     assert calc.model_sheet(PROJ, []) is None
+
+
+def test_views_show_joist_rows_decks_and_openings():
+    """The 3D views draw each joist row as its members at their spacing over the width it covers, with a deck over them, and each wall's
+    windows and doors: typed on the placement card (start, width, sill, height), or a perforated or force-transfer wall's own openings."""
+    mem = [dict(kind="ijoist", values=dict(name="BCI 4500S-1.8", depth="11.875", spacing="24", bearing="3.5", stiffeners="no", flange="yes", defl=[],
+                                           mark="RJ", span="20", loads=[], at_level="Roof", at_x1="0", at_y1="0", at_x2="0", at_y2="20", at_row="10")),
+           dict(kind="shear_wall", values=dict(SW, mark="S", lengths="20", at_level="Roof", at_x1="0", at_y1="0", at_x2="20", at_y2="0",
+                                               at_openings="2 3 3 4; 12 3 0 6.67")),
+           dict(kind="ftao_wall", values=dict(G="0.5", G_source="t", mark="F", panel="Sheathing, 7/16 in, 8d common", spacing="6", panel_type="OSB",
+                                              sides="one side", h="9", L1="4", Lo="4", L2="4", ho="4", sill="3", load="wind", V="1", v_source="t",
+                                              at_level="Roof", at_x1="0", at_y1="20", at_x2="12", at_y2="20"))]
+    v = calc.model_view(PROJ, mem)
+    joists = [i for i in v["items"] if i["type"] == "joist"]
+    assert len(joists) == 6 and sum(1 for i in joists if i["mark"]) == 1          # 10 ft at 24 in.: 0, 2, ... 10 ft
+    assert {round(i["a"][0], 3) for i in joists} == {0.0, 2.0, 4.0, 6.0, 8.0, 10.0}
+    assert any(i["type"] == "deck" for i in v["items"])
+    walls = {i["mark"]: i for i in v["items"] if i["type"] == "wall"}
+    assert walls["S"]["openings"] == [((2.0, 5.0), (3.0, 7.0)), ((12.0, 15.0), (0.0, 6.67))]
+    assert walls["F"]["openings"] == [((4.0, 8.0), (3.0, 7.0))]
+    bad = dict(mem[1], values=dict(mem[1]["values"], at_openings="2 3 3"))
+    v2 = calc.model_view(PROJ, [bad])
+    assert any("opening for the views" in p for p in v2["problems"])

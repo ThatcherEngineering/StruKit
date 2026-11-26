@@ -83,6 +83,14 @@ for mk, top, p1, p2 in (("Line 1, main level", "Roof", (0, 0), (27.25, 0)), ("Li
     # stiffness for the 3D frame (test inputs): end posts (2) 2x6 No. 2 Douglas Fir-Larch, E from NDS Supplement Table 4A; anchorage slip
     # the STHD14 deflection of catalog C-C-2026 p. 67 note 5 (at the allowable load, the larger of its values)
     w_["values"].update(chord_A="16.5", chord_E="1600000", slip="0.164")
+    # windows and doors for the 3D views only, read by scale (1/4 in. = 1 ft, about 0.5 ft) from the architect's elevations A4.1 / A4.2
+    # (West = Line 1, South = Line A, East = Line B); start from End 1 of the placed wall, width, sill above the level below, height
+    w_["values"]["at_openings"] = {"Line 1, lower level": "22.2 3.7 0 6.67; 2.0 4.0 3.5 2.8",
+                                   "Line 1, main level": "22.3 3.6 7.0 1.9; 16.5 3.4 7.0 1.9; 12.3 2.5 7.0 1.9",
+                                   "Line A, lower level": "22.5 2.8 2.7 4.2",
+                                   "Line A, main level": "12.0 5.3 3.3 3.8; 22.5 2.8 2.9 4.3",
+                                   "Line B, lower level": "2.1 3.6 2.1 4.9",
+                                   "Line B, main level": "2.0 3.5 6.5 2.0"}[mk]
 for mk, p1, p2 in (("Footing Line 1", (0, 0), (27.25, 0)), ("Footing Line A", (0, 0), (0, 29.75)), ("Footing Line B", (27.25, 0), (27.25, 22.58))):
     put(G["Continuous Footing"], mk, at_x1=p1[0], at_y1=p1[1], at_x2=p2[0], at_y2=p2[1])
 for mk in ("Wind", "Seismic"):
