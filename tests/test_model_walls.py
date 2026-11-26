@@ -242,3 +242,28 @@ def test_seismic_weights_from_the_model():
     eq = next(m for m in ms if m["kind"] == "seismic_elf")["values"]
     sheet, _, _ = calc.build("seismic_elf", dict(eq, w_source="building model weight takeoff", w_parts=["Roof: 1 lb"]), d["project"])
     assert any(b.get("title") == "Seismic Weight Takeoff" for b in sheet.blocks) and ("Seismic Weights", "building model weight takeoff") in sheet.info
+
+
+def test_diaphragms_filled_from_the_model():
+    """Placed Wood Diaphragms (level, load direction) take the span between neighbouring wall lines parallel to the load, the depth of the
+    plan along the load, and the load per foot of the lateral distribution; wind or seismic by the larger of w and 1.4 w (SDPWS 4.1.4)."""
+    import copy
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+    ms = copy.deepcopy(d["members"])
+    r = calc.model_diaphragms(d["project"], ms)
+    f = {x["mark"]: x for x in r["filled"]}
+    roofY = f["Roof diaphragm, wind on Line 1"]
+    assert (roofY["dir"], roofY["L"], roofY["W"], roofY["load"]) == ("Y", 27.25, 29.75, "wind")
+    spans = calc.lateral_wind(d["project"], ms)["spans"]
+    sp = next(s_ for s_ in spans if s_["level"] == "Roof" and s_["dir"] == "Y")
+    assert roofY["w"] == pytest.approx(sp["w"])
+    fx = f["Main floor diaphragm, wind on Line A or B"]
+    assert fx["L"] == 29.75 and "Existing house wall" in fx["lines"][1]
+    # seismic governs once 1.4 x its load per foot is over the wind's
+    eq = next(m for m in ms if m["kind"] == "seismic_elf")["values"]
+    for row in eq["levels"]:
+        row["w"] = str(float(row["w"]) * 20)
+    r2 = calc.model_diaphragms(d["project"], ms)
+    assert {x["load"] for x in r2["filled"]} == {"seismic"}
+    v = next(m for m in r2["members"] if m["values"]["mark"] == "Roof diaphragm, wind on Line 1")["values"]
+    assert v["load"] == "seismic" and "story force at Roof" in v["w_source"]

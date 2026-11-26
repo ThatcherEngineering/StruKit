@@ -733,6 +733,14 @@ function modelOf() { const p = S.project; p.model = p.model || {}; ["levels", "g
 
 // Placement boxes on a member screen: where the member sits in the building model. Optional; a member works without them.
 function placementCard(m, changed) {
+  if (m.kind === "diaphragm") {
+    const levels_ = modelOf().levels.map(l => (l.name || "").trim()).filter(Boolean);
+    if (!levels_.length) return null;
+    return el("div", {}, el("h2", {}, "Place in the Building Model (optional)"), el("div", { class: "grid" },
+      field({ key: "at_level", label: "Level", type: "select", options: levels_, required: false }, m.values, changed),
+      field({ key: "at_dir", label: "Load direction", type: "select", options: ["X", "Y"], required: false, help: "the diaphragm spans between the wall lines parallel to the load" }, m.values, changed)),
+      el("div", { class: "help" }, "“Fill the diaphragms from the model” on the Project page writes the governing span, depth and load of this level and direction."));
+  }
   if (!MODEL_KINDS().includes(m.kind)) return null;
   const mdl = modelOf(), levels = mdl.levels.map(l => (l.name || "").trim()).filter(Boolean);
   if (!levels.length) return el("div", { class: "help" }, "To place this member in the building model, list the levels (and grids, if you use them) on the Project page first. Placement is optional.");
@@ -904,7 +912,15 @@ function modelCard(changed) {
     setDirty(); await recalcAll(); select("project");
     toast(n ? n + " level weight" + (n === 1 ? "" : "s") + " written to the seismic sheet." + (out.problems.length ? " See the notes under the plan." : "") : "No level of the seismic sheet matches a level of the model by name.", 12000);
   } }, "Fill the seismic weights from the model");
-  const lat = el("span", {}, wtBtn, latBtn("wind", "Send the wind to the wall lines"), latBtn("seismic", "Send the seismic forces"), latBtn("governing", "Use whichever governs each wall"));
+  const diaBtn = el("button", { class: "btn", onclick: async () => {
+    let out;
+    try { out = await post("/api/model_diaphragms", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
+    out.members.forEach((nm, i) => { if (nm.kind === "diaphragm") S.members[i].values = nm.values; });
+    MODEL_NOTES = out.problems.concat(out.filled.map(f => f.mark + ": span " + f.L + " ft between " + f.lines[0] + " and " + f.lines[1] + ", depth " + f.W + " ft, " + f.w.toFixed(1) + " plf " + f.load));
+    setDirty(); await recalcAll(); select("project");
+    toast(out.filled.length ? out.filled.length + " diaphragm" + (out.filled.length === 1 ? "" : "s") + " filled from the model." : "No diaphragm was filled. See the notes under the plan.", 12000);
+  } }, "Fill the diaphragms from the model");
+  const lat = el("span", {}, wtBtn, diaBtn, latBtn("wind", "Send the wind to the wall lines"), latBtn("seismic", "Send the seismic forces"), latBtn("governing", "Use whichever governs each wall"));
   const frameBtn = el("button", { class: "btn", onclick: async () => {
     let out;
     try { out = await post("/api/model_frame", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }

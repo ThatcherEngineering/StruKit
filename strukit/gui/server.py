@@ -183,6 +183,8 @@ def api(path, body):
         return calc.bent_building(body.get("project") or {}, body.get("members") or [], body.get("spec") or {})
     if path == "/api/model_seismic_weights":
         return calc.model_seismic_weights(body.get("project") or {}, body.get("members") or [])
+    if path == "/api/model_diaphragms":
+        return calc.model_diaphragms(body.get("project") or {}, body.get("members") or [])
     if path == "/api/model_links":
         return calc.model_links(body.get("project") or {}, body.get("members") or [])
     if path == "/api/model_plan":

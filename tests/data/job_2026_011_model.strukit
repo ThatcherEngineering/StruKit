@@ -984,6 +984,86 @@
    }
   },
   {
+   "kind": "diaphragm",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing and Single-Floor, 15/32 in, 8d common",
+    "edges": "unblocked",
+    "face": "2",
+    "case": "Case 1",
+    "panel_type": "OSB",
+    "load": "wind",
+    "mark": "Roof diaphragm, wind on Line 1",
+    "L": "27.25",
+    "W": "29.6",
+    "w": "104.0",
+    "w_source": "sheet Wind, wind parallel to the ridge, walls from 14.5 to 20.7854 ft: 173.3 plf x 0.6",
+    "at_level": "Roof",
+    "at_dir": "Y"
+   }
+  },
+  {
+   "kind": "diaphragm",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing and Single-Floor, 15/32 in, 8d common",
+    "edges": "unblocked",
+    "face": "2",
+    "case": "Case 1",
+    "panel_type": "OSB",
+    "load": "wind",
+    "mark": "Roof diaphragm, wind on Line A or B",
+    "L": "29.6",
+    "W": "27.25",
+    "w": "102.9",
+    "w_source": "sheet Wind, wind normal to the ridge, walls from 14.5 to 20.5 ft: 171.6 plf x 0.6",
+    "at_level": "Roof",
+    "at_dir": "X"
+   }
+  },
+  {
+   "kind": "diaphragm",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing and Single-Floor, 15/32 in, 8d common",
+    "edges": "unblocked",
+    "face": "2",
+    "case": "Case 1",
+    "panel_type": "OSB",
+    "load": "wind",
+    "mark": "Main floor diaphragm, wind on Line 1",
+    "L": "27.25",
+    "W": "29.6",
+    "w": "163.9",
+    "w_source": "sheet Wind, wind parallel to the ridge, walls from 4.5 to 14.5 ft: 273.1 plf x 0.6",
+    "at_level": "Main floor",
+    "at_dir": "Y"
+   }
+  },
+  {
+   "kind": "diaphragm",
+   "values": {
+    "G": "0.50",
+    "G_source": "No. 2 Douglas Fir-Larch studs and plates, sheet S0 Timber Notes; NDS Table 12.3.3A",
+    "panel": "Sheathing and Single-Floor, 15/32 in, 8d common",
+    "edges": "unblocked",
+    "face": "2",
+    "case": "Case 1",
+    "panel_type": "OSB",
+    "load": "wind",
+    "mark": "Main floor diaphragm, wind on Line A or B",
+    "L": "29.6",
+    "W": "27.25",
+    "w": "166.1",
+    "w_source": "sheet Wind, wind normal to the ridge, walls from 4.5 to 14.5 ft: 276.9 plf x 0.6",
+    "at_level": "Main floor",
+    "at_dir": "X"
+   }
+  },
+  {
    "kind": "lvl_beam",
    "values": {
     "grade": "2.1E 2800",

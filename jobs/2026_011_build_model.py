@@ -79,6 +79,10 @@ for mk, p1, p2 in (("Footing Line 1", (0, 0), (27.25, 0)), ("Footing Line A", (0
     put(G["Continuous Footing"], mk, at_x1=p1[0], at_y1=p1[1], at_x2=p2[0], at_y2=p2[1])
 for mk in ("Wind", "Seismic"):
     put(Lm[mk])
+# the four diaphragm sheets of the lateral project, placed: level and load direction (wind on Line 1 = load in Y; on Line A or B = load in X)
+for lv in ("Roof", "Main floor"):
+    put(Lm[f"{lv} diaphragm, wind on Line 1"], at_level=lv, at_dir="Y")
+    put(Lm[f"{lv} diaphragm, wind on Line A or B"], at_level=lv, at_dir="X")
 # unplaced, stand-alone checks kept in the project
 # Roof Beam A: the LVL header in the Line 1 wall at the roof, from the corner at Line A (sheet S3, by scale: 11.25 ft, the span of its sheet)
 rba = put(G["Roof Beam A"], at_level="Roof", at_x1=0, at_y1=0, at_x2=11.25, at_y2=0)
