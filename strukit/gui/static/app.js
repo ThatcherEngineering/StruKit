@@ -857,10 +857,11 @@ function modelCard(changed) {
   const gx = { key: "grids_x", label: "Grid lines across (X)", columns: [{ key: "name", label: "Grid", type: "text", required: true }, { key: "at", label: "At X", unit: "ft", type: "text", required: true }] };
   const gy = { key: "grids_y", label: "Grid lines up the plan (Y)", columns: [{ key: "name", label: "Grid", type: "text", required: true }, { key: "at", label: "At Y", unit: "ft", type: "text", required: true }],
     help: "Grids are optional: a member can be placed by feet alone. Where a grid has the same name as a number, the grid is meant." };
-  const ex = { key: "existing", label: "Existing walls (by others, not designed here)", columns: [{ key: "name", label: "Name", type: "text", required: true },
-      { key: "level", label: "Level at its top", type: "text", required: true }, { key: "x1", label: "End 1, X", type: "text", required: true }, { key: "y1", label: "End 1, Y", type: "text", required: true },
-      { key: "x2", label: "End 2, X", type: "text", required: true }, { key: "y2", label: "End 2, Y", type: "text", required: true }],
-    help: "Optional, for additions: an existing wall takes what bears on it and its share of wind and seismic as a wall line; the loads are listed for checking the existing construction." };
+  const ex = { key: "existing", label: "Existing construction (by others, not designed here)", columns: [{ key: "name", label: "Name", type: "text", required: true },
+      { key: "kind", label: "Is a", type: "select", options: ["wall", "beam", "post", "footing"], required: false },
+      { key: "level", label: "Level at its top", type: "text", required: true }, { key: "x1", label: "End 1 (or point), X", type: "text", required: true }, { key: "y1", label: "End 1 (or point), Y", type: "text", required: true },
+      { key: "x2", label: "End 2, X", type: "text", required: false }, { key: "y2", label: "End 2, Y", type: "text", required: false }],
+    help: "Optional, for additions: existing walls, beams, posts and footings take what bears on them, and the loads are listed for checking the existing construction; an existing wall is also a wall line for wind and seismic. A post or footing may be a point (End 2 blank). Blank Is a = wall." };
   const holder = el("div", {});
   const levels = mdl.levels.map(l => (l.name || "").trim()).filter(Boolean);
   const pickLevel = el("select", {}, levels.map(l => el("option", { value: l }, l)).concat([el("option", { value: "(3D)" }, "3D view")]));

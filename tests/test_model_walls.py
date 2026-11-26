@@ -267,3 +267,26 @@ def test_diaphragms_filled_from_the_model():
     assert {x["load"] for x in r2["filled"]} == {"seismic"}
     v = next(m for m in r2["members"] if m["values"]["mark"] == "Roof diaphragm, wind on Line 1")["values"]
     assert v["load"] == "seismic" and "story force at Roof" in v["w_source"]
+
+
+def test_existing_beam_and_post_carry_and_list():
+    """Existing construction may be a beam, a post or a footing: what lands on it stops there and is listed; only existing walls are wall
+    lines for wind and seismic. 2026-011 with the lower existing wall entered as an existing beam instead, and Column B removed with an
+    existing post in its place: FJ-lower ends on the beam (297 plf live, as on the wall) and Floor Beam A's right end on the post."""
+    import copy
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+    proj = copy.deepcopy(d["project"])
+    ex = proj["model"]["existing"]
+    ex[1].update(kind="beam")
+    ex.append(dict(name="Existing post", kind="post", level="Main floor", x1="27.25", y1="14.896"))
+    ms = [m for m in copy.deepcopy(d["members"]) if m["values"]["mark"] != "Column B"]
+    out = calc.model_links(proj, ms)
+    on = {(e["wall"], e["source"]): e for e in out["existing"]}
+    assert on[("Existing house wall, lower level", "FJ-lower")]["cases"]["L"] == pytest.approx(297, abs=2)
+    fa = on[("Existing post", "Floor Beam A")]
+    assert fa["unit"] == "lb" and fa["support"] == "right support" and fa["cases"]["L"] > 0
+    g = calc.lateral_governing(proj, out["members"])
+    walls = {l["wall"] for l in g["lines"]}
+    assert "Existing house wall, main level (existing)" in walls and not any("lower level (existing)" in w for w in walls)
+    sh = calc.existing_sheet(proj, out["members"])
+    assert ("Existing", "Existing house wall, main level (wall), Existing house wall, lower level (beam), Existing post (post)") in sh.info

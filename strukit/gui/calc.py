@@ -3101,18 +3101,22 @@ def _point_pad(project, members, lp, prev_pads):
 
 
 def model_existing(project):
-    """Existing walls of the model (by others, not designed): [(name, dict(level, base, p1, p2))]; unreadable rows are skipped."""
+    """Existing construction in the model (by others, not designed): [(name, dict(level, base, p1, p2, kind))], kind wall, beam, post or
+    footing (a post or footing may be a point: p2 None; level = the level at its top); unreadable rows are skipped."""
     mdl = (project or {}).get("model") or {}
     gx, gy = mdl.get("grids_x") or [], mdl.get("grids_y") or []
     levels = [str(l.get("name") or "").strip() for l in mdl.get("levels") or []]
     out = []
     for r in mdl.get("existing") or []:
         nm, lv = str(r.get("name") or "").strip(), str(r.get("level") or "").strip()
-        p1, p2 = (_coord(r.get("x1"), gx), _coord(r.get("y1"), gy)), (_coord(r.get("x2"), gx), _coord(r.get("y2"), gy))
-        if not nm or lv not in levels or None in p1 or None in p2:
+        kd = str(r.get("kind") or "wall").strip() or "wall"
+        p1 = (_coord(r.get("x1"), gx), _coord(r.get("y1"), gy))
+        blank2 = not str(r.get("x2") or "").strip() and not str(r.get("y2") or "").strip()
+        p2 = None if (blank2 and kd in ("post", "footing")) else (_coord(r.get("x2"), gx), _coord(r.get("y2"), gy))
+        if not nm or lv not in levels or None in p1 or (p2 is not None and None in p2) or (p2 is None and kd not in ("post", "footing")):
             continue
         i = levels.index(lv)
-        out.append((nm, dict(level=lv, base=levels[i - 1] if i > 0 else lv, p1=p1, p2=p2)))
+        out.append((nm, dict(level=lv, base=levels[i - 1] if i > 0 else lv, p1=p1, p2=p2, kind=kd)))
     return out
 
 
@@ -3198,6 +3202,9 @@ def model_links(project, members):
         posts = [(m, pl) for m, pl in placed if m is not me and m["kind"] in TAKEDOWN_POSTS and pl["level"] == level and dist(pl["p1"], pt) <= MODEL_TOL]
         if posts:
             return posts, None
+        for nm, epl in existing:                             # an existing post at the point, like a post
+            if epl.get("kind") == "post" and epl["level"] == level and epl.get("p2") is None and dist(epl["p1"], pt) <= MODEL_TOL:
+                return [(dict(kind="existing", values=dict(mark=nm)), epl)], None
         beams = []
         mine = next((p_ for m_, p_ in placed if m_ is me), None)
         def parallel(pl):                                    # a member running the same way does not carry this one (two joists end to end)
@@ -3226,8 +3233,12 @@ def model_links(project, members):
             return [(m, pl) for m, pl, _ in walls], [x for _, _, x in walls]
         for nm, epl in existing:
             if epl["level"] == level:
-                a = along(pt, epl)
-                if a and a[1] <= MODEL_TOL:
+                if epl.get("p2") is None:
+                    hit = dist(epl["p1"], pt) <= MODEL_TOL
+                else:
+                    a = along(pt, epl)
+                    hit = bool(a and a[1] <= MODEL_TOL)
+                if hit:
                     return [(dict(kind="existing", values=dict(mark=nm)), epl)], None
         if want_footing:
             foots = [(m, pl) for m, pl in placed if m["kind"] in TAKEDOWN_FOOTINGS and pl.get("p2") is None and pl["level"] == level and dist(pl["p1"], pt) <= MODEL_TOL]
@@ -3361,9 +3372,7 @@ def model_links(project, members):
             tv = tgt["values"]
             if tgt["kind"] == "existing":                     # the load goes to existing construction: listed, not carried further
                 sp = num("spacing") if kind in TAKEDOWN_BEAMS else 0
-                cases = sup.get("cases") or {}
-                on_existing.append(dict(wall=tv["mark"], source=v["mark"], support=sup["name"], cases={c: round(x * (12.0 / sp if sp > 0 else 1.0)) for c, x in cases.items()},
-                                        unit="lb/ft" if sp > 0 else "lb"))
+                on_existing.append(dict(wall=tv["mark"], source=v["mark"], support=sup["name"], sp=sp, unit="lb/ft" if sp > 0 else "lb"))
                 continue
             lk = dict(src=v["mark"], support=sup["name"], count=1, auto=True)
             sp_ = num("spacing") if kind in TAKEDOWN_BEAMS else 0
@@ -3470,6 +3479,14 @@ def model_links(project, members):
         else:
             out["members"].append(got[0])
             out["pads"].append(got[1])
+    by_mark_ = {(m.get("values") or {}).get("mark"): m for m in out["members"]}
+    for e in on_existing:                                    # the loads on existing construction, from the load path as recalculated
+        src = by_mark_.get(e["source"])
+        got = case_reactions(src["kind"], src["values"], project) if src else dict(error="missing")
+        sup = next((s_ for s_ in got.get("supports") or [] if s_["name"] == e["support"]), None)
+        f = 12.0 / e["sp"] if e["sp"] > 0 else 1.0
+        e["cases"] = {c: round(x * f) for c, x in (sup or {}).get("cases", {}).items()}
+        e.pop("sp", None)
     out["problems"] = problems + out["problems"]
     out["existing"] = on_existing
     out["placed"] = len(placed)
@@ -3542,7 +3559,7 @@ def lateral_wind(project, members, wind_mark=None, load="wind"):
             problems.append(str(e)); continue
         if pl:
             placed.append((m, pl))
-    placed += [(dict(kind="existing", values=dict(mark=nm + " (existing)")), epl) for nm, epl in model_existing(project)]
+    placed += [(dict(kind="existing", values=dict(mark=nm + " (existing)")), epl) for nm, epl in model_existing(project) if epl.get("kind", "wall") == "wall"]
     walls = [(m, pl) for m, pl in placed if m["kind"] in MODEL_WALLS]
     if not walls:
         return dict(members=members, lines=[], problems=problems + ["No shear wall is placed in the model yet (use the placement boxes on the wall screens)"])
@@ -3752,7 +3769,7 @@ def model_view(project, members):
             d1_, d2_ = zends(m, pl)
             items.append(dict(mark=mark, kind=kind, type="joist" if (kind == "ijoist" or sp > 0) else "beam", a=(*pl["p1"], z + d1_), b=(*pl["p2"], z + d2_)))
     for nm, epl in model_existing(project):                   # existing walls: grey panels from the level below to their top
-        if epl["level"] in el:
+        if epl["level"] in el and epl.get("kind", "wall") == "wall":
             i = order.index(epl["level"])
             z = el[epl["level"]]
             items.append(dict(mark=nm, kind="existing", type="wall", existing=True, a=(*epl["p1"], z), b=(*epl["p2"], z), zb=levels[i - 1][1] if i > 0 else z - 9.0))
@@ -4711,8 +4728,8 @@ def model_plan(project, members):
             out.setdefault(pl["level"], []).append(item)
             if m.get("kind") in TAKEDOWN_POSTS and pl["base"] in out and pl["base"] != pl["level"]:
                 out[pl["base"]].append(dict(item, below=True))
-    for nm, epl in model_existing(project):                   # existing walls, drawn on the level at their top and grey
-        out.setdefault(epl["level"], []).append(dict(mark=nm, kind="existing", p1=epl["p1"], p2=epl["p2"], wall=True, brace=False, existing=True))
+    for nm, epl in model_existing(project):                   # existing construction, drawn grey on the level at its top
+        out.setdefault(epl["level"], []).append(dict(mark=nm, kind="existing", p1=epl["p1"], p2=epl["p2"], wall=epl.get("kind", "wall") == "wall", brace=False, existing=True))
     gx = [(str(g.get("name") or ""), _coord(g.get("at"), [])) for g in mdl.get("grids_x") or []]
     gy = [(str(g.get("name") or ""), _coord(g.get("at"), [])) for g in mdl.get("grids_y") or []]
     return dict(levels=levels, items=out, grids_x=[g for g in gx if g[1] is not None], grids_y=[g for g in gy if g[1] is not None])
@@ -5262,27 +5279,28 @@ def existing_sheet(project, members):
     ex = model_existing(project)
     if not ex:
         return None
+    kinds_ = {nm: epl.get("kind", "wall") for nm, epl in ex}
     try:
         out = model_links(project, members)
         g = lateral_governing(project, out["members"])
     except Exception:
         return None
     asd = (project or {}).get("method") == "ASD"
-    grav = [f"{'Existing wall':<38}{'From':<16}{'Support':<15}Service load by case"]
+    grav = [f"{'Existing':<38}{'From':<16}{'Support':<15}Service load by case"]
     for e in out.get("existing") or []:
         grav.append(f"{e['wall'][:37]:<38}{e['source'][:15]:<16}{e['support'][:14]:<15}" + ", ".join(f"{c} {v:,.0f}" for c, v in e["cases"].items()) + f" {e['unit']}")
     lat = [f"{'Existing wall':<38}{'Level':<12}{'Dir.':<6}{'Trib. ft':>9}{'V, lb':>9}  Load"]
     for l in g.get("lines") or []:
         if l.get("existing"):
             lat.append(f"{l['wall'].replace(' (existing)', '')[:37]:<38}{str(l['level'])[:11]:<12}{str(l['wind']):<6}{l['trib']:>9.2f}{l['V']:>9,.0f}  {l['load']}")
-    blocks = [dict(title="Gravity Loads Bearing on Existing Walls", lines=grav if len(grav) > 1 else grav + ["(none)"]),
+    blocks = [dict(title="Gravity Loads Bearing on Existing Construction", lines=grav if len(grav) > 1 else grav + ["(none)"]),
               dict(title="Lateral Shear Taken by Existing Wall Lines", lines=lat if len(lat) > 1 else lat + ["(none)"])]
     sh = SimpleSheet("EX", "Loads on Existing Construction", "Existing", (project or {}).get("method") or "",
-                     [("Existing walls", ", ".join(nm for nm, _ in ex))], [], [], "", [], [],
-                     ["Gravity loads are service loads per foot of wall from the members that bear on the wall, by load case.",
+                     [("Existing", ", ".join(f"{nm} ({kinds_[nm]})" for nm, _ in ex))], [], [], "", [], [],
+                     ["Gravity loads are service loads by load case: per foot where a row of members bears on a wall or beam, otherwise the point load.",
                       "Lateral shear is distributed to wall lines by tributary width (flexible diaphragm) at the same level as the new walls of the "
                       "model" + (" (ASD: 0.6 W, 0.7 E)." if asd else " (strength level W and E).")],
-                     ["The existing walls, their foundations and their connections are not checked on this sheet"])
+                     ["The existing construction, its foundations and its connections are not checked on this sheet"])
     sh.blocks = blocks
     return sh
 
