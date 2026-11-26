@@ -109,3 +109,36 @@ def test_extended_end_plate_on_the_screen():
     assert s.title.startswith("Four-Bolt Extended") and any(r.check == "Extended plate, shear rupture" for r in s.rows)
     with pytest.raises(calc.Missing):
         calc.build("flush_end_plate", dict(v, pfo="", loads=L(1500, 0, 25.8)), dict(PROJ, method="LRFD"))
+
+
+def test_extended_column_side_design_guide_39_example_5_3_2():
+    """Column side of a four-bolt extended end plate on a continuous W14x99, AISC Design Guide 39 Example 5.3-2 (W24x84 beam, g 5-3/4 in.,
+    pfo 2-3/4, pfi 2, tp 1 in., Mu 7,620 kip-in., Tu 20.4 kips; partial-depth 1/2 x 6 in. stiffeners, 6-1/2 in. long, 1-3/8 in. clip, 3/8 in.
+    fillets to the flange, 1/4 in. to the web; 3/8 in. doubler). Published: Ycu 202 in., Rn,cu 263 (phi 237) against 1.10 x 337 = 371 kips;
+    Ycs 321 in. (bcf,eff 13.5 in.), Rn,cs 418 (phi 376); Tu,stiff 100 kips; Anet 4.63 in2, Pn 232 (phi 209); flange welds 309 (phi 232);
+    web welds 152 (phi 114); panel zone 366 (phi 329) kips. The beam-side end plate of the example is stiffened (4ES); the beam side here is
+    the unstiffened 4E, so only the column side is compared."""
+    from strukit.ws_more import flush_end_plate_sheet
+    from strukit.ws_steel_beam import Combo
+    lr = [Combo("LRFD", {"M": 1.0}, "t")]
+    stiff = dict(ts=0.5, bs=6.0, clip=1.375, ls=6.5, w_f=0.375, w_w=0.25, Fy=50.0)
+    s = flush_end_plate_sheet("EP", "W24X84", 50, 65, "W14X99", 50, 65, "ASTM A992", 9.0, 1.0, 50, 65, "A572 Gr. 50", 1.125, "A490", "N", 5.75, 2.0,
+                              0.5, 0.25, 1.5, None, None, None, None, 70, [], lr, "LRFD", runs=[dict(name="LRFD", M=7620 / 12, T=20.4, V=45.8)],
+                              extended=True, pfo=2.75, col_side=True, col_cfg="stiffened", stiff=stiff, tdp=0.375, Vc=19.6)
+    c = s.ep["col"]
+    assert c["Ff"] == pytest.approx(337, abs=0.5) and c["Ycu"] == pytest.approx(202, rel=0.003) and c["Rcu"] == pytest.approx(237, rel=0.005)
+    assert c["bcf_eff"] == pytest.approx(13.5, abs=0.02) and c["Ycs"] == pytest.approx(321, rel=0.004) and c["Rcs"] == pytest.approx(376, rel=0.005)
+    assert c["T_st"] == pytest.approx(100, abs=1.0)
+    assert c["Anet"] == pytest.approx(4.63, abs=0.01) and 0.9 * c["Pst"] == pytest.approx(209, rel=0.005)
+    assert c["Rwsf"] == pytest.approx(232, rel=0.005) and c["Rwsw"] == pytest.approx(114, rel=0.005)
+    assert c["Rpz"] == pytest.approx(329, rel=0.005)
+    rows = {r.check: r for r in s.rows}
+    assert rows["Column flange flexure (stiffened)"].demand == pytest.approx(1.10 * c["Ff"]) and rows["Column flange flexure (stiffened)"].status == "OK"
+    # web yielding at the tension flange: Eq. 3-46 with lb = tbf + 2w + 2tp (the example's flanges are not fillet welded: lb = tbf + 2tp, 268 kips)
+    assert c["Rwy_t"] == pytest.approx((6 * 1.38 + 0.77 + 2 * 0.5 + 2.0) * 50 * 0.485, rel=1e-3)
+    # unstiffened, the same column fails flange flexure (237 < 371): flagged, and stiffeners are listed as not checked
+    u = flush_end_plate_sheet("EP", "W24X84", 50, 65, "W14X99", 50, 65, "ASTM A992", 9.0, 1.0, 50, 65, "A572 Gr. 50", 1.125, "A490", "N", 5.75, 2.0,
+                              0.5, 0.25, 1.5, None, None, None, None, 70, [], lr, "LRFD", runs=[dict(name="LRFD", M=7620 / 12, T=20.4, V=45.8)],
+                              extended=True, pfo=2.75, col_side=True, col_cfg="continuous")
+    ur = {r.check: r for r in u.rows}
+    assert ur["Column flange flexure (unstiffened)"].status != "OK" and any("stiffeners" in t for t in u.not_checked)

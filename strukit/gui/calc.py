@@ -354,14 +354,16 @@ FORMS = {
     "flush_end_plate": dict(
         title="End-Plate Moment Connection (flush, or four-bolt extended)", code="AISC 360-22", mark="FEP",
         fields=[F("beam", "Beam", "shape"), F("beam_Fy", "Beam Fy", unit="ksi"), F("beam_Fu", "Beam Fu", unit="ksi"),
-                F("config", "End plate", "select", options=["flush", "extended, four bolts (two outside and two inside the tension flange; beam side only)"], required=False, help="blank = flush"),
+                F("config", "End plate", "select", options=["flush", "extended, four bolts (two outside and two inside the tension flange)"], required=False, help="blank = flush"),
                 F("pfo", "Extended: outside of the tension flange to the outer bolts, pfo", unit="in", required=False),
                 F("n_shear", "Bolts at the compression flange counted for shear", required=False, help="blank = 2"),
                 F("n_rows", "Flush: rows of tension bolts (two bolts a row)", "select", options=["1", "2"], required=False, help="blank = 1"),
                 F("pb", "Spacing between the two rows, pb", unit="in", required=False),
-                F("col_side", "Checks on the support", "select", options=["column flange with a cap plate (two-bolt only)", "beam side only"], required=False,
-                  help="blank = column flange with a cap plate"),
-                F("column", "Column (the beam frames to its flange at the column top)", "shape", required=False), F("col_Fy", "Column Fy", unit="ksi", required=False),
+                F("col_side", "Checks on the support", "select", options=["column flange with a cap plate (two-bolt only)", "beam side only",
+                                                                         "continuous column, unstiffened (four-bolt extended)",
+                                                                         "continuous column with stiffeners at the beam flanges (four-bolt extended)"], required=False,
+                  help="blank = column flange with a cap plate (flush), beam side only (four-bolt extended)"),
+                F("column", "Column (the beam frames to its flange)", "shape", required=False), F("col_Fy", "Column Fy", unit="ksi", required=False),
                 F("col_Fu", "Column Fu", unit="ksi", required=False),
                 F("steel_source", "Source of the beam and column steel", "text"),
                 F("bp", "End plate width", unit="in"), F("tp", "End plate thickness", unit="in"), F("plate_Fy", "Plate Fy", unit="ksi"), F("plate_Fu", "Plate Fu", unit="ksi"),
@@ -373,6 +375,14 @@ FORMS = {
                 F("below", "End plate past the compression flange weld", unit="in", help="from the outside of the flange weld to the end of the plate"),
                 F("tcap", "Column cap plate thickness", unit="in", required=False), F("bcp", "Column cap plate width", unit="in", required=False),
                 F("w_cap_flange", "Cap plate to column flange fillet (one side)", unit="in", required=False), F("w_cap_web", "Cap plate to column web fillets (both sides)", unit="in", required=False),
+                F("st_ts", "Column stiffeners: thickness", unit="in", required=False, help="two plates in line with each beam flange, one each side of the column web"),
+                F("st_bs", "Column stiffeners: width (from the web)", unit="in", required=False),
+                F("st_ls", "Column stiffeners: length along the web", unit="in", required=False, help="partial depth, from the inside of the column flange"),
+                F("st_clip", "Column stiffeners: corner clip", unit="in", required=False),
+                F("st_wf", "Stiffener to column flange fillets (both sides)", unit="in", required=False), F("st_ww", "Stiffener to column web fillets (both sides)", unit="in", required=False),
+                F("st_Fy", "Stiffener Fy", unit="ksi", required=False, help="blank = the end plate Fy"),
+                F("tdp", "Panel zone doubler plate thickness", unit="in", required=False, help="continuous column; blank = none"),
+                F("Vc", "Column shear at the joint (taken off the panel zone shear)", unit="kip", required=False, help="blank = 0, not counted on"),
                 F("FEXX", "Electrode strength", unit="ksi")],
         tables=[T("loads", "Loads at the connection", [CASE, F("M", "Moment", unit="kip-ft"), F("T", "Beam axial tension", unit="kip", required=False), F("V", "Shear", unit="kip", required=False),
                                                        F("label", "Note", "text", required=False)]),
@@ -1967,19 +1977,33 @@ def _build(kind, values, project):
             r.miss.append("No load is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
         ext = str(values.get("config") or "").startswith("extended")
-        cside = not str(values.get("col_side") or "").startswith("beam side") and not ext
+        csv = str(values.get("col_side") or "")
+        ccfg = ("stiffened" if "stiffeners" in csv else "continuous") if csv.startswith("continuous") else None
+        if ccfg and not ext:
+            r.miss.append("Checks on the support: a continuous column is for the four-bolt extended end plate here")
+        if ext and csv.startswith("column flange"):
+            r.miss.append("Checks on the support: the cap plate detail is for the flush end plate; for a four-bolt extended end plate pick a continuous column or beam side only")
+        cside = (not csv.startswith("beam side") and not ext) or (ext and bool(ccfg))
+        cap = cside and not ccfg
         nrow = 2 if (str(values.get("n_rows") or "").strip() == "2" and not ext) else 1
         cn = lambda key: r.num(key, cside, label=r.labels[key]) if cside else None
+        cpn = lambda key: r.num(key, cap, label=r.labels[key]) if cap else None
         args = (r.text("beam"), r.num("beam_Fy"), r.num("beam_Fu"), (r.text("column", False) if cside else ""), cn("col_Fy"), cn("col_Fu"), r.text("steel_source"), r.num("bp"), r.num("tp"),
                 r.num("plate_Fy"), r.num("plate_Fu"), r.text("plate_source"), r.num("d"), r.text("group"), r.text("threads"), r.num("g"), r.num("pfi"), r.num("w_flange"), r.num("w_web"),
-                r.num("below"), cn("tcap"), cn("bcp"), cn("w_cap_flange"), cn("w_cap_web"), r.num("FEXX"))
+                r.num("below"), cpn("tcap"), cpn("bcp"), cpn("w_cap_flange"), cpn("w_cap_web"), r.num("FEXX"))
+        stf = None
+        if ccfg == "stiffened":
+            stf = {k: r.num(f, True, label=r.labels[f]) for k, f in (("ts", "st_ts"), ("bs", "st_bs"), ("ls", "st_ls"), ("w_f", "st_wf"), ("w_w", "st_ww"))}
+            stf["clip"] = r.num("st_clip", False) or 0.0
+            stf["Fy"] = r.num("st_Fy", False)
         if cside and not r.text("column", False):
             r.miss.append("Column is blank")
         pb_ = r.num("pb", nrow == 2, label="Spacing between the two rows")
         pfo_ = r.num("pfo", ext, label="Extended: pfo")
         nsh_ = r.num("n_shear", False)
         r.done()
-        return ws_more.flush_end_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or ""), n_rows=nrow, pb=pb_, col_side=cside, extended=ext, pfo=pfo_, n_shear=nsh_ or 2), "simple", {}
+        return ws_more.flush_end_plate_sheet(mark, *args, loads, cb, m, runs=runs or None, runs_from=str(values.get("loads_from") or ""), n_rows=nrow, pb=pb_, col_side=cside, extended=ext, pfo=pfo_, n_shear=nsh_ or 2,
+                                             col_cfg=ccfg, stiff=stf, tdp=(r.num("tdp", False) or 0.0) if ccfg else 0.0, Vc=(r.num("Vc", False) or 0.0) if ccfg else 0.0), "simple", {}
     if kind == "cap_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
         runs = [dict(name=x["name"], P=x["P"], M=x["M"]) for x in r.rows("runs")]

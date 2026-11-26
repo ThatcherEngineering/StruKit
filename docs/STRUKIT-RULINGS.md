@@ -298,3 +298,12 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - J and Cw from AISC Design Guide 9 (J = sum b t^3 / 3 with the web's clear height; Cw = ho^2 Iyc Iyt / (Iyc + Iyt)).
 - Weight 490 pcf (steel), no allowance for welds.
 
+## 2026-11-26 00:55, column side of the four-bolt extended end plate (0.240.0), applied (not ruled; tell Zach in the morning)
+- Column web local yielding at the tension flange uses Eq. 3-47 as written, lb = tbf + 2w + 2tp (Example 5.3-2 leaves out 2w; its flange
+  welds are not fillets).
+- Panel zone shear adds half the beam axial tension (Example 5.3-1 adds it; Example 5.3-2 subtracts it for its load direction) and takes off
+  only the column shear the engineer types.
+- Stiffener local buckling: both AISC 360-22 J10.8(b) (ts at least bs/16) and Table B4.1a Case 2 with kc from the column web (Example 5.3-2).
+- Stiffener-to-flange welds are sized for the stiffener yield strength (the Design Guide's recommendation), more than J10.8's difference force.
+- pso and psi are taken as pfo and pfi (stiffeners centred on the beam flanges, as Example 5.3-2), not over s.
+
