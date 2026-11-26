@@ -1106,7 +1106,9 @@
       "w": "47.9",
       "h": "10"
      }
-    ]
+    ],
+    "drift_type": "all other structures",
+    "de_source": "3D frame analysis, seismic story forces alone, first-order"
    }
   },
   {

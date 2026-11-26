@@ -87,6 +87,9 @@ for mk, p1, p2 in (("Footing Line 1", (0, 0), (27.25, 0)), ("Footing Line A", (0
     put(G["Continuous Footing"], mk, at_x1=p1[0], at_y1=p1[1], at_x2=p2[0], at_y2=p2[1])
 for mk in ("Wind", "Seismic"):
     put(Lm[mk])
+# test input so the drift check runs when the 3D frame writes the displacements: Table 12.12-1, "all other structures" (the smaller limit)
+M[-1]["values"].setdefault("drift_type", "all other structures")
+M[-1]["values"].setdefault("de_source", "3D frame analysis, seismic story forces alone, first-order")
 # the four diaphragm sheets of the lateral project, placed: level and load direction (wind on Line 1 = load in Y; on Line A or B = load in X)
 for lv in ("Roof", "Main floor"):
     put(Lm[f"{lv} diaphragm, wind on Line 1"], at_level=lv, at_dir="Y")
