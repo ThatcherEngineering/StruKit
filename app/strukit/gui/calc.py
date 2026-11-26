@@ -478,8 +478,8 @@ FORMS = {
                 F("ts", "Stiffener thickness", unit="in"), F("stiff_Fy", "Stiffener Fy", unit="ksi"), F("stiff_source", "Source of the stiffener Fy", "text"),
                 F("tseat", "Seat plate thickness", unit="in"), F("weld", "Fillet weld size to the support", unit="in", required=False, help="welded stiffener"),
                 F("FEXX", "Electrode strength", unit="ksi", required=False, help="welded stiffener"),
-                F("support", "Support (member and part)", "text", help="for example W14x90 flange"), F("t_sup", "Support thickness", unit="in"),
-                F("Fu_sup", "Support Fu", unit="ksi"),
+                F("support", "Support (member and part)", "text", required=False, help="for example W14x90 flange; blank for an HSS column face (below)"),
+                F("t_sup", "Support thickness", unit="in", required=False), F("Fu_sup", "Support Fu", unit="ksi", required=False),
                 F("both_sides", "Seats welded on both faces of the support (a column web)", "select", options=["no", "yes"], required=False),
                 F("attach", "Stiffener", "select", options=["plate welded to the support", "two angles bolted to the support"], required=False,
                   help="two angles: W is the outstanding leg, the thickness the angle thickness; the weld boxes are not used"),
@@ -489,6 +489,14 @@ FORMS = {
                 F("stiff_Fu", "Bolted angles: angle Fu", unit="ksi", required=False),
                 F("web_col", "Support is one face of a column web: column", "shape", required=False, help="checks the simplified punching limits of the Manual (welded seats)"),
                 F("B", "Column web: seat bolts from the web face, B", unit="in", required=False),
+                F("hss_col", "Support is the face of an HSS column: column", "hss_shape", required=False,
+                  help="square or rectangular HSS; welded stiffener on one face (AISC Design Guide 24 Sect. 5.2.6); the support thickness and Fu come from the column"),
+                F("hss_face", "HSS column: face the seat is on", "select", options=["B", "H"], required=False, help="B: the face named second in the size; blank = B"),
+                F("hss_Fy", "HSS column: Fy", unit="ksi", required=False), F("hss_Fu", "HSS column: Fu", unit="ksi", required=False),
+                F("hss_Fy_source", "HSS column: source of Fy and Fu", "text", required=False),
+                F("hss_P", "HSS column: axial load at the joint", unit="kip", required=False, help="at the project's design method, for Qf (Eq. K1-6); 0 if none"),
+                F("hss_M", "HSS column: moment at the joint", unit="kip-ft", required=False),
+                F("hss_source", "HSS column: where the column loads come from", "text", required=False),
                 F("top_t", "Top angle thickness", unit="in", required=False), F("top_leg", "Top angle vertical leg", unit="in", required=False),
                 F("top_attach", "Top angle attachment", "select", options=["two bolts through each leg", "welded along the toes only"], required=False)],
         tables=[T("loads", "End reaction", [CASE, F("P", "R", unit="kip"), F("label", "Note", "text", required=False)]),
@@ -2224,12 +2232,25 @@ def _build(kind, values, project):
         if r.num("top_t", False) is not None:
             top = dict(t=r.num("top_t", False), leg=r.num("top_leg", True, label="Top angle vertical leg"),
                        attach=str(values.get("top_attach") or "two bolts through each leg"))
-        args = (r.text("beam"), r.num("beam_Fy"), r.text("beam_source"), r.num("W"), r.num("L"), r.num("ts"), r.num("stiff_Fy"), r.text("stiff_source"),
-                r.num("tseat"), r.num("weld", not bolted_) or 0.0, r.num("FEXX", not bolted_) or 70.0, r.text("support"), r.num("t_sup"), r.num("Fu_sup"))
+        hss_ = None
+        if str(values.get("hss_col") or "").strip():
+            hss_ = dict(shape=str(values.get("hss_col")).strip(), face=str(values.get("hss_face") or "B"), Fy=r.num("hss_Fy", True, label="HSS column: Fy"),
+                        Fu=r.num("hss_Fu", True, label="HSS column: Fu"), Fy_source=r.text("hss_Fy_source", True),
+                        P=r.num("hss_P", True, label="HSS column: axial load at the joint"), M=r.num("hss_M", False) or 0.0, source=r.text("hss_source", True))
+            try:
+                col_ = shapes.hss(hss_["shape"])
+            except Exception:
+                col_ = None
+            sup_txt = f"{hss_['shape']} face" if col_ else ""
+            args = (r.text("beam"), r.num("beam_Fy"), r.text("beam_source"), r.num("W"), r.num("L"), r.num("ts"), r.num("stiff_Fy"), r.text("stiff_source"),
+                    r.num("tseat"), r.num("weld", not bolted_) or 0.0, r.num("FEXX", not bolted_) or 70.0, sup_txt, col_["tdes"] if col_ else 0.0, hss_["Fu"] or 0.0)
+        else:
+            args = (r.text("beam"), r.num("beam_Fy"), r.text("beam_source"), r.num("W"), r.num("L"), r.num("ts"), r.num("stiff_Fy"), r.text("stiff_source"),
+                    r.num("tseat"), r.num("weld", not bolted_) or 0.0, r.num("FEXX", not bolted_) or 70.0, r.text("support"), r.num("t_sup"), r.num("Fu_sup"))
         r.done()
         return ws_more.stiffened_seat_sheet(mark, *args, loads, cb, m, both_sides=str(values.get("both_sides") or "").startswith("y"),
                                             runs=runs or None, runs_from=str(values.get("loads_from") or ""), bolted=bo,
-                                            web_col=str(values.get("web_col") or "").strip() or None, B=r.num("B", False), top=top), "simple", {}
+                                            web_col=str(values.get("web_col") or "").strip() or None, B=r.num("B", False), top=top, hss=hss_), "simple", {}
     if kind == "beam_hss_moment":
         cb, m = combos(project, r.miss), method(project, r.miss)
         z = lambda v: v if v is not None else 0.0
