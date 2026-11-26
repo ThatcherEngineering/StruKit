@@ -344,3 +344,8 @@ design log" rule. Unattended: no questions; conservative readings applied and re
 - The HSS crippling uses Qf of the combination with the largest force over Qf; the other checks use the largest force.
 - A reinforcing fillet on the flare-bevel welds is not counted on.
 
+## 2026-11-26 01:48, story force by weight (0.246.0), applied (not ruled)
+- The default stays "evenly over the building width"; "by the weight in the building model" is the engineer's choice per seismic sheet.
+- By weight, the story force is shared by the placed seismic weight between the half-way lines (flexible diaphragm, as the even spread);
+  accidental torsion and the weight not placed in the model (typed on the seismic sheet only) are not distributed differently.
+

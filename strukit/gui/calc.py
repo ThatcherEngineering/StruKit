@@ -1064,6 +1064,8 @@ FORMS = {
                   "all other structures", "masonry cantilever shear walls", "other masonry shear walls"], help="Table 12.12-1"),
                 F("de_source", "Drift: where the elastic displacements come from", "text", required=False, help="for example: shear wall sheets SW1 to SW4, or the frame analysis"),
                 F("rho", "Wall lines: redundancy factor", "select", options=["1.0", "1.3"], required=False, help="ASCE 7-22 Sect. 12.3.4; needed when wall lines are listed"),
+                F("spread", "Building model: story force to the wall lines", "select", options=["evenly over the building width", "by the weight in the building model"],
+                  required=False, help="blank = evenly; by weight uses the placed members' seismic weight where it sits in plan"),
                 F("rho_source", "Wall lines: basis of the redundancy factor", "text", required=False),
                 F("w_source", "Where the seismic weights come from", "text", required=False, help="printed on the sheet; filled by the building model's weight takeoff")],
         tables=[T("levels", "Levels", [F("name", "Level", "text"), F("w", "Effective seismic weight", unit="kips"),
@@ -3252,6 +3254,7 @@ def model_seismic_weights(project, members):
     names = [str(l.get("name") or "").strip() for l in mdl.get("levels") or []]
     levels = {n: 0.0 for n in names if n}
     parts = {n: [] for n in levels}
+    pieces = {n: [] for n in levels}                          # where each weight sits in plan: dict(W, p1, p2, off) (off: a row's width vector)
     problems, notes = [], []
     pf = None
     for m in ms:
@@ -3290,9 +3293,11 @@ def model_seismic_weights(project, members):
                 problems.append(f"{mark}: {ww}"); continue
             levels[pl["level"]] += ww[0] / 2
             parts[pl["level"]].append(f"{mark}: half its weight, {ww[0] / 2:,.0f} lb")
+            pieces[pl["level"]].append(dict(W=ww[0] / 2, p1=pl["p1"], p2=pl["p2"], off=None))
             if pl["base"] in levels and names.index(pl["base"]) > 0:
                 levels[pl["base"]] += ww[0] / 2
                 parts[pl["base"]].append(f"{mark}: half its weight, {ww[0] / 2:,.0f} lb")
+                pieces[pl["base"]].append(dict(W=ww[0] / 2, p1=pl["p1"], p2=pl["p2"], off=None))
             continue
         if kind not in TAKEDOWN_BEAMS:
             continue
@@ -3325,11 +3330,21 @@ def model_seismic_weights(project, members):
                 problems.append(f"{mark}: a row of members with no carrier in the model; its weight is not counted"); continue
             mult, how = cover * 12.0 / sp, f" x {cover:.2f} ft x 12 / {sp:g} in."
         W_ = (tot["D"] + snow_f * tot["S"]) * mult
+        off = None
+        rw_ = str(v.get("at_row") or "").replace(",", "").strip()
+        if sp > 0 and rw_ and pl.get("p2") is not None:
+            try:
+                Wr = float(rw_)
+                L_ = math.hypot(pl["p2"][0] - pl["p1"][0], pl["p2"][1] - pl["p1"][1]) or 1.0
+                off = ((pl["p2"][1] - pl["p1"][1]) / L_ * Wr, -(pl["p2"][0] - pl["p1"][0]) / L_ * Wr)    # to the right, as the 3D view
+            except ValueError:
+                off = None
+        pieces[pl["level"]].append(dict(W=W_, p1=pl["p1"], p2=pl["p2"] if pl.get("p2") is not None else pl["p1"], off=off))
         levels[pl["level"]] += W_
         parts[pl["level"]].append(f"{mark}: {tot['D']:,.0f} lb dead" + (f" + 0.2 x {tot['S']:,.0f} lb snow" if snow_f and tot["S"] else "") + how + f" = {W_:,.0f} lb")
     if no_wt:
         problems.append("No wall weight is typed on " + ", ".join(no_wt) + " (placement card); their weight is not counted")
-    return dict(levels=levels, parts=parts, notes=notes, problems=problems)
+    return dict(pieces=pieces, levels=levels, parts=parts, notes=notes, problems=problems)
 
 
 def model_diaphragms(project, members):
@@ -3942,6 +3957,25 @@ def model_links(project, members):
     return out
 
 
+def _weight_in_strip(pieces, axis_other, a, b, n=24):
+    """Weight of the model's pieces whose plan position on the axis `axis_other` lies between a and b (each piece's weight spread evenly over
+    its length, or over its rectangle for a row of joists; sampled at n points along each side)."""
+    tot = 0.0
+    for pc in pieces:
+        p1, p2, off = pc["p1"], pc["p2"], pc.get("off")
+        pts = []
+        for i in range(n):
+            t = (i + 0.5) / n
+            x, y = p1[0] + (p2[0] - p1[0]) * t, p1[1] + (p2[1] - p1[1]) * t
+            if off:
+                pts += [(x + off[0] * (j + 0.5) / n, y + off[1] * (j + 0.5) / n) for j in range(n)]
+            else:
+                pts.append((x, y))
+        inside = sum(1 for q in pts if a - 1e-9 <= q[axis_other] <= b + 1e-9)
+        tot += pc["W"] * inside / len(pts)
+    return tot
+
+
 def lateral_wind(project, members, wind_mark=None, load="wind"):
     """Wind to the wall lines of the building model, flexible diaphragms: at each level the wind load per foot of building width (the main
     system wind sheet between mid-story heights, the larger of its two directions) goes to the placed shear walls parallel to the wind by
@@ -3991,6 +4025,8 @@ def lateral_wind(project, members, wind_mark=None, load="wind"):
         for nm, _ in levels[1:]:
             if nm not in story:
                 problems.append(f"Level {nm} is not a level of seismic sheet {wmark} (the names must match)")
+        by_mass = str(winds[0]["values"].get("spread") or "").startswith("by the weight")
+        wpieces = model_seismic_weights(project, members).get("pieces", {}) if by_mass else {}
     else:
         cases = ws.wind["cases"]
         top = max(max(r["top_w"], r["top_l"]) for r in cases)
@@ -4042,6 +4078,14 @@ def lateral_wind(project, members, wind_mark=None, load="wind"):
                 w = story[name] / (hi - lo)                  # the story force spread evenly over the building width
             ext_ax = [c for m, pl in here for c in (pl["p1"][axis], (pl["p2"] or pl["p1"])[axis])]
             depth = max(ext_ax) - min(ext_ax)
+            mass = None
+            if seis and by_mass:
+                pcs = wpieces.get(name) or []
+                Wtot = sum(pc["W"] for pc in pcs)
+                if Wtot > 0:
+                    mass = (pcs, Wtot)
+                else:
+                    problems.append(f"Level {name}: no seismic weight is placed at this level in the model; its story force is spread evenly")
             groups = []
             for m, pl in sorted(ws_here, key=lambda t: (t[1]["p1"][other] + t[1]["p2"][other]) / 2):
                 pos = (pl["p1"][other] + pl["p2"][other]) / 2
@@ -4064,6 +4108,9 @@ def lateral_wind(project, members, wind_mark=None, load="wind"):
                 b = hi if gi == len(groups) - 1 else (pos + groups[gi + 1][0]) / 2
                 trib = b - a
                 V_level = w * fac * trib
+                if mass:                                     # the story force in proportion to the weight between the half-way lines
+                    frac = _weight_in_strip(mass[0], other, a - (1e9 if gi == 0 else 0.0), b + (1e9 if gi == len(groups) - 1 else 0.0)) / mass[1]
+                    V_level = story[name] * fac * frac
                 tot_len = sum(abs(pl["p2"][axis] - pl["p1"][axis]) for m, pl in grp) or 1.0
                 for m, pl in grp:
                     share = abs(pl["p2"][axis] - pl["p1"][axis]) / tot_len
@@ -4072,9 +4119,14 @@ def lateral_wind(project, members, wind_mark=None, load="wind"):
                     up = carry.get((axis, round(pos / MODEL_TOL), li + 1))
                     V_up = up[0] * share if up else 0.0
                     V = V_level * share + V_up
-                    src = ((f"sheet {wmark}, story force at {name} {story[name]:,.0f} lb over {hi - lo:g} ft" + (f" x {rho:g}" if rho != 1 else "") + (" x 0.7" if asd else "")
-                            if seis else f"sheet {wmark}, level {name}, walls from {z_lo:g} to {z_hi:g} ft: {w:.1f} plf" + (" x 0.6" if asd else "")) + f" x {trib:g} ft tributary"
-                           + (f" x {share:.2f} of the line" if share < 0.999 else "") + (f"; plus {V_up:,.0f} lb from {up[2]} above" if up else ""))
+                    if mass:
+                        src = (f"sheet {wmark}, story force at {name} {story[name]:,.0f} lb" + (f" x {rho:g}" if rho != 1 else "") + (" x 0.7" if asd else "")
+                               + f" x {frac:.3f} (the model's seismic weight between the half-way lines, {frac * mass[1]:,.0f} of {mass[1]:,.0f} lb)"
+                               + (f" x {share:.2f} of the line" if share < 0.999 else "") + (f"; plus {V_up:,.0f} lb from {up[2]} above" if up else ""))
+                    else:
+                        src = ((f"sheet {wmark}, story force at {name} {story[name]:,.0f} lb over {hi - lo:g} ft" + (f" x {rho:g}" if rho != 1 else "") + (" x 0.7" if asd else "")
+                                if seis else f"sheet {wmark}, level {name}, walls from {z_lo:g} to {z_hi:g} ft: {w:.1f} plf" + (" x 0.6" if asd else "")) + f" x {trib:g} ft tributary"
+                               + (f" x {share:.2f} of the line" if share < 0.999 else "") + (f"; plus {V_up:,.0f} lb from {up[2]} above" if up else ""))
                     if m["kind"] == "existing":                  # existing construction takes its share; listed, not designed
                         lines.append(dict(level=name, wind=label, at=pos, wall=mark, trib=trib, V=V, from_above=V_up, T=None, load="seismic" if seis else "wind", existing=True))
                         key = (axis, round(pos / MODEL_TOL), li)
