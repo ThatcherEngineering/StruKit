@@ -3768,24 +3768,37 @@ def _diaphragm_picture(c, top, d):
     x1 = x0 + w_
     c.setFillColorRGB(0.96, 0.97, 0.99); c.setStrokeColorRGB(*INK); c.setLineWidth(0.6); c.rect(x0, y0, w_, h_, fill=1, stroke=1)
     c.setLineWidth(1.8); c.line(x0, y0, x1, y0); c.line(x0, y1, x1, y1)                     # chords
-    c.setStrokeColorRGB(*GREY); c.setLineWidth(2.4); c.line(x0, y0 - 3, x0, y1 + 3); c.line(x1, y0 - 3, x1, y1 + 3)   # lines of resistance
+    cant = d.get("cant")
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(2.4); c.line(x0, y0 - 3, x0, y1 + 3)
+    if not cant:
+        c.line(x1, y0 - 3, x1, y1 + 3)                                                         # lines of resistance
+    else:                                                                                       # the free (open) edge
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.6); c.setDash(3, 2); c.line(x1, y0, x1, y1); c.setDash()
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.6)
     n = max(6, int(w_ / 16))
     for k in range(n + 1):
         _arrow_down(c, x0 + w_ * k / n, y1 + 16, y1 + 3)
     c.line(x0, y1 + 16, x1, y1 + 16)
     c.setFont(FR, 6.5); c.drawCentredString((x0 + x1) / 2, y1 + 19, f"w = {d['w']:,.0f} plf")
-    for x, al in ((x0, "right"), (x1, "left")):
+    for x, al in (((x0, "right"),) if cant else ((x0, "right"), (x1, "left"))):
         _arrow(c, x + (-7 if al == "right" else 7), y0 + h_ * 0.35, x + (-7 if al == "right" else 7), y0 + h_ * 0.65, head=3.5)
         t = [f"R = {d['R']:,.0f} lb", f"v = {d['v']:,.0f} plf"]
         for j, tt in enumerate(t):
             (c.drawRightString if al == "right" else c.drawString)(x + (-12 if al == "right" else 12), y0 + h_ * 0.55 - j * 8, tt)
     c.setFillColorRGB(*INK); c.setFont(FR, 6)
-    c.drawCentredString((x0 + x1) / 2, y1 - 9, f"chord, C = {d['T']:,.0f} lb")
-    c.drawCentredString((x0 + x1) / 2, y0 + 4, f"chord, T = {d['T']:,.0f} lb")
-    memberart._dim_h(c, x0, x1, y0 - 10, f"L = {L:g} ft", FR, ext_from=y0)
-    memberart._dim_v(c, y0, y1, x1 + 62, f"W = {W:g} ft", FR, ext_from=x1 + 4)
-    _small(c, (LM + RM) / 2, y0 - 28, "plan, to scale; heavy lines at the ends are the lines of resistance")
+    at = " at the line" if cant else ""
+    tC, tT = f"chord, C = {d['T']:,.0f} lb{at}", f"chord, T = {d['T']:,.0f} lb{at}"
+    if c.stringWidth(tC, FR, 6) > w_ - 8:                                       # a narrow plan: the chord forces beside the line of resistance
+        c.drawRightString(x0 - 8, y1 - 3, tC); c.drawRightString(x0 - 8, y0 - 1, tT)
+    else:
+        c.drawCentredString((x0 + x1) / 2, y1 - 9, tC)
+        c.drawCentredString((x0 + x1) / 2, y0 + 4, tT)
+    memberart._dim_h(c, x0, x1, y0 - 10, f"L' = {L:g} ft" if cant else f"L = {L:g} ft", FR, ext_from=y0)
+    memberart._dim_v(c, y0, y1, x1 + 62, f"W' = {W:g} ft" if cant else f"W = {W:g} ft", FR, ext_from=x1 + 4)
+    if cant:
+        c.setFont(FR, 6); c.drawString(x1 + 4, y0 + h_ / 2 - 2, "open edge")
+    _small(c, (LM + RM) / 2, y0 - 28, "plan, to scale; the heavy line at the left is the line of resistance, the dashed edge is open" if cant else
+           "plan, to scale; heavy lines at the ends are the lines of resistance")
     return y0 - 34
 
 
