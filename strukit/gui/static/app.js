@@ -767,6 +767,18 @@ function placementCard(m, changed) {
   if (TD_BEAMS.includes(m.kind)) fs.push({ key: "at_row", label: "Joists or rafters: the row runs on, to its left or right, for", unit: "ft", type: "text", required: false,
     help: "for a member with a spacing; + to the right of its line looking from the left end to the right end, - to the left; blank = the row covers the whole beam it lands on. " +
       "A beam placed in a wall line at the wall's top level is a header: it takes what bears on the wall over its length, and its ends go down to what is under the wall." });
+  if (TD_BEAMS.includes(m.kind) && m.kind !== "steel_beam") fs.push(
+    { key: "at_jacks", label: "Header: jack studs under each end", type: "select", options: ["1", "2", "3", "4", "5"], required: false, help: "blank = none checked; each end becomes a stud column carrying that end's reaction" },
+    { key: "at_jack_size", label: "Header studs: size", type: "select", options: ["2x4", "2x6", "2x8", "2x10", "2x12"], required: false },
+    { key: "at_jack_species", label: "Header studs: species", type: "select", options: ["DOUGLAS FIR-LARCH", "HEM-FIR", "SPRUCE-PINE-FIR", "SOUTHERN PINE"], required: false },
+    { key: "at_jack_grade", label: "Header studs: grade", type: "select", options: ["Stud", "No. 2", "No. 1", "Select Structural", "No. 3", "Construction", "Standard"], required: false },
+    { key: "at_jack_h", label: "Jack studs: height (to the underside of the header)", unit: "ft", type: "text", required: false },
+    { key: "at_jack_brace", label: "Jack and king studs: braced along the wall at", unit: "ft", type: "text", required: false, help: "for example by the sheathing nailing or blocking; blank = unbraced over the full height" },
+    { key: "at_kings", label: "Header: king studs at each side of the opening", type: "select", options: ["1", "2", "3", "4"], required: false, help: "blank = not checked; checked for the wind on the wall over half the opening plus half a stud space" },
+    { key: "at_king_h", label: "King studs: height", unit: "ft", type: "text", required: false },
+    { key: "at_king_p", label: "King studs: wind pressure on the wall (strength level, W)", unit: "psf", type: "text", required: false },
+    { key: "at_king_p_source", label: "Where that pressure comes from", type: "text", required: false, help: "for example the wall components and cladding sheet, its zone and area" },
+    { key: "at_stud_sp", label: "Stud spacing in the wall", unit: "in", type: "text", required: false });
   if (m.kind === "steel_beam") fs.push({ key: "at_fix_i", label: "Left end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false, help: "blank = pinned (shear connection)" },
     { key: "at_fix_j", label: "Right end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false });
   if (m.kind === "steel_column" || m.kind === "hss_column") fs.push({ key: "at_base_fix", label: "Base (3D frame)", type: "select", options: ["pinned", "fixed", "fixed for sway in X only", "fixed for sway in Y only"], required: false, help: "blank = pinned" },
@@ -883,10 +895,11 @@ function modelCard(changed) {
   const link = el("button", { class: "btn", onclick: async () => {
     let out;
     try { out = await post("/api/model_links", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
-    S.members = S.members.filter(m => !(m.values || {}).pad_of);
+    S.members = S.members.filter(m => !(m.values || {}).pad_of && !(m.values || {}).stud_of);
     out.members.forEach((nm, i) => { if (i < S.members.length) S.members[i].values = nm.values; else S.members.push({ kind: nm.kind, values: nm.values }); });
     LINKS = out.links; MODEL_NOTES = out.problems.concat((out.pads || []).map(p => p.mark + ": " + (p.enlarged ? "pad " + p.B + " x " + p.L + " ft sized for " + Math.round(p.P).toLocaleString() + " lb service (the continuous footing is not enough)" :
-      "the continuous footing over " + p.L + " ft carries it (" + Math.round(p.q) + " of " + p.q_allow + " psf)") + "; see its Isolated Footing sheet"), (out.existing || []).map(e => "On " + e.wall + ": " + e.source + ", " + e.support + ", " +
+      "the continuous footing over " + p.L + " ft carries it (" + Math.round(p.q) + " of " + p.q_allow + " psf)") + "; see its Isolated Footing sheet"),
+      (out.studs || []).map(t => t.mark + ": made from the header's placement card; see its sheet"), (out.existing || []).map(e => "On " + e.wall + ": " + e.source + ", " + e.support + ", " +
       Object.entries(e.cases).map(([c, v]) => c + " " + v.toLocaleString()).join(", ") + " " + e.unit + " (existing construction; check it separately)"));
     setDirty(); await recalcAll(); select("project");
     toast(out.placed + " member" + (out.placed === 1 ? "" : "s") + " placed; " + out.made + " link" + (out.made === 1 ? "" : "s") + " made by position; the load path is recalculated." + (out.problems.length ? " See the notes under the plan." : ""), 12000);

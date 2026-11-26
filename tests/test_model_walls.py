@@ -290,3 +290,33 @@ def test_existing_beam_and_post_carry_and_list():
     assert "Existing house wall, main level (existing)" in walls and not any("lower level (existing)" in w for w in walls)
     sh = calc.existing_sheet(proj, out["members"])
     assert ("Existing", "Existing house wall, main level (wall), Existing house wall, lower level (beam), Existing post (post)") in sh.info
+
+
+def test_header_jack_and_king_studs():
+    """Jack studs under each end of a header carry that end's reaction by load case (2 or more as a Built-Up Wood Column, 1 as a Wood
+    Post); king studs take the wind on the wall over half the opening plus half a stud space, shared among them. Made again on every run."""
+    import copy
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+    proj = copy.deepcopy(d["project"])
+    proj["combos_asd"] = list(proj.get("combos_asd") or []) + [dict(expr="D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 5")]
+    ms = copy.deepcopy(d["members"])
+    next(m for m in ms if m["values"]["mark"] == "Roof Beam A")["values"].update(
+        at_jacks="2", at_jack_size="2x6", at_jack_species="DOUGLAS FIR-LARCH", at_jack_grade="No. 2", at_jack_h="8", at_jack_brace="1.33",
+        at_kings="2", at_king_h="9", at_king_p="25", at_king_p_source="test value", at_stud_sp="16")
+    out = calc.model_links(proj, ms)
+    by = {m["values"]["mark"]: m for m in out["members"]}
+    hdr = by["Roof Beam A"]
+    reac = {s_["name"]: s_["cases"] for s_ in calc.case_reactions(hdr["kind"], hdr["values"], proj)["supports"]}
+    for side in ("left support", "right support"):
+        j = by[f"Roof Beam A jacks, {side}"]
+        assert j["kind"] == "builtup_post" and j["values"]["plies"] == "2"
+        got = {r["case"]: float(r["P"]) for r in j["values"]["loads"]}
+        assert all(got[c] == pytest.approx(P, abs=1) for c, P in reac[side].items() if abs(P) >= 0.5)
+        sheet, _, _ = calc.build("builtup_post", j["values"], proj)
+        assert sheet.rows
+    k = by["Roof Beam A king studs"]["values"]
+    assert float(k["lateral"][0]["mag"]) == pytest.approx(25 * (11.25 / 2 + 16 / 24) / 2, abs=0.1)
+    sheet, _, _ = calc.build("wood_post", k, proj)
+    assert any(r.combo == "D + 0.6W" for r in sheet.rows)
+    out2 = calc.model_links(proj, out["members"])
+    assert sum(1 for m in out2["members"] if m["values"].get("stud_of")) == 3

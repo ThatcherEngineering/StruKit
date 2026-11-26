@@ -220,3 +220,10 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - Larger pads go up in 3 in. steps; their thickness starts at the line's (kept if the engineer changes it), bars at the line's transverse
   bar size and spacing both ways; the pad's own sheet checks bearing, shear, flexure and minimum steel.
 
+## 2026-11-25 19:30, header studs (0.230.0), applied (not ruled; tell Zach at the check-in)
+- Jack studs carry the whole end reaction of the header; king studs carry no part of it.
+- Jack and king studs: Ke = 1.0 both ways (pinned top and bottom, NDS Appendix G); unbraced out of the wall plane over their full height;
+  along the wall at the bracing typed (blank = full height).
+- King studs take the wind on the wall (strength-level pressure typed with its source) over half the opening plus half a stud space, shared
+  equally among the king studs at that side, as a uniform load over their height; no axial load.
+
