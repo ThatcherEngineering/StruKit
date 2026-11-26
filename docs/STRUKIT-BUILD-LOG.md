@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 18:50. Build **0.227.0**, 607 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 18:44. Build **0.227.0**, 607 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -699,7 +699,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - Validation: soil bearing by hand (2026-011 model: the post under Floor Beam B needs 2.25 ft square; 2.0 ft fails, by the same formula as the Isolated Footing sheet); Column A and Column B carried by the footing over its 2 ft width; rectangular and typed-length cases; a second run makes no duplicates. "Link members by position" pressed twice in a headless browser: 3 pads, all OK, no page errors.
 - Not yet: pads when "Recalculate the load path" is pressed alone (pads come from the position link), two point loads close enough to share one pad, the continuous footing's own sheet showing the pad locations.
 
-## 2026-11-25 18:50 local — 0.227.0 seismic weights from the building model (607 tests)
+## 2026-11-25 18:44 local — 0.227.0 seismic weights from the building model (607 tests)
 - Next item 8(d).
 - **`calc.model_seismic_weights`, Building Model card button "Fill the seismic weights from the model":** the effective seismic weight at each level (ASCE/SEI 7-22 Sect. 12.7.2) from the placed members after linking: each beam and joist's own dead load (its typed dead loads and self-weight; loads brought to it by links are not counted again), a joist or rafter row times the members over the length it covers on its carriers (cover_ft or the carrier length, headers included), each wall's typed weight half to the level at its top and half to the level below (the half above the lowest level goes to the foundation); 20 percent of the snow on the members where a Roof Snow Load sheet gives pf over 30 psf (Sect. 12.7.2 item 4), otherwise none, said in the notes. Partitions, equipment and the other items of Sect. 12.7.2 count only where typed as dead load. Walls with no weight typed are listed.
 - The button writes each level's weight (kips) into the Levels table of the project's Seismic Base Shear sheet by level name, its source line, and the takeoff (one line per member) which prints on the seismic sheet as a "Seismic Weight Takeoff" block. New optional field on the seismic screen: "Where the seismic weights come from" (printed as "Seismic Weights").
