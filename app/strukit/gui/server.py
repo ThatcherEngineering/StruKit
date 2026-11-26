@@ -284,7 +284,7 @@ def api(path, body):
         _last_ping[0] = time.time(); _pinged[0] = True
         return {}
     if path == "/api/calc":
-        return calc.results(body["kind"], body.get("values") or {}, body.get("project") or {})
+        return calc.results(body["kind"], body.get("values") or {}, body.get("project") or {}, body.get("members"))
     if path == "/api/frame_base_biaxial":
         return calc.frame_base_biaxial(body.get("project") or {}, body.get("members") or [], body.get("mark"))
     if path == "/api/frame_beam_hss":
@@ -297,13 +297,14 @@ def api(path, body):
         return calc.reactions(body["kind"], body.get("values") or {}, body.get("project") or {}, body.get("members"))
     if path == "/api/calc_all":
         proj = body.get("project") or {}
-        return dict(results=[calc.results(m["kind"], m.get("values") or {}, proj) for m in body.get("members") or []])
+        mem = body.get("members") or []
+        return dict(results=[calc.results(m["kind"], m.get("values") or {}, proj, mem) for m in mem])
     if path in ("/api/pdf", "/api/package"):
         fd, tmp = tempfile.mkstemp(suffix=".pdf", prefix="strukit-")
         os.close(fd)
         extra = {}
         if path == "/api/pdf":
-            calc.sheet_pdf(body["kind"], body.get("values") or {}, body.get("project") or {}, tmp)
+            calc.sheet_pdf(body["kind"], body.get("values") or {}, body.get("project") or {}, tmp, body.get("members"))
         else:
             n, skipped = calc.package_pdf(body.get("project") or {}, body.get("members") or [], tmp)
             extra = dict(sheets=n, skipped=skipped)
