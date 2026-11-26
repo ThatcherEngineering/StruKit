@@ -729,7 +729,7 @@ function fillBar(m, changed) {
 const MODEL_WALLS = ["shear_wall", "perforated_wall", "ftao_wall"];
 const FRAME_BRACES = ["tension_member", "angle_strut"];
 const MODEL_KINDS = () => TD_BEAMS.concat(TD_POSTS, ["footing_iso", "footing_cont"], MODEL_WALLS, FRAME_BRACES);
-function modelOf() { const p = S.project; p.model = p.model || {}; ["levels", "grids_x", "grids_y"].forEach(k => { p.model[k] = p.model[k] || []; }); return p.model; }
+function modelOf() { const p = S.project; p.model = p.model || {}; ["levels", "grids_x", "grids_y", "existing"].forEach(k => { p.model[k] = p.model[k] || []; }); return p.model; }
 
 // Placement boxes on a member screen: where the member sits in the building model. Optional; a member works without them.
 function placementCard(m, changed) {
@@ -783,8 +783,8 @@ function planSvg(plan, level) {
     if (i.p2) {
       const joist = false;
       const ftg = i.kind === "footing_cont";
-      add("line", Object.assign({ x1: X(i.p1[0]), y1: Y(i.p1[1]), x2: X(i.p2[0]), y2: Y(i.p2[1]), stroke: i.wall ? "#8A5A2B" : ftg ? "#3A4756" : "#213651",
-        "stroke-width": fsz * (i.wall ? 0.7 : ftg ? 0.9 : 0.28), "stroke-linecap": i.wall || ftg ? "butt" : "round" }, ftg ? { "stroke-opacity": 0.35 } : {}));
+      add("line", Object.assign({ x1: X(i.p1[0]), y1: Y(i.p1[1]), x2: X(i.p2[0]), y2: Y(i.p2[1]), stroke: i.existing ? "#9AA6B4" : i.wall ? "#8A5A2B" : ftg ? "#3A4756" : "#213651",
+        "stroke-width": fsz * (i.wall ? 0.7 : ftg ? 0.9 : 0.28), "stroke-linecap": i.wall || ftg ? "butt" : "round" }, ftg ? { "stroke-opacity": 0.35 } : {}, i.existing ? { "stroke-dasharray": `${fsz * 0.3} ${fsz * 0.2}` } : {}));
       const horiz = Math.abs(i.p2[0] - i.p1[0]) >= Math.abs(i.p2[1] - i.p1[1]);
       add("text", { x: (X(i.p1[0]) + X(i.p2[0])) / 2 + (horiz ? 0 : fsz * 0.4), y: (Y(i.p1[1]) + Y(i.p2[1])) / 2 - (horiz ? fsz * 0.4 : 0), "font-size": fsz, fill: "#1B2430", "text-anchor": horiz ? "middle" : "start" }, i.mark);
     } else if (i.kind === "footing_iso" || i.kind === "footing_cont") {
@@ -827,7 +827,7 @@ function view3dSvg(view) {
   const col = { beam: "#213651", joist: "#6C7C90", column: "#1B2430" };
   segs.forEach(g => {
     const i = g.item, q = g.q;
-    if (g.poly) add("polygon", { points: q.map(p => p[0] + "," + p[1]).join(" "), fill: i.type === "wall" ? "#C9A27A" : "#D5DAE1", "fill-opacity": i.type === "wall" ? 0.55 : 0.8, stroke: i.type === "wall" ? "#8A5A2B" : "#3A4756", "stroke-width": fsz * 0.08 });
+    if (g.poly) add("polygon", { points: q.map(p => p[0] + "," + p[1]).join(" "), fill: i.existing ? "#C3C9D1" : i.type === "wall" ? "#C9A27A" : "#D5DAE1", "fill-opacity": i.type === "wall" ? 0.55 : 0.8, stroke: i.existing ? "#7A8594" : i.type === "wall" ? "#8A5A2B" : "#3A4756", "stroke-width": fsz * 0.08 });
     else add("line", { x1: q[0][0], y1: q[0][1], x2: q[1][0], y2: q[1][1], stroke: col[i.type] || "#213651", "stroke-width": fsz * (i.type === "column" ? 0.42 : i.type === "joist" ? 0.14 : 0.3), "stroke-linecap": "round" });
     const mx = q.reduce((t, p) => t + p[0], 0) / q.length, my = q.reduce((t, p) => t + p[1], 0) / q.length;
     add("text", { x: mx + fsz * 0.3, y: my - fsz * 0.3, "font-size": fsz * 0.85, fill: "#1B2430" }, i.mark);
@@ -842,6 +842,10 @@ function modelCard(changed) {
   const gx = { key: "grids_x", label: "Grid lines across (X)", columns: [{ key: "name", label: "Grid", type: "text", required: true }, { key: "at", label: "At X", unit: "ft", type: "text", required: true }] };
   const gy = { key: "grids_y", label: "Grid lines up the plan (Y)", columns: [{ key: "name", label: "Grid", type: "text", required: true }, { key: "at", label: "At Y", unit: "ft", type: "text", required: true }],
     help: "Grids are optional: a member can be placed by feet alone. Where a grid has the same name as a number, the grid is meant." };
+  const ex = { key: "existing", label: "Existing walls (by others, not designed here)", columns: [{ key: "name", label: "Name", type: "text", required: true },
+      { key: "level", label: "Level at its top", type: "text", required: true }, { key: "x1", label: "End 1, X", type: "text", required: true }, { key: "y1", label: "End 1, Y", type: "text", required: true },
+      { key: "x2", label: "End 2, X", type: "text", required: true }, { key: "y2", label: "End 2, Y", type: "text", required: true }],
+    help: "Optional, for additions: an existing wall takes what bears on it and its share of wind and seismic as a wall line; the loads are listed for checking the existing construction." };
   const holder = el("div", {});
   const levels = mdl.levels.map(l => (l.name || "").trim()).filter(Boolean);
   const pickLevel = el("select", {}, levels.map(l => el("option", { value: l }, l)).concat([el("option", { value: "(3D)" }, "3D view")]));
@@ -864,7 +868,8 @@ function modelCard(changed) {
     let out;
     try { out = await post("/api/model_links", { project: S.project, members: S.members }); } catch (e) { toast(e.message, 12000); return; }
     out.members.forEach((nm, i) => { S.members[i].values = nm.values; });
-    LINKS = out.links; MODEL_NOTES = out.problems;
+    LINKS = out.links; MODEL_NOTES = out.problems.concat((out.existing || []).map(e => "On " + e.wall + ": " + e.source + ", " + e.support + ", " +
+      Object.entries(e.cases).map(([c, v]) => c + " " + v.toLocaleString()).join(", ") + " " + e.unit + " (existing construction; check it separately)"));
     setDirty(); await recalcAll(); select("project");
     toast(out.placed + " member" + (out.placed === 1 ? "" : "s") + " placed; " + out.made + " link" + (out.made === 1 ? "" : "s") + " made by position; the load path is recalculated." + (out.problems.length ? " See the notes under the plan." : ""), 12000);
   } }, "Link members by position");
@@ -918,7 +923,7 @@ function modelCard(changed) {
   drawPlan();
   return el("div", { class: "card" }, el("h2", {}, "Building Model"), bentCard,
     el("div", { class: "help" }, "Optional. List the levels and grids, place members on their own screens, then link them by position. Every member can still be checked alone."),
-    table(lv, mdl.levels, changed), table(gx, mdl.grids_x, changed), table(gy, mdl.grids_y, changed),
+    table(lv, mdl.levels, changed), table(gx, mdl.grids_x, changed), table(gy, mdl.grids_y, changed), table(ex, mdl.existing, changed),
     el("div", { class: "grid" }, field({ key: "drift_ratio", label: "Wind drift limit: story height over", type: "text", required: false, help: "for example 240; blank = drift is reported, not checked" }, mdl, changed),
       field({ key: "drift_factor", label: "Wind drift: factor on W", type: "text", required: false, help: "the service wind as a factor on the strength-level wind, for example 0.6" }, mdl, changed),
       field({ key: "drift_source", label: "Wind drift: where the limit and factor come from", type: "text", required: false }, mdl, changed)),

@@ -22,7 +22,9 @@ proj = copy.deepcopy(grav["project"])
 proj["name"] = "Humbargar Residence Addition, building model (test)"
 proj["model"] = dict(levels=[dict(name="Foundation", elev="0"), dict(name="Main floor", elev="9.5"), dict(name="Roof", elev="19")],
                      grids_x=[dict(name="1", at="0"), dict(name="2", at="9.0833"), dict(name="3", at="11.2"), dict(name="4", at="18.1667"), dict(name="5", at="27.25")],
-                     grids_y=[dict(name="A", at="0"), dict(name="B", at="4.5"), dict(name="C", at="14.896"), dict(name="D", at="29.75")])
+                     grids_y=[dict(name="A", at="0"), dict(name="B", at="4.5"), dict(name="C", at="14.896"), dict(name="D", at="29.75")],
+                     existing=[dict(name="Existing house wall, main level", level="Roof", x1="0", y1="29.75", x2="27.25", y2="29.75"),
+                               dict(name="Existing house wall, lower level", level="Main floor", x1="0", y1="29.75", x2="27.25", y2="29.75")])
 M = []
 
 

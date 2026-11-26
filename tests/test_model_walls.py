@@ -82,3 +82,17 @@ def test_job_2026_011_model_runs():
     g = calc.lateral_governing(d["project"], out["members"])
     walls = {m["values"]["mark"]: m["values"] for m in g["members"] if m["kind"] in ("shear_wall", "ftao_wall")}
     assert all(float(w["V"]) > 0 for w in walls.values())
+
+
+def test_existing_walls_take_gravity_and_lateral():
+    """2026-011 with the existing house wall (Line 2) as existing construction: the lower floor joists and the roof joists end on it, and it
+    takes its share of the wind across the house. The loads per foot on it equal the floor and roof live loads the sealed calculations put on
+    the Line 2 headers (297 and 598 plf, typed by hand there)."""
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+    out = calc.model_links(d["project"], d["members"])
+    ex = {e["source"]: e for e in out["existing"]}
+    assert ex["FJ-lower"]["cases"]["L"] == pytest.approx(297, abs=2) and ex["Roof joists"]["cases"]["Lr"] == pytest.approx(598, abs=4)
+    g = calc.lateral_governing(d["project"], out["members"])
+    x_lines = {l["wall"]: l["V"] for l in g["lines"] if l.get("governs") and l["wind"] == "X"}
+    assert x_lines["Line 1, lower level"] == pytest.approx(x_lines["Existing house wall, lower level (existing)"])
+    assert not any("only one wall line" in p for p in g["problems"])

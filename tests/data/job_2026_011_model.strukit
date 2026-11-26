@@ -85,6 +85,24 @@
      "name": "D",
      "at": "29.75"
     }
+   ],
+   "existing": [
+    {
+     "name": "Existing house wall, main level",
+     "level": "Roof",
+     "x1": "0",
+     "y1": "29.75",
+     "x2": "27.25",
+     "y2": "29.75"
+    },
+    {
+     "name": "Existing house wall, lower level",
+     "level": "Main floor",
+     "x1": "0",
+     "y1": "29.75",
+     "x2": "27.25",
+     "y2": "29.75"
+    }
    ]
   }
  },
