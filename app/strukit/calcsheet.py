@@ -3195,43 +3195,141 @@ def _beam_hss_moment_picture(c, top, d):
 
 
 def _stiffened_seat_picture(c, top, d):
-    """Side elevation of a stiffened seat, to scale: support face, seat plate, stiffener, the beam on the seat with its 1/2 in. setback, the
-    reaction at 0.8 W, and W, L, lb and the plate thicknesses dimensioned."""
+    """Stiffened seat, to scale: an elevation as a section at the beam centreline (the support as the real member: a W column with its flange
+    at the face, or the column web cut with the far flange seen beyond; the seat plate, the stiffener plate with its fillets or the two angles
+    with their bolts, the beam with its flanges broken off, the seat bolts and the top angle with their heads and nuts) and, where the support
+    is a W shape, a plan section cut above the seat. W, L, lb, B and the plates dimensioned."""
     W, L, ts, tp, dd, tf = d["W"], d["L"], d["ts"], d["tseat"], d["d"], d["tf"]
-    sc = min(7.0, 175.0 / (dd + L + tp), 150.0 / (W + 10))
+    sup = d.get("sup")
+    bo, top_a = d.get("bolted"), d.get("top")
+    sc = min(7.0, 190.0 / (dd + L + tp + 4), 150.0 / (W + 12))
     xf = LM + 150                                    # face of the support
-    ys = top - 10 - dd * sc                          # top of the seat plate (underside of the beam)
+    ys = top - 16 - dd * sc                          # top of the seat plate (underside of the beam)
+    ylo, yhi = ys - tp * sc - L * sc - 14, ys + dd * sc + 14
+    tsup = d.get("t_sup") or 0.5
     c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-    c.setFillColorRGB(0.82, 0.85, 0.89)
-    c.rect(xf - 14, ys - L * sc - tp * sc - 14, 14, dd * sc + L * sc + tp * sc + 24, fill=1, stroke=1)      # support
-    c.setFillColorRGB(0.62, 0.68, 0.76)
-    c.rect(xf, ys - tp * sc, W * sc, tp * sc, fill=1, stroke=1)                                             # seat plate
-    c.setFillColorRGB(0.72, 0.77, 0.83)
-    c.rect(xf, ys - tp * sc - L * sc, W * sc, L * sc, fill=1, stroke=1)                                     # stiffener, side view
-    xb = xf + 0.5 * sc                                                                                        # beam end, 1/2 in. setback
-    c.setFillColorRGB(0.90, 0.92, 0.95)
-    c.rect(xb, ys, 9 * sc + W * sc, dd * sc, fill=1, stroke=1)
-    c.line(xb, ys + tf * sc, xb + 9 * sc + W * sc, ys + tf * sc)
-    c.line(xb, ys + (dd - tf) * sc, xb + 9 * sc + W * sc, ys + (dd - tf) * sc)
-    c.setFillColorRGB(0.62, 0.68, 0.76)
-    c.rect(xf, ys + dd * sc, 4 * sc, 0.375 * sc + 1, fill=1, stroke=1)                                       # top angle leg
-    xr = xf + 0.8 * W * sc                                                                                    # reaction at 0.8 W, the beam bearing down on the seat
+    if sup and not sup["web"]:                       # W column seen from the side, its flange at the face
+        colw = min(sup["d"] * sc, 90.0)
+        memberart.w_side(c, xf - colw, ylo, colw, yhi - ylo, sup["tf"] * sc)
+        _break_h(c, xf - colw, xf, ylo); _break_h(c, xf - colw, xf, yhi)
+    elif sup:                                        # section at the beam centreline: the column web cut, the far flange seen beyond
+        colw = sup["bf"] * sc / 2
+        c.setFillColorRGB(0.90, 0.92, 0.95); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+        c.rect(xf - sup["tw"] * sc - colw + sup["tw"] * sc / 2, ylo, sup["bf"] * sc, yhi - ylo, fill=1, stroke=1)
+        c.setFillColorRGB(*memberart.STEEL_CUT)
+        c.rect(xf - sup["tw"] * sc, ylo, max(sup["tw"] * sc, 1.5), yhi - ylo, fill=1, stroke=1)
+        _break_h(c, xf - colw - sup["tw"] * sc / 2, xf + colw - sup["tw"] * sc / 2, ylo); _break_h(c, xf - colw - sup["tw"] * sc / 2, xf + colw - sup["tw"] * sc / 2, yhi)
+    else:
+        colw = max(tsup * sc, 4.0)
+        c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+        c.rect(xf - colw, ylo, colw, yhi - ylo, fill=1, stroke=1)
+        _break_h(c, xf - colw, xf, ylo); _break_h(c, xf - colw, xf, yhi)
+    # seat plate and stiffener
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+    ystf = ys - tp * sc - L * sc
+    if bo:                                           # the far angle: outstanding leg seen, vertical leg cut against the face
+        c.setFillColorRGB(*memberart.STEEL_FILL)
+        c.rect(xf, ystf, W * sc, L * sc, fill=1, stroke=1)
+        c.setFillColorRGB(*memberart.STEEL_CUT)
+        c.rect(xf, ystf, max(ts * sc, 1.4), L * sc, fill=1, stroke=1)
+        yb_ = [ystf + (bo["lev"] + k * bo["s"]) * sc for k in range(bo["n"])]
+        for yb in yb_:
+            memberart.bolt_side(c, xf - (tsup if not (sup and not sup["web"]) else sup["tf"]) * sc, yb, xf + max(ts * sc, 1.4), yb, max(bo["d"] * sc, 2.0), head_end=2)
+    else:
+        c.setFillColorRGB(*memberart.STEEL_FILL)
+        c.rect(xf, ystf, W * sc, L * sc, fill=1, stroke=1)                                   # stiffener plate, side view
+        band = max(1.8, d["weld"] * sc)
+        c.setFillColorRGB(0.35, 0.38, 0.42); c.setLineWidth(0.3)
+        c.rect(xf, ystf, band, L * sc, fill=1, stroke=0)                                     # fillet along the face, both sides of the stiffener
+        k = ystf
+        while k < ys - tp * sc - 1:
+            c.line(xf, k, xf + band, min(k + band * 0.7, ys - tp * sc)); k += 3.0
+    c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+    c.rect(xf, ys - tp * sc, W * sc + 0.5 * sc, tp * sc, fill=1, stroke=1)                     # seat plate, cut
+    # beam with its flanges, 1/2 in. setback, broken off
+    xb = xf + 0.5 * sc
+    xe = xb + (W + 9) * sc
+    memberart.w_side(c, xb, ys, xe - xb, dd * sc, tf * sc, vertical=False)
+    _break_v(c, xe, ys, ys + dd * sc)
+    # seat bolts through the seat plate and the bottom flange
+    xB = xf + (d.get("B") or max(W / 2, 2.625 if W / 2 < 2.625 else W / 2)) * sc
+    memberart.bolt_side(c, xB, ys - tp * sc, xB, ys + tf * sc, max(0.75 * sc, 2.0), head_end=1)
+    # top angle
+    if top_a:
+        tt, lg = top_a["t"], top_a["leg"]
+        yt = ys + dd * sc
+        c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+        pth = c.beginPath(); pth.moveTo(xf, yt); pth.lineTo(xf + 4 * sc, yt); pth.lineTo(xf + 4 * sc, yt + tt * sc); pth.lineTo(xf + tt * sc, yt + tt * sc)
+        pth.lineTo(xf + tt * sc, yt + lg * sc); pth.lineTo(xf, yt + lg * sc); pth.close(); c.drawPath(pth, fill=1, stroke=1)
+        if top_a["attach"].startswith("two bolts"):
+            memberart.bolt_side(c, xf + 2.5 * sc, yt - tf * sc, xf + 2.5 * sc, yt + tt * sc, max(0.75 * sc, 2.0), head_end=2)
+        else:
+            c.setFillColorRGB(0.35, 0.38, 0.42)
+            p2 = c.beginPath(); p2.moveTo(xf + 4 * sc, yt); p2.lineTo(xf + 4 * sc + 2.2, yt); p2.lineTo(xf + 4 * sc, yt + 2.2); p2.close(); c.drawPath(p2, fill=1, stroke=0)
+        c.setFont(FR, 6); c.setFillColorRGB(*INK)
+        c.drawString(xf + 4 * sc + 6, yt + lg * sc - 4, f"top angle, {tt:g} in, {lg:g} in leg, " + ("bolted" if top_a["attach"].startswith("two bolts") else "welded at the toes"))
+    # reaction at 0.8 W
+    xr = xf + 0.8 * W * sc
     c.setStrokeColorRGB(*FLAGC); c.setLineWidth(1.0)
-    c.line(xr, ys + 26, xr, ys + 7)
-    t_ = c.beginPath(); t_.moveTo(xr, ys + 1); t_.lineTo(xr - 3, ys + 8); t_.lineTo(xr + 3, ys + 8); t_.close()
+    c.line(xr, ys + tf * sc + 22, xr, ys + tf * sc + 7)
+    t_ = c.beginPath(); t_.moveTo(xr, ys + tf * sc + 1); t_.lineTo(xr - 3, ys + tf * sc + 8); t_.lineTo(xr + 3, ys + tf * sc + 8); t_.close()
     c.setFillColorRGB(*FLAGC); c.drawPath(t_, fill=1, stroke=0)
-    c.setFont(FR, 6); c.drawString(xr + 4, ys + 18, "R at 0.8 W")
+    c.setFont(FR, 6); c.drawString(xr + 4, ys + tf * sc + 14, "R at 0.8 W")
     c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
-    c.drawString(xb + 9 * sc + W * sc + 6, ys + dd * sc / 2, d["beam"])
-    c.drawRightString(xf - 18, ys - L * sc / 2, d["support"])
-    memberart._dim_h(c, xf, xf + W * sc, ys - tp * sc - L * sc - 12, f"W = {W:g} in", FR, ext_from=ys - tp * sc - L * sc)
-    memberart._dim_v(c, ys - tp * sc - L * sc, ys - tp * sc, xf + W * sc + 12, f"L = {L:g} in", FR, ext_from=xf + W * sc)
-    memberart._dim_h(c, xb, xf + W * sc - 0.25 * sc, ys + dd * sc + 14, f"lb = {d['lb']:.3g} in", FR, ext_from=ys + dd * sc)
+    c.drawString(xe + 6, ys + dd * sc / 2, d["beam"])
+    c.drawRightString(xf - colw - 6, ys - L * sc / 2, d["support"])
+    memberart._dim_h(c, xf, xf + W * sc, ystf - 12, f"W = {W:g} in", FR, ext_from=ystf)
+    memberart._dim_v(c, ystf, ys - tp * sc, xf + W * sc + 12, f"L = {L:g} in", FR, ext_from=xf + W * sc)
+    if d.get("B"):                                   # seat bolts from the web face, dimensioned inside the beam above the bottom flange
+        memberart._dim_h(c, xf, xB, ys + tf * sc + 30, f"B = {d['B']:g} in", FR, ext_from=ys + tf * sc + 2)
     c.setFont(FR, 6); c.setFillColorRGB(*INK)
-    c.drawString(xf + W * sc + 46, ys - tp * sc - L * sc * 0.70, f"seat PL {tp:g} in, stiffener PL {ts:g} in")
-    c.drawString(xf + W * sc + 46, ys - tp * sc - L * sc * 0.70 - 8, f"{d['weld']:g} in fillets to the support")
-    _small(c, xf + 40, ys - tp * sc - L * sc - 34, "side elevation, to scale; the beam is set back 1/2 in. from the support")
-    return ys - tp * sc - L * sc - 42
+    c.drawString(xf + W * sc + 46, ystf + L * sc * 0.62, f"seat PL {tp:g} in, lb = {d['lb']:.3g} in")
+    c.drawString(xf + W * sc + 46, ystf + L * sc * 0.62 - 8, (f"two angles {ts:g} in, {2 * bo['n']} bolts" if bo else f"stiffener PL {ts:g} in"))
+    if not bo:
+        c.drawString(xf + W * sc + 46, ystf + L * sc * 0.62 - 16, f"{d['weld']:g} in fillets to the support")
+    yl = ystf - 30
+    _small(c, xf - 20, yl, "section at the beam centreline, to scale; beam set back 1/2 in.")
+    low = yl - 6
+    # plan section, cut above the seat plate, where the support is a W shape
+    if sup:
+        s2 = min(6.0, 150.0 / (max(sup["d"], sup["bf"]) + W + 6))
+        xq = RM - 30 - (W + 6) * s2                   # face of the support in plan
+        cq = ys - tp * sc - 30
+        c.saveState()
+        if sup["web"]:
+            c.translate(xq - sup["tw"] * s2 / 2, cq)
+            memberart.steel_section(c, 0, 0, sup["bf"] * s2, sup["d"] * s2, sup["d"], sup["bf"], sup["tf"], sup["tw"])
+            c.restoreState()
+            hb = sup["d"] * s2 / 2
+        else:
+            c.translate(xq - sup["d"] * s2 / 2, cq); c.rotate(90)
+            memberart.steel_section(c, 0, 0, sup["bf"] * s2, sup["d"] * s2, sup["d"], sup["bf"], sup["tf"], sup["tw"])
+            c.restoreState()
+            hb = sup["bf"] * s2 / 2
+        bw_ = d.get("bbf") or 7.0                     # seat plate as wide as the beam flange
+        c.setFillColorRGB(0.90, 0.92, 0.95); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+        c.rect(xq, cq - bw_ / 2 * s2, (W + 0.5) * s2, bw_ * s2, fill=1, stroke=1)                # seat plate seen below the cut
+        c.setDash(2, 1.5)
+        if bo:
+            c.rect(xq, cq - ts * s2 - 0.5, W * s2, ts * s2, fill=0, stroke=1); c.rect(xq, cq + 0.5, W * s2, ts * s2, fill=0, stroke=1)
+        else:
+            c.rect(xq, cq - ts * s2 / 2, W * s2, ts * s2, fill=0, stroke=1)                    # stiffener below the seat, hidden
+        c.setDash()
+        xb2 = xq + 0.5 * s2
+        c.setFillColorRGB(*memberart.STEEL_CUT)
+        c.rect(xb2, cq - max(d.get("tw", 0.4) * s2, 1.2) / 2, (W + 5) * s2, max(d.get("tw", 0.4) * s2, 1.2), fill=1, stroke=1)   # beam web, cut
+        c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+        c.line(xb2, cq - bw_ / 2 * s2, xb2 + (W + 5) * s2, cq - bw_ / 2 * s2); c.line(xb2, cq + bw_ / 2 * s2, xb2 + (W + 5) * s2, cq + bw_ / 2 * s2)
+        _break_v(c, xb2 + (W + 5) * s2, cq - bw_ / 2 * s2 - 2, cq + bw_ / 2 * s2 + 2)
+        c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*INK)
+        xBp = xq + (d.get("B") or max(W / 2, 2.625)) * s2
+        for sg in (1, -1):
+            c.circle(xBp, cq + sg * min(1.75, bw_ / 2 - 1.0) * s2, max(1.6, 0.4 * s2), fill=1, stroke=1)
+        if d.get("B"):
+            memberart._dim_h(c, xq, xBp, cq - max(hb, bw_ / 2 * s2) - 8, f"B = {d['B']:g} in", FR, ext_from=cq - bw_ / 2 * s2)
+        _small(c, xq - hb * 0.5 - 10, cq - max(hb, bw_ / 2 * s2) - 26, "plan, cut above the seat, to scale")
+        low = min(low, cq - max(hb, bw_ / 2 * s2) - 32)
+    return low
 
 
 def _guard_picture(c, top, d):

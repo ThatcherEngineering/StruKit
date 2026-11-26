@@ -553,3 +553,35 @@ def bolt_picture(c, x, y, w, h, n, spacing_in, edge_in, d_in, font="Helvetica"):
             label = t if room or k == 0 else t + " typ."
             c.drawCentredString((a + b) / 2, yd - 7.5, label)
     return px, py, pw, ph, s
+
+
+def bolt_side(c, x1, y1, x2, y2, d, head_end=1):
+    """A bolt seen from the side, through the plies from (x1, y1) to (x2, y2) in points (a vertical or horizontal grip): the shank d wide
+    (points), a hex head on the grip face at the head_end (1: the first point, 2: the second), a nut and washer on the other face, and the
+    threaded end showing past the nut."""
+    vert = abs(x2 - x1) < abs(y2 - y1)
+    hw, hh = max(d * 1.6, 3.0), max(d * 0.65, 1.4)                # head across flats, head height
+    nw, nh, ww = hw, max(d * 0.85, 1.7), max(d * 0.18, 0.5)
+    c.setLineWidth(0.4); c.setStrokeColorRGB(*STEEL_LINE)
+    def box(cx, cy, along, across, fill):
+        c.setFillColorRGB(*fill)
+        if vert:
+            c.rect(cx - across / 2, cy, across, along, fill=1, stroke=1)
+        else:
+            c.rect(cx, cy - across / 2, along, across, fill=1, stroke=1)
+    a, b = ((x1, y1), (x2, y2)) if head_end == 1 else ((x2, y2), (x1, y1))
+    sgn = 1 if ((b[1] - a[1]) if vert else (b[0] - a[0])) > 0 else -1
+    if vert:
+        box(a[0], min(a[1], b[1]), abs(b[1] - a[1]), d, (0.70, 0.74, 0.79))                  # shank through the grip
+        box(a[0], a[1] - (hh if sgn > 0 else 0), hh, hw, (0.42, 0.47, 0.54))                 # head
+        box(b[0], b[1] + (0 if sgn > 0 else -ww), ww, hw * 1.15, (0.62, 0.66, 0.72))           # washer
+        yn = b[1] + (ww if sgn > 0 else -ww - nh)
+        box(b[0], yn, nh, nw, (0.42, 0.47, 0.54))                                             # nut
+        box(b[0], yn + (nh if sgn > 0 else -d * 0.4), d * 0.4, d * 0.9, (0.70, 0.74, 0.79))   # thread past the nut
+    else:
+        box(min(a[0], b[0]), a[1], abs(b[0] - a[0]), d, (0.70, 0.74, 0.79))
+        box(a[0] - (hh if sgn > 0 else 0), a[1], hh, hw, (0.42, 0.47, 0.54))
+        box(b[0] + (0 if sgn > 0 else -ww), b[1], ww, hw * 1.15, (0.62, 0.66, 0.72))
+        xn = b[0] + (ww if sgn > 0 else -ww - nh)
+        box(xn, b[1], nh, nw, (0.42, 0.47, 0.54))
+        box(xn + (nh if sgn > 0 else -d * 0.4), b[1], d * 0.4, d * 0.9, (0.70, 0.74, 0.79))
