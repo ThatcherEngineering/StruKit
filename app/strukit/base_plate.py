@@ -3,7 +3,7 @@
 Sources on file:
   ANSI/AISC 360-22 Sect. J8: bearing on concrete, Eq. J8-1 and J8-2, phi_c = 0.65,
       Omega_c = 2.31.
-  AISC Manual Part 14 plate-thickness method, Eq. 14-2 to 14-7, as printed in AISC Design
+  AISC Manual (16th Ed.) Part 14 plate-thickness method, Eq. 14-2 to 14-7, as printed in AISC Design
       Examples v16.0, Example J.6 (the Manual itself is not on file; the equations are
       taken from that example, which also gives the reference values the tests use).
 
@@ -78,7 +78,7 @@ def check(d, bf, N, B, Fy_plate, fc, A2, Pr, method="ASD", kind="I"):
               Line(f"n = (B - {nm[1]}) / 2", n, "in", "AISC Design Guide 1 Sect. 4.3.1 (HSS and pipe)"),
               Line("l = max(m, n)", ell, "in", "AISC Design Guide 1 Sect. 4.3.1"),
               Line("fp = Pr / (B N)", fp, "ksi", "bearing stress under the plate"),
-              Line("t min", t_min, "in", "Manual Eq. 14-7a" if method == "LRFD" else "Manual Eq. 14-7b")]
+              Line("t min", t_min, "in", "AISC Manual (16th Ed.) Eq. 14-7a" if method == "LRFD" else "AISC Manual (16th Ed.) Eq. 14-7b")]
         return BasePlateResult(Pp, Pc, t_min, L)
     m = (N - 0.95 * d) / 2
     n = (B - 0.8 * bf) / 2
@@ -89,14 +89,14 @@ def check(d, bf, N, B, Fy_plate, fc, A2, Pr, method="ASD", kind="I"):
     fp = Pr / A1
     t_min = ell * math.sqrt(2 * fp / (0.90 * Fy_plate)) if method == "LRFD" else \
         ell * math.sqrt(1.67 * 2 * fp / Fy_plate)
-    L += [Line("m = (N - 0.95 d) / 2", m, "in", "Manual Eq. 14-2 (Design Example J.6)"),
-          Line("n = (B - 0.8 bf) / 2", n, "in", "Manual Eq. 14-3"),
-          Line("n' = sqrt(d bf) / 4", n1, "in", "Manual Eq. 14-4"),
-          Line("X", X, "", "Manual Eq. 14-6"),
-          Line("lambda", lam, "", "Manual Eq. 14-5", "not more than 1"),
-          Line("l = max(m, n, lambda n')", ell, "in", "Manual Part 14"),
+    L += [Line("m = (N - 0.95 d) / 2", m, "in", "AISC Manual (16th Ed.) Eq. 14-2 (Design Example J.6)"),
+          Line("n = (B - 0.8 bf) / 2", n, "in", "AISC Manual (16th Ed.) Eq. 14-3"),
+          Line("n' = sqrt(d bf) / 4", n1, "in", "AISC Manual (16th Ed.) Eq. 14-4"),
+          Line("X", X, "", "AISC Manual (16th Ed.) Eq. 14-6"),
+          Line("lambda", lam, "", "AISC Manual (16th Ed.) Eq. 14-5", "not more than 1"),
+          Line("l = max(m, n, lambda n')", ell, "in", "AISC Manual (16th Ed.) Part 14"),
           Line("fp = Pr / (B N)", fp, "ksi", "bearing stress under the plate"),
-          Line("t min", t_min, "in", "Manual Eq. 14-7a" if method == "LRFD" else "Manual Eq. 14-7b")]
+          Line("t min", t_min, "in", "AISC Manual (16th Ed.) Eq. 14-7a" if method == "LRFD" else "AISC Manual (16th Ed.) Eq. 14-7b")]
     return BasePlateResult(Pp, Pc, t_min, L)
 
 

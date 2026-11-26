@@ -470,6 +470,11 @@ FORMS = {
                 F("fn", "Bolts in each of the two rows", required=False), F("fs", "Bolt spacing along the beam", unit="in", required=False),
                 F("fg", "Gage between the two rows", unit="in", required=False), F("flev_p", "Plate end to the last bolt", unit="in", required=False),
                 F("flev_b", "Beam end to the first bolt", unit="in", required=False), F("fa1", "Column face to the first bolt", unit="in", required=False),
+                F("fbw", "Or welded: fillet weld, flange plate to the beam flange", unit="in", required=False,
+                  help="in place of the bolts: fillets along both long edges (of the plate if it is narrower than the flange, else of the flange)"),
+                F("fLw", "Welded: weld length along each edge", unit="in", required=False),
+                F("fend", "Welded: transverse weld across the end", "select", options=["no", "yes"], required=False),
+                F("fwa1", "Welded: column face to the start of the welds", unit="in", required=False),
                 F("fweld", "Fillet weld, flange plate to the HSS face (each side of the plate)", unit="in", required=False),
                 F("fFEXX", "Electrode strength", unit="ksi", required=False)],
         tables=[T("loads", "Loads at the joint", [CASE, F("M", "Beam end moment", unit="kip-ft"), F("P", "Column axial load at the joint", unit="kip", required=False),
@@ -514,7 +519,9 @@ FORMS = {
                 F("cope_lev", "Coped beam: cut edge to the nearest bolt", unit="in", required=False, help="from the top cut; for a cope at the bottom flange only, from the bottom cut"),
                 F("cope_leh", "Coped beam: bolt line to the beam end", unit="in", required=False),
                 F("beam_Fy", "Coped beam: beam Fy", unit="ksi", required=False)],
-        tables=[T("loads", "Beam end reaction", [CASE, F("P", "Reaction", unit="kip"), F("label", "Note", "text", required=False)])]),
+        tables=[T("loads", "Beam end reaction", [CASE, F("P", "Reaction", unit="kip"), F("label", "Note", "text", required=False)]),
+                T("runs", "Or: combined end shears (for example from the 3D frame), used in place of the table above",
+                  [F("name", "Combination or run", "text"), F("R", "End shear", unit="kip")])]),
     "wood_beam": dict(
         title="Wood Beam", code="2018 NDS", mark="WB",
         fields=[F("species", "Species", "select",
@@ -2147,6 +2154,12 @@ def _build(kind, values, project):
                          lev_b=r.num("flev_b", True, label="Beam end to the first bolt"), a1=r.num("fa1", True, label="Column face to the first bolt"),
                          Fu=r.num("plate_Fu", True, label="Flange plate Fu"), beam_Fu=r.num("beam_Fu", True, label="Beam Fu"),
                          weld=r.num("fweld", False), FEXX=r.num("fFEXX", False) or 70.0)
+        if plated and r.num("fbw", False) is not None:
+            plate.update(bw=r.num("fbw", False), Lw=r.num("fLw", True, label="Welded: weld length along each edge"),
+                         end_weld=str(values.get("fend") or "").strip().lower().startswith("y"),
+                         wa1=r.num("fwa1", True, label="Welded: column face to the start of the welds"),
+                         Fu=r.num("plate_Fu", True, label="Flange plate Fu"), beam_Fu=r.num("beam_Fu", True, label="Beam Fu"),
+                         weld=r.num("fweld", False), FEXX=r.num("fFEXX", False) or 70.0)
         r.text("flanges")
         args = (r.text("beam"), r.num("beam_Fy"), r.text("beam_source"), r.text("column"), r.num("col_Fy"), r.text("col_source"))
         r.done()
@@ -2166,8 +2179,9 @@ def _build(kind, values, project):
         return ws_more.end_plate_sheet(mark, *args, loads, cb, m, support=sup), "simple", {}
     if kind == "single_plate":
         cb, m = combos(project, r.miss), method(project, r.miss)
-        loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
-        if not loads:
+        runs = [dict(name=x["name"], R=x["R"]) for x in r.rows("runs")]
+        loads = [] if runs else [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]
+        if not loads and not runs:
             r.miss.append("No reaction is entered")
         cases_used([x["case"] for x in loads], cb, r.miss)
         hc = bool(r.text("column", False))
@@ -2182,7 +2196,8 @@ def _build(kind, values, project):
                         Fy=r.num("beam_Fy", True, label="Coped beam: beam Fy"))
         thr_ = r.num("through", False)
         r.done()
-        return ws_more.single_plate_sheet(mark, *args, loads, cb, m, support=sup, cope=cope, through=thr_), "simple", {}
+        return ws_more.single_plate_sheet(mark, *args, loads, cb, m, support=sup, cope=cope, through=thr_, runs=runs or None,
+                                          runs_from=str(values.get("loads_from") or "")), "simple", {}
     if kind in ("weld", "bolts"):
         cb, m = combos(project, r.miss), method(project, r.miss)
         loads = [dict(case=x["case"], P=x["P"], **({"label": x["label"]} if x["label"] else {})) for x in r.rows("loads")]

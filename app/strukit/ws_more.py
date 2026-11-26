@@ -66,7 +66,7 @@ def base_plate_sheet(mark, shape, N, B, t, Fy_plate, fc_psi, support, loads, com
                 "AISC 360-22 Sect. J8, " + ("Eq. J8-1" if support == "full" else "Eq. J8-2"),
                 f"A1 = {N * B:g} in2; A2 = {A2:g} in2"),
             Row("plate thickness", worst, res.t_min, t, "in",
-                "AISC Manual Part 14, Eq. 14-2 to 14-7" if kind == "I" else "AISC Design Guide 1 Sect. 4.3.1, Manual Eq. 14-7",
+                "AISC Manual (16th Ed.) Part 14, Eq. 14-2 to 14-7" if kind == "I" else "AISC Design Guide 1 Sect. 4.3.1; AISC Manual (16th Ed.) Eq. 14-7",
                 "demand is the minimum thickness, capacity is the thickness provided")]
     info = [("Column", f"{shapes.normalize(shape)}  " + (f"(d = {p['d']:g} in, bf = {p['bf']:g} in)" if kind == "I" else
                                                         f"(H = {p['d']:g} in, B = {p['bf']:g} in)" if kind == "rect" else f"(OD = {p['d']:g} in)")),
@@ -3051,12 +3051,14 @@ def _support_shape(name):
 
 
 def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, beam_source, tp, plate_Fy, plate_Fu, plate_source,
-                       d, group, threads, n, spacing, lev, leh, a, holes, weld, FEXX, loads, combos, method, support=None, cope=None, through=None):
-    """Single-plate (shear tab) connection of a wide-flange beam to an HSS column: conventional configuration of AISC Manual Part 10 as worked
+                       d, group, threads, n, spacing, lev, leh, a, holes, weld, FEXX, loads, combos, method, support=None, cope=None, through=None,
+                       runs=None, runs_from=""):
+    """Single-plate (shear tab) connection of a wide-flange beam to an HSS column: conventional configuration of AISC Manual (16th Ed.) Part 10 as worked
     in AISC Design Guide 24 (2nd Ed.) Example 5.1.  One vertical row of 2 to 12 bolts (Manual Table 10-9, read from the 15th Edition page image:
     2 to 5 bolts e = a/2; 6 to 12 bolts e = a/2 with SSLT holes and e = a with STD holes).  holes: "STD" or "SSLT" (horizontal short slots) in the plate; standard holes in the beam web.  loads: dict(case, P) kips.
     column blank with support = dict(name, t, Fu): the plate is welded to a column flange or girder web instead (AISC Design Examples v16
-    Example II.A-17A); the HSS wall checks are replaced by the support thickness that matches the weld."""
+    Example II.A-17A); the HSS wall checks are replaced by the support thickness that matches the weld.
+    runs: combined beam end shears already at the method's level (dict(name, R) kips, for example from the 3D frame); used in place of loads."""
     from . import bolts
     from .steel_beam import SteelInputError
     hss_col = bool((column or "").strip())
@@ -3068,13 +3070,13 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     for nm, v in ((("the source of the column Fy and Fu", col_source),) if hss_col else ()) + (("the source of the beam Fu", beam_source), ("the source of the plate Fy and Fu", plate_source)):
         if not (v or "").strip():
             raise WorksheetError(f"{mark}: {nm} is blank")
-    if not combos:
+    if not runs and not combos:
         raise WorksheetError(f"{mark}: no load combinations given")
-    if not loads:
+    if not runs and not loads:
         raise WorksheetError(f"{mark}: no loads given")
     n = int(n)
     if not 2 <= n <= 12:
-        raise WorksheetError(f"{mark}: the conventional configuration is one vertical row of 2 to 12 bolts (AISC Manual Table 10-9); {n} entered")
+        raise WorksheetError(f"{mark}: the conventional configuration is one vertical row of 2 to 12 bolts (AISC Manual (15th Ed.) Table 10-9); {n} entered")
     if holes not in ("STD", "SSLT"):
         raise WorksheetError(f"{mark}: plate holes are STD (standard) or SSLT (horizontal short slots)")
     col = None
@@ -3094,9 +3096,9 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     except SteelInputError as e:
         raise WorksheetError(f"{mark}: {e}")
     if a > 3.5:
-        raise WorksheetError(f"{mark}: the weld line to bolt line distance a = {a:g} in. is over 3-1/2 in.; outside the conventional configuration (AISC Manual Part 10)")
+        raise WorksheetError(f"{mark}: the weld line to bolt line distance a = {a:g} in. is over 3-1/2 in.; outside the conventional configuration (AISC Manual (16th Ed.) Part 10)")
     if leh < 2 * d:
-        raise WorksheetError(f"{mark}: the horizontal edge distance {leh:g} in. is less than 2 bolt diameters = {2 * d:g} in. (AISC Manual Part 10)")
+        raise WorksheetError(f"{mark}: the horizontal edge distance {leh:g} in. is less than 2 bolt diameters = {2 * d:g} in. (AISC Manual (16th Ed.) Part 10)")
     if lev < le_min:
         raise WorksheetError(f"{mark}: the vertical edge distance {lev:g} in. is less than {le_min:g} in. (AISC 360-22 Table J3.4)")
     if spacing < 8 * d / 3:
@@ -3104,7 +3106,10 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     lrfd = method == "LRFD"
     av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
     fac = lambda phi, om: f"phi = {phi:g}" if lrfd else f"Omega = {om:g}"
-    totals = {cb.name: abs(sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)) for cb in combos}
+    if runs:
+        totals = {r_["name"]: abs(r_["R"]) for r_ in runs}
+    else:
+        totals = {cb.name: abs(sum(cb.factors.get(ld["case"], 0.0) * ld["P"] for ld in loads)) for cb in combos}
     worst = max(totals, key=lambda k: totals[k])
     R = totals[worst]
     tw = bm["tw"]
@@ -3137,13 +3142,13 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     if not hss_col:
         pass
     elif rnd:
-        lam, lam_r, lam_txt, lam_src = col["D_t"], 0.11 * 29000 / col_Fy, "D / t", "AISC Manual Part 10; 0.11 E / Fy"
+        lam, lam_r, lam_txt, lam_src = col["D_t"], 0.11 * 29000 / col_Fy, "D / t", "AISC Manual (16th Ed.) Part 10; 0.11 E / Fy"
     else:
-        lam, lam_r, lam_txt, lam_src = max(col["b_t"], col["h_t"]), 1.40 * math.sqrt(29000 / col_Fy), "b / t", "AISC Manual Part 10; AISC 360-22 Table B4.1a Case 6"
+        lam, lam_r, lam_txt, lam_src = max(col["b_t"], col["h_t"]), 1.40 * math.sqrt(29000 / col_Fy), "b / t", "AISC Manual (16th Ed.) Part 10; AISC 360-22 Table B4.1a Case 6"
     steps = [Ln("Required strength R", R, "kip", worst, ""),
              Ln("Strength of one bolt", rn, "kip", "AISC 360-22 Sect. J3.7, Table J3.2", f"{d:g} in. {group}, threads {threads}, single shear; " + fac(0.75, 2.00)),
-             Ln("e = a" if (n >= 6 and holes == "STD") else "e = a / 2", e, "in", "AISC Manual Table 10-9", f"a = {a:g} in., {n} bolts, {holes} holes in the plate"),
-             Ln("C", f"{C:.2f}", "", "AISC Manual Table 7-6, angle 0", f"{n} bolts at {spacing:g} in., ex = {e:g} in.; instantaneous centre of rotation method"),
+             Ln("e = a" if (n >= 6 and holes == "STD") else "e = a / 2", e, "in", "AISC Manual (15th Ed.) Table 10-9", f"a = {a:g} in., {n} bolts, {holes} holes in the plate"),
+             Ln("C", f"{C:.2f}", "", "AISC Manual (16th Ed.) Table 7-6, angle 0", f"{n} bolts at {spacing:g} in., ex = {e:g} in.; instantaneous centre of rotation method"),
              Ln("Bolt group C rn", C * rn, "kip", "AISC 360-22 Sect. J3.7", ""),
              Ln("Bearing and tearout, plate", brg_p, "kip", "Sect. J3.11a, Eq. J3-6a, J3-6c", f"interior {b_int_p:.1f} kip per bolt, edge bolt {b_edge_p:.1f} kip (lev = {lev:g} in.); reaction taken concentric"),
              Ln("Bearing and tearout, beam web", brg_w, "kip", "Sect. J3.11a", f"tw = {tw:g} in., Fu = {beam_Fu:g} ksi"),
@@ -3151,7 +3156,7 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
              Ln("Shear yielding, 0.60 Fy Agv", Vy, "kip", "Eq. J4-3", f"Agv = {Agv:.2f} in2; " + fac(1.00, 1.50)),
              Ln("Shear rupture, 0.60 Fu Anv", Vr, "kip", "Eq. J4-4", f"Anv = (l - n (dh + 1/16)) tp = {Anv:.2f} in2; " + fac(0.75, 2.00)),
              Ln("Block shear", Rbs, "kip", "Eq. J4-5, Ubs = 1.0", f"Agv = {Agv_b:.2f}, Anv = {Anv_b:.2f}, Ant = {Ant_b:.3f} in2; Rn = {Rbs_n:.0f} kip"),
-             Ln("Weld each side, 5/8 tp", w_req, "in", "AISC Manual Part 10", f"provided {weld:g} in. fillet each side, develops the plate"),
+             Ln("Weld each side, 5/8 tp", w_req, "in", "AISC Manual (16th Ed.) Part 10", f"provided {weld:g} in. fillet each side, develops the plate"),
              ]
     thr = None
     if through and hss_col:
@@ -3167,17 +3172,17 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     elif hss_col:
         steps += [Ln("Column wall to develop the weld, tmin", t_min, "in", "AISC Design Guide 24 Sect. 3.4, Tables 3-2 and 3-3",
                      f"D FEXX / min(30.2 Fy, 22.6 Fu), D = {D16:g} sixteenths; wall t = {t:g} in."),
-                  Ln("Column wall shear yielding (punching), Fu t l^2 / 5", punch, "kip-in", "AISC Manual Eq. 10-10", f"against R a = {R:.1f} x {a:g} = {R * a:.0f} kip-in; " + fac(0.75, 2.00)),
+                  Ln("Column wall shear yielding (punching), Fu t l^2 / 5", punch, "kip-in", "AISC Manual (16th Ed.) Eq. 10-10" + ("a" if lrfd else "b"), f"against R a = {R:.1f} x {a:g} = {R * a:.0f} kip-in; " + fac(0.75, 2.00)),
                   Ln(f"Column wall {lam_txt}", f"{lam:.1f}", "", lam_src, f"limit {lam_r:.1f}: the column wall is not slender")]
     else:
-        steps.append(Ln("Support thickness to match the weld, tmin = 3.09 D / Fu", t_min, "in", "AISC Manual Eq. 9-2", f"D = {D16:g} sixteenths, Fu = {support['Fu']:g} ksi; {support['name'].strip()}, t = {t:g} in."))
-    rows = [Row("Bolt shear with eccentricity", worst, R, C * rn, "kip", "AISC 360-22 Sect. J3.7; AISC Manual Tables 7-6, 10-9", f"({n}) {d:g} in. {group}-{threads}, C = {C:.2f}"),
+        steps.append(Ln("Support thickness to match the weld, tmin = 3.09 D / Fu", t_min, "in", "AISC Manual (16th Ed.) Eq. 9-6", f"D = {D16:g} sixteenths, Fu = {support['Fu']:g} ksi; {support['name'].strip()}, t = {t:g} in."))
+    rows = [Row("Bolt shear with eccentricity", worst, R, C * rn, "kip", "AISC 360-22 Sect. J3.7; AISC Manual (16th Ed.) Table 7-6, (15th Ed.) Table 10-9", f"({n}) {d:g} in. {group}-{threads}, C = {C:.2f}"),
             Row("Bolt bearing and tearout, plate", worst, R, brg_p, "kip", "AISC 360-22 Sect. J3.11a", f"plate {tp:g} in."),
             Row("Bolt bearing and tearout, beam web", worst, R, brg_w, "kip", "AISC 360-22 Sect. J3.11a", f"{shapes.normalize(beam)}, tw = {tw:g} in."),
             Row("Plate shear yielding", worst, R, Vy, "kip", "AISC 360-22 Eq. J4-3", ""),
             Row("Plate shear rupture", worst, R, Vr, "kip", "AISC 360-22 Eq. J4-4", ""),
             Row("Plate block shear", worst, R, Rbs, "kip", "AISC 360-22 Eq. J4-5", ""),
-            Row("Fillet weld size, each side", "", w_req, weld, "in", "AISC Manual Part 10", "5/8 of the plate thickness"),
+            Row("Fillet weld size, each side", "", w_req, weld, "in", "AISC Manual (16th Ed.) Part 10", "5/8 of the plate thickness"),
             ]
     if thr:
         rows = [x for x in rows if x.check != "Fillet weld size, each side"]
@@ -3186,10 +3191,10 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
                  Row("Column walls, shear rupture", worst, R, thr["vr"], "kip", "AISC 360-22 Eq. J4-4", "two planes")]
     elif hss_col:
         rows += [Row("Column wall thickness at the weld", "", t_min, t, "in", "AISC Design Guide 24 Table 3-3", ""),
-                 Row("Column wall shear yielding (punching)", worst, R * a, punch, "kip-in", "AISC Manual Eq. 10-10", ""),
+                 Row("Column wall shear yielding (punching)", worst, R * a, punch, "kip-in", "AISC Manual (16th Ed.) Eq. 10-10" + ("a" if lrfd else "b"), ""),
                  Row(f"Column wall slenderness {lam_txt}", "", lam, lam_r, "", lam_src, "")]
     else:
-        rows.append(Row("Support thickness at the weld", "", t_min, t, "in", "AISC Manual Eq. 9-2", support["name"].strip()))
+        rows.append(Row("Support thickness at the weld", "", t_min, t, "in", "AISC Manual (16th Ed.) Eq. 9-6", support["name"].strip()))
     cp = None
     if cope:
         from . import cope as _cope
@@ -3209,7 +3214,7 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
         except _cope.CopeError as e:
             raise WorksheetError(f"{mark}: {e}")
         if cope["leh"] < 2 * d:
-            raise WorksheetError(f"{mark}: the bolt line is {cope['leh']:g} in. from the beam end, less than 2 bolt diameters (AISC Manual Part 10)")
+            raise WorksheetError(f"{mark}: the bolt line is {cope['leh']:g} in. from the beam end, less than 2 bolt diameters (AISC Manual (16th Ed.) Part 10)")
         if cope["lev"] < le_min:
             raise WorksheetError(f"{mark}: the nearest bolt is {cope['lev']:g} in. from the cut edge, less than {le_min:g} in. (AISC 360-22 Table J3.4)")
         dbl = kind == "double"
@@ -3222,7 +3227,7 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
         if kind == "bottom":
             ltb = (f"Lb = c = {cope['c']:g} in. {'not over' if cope['c'] <= cp['Lp'] else 'over'} Lp = 1.76 ry (E / Fy)^0.5 = {cp['Lp']:.1f} in. (Eq. F9-8); "
                    f"Lr = {cp['Lr']:.0f} in. (Eq. F9-9)")
-            steps += [Ln("Coped section: hc = d - dc", cp["hc"], "in", "AISC Manual Figure 9-2", f"cope {cope['dcb']:g} in. deep x {cope['c']:g} in. long at the bottom flange; e = c + setback = {cp['e']:g} in."),
+            steps += [Ln("Coped section: hc = d - dc", cp["hc"], "in", "AISC Manual (16th Ed.) Figure 9-2", f"cope {cope['dcb']:g} in. deep x {cope['c']:g} in. long at the bottom flange; e = c + setback = {cp['e']:g} in."),
                       Ln("Tee: Sx (stem tip), Sxc (flange), Zx", f"{cp['Sx']:.2f}, {cp['Sxc']:.2f}, {cp['Zc']:.2f}", "in3", "section properties", "top flange and web, fillets not counted"),
                       Ln("Tee: Iy, J, ry", f"{cp['Iy']:.2f} in4, {cp['J']:.3f} in4, {cp['ry']:.2f} in", "", "section properties", "J = sum of b t^3 / 3"),
                       Ln("Yielding: Mp = Fy Zx, not over 1.6 My", cp["Mp"], "kip-in", "AISC 360-22 Eq. F9-1 to F9-3", f"Fy Zx = {cp['Mp_raw']:.0f}, My = Fy Sx = {cp['My']:.0f} kip-in"),
@@ -3230,34 +3235,34 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
                       Ln("Flange local buckling: bf / 2tf", f"{cp['lam_f']:.2f}", "", "AISC 360-22 Table B4.1b Case 10",
                          f"lambda_pf = 0.38 (E / Fy)^0.5 = {cp['lam_pf']:.2f}, lambda_rf = 1.0 (E / Fy)^0.5 = {cp['lam_rf']:.1f}"),
                       Ln("Mn of the coped section", cp["Mn"], "kip-in", "AISC 360-22 Sect. F9", f"{cp['governs']} governs; {cp['eq']}"),
-                      Ln("Flexural rupture: Mn = Fu Znet", cp["Mr"], "kip-in", "AISC Manual Eq. 9-8", "Znet = Zx, no bolt holes at the end of the cope")]
+                      Ln("Flexural rupture: Mn = Fu Znet", cp["Mr"], "kip-in", "AISC Manual (16th Ed.) Eq. 9-8", "Znet = Zx, no bolt holes at the end of the cope")]
             c_rup = av(cp["R_rup"], 0.75, 2.00)
         elif dbl:
-            steps += [Ln("Coped web: hc = d - dct - dcb", cp["hc"], "in", "AISC Manual Figure 9-2", f"copes {cope['dc']:g} in. (top) and {cope['dcb']:g} in. (bottom) deep x {cope['c']:g} in. long; e = c + setback = {cp['e']:g} in."),
-                      Ln("Cb", f"{cp['Cb']:.2f}", "", "AISC Manual Eq. 9-21", "[3 + ln(Lb / d)](1 - dct / d), not less than 1.84; Lb = c"),
+            steps += [Ln("Coped web: hc = d - dct - dcb", cp["hc"], "in", "AISC Manual (16th Ed.) Figure 9-2", f"copes {cope['dc']:g} in. (top) and {cope['dcb']:g} in. (bottom) deep x {cope['c']:g} in. long; e = c + setback = {cp['e']:g} in."),
+                      Ln("Cb", f"{cp['Cb']:.2f}", "", "AISC Manual (16th Ed.) Eq. 9-21", "[3 + ln(Lb / d)](1 - dct / d), not less than 1.84; Lb = c"),
                       Ln("Lb d / t^2", f"{cp['lam']:.0f}", "", "AISC 360-22 Sect. F11.2", f"0.08 E / Fy = {0.08 * 29000 / cope['Fy']:.1f}, 1.9 E / Fy = {1.9 * 29000 / cope['Fy']:.0f}"),
                       Ln("Mn of the coped web", cp["Mn"], "kip-in", cp["eq"].split("(")[-1].rstrip(")"), f"Mp = {cp['Mp']:.0f}, My = {cp['My']:.0f} kip-in; {cp['eq'].split(' (')[0]}")]
         else:
-            steps += [Ln("Coped web: hc = d - dc", cp["hc"], "in", "AISC Manual Figure 9-2", f"cope {cope['dc']:g} in. deep x {cope['c']:g} in. long at the top flange; e = c + setback = {cp['e']:g} in."),
-                      Ln("f", f"{cp['f']:.3f}", "", "AISC Manual Eq. 9-20", f"c / d = {cope['c'] / bm['d']:.3f}"),
-                      Ln("k", f"{cp['k']:.2f}", "", "AISC Manual Eq. 9-19", f"c / hc = {cope['c'] / cp['hc']:.3f}; k1 = f k, not less than 1.61 = {cp['k1']:.2f}"),
+            steps += [Ln("Coped web: hc = d - dc", cp["hc"], "in", "AISC Manual (16th Ed.) Figure 9-2", f"cope {cope['dc']:g} in. deep x {cope['c']:g} in. long at the top flange; e = c + setback = {cp['e']:g} in."),
+                      Ln("f", f"{cp['f']:.3f}", "", "AISC Manual (16th Ed.) Eq. 9-20" + ("a" if cope["c"] / bm["d"] <= 1.0 else "b"), f"c / d = {cope['c'] / bm['d']:.3f}"),
+                      Ln("k", f"{cp['k']:.2f}", "", "AISC Manual (16th Ed.) Eq. 9-19" + ("a" if cope["c"] / cp["hc"] <= 1.0 else "b"), f"c / hc = {cope['c'] / cp['hc']:.3f}; k1 = f k, not less than 1.61 = {cp['k1']:.2f}"),
                       Ln("Sc, Zc of the coped section", f"{cp['Sc']:.2f}, {cp['Zc']:.2f}", "in3", "section properties", "bottom flange and web, fillets not counted"),
-                      Ln("lambda = hc / tw", f"{cp['lam']:.1f}", "", "AISC Manual Eq. 9-17", f"lambda_p = 0.475 (k1 E / Fy)^0.5 = {cp['lam_p']:.1f} (Eq. 9-18)"),
+                      Ln("lambda = hc / tw", f"{cp['lam']:.1f}", "", "AISC Manual (16th Ed.) Eq. 9-17", f"lambda_p = 0.475 (k1 E / Fy)^0.5 = {cp['lam_p']:.1f} (Eq. 9-18)"),
                       Ln("Mn of the coped web", cp["Mn"], "kip-in", cp["eq"].split("(")[-1].rstrip(")"), f"Mp = {cp['Mp']:.0f}, My = {cp['My']:.0f} kip-in; {cp['eq'].split(' (')[0]}")]
         if kind == "bottom":
-            steps += [Ln("Coped section flexure, Mn / e", c_fl, "kip", "AISC Manual Eq. 9-9", fac(0.90, 1.67)),
-                      Ln("Coped section flexural rupture, Fu Znet / e", c_rup, "kip", "AISC Manual Eq. 9-8, 9-9", fac(0.75, 2.00))]
+            steps += [Ln("Coped section flexure, Mn / e", c_fl, "kip", "AISC Manual (16th Ed.) Eq. 9-9", fac(0.90, 1.67)),
+                      Ln("Coped section flexural rupture, Fu Znet / e", c_rup, "kip", "AISC Manual (16th Ed.) Eq. 9-8, 9-9", fac(0.75, 2.00))]
         else:
-            steps.append(Ln("Coped web flexure, Mn / e", c_fl, "kip", "AISC Manual Eq. 9-9", fac(0.90, 1.67)))
+            steps.append(Ln("Coped web flexure, Mn / e", c_fl, "kip", "AISC Manual (16th Ed.) Eq. 9-9", fac(0.90, 1.67)))
         steps += [Ln("Coped web shear yielding", c_vy, "kip", "Eq. J4-3", f"Agv = hc tw = {cp['Agv']:.2f} in2; " + fac(1.00, 1.50)),
                   Ln("Coped web shear rupture", c_vr, "kip", "Eq. J4-4", f"Anv = {cp['Anv']:.2f} in2; " + fac(0.75, 2.00))]
         if bs:
             steps.append(Ln("Coped web block shear", c_bs, "kip", "Eq. J4-5, Ubs = 1.0", f"Agv = {bs['Agv']:.2f}, Anv = {bs['Anv']:.2f}, Ant = {bs['Ant']:.3f} in2; Rn = {bs['Rn']:.0f} kip"))
         if kind == "bottom":
-            rows += [Row("Coped beam flexure (tee at the bottom cope)", worst, R, c_fl, "kip", "AISC 360-22 Sect. F9; AISC Manual Part 9", f"cope {cope['dcb']:g} x {cope['c']:g} in., e = {cp['e']:g} in."),
-                     Row("Coped beam flexural rupture", worst, R, c_rup, "kip", "AISC Manual Eq. 9-8", "")]
+            rows += [Row("Coped beam flexure (tee at the bottom cope)", worst, R, c_fl, "kip", "AISC 360-22 Sect. F9; AISC Manual (16th Ed.) Part 9", f"cope {cope['dcb']:g} x {cope['c']:g} in., e = {cp['e']:g} in."),
+                     Row("Coped beam flexural rupture", worst, R, c_rup, "kip", "AISC Manual (16th Ed.) Eq. 9-8", "")]
         else:
-            rows.append(Row("Coped beam web flexure and local buckling", worst, R, c_fl, "kip", "AISC Manual Part 9; AISC 360-22 Sect. F11" if dbl else "AISC Manual Part 9, Eq. 9-9 to 9-20",
+            rows.append(Row("Coped beam web flexure and local buckling", worst, R, c_fl, "kip", "AISC Manual (16th Ed.) Part 9; AISC 360-22 Sect. F11" if dbl else "AISC Manual (16th Ed.) Part 9, Eq. 9-9 to 9-20",
                             f"cope {cope['dc']:g} x {cope['c']:g} in., e = {cp['e']:g} in."))
         rows += [Row("Coped beam web shear yielding", worst, R, c_vy, "kip", "AISC 360-22 Eq. J4-3", ""),
                  Row("Coped beam web shear rupture", worst, R, c_vr, "kip", "AISC 360-22 Eq. J4-4", "")]
@@ -3267,21 +3272,26 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
     Tdim = None if cope else bm.get("T")
     if Tdim:
         steps.append(Ln("Beam T dimension", Tdim, "in", shapes.SOURCE, f"{shapes.normalize(beam)}; plate length between T / 2 = {Tdim / 2:.2f} in. and T"))
-        rows += [Row("Plate length, not less than T / 2", "", Tdim / 2, L, "in", "AISC Manual Part 10", f"l = {L:g} in."),
-                 Row("Plate length, not over T", "", L, Tdim, "in", "AISC Manual Part 10", "fits between the web fillets")]
+        rows += [Row("Plate length, not less than T / 2", "", Tdim / 2, L, "in", "AISC Manual (16th Ed.) Part 10", f"l = {L:g} in."),
+                 Row("Plate length, not over T", "", L, Tdim, "in", "AISC Manual (16th Ed.) Part 10", "fits between the web fillets")]
     if holes == "STD" or n >= 6:
         lim, lim_t = (d / 2 - 1 / 16, "d / 2 - 1/16 in.") if (n >= 6 and holes == "STD") else (d / 2 + 1 / 16, "d / 2 + 1/16 in.")
-        rows.append(Row("Plate or beam web thickness, rotational ductility", "", min(tp, tw), lim, "in", "AISC Manual Table 10-9", f"the thinner of the two; {lim_t}"))
+        rows.append(Row("Plate or beam web thickness, rotational ductility", "", min(tp, tw), lim, "in", "AISC Manual (15th Ed.) Table 10-9", f"the thinner of the two; {lim_t}"))
     info = [("Column", f"{shapes.normalize(column)}, Fy = {col_Fy:g} ksi, Fu = {col_Fu:g} ksi ({col_source.strip()})") if hss_col else
             ("Support", f"{support['name'].strip()}, t = {t:g} in., Fu = {support['Fu']:g} ksi"),
             ("Beam", f"{shapes.normalize(beam)}, tw = {tw:g} in., Fu = {beam_Fu:g} ksi ({beam_source.strip()})"),
             ("Plate", f"{tp:g} in. x {leh + a:g} in. x {L:g} in., Fy = {plate_Fy:g} ksi, Fu = {plate_Fu:g} ksi ({plate_source.strip()})"),
             ("Bolts", f"({n}) {d:g} in. {group}, threads {threads}, at {spacing:g} in.; {'standard holes' if holes == 'STD' else 'horizontal short-slotted holes'} in the plate, standard holes in the beam web"),
             ("Weld", f"{weld:g} in. fillet each side of the plate, full length, E{FEXX:g}XX")]
-    load_lines = [f"{x['case']:<3} {x['P']:>8.2f} kip" + (f"   {x['label']}" if x.get("label") else "") for x in loads]
-    sheet = SimpleSheet(mark, "Single-Plate Shear Connection to an HSS Column" if hss_col else "Single-Plate Shear Connection", "Connection", method, info, load_lines, [(cb.name, cb.source) for cb in combos],
+    if runs:
+        load_lines = [f"V = {abs(r_['R']):>8.2f} kip   {r_['name']}" for r_ in runs]
+        combo_lines = [(f"Combined loads at the {method} level" + (f": {runs_from.strip()}" if (runs_from or "").strip() else ""), "")]
+    else:
+        load_lines = [f"{x['case']:<3} {x['P']:>8.2f} kip" + (f"   {x['label']}" if x.get("label") else "") for x in loads]
+        combo_lines = [(cb.name, cb.source) for cb in combos]
+    sheet = SimpleSheet(mark, "Single-Plate Shear Connection to an HSS Column" if hss_col else "Single-Plate Shear Connection", "Connection", method, info, load_lines, combo_lines,
                         f"Calculation ({worst})", steps, rows,
-                        ["Conventional configuration (AISC Manual Part 10): one vertical row of bolts, a not over 3-1/2 in., horizontal edge distances at least 2 bolt diameters in the plate "
+                        ["Conventional configuration (AISC Manual (16th Ed.) Part 10): one vertical row of bolts, a not over 3-1/2 in., horizontal edge distances at least 2 bolt diameters in the plate "
                          "and in the beam web, bolts snug-tight or pretensioned bearing-type.",
                          ("The beam end reaction is vertical shear only, acting downward on the beam. The beam is coped at the "
                           + {"top": "top flange", "double": "top and bottom flanges", "bottom": "bottom flange only"}[cp["kind"]]
@@ -3290,7 +3300,7 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
                          "The plate passes through slots in both walls of the column and is welded to each wall on both sides of the plate." if thr else
                          ("The plate is welded to the flat of the column wall" + (" (round column: plate fitted to the wall)" if rnd else "") + ", centred on the column.") if hss_col else
                          "The support is stiff enough to take the connection as a conventional single plate (a column flange, or a girder web with framing on both sides or checked separately)."],
-                        ([] if (Tdim or cope) else ["plate length against the beam T dimension (half of T to T, AISC Manual Part 10)"]) + ["axial force or torsion in the beam"] + ([] if not cope else ["an upward end reaction at the cope"]) + (["coped beams"] if not cope else []) + [
+                        ([] if (Tdim or cope) else ["plate length against the beam T dimension (half of T to T, AISC Manual (16th Ed.) Part 10)"]) + ["axial force or torsion in the beam"] + ([] if not cope else ["an upward end reaction at the cope"]) + (["coped beams"] if not cope else []) + [
                          "the column as a member" if hss_col else "the support member, and its web or flange for the beam reaction", "erection and fit-up"])
     sheet.blocks.append(dict(title="Connection Elevation", head="Connection Elevation",
                              picture=("single_plate", dict(n=n, s=spacing, lev=lev, leh=leh, a=a, L=L, tp=tp, weld=weld, column=shapes.normalize(column) if hss_col else support["name"].strip(), beam=shapes.normalize(beam), d=d,
@@ -3309,7 +3319,7 @@ def single_plate_sheet(mark, column, col_Fy, col_Fu, col_source, beam, beam_Fu, 
 def end_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, tp, width, length, plate_Fy, plate_Fu, plate_source, d, group, threads, n, spacing, lev, gage,
                     weld, FEXX, loads, combos, method, support=None):
     """Shear end-plate connection of a wide-flange beam: a plate shop-welded to the beam web and field-bolted to the support with two
-    vertical rows of n bolts, AISC Manual Part 10 as worked limit state by limit state in AISC Design Examples v16.0 Example II.A-11A
+    vertical rows of n bolts, AISC Manual (16th Ed.) Part 10 as worked limit state by limit state in AISC Design Examples v16.0 Example II.A-11A
     (Part B). lev: top of the plate to the first bolts; the edge distance at the bottom is what is left of the length. loads: dict(case, P)
     kips. support: dict(name, t, Fu) for bolt bearing on the support, or None (support by others, listed as not checked)."""
     from . import bolts
@@ -3380,15 +3390,15 @@ def end_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, tp, width, length
              Ln("Plate shear yielding, 0.60 Fy Agv", Vy, "kip", "Eq. J4-3", f"Agv = 2 l tp = {Agv:.2f} in2; " + fac(1.00, 1.50)),
              Ln("Plate shear rupture, 0.60 Fu Anv", Vr, "kip", "Eq. J4-4", f"Anv = 2 (l - n (dh + 1/16)) tp = {Anv:.2f} in2; " + fac(0.75, 2.00)),
              Ln("Plate block shear", Rbs, "kip", "Eq. J4-5, Ubs = 1.0", f"Agv = {Agv_b:.2f}, Anv = {Anv_b:.2f}, Ant = {Ant_b:.3f} in2; Rn = {Rbs_n:.0f} kip"),
-             Ln("Weld length each side of the web", lw, "in", "AISC Manual Part 10", f"lesser of the plate length {length:g} in. and the flat of the web d - 2k = {web_flat:.2f} in., less twice the weld size"),
-             Ln("Beam web to match the welds, tmin = 6.19 D / Fu", t_min, "in", "AISC Manual Eq. 9-3", f"D = {D16:g} sixteenths; tw = {tw:g} in." + ("" if tw >= t_min else f"; weld strength x tw / tmin = {tw / t_min:.3f}")),
+             Ln("Weld length each side of the web", lw, "in", "AISC Manual (16th Ed.) Part 10", f"lesser of the plate length {length:g} in. and the flat of the web d - 2k = {web_flat:.2f} in., less twice the weld size"),
+             Ln("Beam web to match the welds, tmin = 6.19 D / Fu", t_min, "in", "AISC Manual (16th Ed.) Eq. 9-7", f"D = {D16:g} sixteenths; tw = {tw:g} in." + ("" if tw >= t_min else f"; weld strength x tw / tmin = {tw / t_min:.3f}")),
              Ln("Weld, two lines", Rw, "kip", "AISC 360-22 Eq. J2-4", f"2 x 0.60 FEXX x 0.707 w l; Rn = {Rw_n:.1f} kip; " + fac(0.75, 2.00)),
              Ln("Beam web shear yielding", Vweb, "kip", "Eq. J4-3", f"0.60 Fy d tw; " + fac(1.00, 1.50))]
     rows = [Row("Shear transfer at the bolt holes", worst, R, Rb, "kip", "AISC 360-22 Sect. J3.7, J3.11a", f"({2 * n}) {d:g} in. {group}-{threads} in two rows"),
             Row("Plate shear yielding", worst, R, Vy, "kip", "AISC 360-22 Eq. J4-3", ""),
             Row("Plate shear rupture", worst, R, Vr, "kip", "AISC 360-22 Eq. J4-4", ""),
             Row("Plate block shear", worst, R, Rbs, "kip", "AISC 360-22 Eq. J4-5", ""),
-            Row("Weld of the plate to the beam web", worst, R, Rw, "kip", "AISC 360-22 Eq. J2-4; AISC Manual Eq. 9-3", f"{weld:g} in. fillet each side, {lw:.2f} in. long"),
+            Row("Weld of the plate to the beam web", worst, R, Rw, "kip", "AISC 360-22 Eq. J2-4; AISC Manual (16th Ed.) Eq. 9-7", f"{weld:g} in. fillet each side, {lw:.2f} in. long"),
             Row("Beam web shear yielding", worst, R, Vweb, "kip", "AISC 360-22 Eq. J4-3", f"{shapes.normalize(beam)}"),
             Row("Minimum fillet weld size", "", w_min, weld, "in", "AISC 360-22 Table J2.4", "thinner part joined")]
     info = [("Beam", f"{shapes.normalize(beam)}, tw = {tw:g} in., Fy = {beam_Fy:g} ksi, Fu = {beam_Fu:g} ksi ({beam_source.strip()})"),
@@ -3412,7 +3422,7 @@ def end_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, tp, width, length
 
 def seat_sheet(mark, beam, beam_Fy, beam_source, t, length, osl, vleg, angle_Fy, angle_source, attach, loads, combos, method, weld=None, FEXX=None,
                n_bolts=None, d=None, group=None, threads=None):
-    """Unstiffened seated connection: a seat angle under the beam end, AISC Manual Part 10 (15th Ed.) as worked in AISC Design Examples v16.0
+    """Unstiffened seated connection: a seat angle under the beam end, AISC Manual (16th Ed.) Part 10 (15th Ed.) as worked in AISC Design Examples v16.0
     Examples II.A-12A and II.A-13. Beam web local yielding and crippling give the required bearing length (not less than k); the outstanding
     leg is checked in flexure at t + 3/8 in. from the support for the reaction at mid-bearing with a 3/4 in. setback, and in shear. attach:
     "welded" (a vertical fillet at each end of the angle) or "bolted" (n bolts through the vertical leg)."""
@@ -3458,19 +3468,19 @@ def seat_sheet(mark, beam, beam_Fy, beam_source, t, length, osl, vleg, angle_Fy,
     Rf = av(Mn / e, 0.90, 1.67) if e > 1e-9 else None
     Ln = footing_line
     steps = [Ln("Required strength R", R, "kip", worst, ""),
-             Ln("Bearing length for web local yielding", max(N_y, 0.0), "in", "AISC 360-22 Eq. J10-3; AISC Manual Eq. 10-1", f"R / (Fy tw) - 2.5 k with {fac(1.00, 1.50)}; k = {k:g} in."),
-             Ln("Bearing length for web local crippling", max(N_c, 0.0), "in", "AISC 360-22 Eq. J10-5; AISC Manual Eq. 10-2", fac(0.75, 2.00)),
+             Ln("Bearing length for web local yielding", max(N_y, 0.0), "in", "AISC 360-22 Eq. J10-3; AISC Manual (16th Ed.) Eq. 10-1" + ("a" if lrfd else "b"), f"R / (Fy tw) - 2.5 k with {fac(1.00, 1.50)}; k = {k:g} in."),
+             Ln("Bearing length for web local crippling", max(N_c, 0.0), "in", "AISC 360-22 Eq. J10-5; AISC Manual (16th Ed.) Eq. 10-2" + ("a" if lrfd else "b"), fac(0.75, 2.00)),
              Ln("Required bearing length, not less than k", N, "in", "AISC 360-22 Sect. J10.2", f"bearing available on the leg = {osl:g} - {sb:g} = {N_av:g} in."),
              Ln("Web local yielding on the available bearing", Ry, "kip", "Eq. J10-3", f"Fy tw (2.5 k + lb); " + fac(1.00, 1.50)),
              Ln("Web local crippling on the available bearing", Rc, "kip", "Eq. J10-5a" if N_av / dd <= 0.2 else "Eq. J10-5b", f"lb / d = {N_av / dd:.3f}; " + fac(0.75, 2.00)),
-             Ln("e, reaction to the critical section of the leg", max(e, 0.0), "in", "AISC Manual Part 10", f"{sb:g} + lb / 2 - (t + 3/8); t = {t:g} in."),
+             Ln("e, reaction to the critical section of the leg", max(e, 0.0), "in", "AISC Manual (16th Ed.) Part 10", f"{sb:g} + lb / 2 - (t + 3/8); t = {t:g} in."),
              Ln("Leg flexure, Mn = Fy L t^2 / 4", Mn, "kip-in", "AISC 360-22 Eq. F11-1", f"L = {length:g} in.; Mn / e" + (f" = {Mn / e:.1f} kip; " + fac(0.90, 1.67) if e > 1e-9 else ": the reaction is inside the critical section")),
              Ln("Leg shear yielding, 0.60 Fy L t", Rv, "kip", "Eq. J4-3", fac(1.00, 1.50))]
     rows = [Row("Bearing length on the seat", worst, N, N_av, "in", "AISC 360-22 Sect. J10.2, J10.3", "required against available"),
             Row("Beam web local yielding", worst, R, Ry, "kip", "AISC 360-22 Eq. J10-3", shapes.normalize(beam)),
             Row("Beam web local crippling", worst, R, Rc, "kip", "AISC 360-22 Eq. J10-5", "")]
     if Rf is not None:
-        rows.append(Row("Seat angle leg, flexure", worst, R, Rf, "kip", "AISC Manual Part 10; AISC 360-22 Sect. F11", f"e = {e:.3f} in."))
+        rows.append(Row("Seat angle leg, flexure", worst, R, Rf, "kip", "AISC Manual (16th Ed.) Part 10; AISC 360-22 Sect. F11", f"e = {e:.3f} in."))
     rows.append(Row("Seat angle leg, shear yielding", worst, R, Rv, "kip", "AISC 360-22 Eq. J4-3", ""))
     if attach == "welded":
         if not weld or not FEXX:
@@ -3478,8 +3488,8 @@ def seat_sheet(mark, beam, beam_Fy, beam_source, t, length, osl, vleg, angle_Fy,
         ew = sb + N_av / 2
         Rw_n = 2 * 0.60 * FEXX * 0.7071 * weld * vleg ** 2 / math.sqrt(vleg ** 2 + 20.25 * ew ** 2)
         Rw = av(Rw_n, 0.75, 2.00)
-        steps.append(Ln("Welds, one each end of the angle", Rw, "kip", "AISC Manual Part 10, Table 10-6", f"2 x 0.60 FEXX x 0.707 w L^2 / (L^2 + 20.25 e^2)^0.5; L = {vleg:g} in., e = {ew:g} in.; " + fac(0.75, 2.00)))
-        rows.append(Row("Welds of the seat to the support", worst, R, Rw, "kip", "AISC Manual Part 10", f"{weld:g} in. fillets, {vleg:g} in. long, each end"))
+        steps.append(Ln("Welds, one each end of the angle", Rw, "kip", "AISC Manual (16th Ed.) Part 10, Table 10-6", f"2 x 0.60 FEXX x 0.707 w L^2 / (L^2 + 20.25 e^2)^0.5; L = {vleg:g} in., e = {ew:g} in.; " + fac(0.75, 2.00)))
+        rows.append(Row("Welds of the seat to the support", worst, R, Rw, "kip", "AISC Manual (16th Ed.) Part 10", f"{weld:g} in. fillets, {vleg:g} in. long, each end"))
         att = f"{weld:g} in. fillet each end of the angle, E{FEXX:g}XX"
     else:
         if not n_bolts or not d or not group or not threads:
@@ -3498,7 +3508,7 @@ def seat_sheet(mark, beam, beam_Fy, beam_source, t, length, osl, vleg, angle_Fy,
     load_lines = [f"{x_['case']:<3} {x_['P']:>8.2f} kip" + (f"   {x_['label']}" if x_.get("label") else "") for x_ in loads]
     sheet = SimpleSheet(mark, "Unstiffened Seated Connection", "Connection", method, info, load_lines, [(cb.name, cb.source) for cb in combos], f"Calculation ({worst})", steps, rows,
                         ["The seat carries the whole beam reaction; a top or side angle holds the beam in place and is not counted for strength.",
-                         "Beam setback 1/2 in. nominal, taken as 3/4 in. in the calculation for underrun in beam length (AISC Manual Part 10).",
+                         "Beam setback 1/2 in. nominal, taken as 3/4 in. in the calculation for underrun in beam length (AISC Manual (16th Ed.) Part 10).",
                          "Any stiffener under the seat is not counted."],
                         ["the top angle and its fasteners", "bolts between the beam flange and the seat", ("bearing and tearout at the bolts; " if attach == "bolted" else "") + "the support member",
                          "horizontal force at the seat"])
@@ -4048,8 +4058,8 @@ def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
     wmin = welds.min_fillet_size(min(t, tp))
     Ln = footing_line
     steps = [Ln("Bolt tension without prying, T", T, "kip", "AISC Design Guide 24 (2nd Ed.) Example 6.1", f"{wt['name']}: 2T = (M - P B / 2) / (B / 2 + s / 2); M = {wt['M'] / 12:.1f} kip-ft, P = {wt['P']:.1f} kip, B = {B:g} in., s = {s:g} in."),
-             Ln("Beam flange: thickness for no prying, tnp", t_f, "in", "AISC Manual Eq. 9-34", f"b = (g - tw) / 2 = {bf_:.3g} in., b' = {bf1:.3g} in., p = {pf:.3g} in.; " + fac(0.90, 1.67)),
-             Ln("Cap plate: thickness for no prying, tnp", t_c, "in", "AISC Manual Eq. 9-34", f"b = (s - B) / 2 = {bc_:.3g} in., b' = {bc1:.3g} in., p = {pc:.3g} in.; " + fac(0.90, 1.67)),
+             Ln("Beam flange: thickness for no prying, tnp", t_f, "in", "AISC Manual (16th Ed.) Eq. 9-74", f"b = (g - tw) / 2 = {bf_:.3g} in., b' = {bf1:.3g} in., p = {pf:.3g} in.; " + fac(0.90, 1.67)),
+             Ln("Cap plate: thickness for no prying, tnp", t_c, "in", "AISC Manual (16th Ed.) Eq. 9-74", f"b = (s - B) / 2 = {bc_:.3g} in., b' = {bc1:.3g} in., p = {pc:.3g} in.; " + fac(0.90, 1.67)),
              Ln("Bolt available tension", rt, "kip", "AISC 360-22 Sect. J3.7, Table J3.2", f"{d:g} in. {group}"),
              Ln("Compression at the column wall, C = 2T + P", C, "kip", "AISC Design Guide 24 Example 6.1", wc["name"]),
              Ln("Beam web local yielding", Ry, "kip", "AISC 360-22 Eq. J10-2", f"lb = 5 tp + t = {lb:.3g} in., k = {k:g} in.; " + fac(1.00, 1.50)),
@@ -4059,8 +4069,8 @@ def cap_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
              Ln("Weld of the cap plate to the HSS, load per inch", per_in, "kip/in", "AISC Design Guide 24 Example 6.1", wtxt),
              Ln("Fillet weld strength per inch", Rw, "kip/in", "AISC 360-22 Eq. J2-4", f"0.60 FEXX x 0.707 w; " + fac(0.75, 2.00))]
     rows = [Row("Bolt tension", wt["name"], T, rt, "kip", "AISC 360-22 Sect. J3.7", f"({4}) {d:g} in. {group}, two in tension"),
-            Row("Beam flange thickness, no prying", wt["name"], t_f, tf, "in", "AISC Manual Eq. 9-34", "required against the flange thickness"),
-            Row("Cap plate thickness, no prying", wt["name"], t_c, tp, "in", "AISC Manual Eq. 9-34", "required against the plate thickness"),
+            Row("Beam flange thickness, no prying", wt["name"], t_f, tf, "in", "AISC Manual (16th Ed.) Eq. 9-74", "required against the flange thickness"),
+            Row("Cap plate thickness, no prying", wt["name"], t_c, tp, "in", "AISC Manual (16th Ed.) Eq. 9-74", "required against the plate thickness"),
             Row("Beam web local yielding", wc["name"], C, Ry, "kip", "AISC 360-22 Eq. J10-2", shapes.normalize(beam)),
             Row("Beam web local crippling", wc["name"], C, Rc, "kip", "AISC 360-22 Eq. J10-4", ""),
             Row("HSS wall local yielding", wc["name"], C, Rwy, "kip", "AISC 360-22 Eq. J10-2", shapes.normalize(column)),
@@ -4141,28 +4151,28 @@ def stiffened_seat_sheet(mark, beam, beam_Fy, beam_source, W, L, ts, stiff_Fy, s
     Wy, Wc = max(0.0, (R - R1) / R2) + sb + under, max(0.0, (R - R5) / R6) + sb + under
     D = weld * 16.0
     Rw0, qa, f = stiffened_seat_weld(W, L, D, FEXX, method)
-    tmin = (2.0 if both_sides else 1.0) * 3.09 * D / Fu_sup * FEXX / 70.0     # AISC Manual Eq. 9-2 (70 ksi), scaled for the electrode
+    tmin = (2.0 if both_sides else 1.0) * 3.09 * D / Fu_sup * FEXX / 70.0     # AISC Manual (16th Ed.) Eq. 9-6 (70 ksi), scaled for the electrode
     red = min(1.0, t_sup / tmin)
     Rw = Rw0 * red
     ts_min = max(tw * beam_Fy / stiff_Fy, (1.5 if stiff_Fy >= 50 else 2.0) * weld)
     Ln = footing_line
     steps = [Ln("Required strength R", R, "kip", worst, ""),
-             Ln("Bearing length lb = W - setback - underrun", lb, "in", "AISC Manual Part 10", f"W = {W:g} in.; setback 1/2 in. and underrun 1/4 in."),
-             Ln("Web local yielding constants R1, R2", R1, "kip", "AISC Manual Table 9-4; AISC 360-22 Eq. J10-3", f"R2 = {R2:.3g} kip/in.; " + fac(1.00, 1.50)),
-             Ln("Web local crippling constants R5, R6", R5, "kip", "AISC Manual Table 9-4; AISC 360-22 " + ceq, f"R6 = {R6:.3g} kip/in.; " + fac(0.75, 2.00)),
-             Ln("Least stiffener width for web local yielding", Wy, "in", "AISC Manual Eq. 9-60", "(R - R1) / R2 + setback + underrun"),
-             Ln("Least stiffener width for web local crippling", Wc, "in", "AISC Manual Eq. 9-63", "(R - R5) / R6 + setback + underrun"),
-             Ln("Weld stress per kip, (fv^2 + fb^2)^0.5", f, "kip/in", "AISC Manual Part 10, elastic method",
+             Ln("Bearing length lb = W - setback - underrun", lb, "in", "AISC Manual (15th Ed.) Part 10", f"W = {W:g} in.; setback 1/2 in. and underrun 1/4 in."),
+             Ln("Web local yielding constants R1, R2", R1, "kip", "AISC Manual (16th Ed.) Table 9-4; AISC 360-22 Eq. J10-3", f"R2 = {R2:.3g} kip/in.; " + fac(1.00, 1.50)),
+             Ln("Web local crippling constants R5, R6", R5, "kip", "AISC Manual (16th Ed.) Table 9-4; AISC 360-22 " + ceq, f"R6 = {R6:.3g} kip/in.; " + fac(0.75, 2.00)),
+             Ln("Least stiffener width for web local yielding", Wy, "in", "AISC Manual (16th Ed.) Eq. 9-60" + ("a" if lrfd else "b"), "(R - R1) / R2 + setback + underrun"),
+             Ln("Least stiffener width for web local crippling", Wc, "in", "AISC Manual (16th Ed.) Eq. 9-63" + ("a" if lrfd else "b"), "(R - R5) / R6 + setback + underrun"),
+             Ln("Weld stress per kip, (fv^2 + fb^2)^0.5", f, "kip/in", "AISC Manual (15th Ed.) Part 10, elastic method",
                 f"fv = 1 / (2.4 L), fb = 0.8 W ybar / I with ybar = L / 2.4, I = 0.25 L^3; L = {L:g} in., load at 0.8 W = {0.8 * W:.3g} in."),
              Ln("Weld available strength per inch", qa, "kip/in", "AISC 360-22 Eq. J2-4", f"{weld:g} in. fillet, FEXX = {FEXX:g} ksi; " + fac(0.75, 2.00)),
-             Ln("Least support thickness for the weld", tmin, "in", "AISC Manual Eq. 9-2", ("welds on both faces: twice " if both_sides else "")
+             Ln("Least support thickness for the weld", tmin, "in", "AISC Manual (16th Ed.) Eq. 9-6", ("welds on both faces: twice " if both_sides else "")
                 + f"3.09 D / Fu; support {support} t = {t_sup:g} in., Fu = {Fu_sup:g} ksi" + (f"; weld strength x {red:.3f}" if red < 1 else "")),
-             Ln("Least stiffener thickness", ts_min, "in", "AISC Manual Part 10", f"larger of tw Fy,beam / Fy,stiffener and {'1.5' if stiff_Fy >= 50 else '2'} w")]
+             Ln("Least stiffener thickness", ts_min, "in", "AISC Manual (15th Ed.) Part 10", f"larger of tw Fy,beam / Fy,stiffener and {'1.5' if stiff_Fy >= 50 else '2'} w")]
     rows = [Row("Beam web local yielding", worst, R, Ry, "kip", "AISC 360-22 Eq. J10-3", f"lb = {lb:.3g} in."),
             Row("Beam web local crippling", worst, R, Rc, "kip", "AISC 360-22 " + ceq, f"lb / d = {lb / dd:.3f}"),
-            Row("Stiffener-to-support welds", worst, R, Rw, "kip", "AISC Manual Part 10; AISC 360-22 Eq. J2-4", f"{weld:g} in. T-shaped weld, L = {L:g} in., W = {W:g} in."),
-            Row("Stiffener thickness", "", ts_min, ts, "in", "AISC Manual Part 10", "required against provided"),
-            Row("Seat plate thickness", "", 0.375, tseat, "in", "AISC Manual Part 10", "3/8 in. minimum")]
+            Row("Stiffener-to-support welds", worst, R, Rw, "kip", "AISC Manual (15th Ed.) Part 10; AISC 360-22 Eq. J2-4", f"{weld:g} in. T-shaped weld, L = {L:g} in., W = {W:g} in."),
+            Row("Stiffener thickness", "", ts_min, ts, "in", "AISC Manual (15th Ed.) Part 10", "required against provided"),
+            Row("Seat plate thickness", "", 0.375, tseat, "in", "AISC Manual (15th Ed.) Part 10", "3/8 in. minimum")]
     info = [("Beam", f"{shapes.normalize(beam)}, d = {dd:g} in., tw = {tw:g} in., tf = {tf:g} in., kdes = {k:g} in., Fy = {beam_Fy:g} ksi ({beam_source.strip()})"),
             ("Stiffener", f"PL {ts:g} x {W:g} x {L:g} in., Fy = {stiff_Fy:g} ksi ({stiff_source.strip()}); seat plate {tseat:g} in. thick"),
             ("Welds", f"{weld:g} in. fillets, FEXX = {FEXX:g} ksi: both sides of the stiffener for its length, and the seat plate 0.2 L = {0.2 * L:.3g} in. each side"),
@@ -4246,6 +4256,63 @@ def flange_plate_bolted(M_bolt, M_plate, beam, beam_Fy, beam_Fu, bp, tp, Fy, Fu,
     return out
 
 
+def flange_plate_welded(M_weld, M_plate, beam, beam_Fy, beam_Fu, bp, tp, Fy, Fu, w, Lw, end_weld, a1, method, FEXX=70.0, arm=None):
+    """A flange plate fillet welded to a wide-flange beam flange: a fillet of leg w along both long edges for a length Lw each (along the plate
+    edges when the plate is narrower than the flange, along the flange tips when it is wider), and, when end_weld, a transverse fillet across
+    the end of the narrower part. M_weld and M_plate are the required moments for the weld (lever arm d) and for the plate (lever arm d + tp,
+    or arm when given: the distance between the plate centrelines where the top and bottom plates differ),
+    kip-in. a1: column face to the start of the welds (the unbraced length of the compression plate). Returns dict (kips) and the values used."""
+    from . import welds as _welds
+    lrfd = method == "LRFD"
+    av = lambda Rn, phi, om: phi * Rn if lrfd else Rn / om
+    bm = shapes.get(beam)
+    dd, bf, tf = bm["d"], bm["bf"], bm["tf"]
+    if not (w > 0 and Lw > 0):
+        raise WorksheetError("the flange plate weld to the beam flange needs its size and its length along each edge")
+    narrow = bp <= bf                                                       # the weld lines run along the edges of the narrower part
+    wl = min(bp, bf)                                                        # distance between the two weld lines, Table D3.1 Case 4 "w"
+    t_edge = tp if narrow else tf                                           # the part whose edge the longitudinal fillets lie along
+    if end_weld and not narrow:
+        raise WorksheetError("a transverse weld is taken across the end of a flange plate narrower than the beam flange; with a plate wider than "
+                             "the flange the flange end is at the column face, so leave the transverse weld out")
+    wmin = _welds.min_fillet_size(min(tp, tf))
+    wmax = t_edge if t_edge < 0.25 else t_edge - 1.0 / 16.0                 # AISC 360-22 Sect. J2.2b(b)
+    if Lw > 100 * w:
+        raise WorksheetError(f"the flange plate welds are over 100 times the weld size long ({Lw:g} in.); the length reduction of AISC 360-22 Sect. J2.2b is not on this sheet")
+    if Lw < wl:
+        raise WorksheetError(f"the longitudinal welds ({Lw:g} in.) are shorter than the distance between them ({wl:g} in.); AISC 360-22 Table D3.1 Case 4 needs l at least w")
+    Pw, Pp = M_weld / dd, M_plate / (arm or (dd + tp))
+    q = 0.60 * FEXX * 0.7071 * w                                            # kips per inch, Eq. J2-4 with kds = 1.0
+    Rnwl = q * 2 * Lw
+    Rnwt = q * wl if end_weld else 0.0                                      # transverse weld at kds = 1.0, as Eq. J2-6 takes it
+    if end_weld:
+        Rnw_a, Rnw_b = Rnwl + Rnwt, 0.85 * Rnwl + 1.5 * Rnwt                # AISC 360-22 Sect. J2.4(a) with kds = 1.0 (User Note); Eq. J2-6
+        Rn_w = max(Rnw_a, Rnw_b)
+    else:
+        Rnw_a = Rnw_b = None
+        Rn_w = Rnwl
+    R_w = av(Rn_w, 0.75, 2.00)
+    # base metal along the two longitudinal weld lines (the transverse weld is not counted on), AISC 360-22 Sect. J2.4(a), J4.2
+    bm_plate = min(av(0.60 * Fy * 2 * Lw * tp, 1.00, 1.50), av(0.60 * Fu * 2 * Lw * tp, 0.75, 2.00))
+    bm_beam = min(av(0.60 * beam_Fy * 2 * Lw * tf, 1.00, 1.50), av(0.60 * beam_Fu * 2 * Lw * tf, 0.75, 2.00))
+    Ag = bp * tp
+    R_ty = av(Fy * Ag, 0.90, 1.67)
+    l_ = Lw
+    U = 1.0 if l_ >= 2 * wl else (0.87 if l_ >= 1.5 * wl else 0.75)        # Table D3.1 Case 4 (transverse weld not counted on)
+    R_tr = av(Fu * U * Ag, 0.75, 2.00)
+    Lc = 0.65 * a1
+    r_ = tp / math.sqrt(12.0)
+    slend = Lc / r_
+    if slend <= 25:
+        Pn, comp_ref = Fy * Ag, "AISC 360-22 Eq. J4-6"
+    else:
+        Fe = math.pi ** 2 * 29000.0 / slend ** 2
+        Fcr = (0.658 ** (Fy / Fe)) * Fy if Fy / Fe <= 2.25 else 0.877 * Fe
+        Pn, comp_ref = Fcr * Ag, "AISC 360-22 Sect. J4.4, Chapter E (Eq. E3-2, E3-3)"
+    return dict(Pw=Pw, Pp=Pp, q=q, Rnwl=Rnwl, Rnwt=Rnwt, Rnw_a=Rnw_a, Rnw_b=Rnw_b, R_w=R_w, bm_plate=bm_plate, bm_beam=bm_beam, Ag=Ag, R_ty=R_ty,
+                U=U, R_tr=R_tr, Lc_r=slend, R_c=av(Pn, 0.90, 1.67), comp_ref=comp_ref, narrow=narrow, wl=wl, wmin=wmin, wmax=wmax, t_edge=t_edge)
+
+
 def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_source, loads, combos, method, face="B", plate=None, runs=None, runs_from=""):
     """Wide-flange beam framing into the face of a square or rectangular HSS column with a moment connection: the flanges welded directly to
     the face, or flange plates welded to the face (plate = dict(bp, tp, Fy, source)). AISC Design Guide 24 (2nd Ed.) Sect. 6.4 as worked in
@@ -4320,13 +4387,13 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
              Ln("Local yielding of the HSS side walls", R_sw, "kip", "AISC 360-22 Eq. J10-2, two walls", f"2 Fy t (5 k + lb), k = 1.5 t, lb = tb; " + fac(1.00, 1.50)),
              Ln("Column utilization at the joint, U", g0["U"], "", "AISC 360-22 Eq. K1-6", f"P / (Fc A) + M / (Fc S); P = {g0['P']:.1f} kip, M = {g0['Mc'] / 12:.1f} kip-ft, Fc = {Fc:g} ksi, A = {A:g} in2, S = {S:g} in3"),
              Ln("Chord-stress factor, Qf", g0["Qf"], "", "AISC 360-22 Eq. K1-4", f"1.3 - 0.4 U / beta, not under 0.4 and not over 1.0; beta = Bb / B = {beta:.3g}"),
-             Ln("Plastification of the connecting face", g0["cap"]["yl"], "kip", "AISC Manual Eq. 9-44", f"a = b = (B - Bb) / 2 = {a_:.3g} in., l = tb, w = B; times Qf; " + fac(1.00, 1.50)),
+             Ln("Plastification of the connecting face", g0["cap"]["yl"], "kip", "AISC Manual (16th Ed.) Eq. 9-44", f"a = b = (B - Bb) / 2 = {a_:.3g} in., l = tb, w = B; times Qf; " + fac(1.00, 1.50)),
              Ln("Effective punching width, ceff", ceff, "in", "AISC 360-22 Eq. K1-2", f"(10 / (B / t)) Bb, not over Bb"),
-             Ln("Punching shear of the connecting face", R_ps, "kip", "AISC Manual Eq. 9-43", "0.6 Fy t (2 ceff + 2 tb); " + fac(1.00, 1.50)),
+             Ln("Punching shear of the connecting face", R_ps, "kip", "AISC Manual (16th Ed.) Eq. 9-43", "0.6 Fy t (2 ceff + 2 tb); " + fac(1.00, 1.50)),
              Ln("HSS wall local crippling", gov["cr"]["cap"]["cr"], "kip", "AISC Design Guide 24 Eq. 2-19", f"1.6 t^2 (1 + 3 lb / H) (E Fy)^0.5 Qf, H = {H:g} in.; " + fac(0.75, 2.00)),
              Ln("Available moment of the connection", low * arm / 12.0, "kip-ft", "AISC Design Guide 24 Example 6.3", f"the least flange force strength x the lever arm, in {g0['name']}")]
     names = dict(fl="Local yielding of the " + what, sw="HSS side wall local yielding", yl="Plastification of the HSS face", ps="Punching shear of the HSS face", cr="HSS wall local crippling")
-    refs = dict(fl="AISC 360-22 Eq. K1-1, J4-1", sw="AISC 360-22 Eq. J10-2", yl="AISC Manual Eq. 9-44; AISC 360-22 Eq. K1-4", ps="AISC Manual Eq. 9-43", cr="AISC Design Guide 24 Eq. 2-19")
+    refs = dict(fl="AISC 360-22 Eq. K1-1, J4-1", sw="AISC 360-22 Eq. J10-2", yl="AISC Manual (16th Ed.) Eq. 9-44; AISC 360-22 Eq. K1-4", ps="AISC Manual (16th Ed.) Eq. 9-43", cr="AISC Design Guide 24 Eq. 2-19")
     rows = [Row(names[k], gov[k]["name"], gov[k]["Ff"], gov[k]["cap"][k], "kip", refs[k], f"Qf = {gov[k]['Qf']:.3g}" if k in ("yl", "cr") else "") for k in ("fl", "sw", "yl", "ps", "cr")]
     fp = None
     if plate and plate.get("d"):
@@ -4351,19 +4418,61 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
         if fp.get("R_w"):
             rows.append(Row("Fillet welds, flange plate to the HSS face", nm_, fp["Pp"], fp["R_w"], "kip", "AISC 360-22 Eq. J2-4, J2-5",
                             f"{plate['weld']:g} in. both sides of the plate, kds = 1.5"))
-        steps += [Ln("Flange force on the bolts, M / d", fp["Pb"], "kip", "AISC Manual Eq. 11-1", f"{nm_}; d = {dd:g} in."),
-                  Ln("Flange force in the plate, M / (d + tp)", fp["Pp"], "kip", "AISC Manual Eq. 11-1", f"d + tp = {dd + tb:.3g} in."),
+        steps += [Ln("Flange force on the bolts, M / d", fp["Pb"], "kip", "AISC Manual (16th Ed.) Eq. 11-1", f"{nm_}; d = {dd:g} in."),
+                  Ln("Flange force in the plate, M / (d + tp)", fp["Pp"], "kip", "AISC Manual (16th Ed.) Eq. 11-1", f"d + tp = {dd + tb:.3g} in."),
                   Ln("Each bolt: least of shear, bearing and tearout", min(fp["per"]), "kip", "AISC 360-22 Eq. J3-1, J3-6a, J3-6c",
                      f"bolt shear alone {fp['rv']:.3g} kip; standard holes {fp['dh']:.4g} in.; deformation at service load considered"),
                   Ln("Net area of the flange plate", fp["An"], "in2", "AISC 360-22 Sect. B4.3b", "two holes, each the hole + 1/16 in."),
                   Ln("Compression plate slenderness, K L / r", fp["Lc_r"], "", "AISC 360-22 Sect. J4.4",
                      f"K = 0.65; L = the larger of the bolt spacing and the face to the first bolt ({plate['a1']:g} in.); r = tp / 12^0.5")]
 
+    fw = None
+    if plate and plate.get("bw"):
+        if plate.get("d"):
+            raise WorksheetError(f"{mark}: the flange plates are either bolted or welded to the beam flange; give the bolts or the weld, not both")
+        gM = max(cases, key=lambda c_: c_["M"])
+        try:
+            fw = flange_plate_welded(gM["M"], gM["M"], beam, beam_Fy, plate["beam_Fu"], Bb, tb, Fyb, plate["Fu"], plate["bw"], plate["Lw"],
+                                     bool(plate.get("end_weld")), plate["wa1"], method, plate.get("FEXX") or 70.0)
+        except WorksheetError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        nm_ = gM["name"]
+        wtxt = f"{plate['bw']:g} in. fillets, 2 x {plate['Lw']:g} in." + (f" + {fw['wl']:g} in. across the end" if plate.get("end_weld") else "")
+        rows += [Row("Fillet welds, flange plate to beam flange", nm_, fw["Pw"], fw["R_w"], "kip", "AISC 360-22 Eq. J2-4" + ("; Sect. J2.4(b), Eq. J2-6" if plate.get("end_weld") else ""), wtxt),
+                 Row("Flange plate base metal at the welds", nm_, fw["Pw"], fw["bm_plate"], "kip", "AISC 360-22 Eq. J4-3, J4-4", "two weld lines"),
+                 Row("Beam flange base metal at the welds", nm_, fw["Pw"], fw["bm_beam"], "kip", "AISC 360-22 Eq. J4-3, J4-4", "two weld lines"),
+                 Row("Flange plate tensile yielding", nm_, fw["Pp"], fw["R_ty"], "kip", "AISC 360-22 Eq. J4-1"),
+                 Row("Flange plate tensile rupture", nm_, fw["Pp"], fw["R_tr"], "kip", "AISC 360-22 Eq. J4-2; Table D3.1 Case 4", f"U = {fw['U']:g}"),
+                 Row("Compression flange plate", nm_, fw["Pp"], fw["R_c"], "kip", fw["comp_ref"], f"Lc / r = {fw['Lc_r']:.3g}"),
+                 Row("Weld to beam flange, minimum size", "", fw["wmin"], plate["bw"], "in", "AISC 360-22 Table J2.4", f"thinner part {min(tb, bm['tf']):g} in."),
+                 Row("Weld to beam flange, maximum size at the edge", "", plate["bw"], fw["wmax"], "in", "AISC 360-22 Sect. J2.2b(b)",
+                     f"along the {'plate' if fw['narrow'] else 'beam flange'} edge, t = {fw['t_edge']:g} in.")]
+        if plate.get("weld"):
+            Rh = av(0.60 * (plate.get("FEXX") or 70.0) * 0.7071 * plate["weld"] * 1.5 * Bb * 2, 0.75, 2.00)
+            fw["R_hss_w"] = Rh
+            rows.append(Row("Fillet welds, flange plate to the HSS face", nm_, fw["Pp"], Rh, "kip", "AISC 360-22 Eq. J2-4, J2-5",
+                            f"{plate['weld']:g} in. both sides of the plate, kds = 1.5"))
+        steps += [Ln("Flange force on the welds, M / d", fw["Pw"], "kip", "AISC Manual (16th Ed.) Eq. 11-1", f"{nm_}; d = {dd:g} in."),
+                  Ln("Flange force in the plate, M / (d + tp)", fw["Pp"], "kip", "AISC Manual (16th Ed.) Eq. 11-1", f"d + tp = {dd + tb:.3g} in."),
+                  Ln("Fillet weld strength per inch, kds = 1.0", fw["q"], "kip/in", "AISC 360-22 Eq. J2-4", f"0.60 FEXX (0.707 w), w = {plate['bw']:g} in., FEXX = {plate.get('FEXX') or 70.0:g} ksi; nominal"),
+                  Ln("Longitudinal welds, Rnwl", fw["Rnwl"], "kip", "AISC 360-22 Eq. J2-4", f"two lines of {plate['Lw']:g} in.; nominal")]
+        if plate.get("end_weld"):
+            steps += [Ln("Transverse weld, Rnwt (kds = 1.0)", fw["Rnwt"], "kip", "AISC 360-22 Eq. J2-4", f"across {fw['wl']:g} in.; nominal"),
+                      Ln("Weld group, larger of Rnwl + Rnwt and 0.85 Rnwl + 1.5 Rnwt", max(fw["Rnw_a"], fw["Rnw_b"]), "kip", "AISC 360-22 Sect. J2.4(a), (b); Eq. J2-6",
+                         f"{fw['Rnw_a']:.1f} and {fw['Rnw_b']:.1f} kip; nominal")]
+        steps += [Ln("Shear lag factor, U", fw["U"], "", "AISC 360-22 Table D3.1 Case 4", f"l = {plate['Lw']:g} in., w = {fw['wl']:g} in. between the weld lines; the transverse weld is not counted on"),
+                  Ln("Compression plate slenderness, K L / r", fw["Lc_r"], "", "AISC 360-22 Sect. J4.4",
+                     f"K = 0.65; L = column face to the start of the welds, {plate['wa1']:g} in.; r = tp / 12^0.5")]
+
     info = [("Beam", f"{shapes.normalize(beam)}, d = {dd:g} in., bf = {bm['bf']:g} in., tf = {bm['tf']:g} in., Fy = {beam_Fy:g} ksi ({beam_source.strip()})"),
             ("Column", f"{shapes.normalize(column)}, connecting face {B:g} in. wide, side walls {H:g} in., t = {t:g} in., A = {A:g} in2, S = {S:g} in3, Fy = {col_Fy:g} ksi ({col_source.strip()})"),
             ("Flanges", (f"flange plates {plate['bp']:g} x {plate['tp']:g} in., Fy = {plate['Fy']:g} ksi ({plate['source'].strip()}), welded to the HSS face, on the outside of each beam flange"
                          if plate else "beam flanges welded directly to the HSS face")),
             ("Flat of Face", f"{flat:.3g} in. (B - 4.5 t nominal); {what} width {Bb:g} in."),]
+    if fw:
+        info.append(("Flange Welds", f"{plate['bw']:g} in. fillets to the beam flange along both {'plate' if fw['narrow'] else 'flange'} edges, {plate['Lw']:g} in. each"
+                                     + (", and across the end" if plate.get("end_weld") else "") + f"; column face to the start of the welds {plate['wa1']:g} in.; "
+                                     f"plate Fu = {plate['Fu']:g} ksi, beam Fu = {plate['beam_Fu']:g} ksi, E{(plate.get('FEXX') or 70.0):g}XX"))
     if fp:
         info.append(("Flange Bolts", f"{2 * int(plate['n'])} - {plate['d']:g} in. {plate['group']}-{plate['threads']} in each plate, two rows of {int(plate['n'])}, "
                                      f"gage {plate['g']:g} in., spacing {plate['s']:g} in.; plate end to last bolt {plate['lev_p']:g} in., beam end to first bolt "
@@ -4380,16 +4489,17 @@ def beam_hss_moment_sheet(mark, beam, beam_Fy, beam_source, column, col_Fy, col_
                          "Each flange force acts on the HSS face as a transverse plate. The " + what + " is welded to the flat of the face with a weld that develops it.",
                          "The chord-stress factor Qf is applied for every combination, with the column axial load and moment at the joint as entered.",
                          "HSS wall local crippling is taken for one wall (AISC Design Guide 24 Example 6.3)."],
-                        ([] if (fp and fp.get("R_w")) else ["the weld of the " + what + " to the HSS face"])
+                        ([] if ((fp and fp.get("R_w")) or (fw and fw.get("R_hss_w"))) else ["the weld of the " + what + " to the HSS face"])
                         + ["the web (shear) connection", "panel shear in the HSS side walls where the moments on opposite faces do not balance"]
                         + ((["the flange plate in tension and compression away from the face, and its bolts or welds to the beam flange", "the beam flange at the bolt holes"]
-                            if not fp else ["slip-critical bolts (the bolts are taken as bearing type)"]) if plate else [])
+                            if not (fp or fw) else (["slip-critical bolts (the bolts are taken as bearing type)"] if fp else [])) if plate else [])
                         + ["the beam and the column themselves"])
-    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("beam_hss_moment", dict(B=B, H=H, t=t, Bb=Bb, tb=tb, d=dd, bf=bm["bf"], tf=bm["tf"], a=a_, plate=bool(plate),
+    sheet.blocks.append(dict(title="Connection", head="Connection", picture=("beam_hss_moment", dict(B=B, H=H, t=t, Bb=Bb, tb=tb, d=dd, bf=bm["bf"], tf=bm["tf"], tw=bm["tw"], a=a_, plate=bool(plate),
                                                                                                     bolts=(dict(n=int(plate["n"]), s=plate["s"], g=plate["g"], lev_p=plate["lev_p"], a1=plate["a1"]) if fp else None),
+                                                                                                    welds=(dict(w=plate["bw"], Lw=plate["Lw"], a1=plate["wa1"], end=bool(plate.get("end_weld"))) if fw else None),
                                                                                                     beam=shapes.normalize(beam), column=shapes.normalize(column)))))
     sheet.conn = dict(Be=Be, R_fl=R_fl, R_sw=R_sw, ceff=ceff, R_ps=R_ps, a=a_, beta=beta, arm=arm, flat=flat, cases=cases, gov={k: v["name"] for k, v in gov.items()},
-                      M_avail=low * arm / 12.0, yl=g0["cap"]["yl"], cr=gov["cr"]["cap"]["cr"], Qf=g0["Qf"], U=g0["U"], fp=fp)
+                      M_avail=low * arm / 12.0, yl=g0["cap"]["yl"], cr=gov["cr"]["cap"]["cr"], Qf=g0["Qf"], U=g0["U"], fp=fp, fw=fw)
     return sheet
 
 
@@ -5237,7 +5347,7 @@ def shear_lug_sheet(mark, bsl, tsl, hsl, t_grout, lug_Fy, lug_Fu, lug_source, we
     rows += [Row("Lug flexural yielding", gm["cb"], gm["M"], My_c, "kip-in", "AISC 360-22 Sect. J4.5", f"M = V e, e = {e:g} in."),
              Row("Lug flexural rupture", gm["cb"], gm["M"], Mr_c, "kip-in", "AISC 360-22 Sect. J4.5", "")]
     gi = pick(res, "inter")
-    rows.append(Row("Lug flexure and shear (Manual Eq. 9-1)", gi["cb"], gi["inter"], 1.0, "", "AISC Manual Eq. 9-1", "Mr / Mc + (Vr / Vc)^4, Pr = 0"))
+    rows.append(Row("Lug flexure and shear (Manual Eq. 9-1)", gi["cb"], gi["inter"], 1.0, "", "AISC Manual (16th Ed.) Eq. 9-1", "Mr / Mc + (Vr / Vc)^4, Pr = 0"))
     gw = pick(res, "rw")
     rows.append(Row("Lug welds to the plate", gw["cb"], gw["rw"], rw_c, "kip/in", "AISC 360-22 Eq. J2-4, J2-5", f"{weld:g} in. fillets both faces, E{FEXX:g}XX, kds = 1.5"))
     tmin = min(tsl, tbp)
@@ -5452,7 +5562,7 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
     Runb = max(abs(abs(c_["MR"]) - abs(c_["ML"])) * 12 / (db_ + tp) for c_ in cases) if cut else 0.0
     # plate to HSS fillet weld (both HSS pieces), Manual Part 8 with the elastic weld group
     rw = av(0.60 * FEXX * weld / math.sqrt(2), 0.75, 2.00)
-    tmin = FEXX * weld / math.sqrt(2) / col_Fu                          # AISC Manual Eq. 9-6 form: 3.09 D / Fu for E70
+    tmin = FEXX * weld / math.sqrt(2) / col_Fu                          # AISC Manual (16th Ed.) Eq. 9-6 form: 3.09 D / Fu for E70
     wmin = 0.1875 if min(tp, tw_hss) <= 0.5 else 0.25 if min(tp, tw_hss) <= 0.75 else 0.3125
     Ln = footing_line
     G24 = "AISC Design Guide 24 (2nd Ed.)"
@@ -5475,7 +5585,7 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
                      f"{av(0.60 * FEXX * weld / math.sqrt(2), 0.75, 2.00) * 2 * H:.1f} kip")] if cut else
                 [Ln("Joint: P conn = VL + VR + P, M conn", f"{wq['Pc']:.1f} kip, {wq['Mc']:.1f} kip-ft", "", f"{G24} Example 6.4",
                     f"{nq}: M conn = [MR - ML + (VR - VL) H / 2] / 2, H = {H:g} in. along the beams"),
-                 Ln("Weld force per inch, P / (2 (B + H)) + M (H / 2) / I", wq["q"], "kip/in", f"{G24} Example 6.4; AISC Manual Part 8",
+                 Ln("Weld force per inch, P / (2 (B + H)) + M (H / 2) / I", wq["q"], "kip/in", f"{G24} Example 6.4; AISC Manual (16th Ed.) Part 8",
                     f"I per unit throat = 2 H^3 / 12 + 2 B (H / 2)^2 = {2 * H ** 3 / 12 + 2 * Bx * (H / 2) ** 2:,.0f} in3")]),
               *([Ln(f"Block shear, plate, case {k_}", v_, "kip", "AISC 360-22 Eq. J4-5", "nominal") for k_, v_ in bs_cases.items()]),
               Ln("Fillet weld strength per inch", rw, "kip/in", "AISC 360-22 Eq. J2-4", f"{weld:g} in., E{FEXX:g}XX, 0.60 FEXX (w / 2^0.5); " + fac(0.75, 2.00))]
@@ -5490,7 +5600,7 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
             (Row("Plate to HSS side wall welds", nm, Runb, rw * 2 * H, "kip", "AISC 360-22 Eq. J2-4", "the unbalanced flange force") if cut else
              Row("Plate to HSS weld", nq, wq["q"], rw, "kip/in", "AISC 360-22 Eq. J2-4", "compression side, axial and moment added")),
             Row("Minimum fillet weld size", "", wmin, weld, "in", "AISC 360-22 Table J2.4", f"thinner part {min(tp, tw_hss):g} in."),
-            Row("HSS wall at the weld (shear rupture)", "", tmin, tw_hss, "in", "AISC Manual Eq. 9-6", "least wall thickness to develop the weld"),
+            Row("HSS wall at the weld (shear rupture)", "", tmin, tw_hss, "in", "AISC Manual (16th Ed.) Eq. 9-6", "least wall thickness to develop the weld"),
             *([] if cut else [Row("Plate width for the fillet weld", "", Bx + 2 * weld, bp, "in", f"{G24} Example 6.4", "plate wider than the HSS by the weld each side")]),
             Row("Bolt spacing, at least 3 d", "", 3 * d, s, "in", "AISC 360-22 Sect. J3.3", "")]
     for nm_e, le_ in (("plate end", le_p), ("beam end", le_f)):

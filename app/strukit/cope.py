@@ -1,4 +1,4 @@
-"""Beam end coped at the top flange: strength of the coped web, AISC Manual Part 9
+"""Beam end coped at the top flange: strength of the coped web, AISC Manual (16th Ed.) Part 9
 (Eq. 9-9 to 9-20) as worked in AISC Design Examples v16.0, Example II.A-6, with
 AISC 360-22 Sect. J4.2 (shear) and J4.3 (block shear).
 
@@ -44,9 +44,9 @@ def top_cope(d, tw, bf, tf, Fy, Fu, dc, c, e, holes=0, hole=0.0):
     if dc <= 0 or c <= 0 or e <= 0:
         raise CopeError("cope: the cope depth, cope length and e must be positive")
     if dc > d / 2:
-        raise CopeError("cope: a cope deeper than half the beam depth is outside AISC Manual Part 9")
+        raise CopeError("cope: a cope deeper than half the beam depth is outside AISC Manual (16th Ed.) Part 9")
     if c > 2 * d:
-        raise CopeError("cope: a cope longer than twice the beam depth is outside AISC Manual Part 9")
+        raise CopeError("cope: a cope longer than twice the beam depth is outside AISC Manual (16th Ed.) Part 9")
     s = tee(d, tw, bf, tf, dc)
     hc = s["hc"]
     f = 2 * c / d if c / d <= 1.0 else 1 + c / d
@@ -55,11 +55,11 @@ def top_cope(d, tw, bf, tf, Fy, Fu, dc, c, e, holes=0, hole=0.0):
     Mp, My = Fy * s["Zc"], Fy * s["Sc"]
     lam, lam_p = hc / tw, 0.475 * math.sqrt(k1 * E / Fy)
     if lam <= lam_p:
-        Mn, eq = Mp, "Mn = Mp (Manual Eq. 9-10)"
+        Mn, eq = Mp, "Mn = Mp (AISC Manual (16th Ed.) Eq. 9-10)"
     elif lam <= 2 * lam_p:
-        Mn, eq = Mp - (Mp - My) * (lam / lam_p - 1), "Mn = Mp - (Mp - My)(lambda / lambda_p - 1) (Manual Eq. 9-11)"
+        Mn, eq = Mp - (Mp - My) * (lam / lam_p - 1), "Mn = Mp - (Mp - My)(lambda / lambda_p - 1) (AISC Manual (16th Ed.) Eq. 9-11)"
     else:
-        Mn, eq = 0.903 * E * k1 / lam ** 2 * s["Sc"], "Mn = Fcr Sc, Fcr = 0.903 E k1 / lambda^2 (Manual Eq. 9-12, 9-13)"
+        Mn, eq = 0.903 * E * k1 / lam ** 2 * s["Sc"], "Mn = Fcr Sc, Fcr = 0.903 E k1 / lambda^2 (AISC Manual (16th Ed.) Eq. 9-12, 9-13)"
     Agv = hc * tw
     Anv = Agv - holes * hole * tw
     return dict(s, f=f, k=k, k1=k1, Mp=Mp, My=My, lam=lam, lam_p=lam_p, Mn=Mn, eq=eq, e=e, R_flex=Mn / e,
@@ -78,7 +78,7 @@ def web_block_shear(tw, Fy, Fu, n, spacing, lev, leh, hole):
 
 def double_cope(d, tw, Fy, Fu, dct, dcb, c, e, holes=0, hole=0.0):
     """Beam end coped at both flanges, equal cope lengths c: the remaining web as a rectangular bar, AISC 360-22 Sect. F11 with Lb = c and
-    Cb by AISC Manual Eq. 9-21, as worked in AISC Design Examples v16.0 Example II.A-7. dct, dcb: cope depths at the top (compression) and
+    Cb by AISC Manual (16th Ed.) Eq. 9-21, as worked in AISC Design Examples v16.0 Example II.A-7. dct, dcb: cope depths at the top (compression) and
     bottom flanges."""
     if min(dct, dcb, c, e) <= 0:
         raise CopeError("cope: the cope depths, cope length and e must be positive")
@@ -137,10 +137,10 @@ def tee_flexure(Fy, Sx, Sxc, Zx, bf, tf, ltb=None):
 
 
 def bottom_cope(d, tw, bf, tf, Fy, Fu, dc, c, e, holes=0, hole=0.0):
-    """Beam end coped at the bottom flange only, the end reaction downward (top flange in compression at the cope). AISC Manual Part 9
+    """Beam end coped at the bottom flange only, the end reaction downward (top flange in compression at the cope). AISC Manual (16th Ed.) Part 9
     (15th Ed.) gives no local buckling procedure for this case; the remaining tee (top flange and web, fillets not counted) is checked
     as a tee with its stem in tension by AISC 360-22 Sect. F9, with Lb = c (braced at the end of the cope), and for flexural rupture by
-    Mn = Fu Znet (Manual Eq. 9-4 in the 15th Ed., 9-8 in the numbering of Design Examples v16.0; no bolt holes at the end of the cope). Shear yielding and rupture of the remaining web (Eq. J4-3, J4-4) are
+    Mn = Fu Znet (AISC Manual (16th Ed.) Eq. 9-8, Eq. 9-4 in the 15th Ed.; no bolt holes at the end of the cope). Shear yielding and rupture of the remaining web (Eq. J4-3, J4-4) are
     returned as well."""
     if dc <= 0 or c <= 0 or e <= 0:
         raise CopeError("cope: the cope depth, cope length and e must be positive")
