@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-25 21:05. Build **0.233.1**, 619 tests passing; `main` and `release` pushed.
+Updated 2026-11-25 21:00. Build **0.233.1**, 619 tests passing; `main` and `release` pushed.
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -750,7 +750,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - 2026-011 rerun with the existing house wall assumed to work: roof drift under the full wind 0.36 in. in X (was 3.1 in. with it left out) and 0.51 in. in Y.
 - Tests: an existing wall with a typed stiffness equal to a new wall shares the load equally (drift 2 / 2k); "assumed to work" is far stiffer; "left out" leaves it out; the model sheet. Package audited for overlapping text.
 
-## 2026-11-25 21:05 local — 0.233.1 joists, decks and windows and doors in the 3D views (619 tests)
+## 2026-11-25 20:58 local — 0.233.1 joists, decks and windows and doors in the 3D views (619 tests)
 - Zach 20:47: the 3D views did not show the roof and floor joists or the openings (windows and doors).
 - **Joist and rafter rows** are drawn as every member at its spacing over the width the row covers, with a light floor or roof deck over them (window 3D view and the Building Model sheet). A row with no row width is drawn as its one member.
 - **Openings:** new placement box on the wall screens, "Openings for the 3D views (windows, doors)": start along the wall from End 1, width, sill above the level below, height, in feet, groups separated by ;. Blank on a perforated or force-transfer wall: its own openings are drawn from End 1. Drawn as pale panels on the walls; the legend lists windows and doors and decks. For the views only; no calculation uses them.
