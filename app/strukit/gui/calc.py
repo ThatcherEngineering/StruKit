@@ -2962,6 +2962,48 @@ def model_seismic_weights(project, members):
     return dict(levels=levels, parts=parts, notes=notes, problems=problems)
 
 
+def model_diaphragms(project, members):
+    """Fills each Wood Diaphragm member placed in the building model (its level and the direction of the load) with the governing span of
+    that level and direction: the diaphragm spans between neighbouring wall lines parallel to the load (flexible diaphragm, the same
+    distribution as the wall lines), loaded by the wind sheet's load per foot at that level and the seismic story force spread over the
+    building width; wind or seismic by the larger of w(wind) and 1.4 w(seismic) (SDPWS-2021 4.1.4: wind capacity 1.4 x seismic), the span
+    with the largest w x L. Returns dict(members, filled=[...], problems)."""
+    import copy
+    ms = copy.deepcopy(members or [])
+    dia = [m for m in ms if m.get("kind") == "diaphragm" and str((m.get("values") or {}).get("at_level") or "").strip()]
+    if not dia:
+        return dict(members=ms, filled=[], problems=["No Wood Diaphragm is placed in the model (its placement card: level and load direction)"])
+    problems, spans = [], []
+    for ld in ("wind", "seismic"):
+        kinds = "wind_mwfrs" if ld == "wind" else "seismic_elf"
+        if not any(m.get("kind") == kinds for m in ms):
+            continue
+        r = lateral_wind(project, members, load=ld)
+        spans += r.get("spans") or []
+        problems += [p_ for p_ in r["problems"] if p_ not in problems]
+    filled = []
+    for m in dia:
+        v = m["values"]
+        lvl, d_ = str(v.get("at_level")).strip(), str(v.get("at_dir") or "").strip()
+        if d_ not in ("X", "Y"):
+            problems.append(f"{v.get('mark')}: choose the load direction (X or Y) on its placement card"); continue
+        here = [sp for sp in spans if sp["level"] == lvl and sp["dir"] == d_ and not sp.get("cantilever")]
+        if not here:
+            problems.append(f"{v.get('mark')}: no diaphragm span between two wall lines at level {lvl} for load in {d_}"); continue
+        best = None
+        for sp in here:
+            key = (sp["w"] * (1.4 if sp["load"] == "seismic" else 1.0)) * sp["L"]
+            if best is None or key > best[0]:
+                best = (key, sp)
+        sp = best[1]
+        v.update(L=f"{sp['L']:.2f}".rstrip("0").rstrip("."), W=f"{sp['W']:.2f}".rstrip("0").rstrip("."), load=sp["load"], w=f"{sp['w']:.1f}",
+                 w_source=f"{sp['src']}; span between wall lines {sp['lines'][0]} and {sp['lines'][1]}")
+        filled.append(dict(mark=v.get("mark"), level=lvl, dir=d_, L=sp["L"], W=sp["W"], w=sp["w"], load=sp["load"], lines=sp["lines"]))
+        if any(c.get("cantilever") for c in spans if c["level"] == lvl and c["dir"] == d_):
+            problems.append(f"{v.get('mark')}: part of level {lvl} reaches past the outer wall line for load in {d_} (a cantilevered diaphragm, not checked)")
+    return dict(members=ms, filled=filled, problems=problems)
+
+
 PAD_STEP_FT = 0.25                                           # pad sizes go up in 3 in. steps
 
 
@@ -3504,6 +3546,7 @@ def lateral_wind(project, members, wind_mark=None, load="wind"):
     walls = [(m, pl) for m, pl in placed if m["kind"] in MODEL_WALLS]
     if not walls:
         return dict(members=members, lines=[], problems=problems + ["No shear wall is placed in the model yet (use the placement boxes on the wall screens)"])
+    spans = []
     carry = {}                                                # (direction, line position, level index) -> (shear, chord force, mark) coming down from above
     for li in range(len(levels) - 1, 0, -1):
         name, el = levels[li]
@@ -3532,6 +3575,8 @@ def lateral_wind(project, members, wind_mark=None, load="wind"):
                 if hi - lo < 1e-6:
                     problems.append(f"Level {name}: the plan has no width across the {label} direction"); continue
                 w = story[name] / (hi - lo)                  # the story force spread evenly over the building width
+            ext_ax = [c for m, pl in here for c in (pl["p1"][axis], (pl["p2"] or pl["p1"])[axis])]
+            depth = max(ext_ax) - min(ext_ax)
             groups = []
             for m, pl in sorted(ws_here, key=lambda t: (t[1]["p1"][other] + t[1]["p2"][other]) / 2):
                 pos = (pl["p1"][other] + pl["p2"][other]) / 2
@@ -3541,6 +3586,14 @@ def lateral_wind(project, members, wind_mark=None, load="wind"):
                     groups.append([pos, [(m, pl)]])
             if len(groups) < 2:
                 problems.append(f"Level {name}, load in {label}: only one wall line; a flexible diaphragm needs a line each side (the whole load is put on that line)")
+            wsrc = (f"sheet {wmark}, story force at {name} {story[name]:,.0f} lb over {hi - lo:g} ft" + (f" x {rho:g}" if rho != 1 else "") + (" x 0.7" if asd else "")
+                    if seis else f"sheet {wmark}, level {name}, walls from {z_lo:g} to {z_hi:g} ft: {w:.1f} plf" + (" x 0.6" if asd else ""))
+            for (pa, ga), (pb, gb) in zip(groups, groups[1:]):  # the diaphragm spans between neighbouring wall lines
+                spans.append(dict(level=name, dir=label, load="seismic" if seis else "wind", w=w * fac, L=pb - pa, W=depth, a=pa, b=pb,
+                                  lines=((ga[0][0].get("values") or {}).get("mark"), (gb[0][0].get("values") or {}).get("mark")), src=wsrc))
+            for ov in ((groups[0][0] - lo) if groups else 0.0, (hi - groups[-1][0]) if groups else 0.0):
+                if ov > 1.0:
+                    spans.append(dict(level=name, dir=label, load="seismic" if seis else "wind", w=w * fac, L=ov, W=depth, cantilever=True, src=wsrc))
             for gi, (pos, grp) in enumerate(groups):
                 a = lo if gi == 0 else (groups[gi - 1][0] + pos) / 2
                 b = hi if gi == len(groups) - 1 else (pos + groups[gi + 1][0]) / 2
@@ -3584,7 +3637,7 @@ def lateral_wind(project, members, wind_mark=None, load="wind"):
             for (ax, kpos, lv), val in list(carry.items()):
                 if ax == axis and lv == li + 1 and not any(round(g[0] / MODEL_TOL) == kpos for g in groups):
                     problems.append(f"Level {name}, load in {label}: no wall line under {val[2]} (its {val[0]:,.0f} lb is not carried down by this distribution)")
-    return dict(members=ms, lines=lines, problems=problems)
+    return dict(members=ms, lines=lines, problems=problems, spans=spans)
 
 
 def lateral_governing(project, members):
