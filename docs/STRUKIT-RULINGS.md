@@ -291,3 +291,10 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - (0.238.0, applied) Deducting openings from the wall weight is the engineer's choice per wall (default: not deducted); when deducted, the
   window and door weight is not added back.
 
+## 2026-11-25 23:55, built-up three-plate sections (0.239.0), applied (not ruled; tell Zach in the morning)
+- Where the sign of the moment is not known (columns with moments, the frame's column checks), a singly symmetric section takes the lower of its
+  two flexural strengths (either flange in compression).
+- Webs without transverse stiffeners only: h/tw not over 0.40 E/Fy (Eq. F13-4, a/h over 1.5), kv = 5.34, no tension field action.
+- J and Cw from AISC Design Guide 9 (J = sum b t^3 / 3 with the web's clear height; Cw = ho^2 Iyc Iyt / (Iyc + Iyt)).
+- Weight 490 pcf (steel), no allowance for welds.
+

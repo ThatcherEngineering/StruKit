@@ -382,6 +382,22 @@ def _closing(p, assumptions, not_checked=()):
     return p.used
 
 
+def _bu_view(pr):
+    """A built-up section's properties rounded for printing (4 significant figures) and its plate rows."""
+    q = {k: (float(f"{v:.4g}") if isinstance(v, float) else v) for k, v in pr.items()}
+    f = lambda x: (str(int(x)) if abs(x - round(x)) < 1e-9 else
+                   (f"{int(x)}-{_frac(x - int(x))}" if x > 1 else _frac(x)))
+    plates = [("Plates", f"top flange PL {f(pr['bft'])} x {f(pr['tft'])}, web PL {f(pr['h'])} x {f(pr['tw'])}"),
+              ("", f"bottom flange PL {f(pr['bfb'])} x {f(pr['tfb'])}, welded")]
+    return q, plates
+
+
+def _frac(x):
+    from fractions import Fraction
+    fr = Fraction(x).limit_denominator(16)
+    return f"{fr.numerator}/{fr.denominator}"
+
+
 def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     """Write the calc sheet for a ws_steel_beam.SteelBeamSheet. `combos` are the Combo
     objects that were run, printed with their sources."""
@@ -394,18 +410,21 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     hss_kind = {"HSS-RECT": "rect", "HSS-ROUND": "round", "PIPE": "round"}.get(pr.get("type"))
     depth_in = pr["d"] if hss_kind is None else (pr["OD"] if hss_kind == "round" else pr["Ht"])
     p.head("Member")
-    p.kv([("Section", f"{sheet.shape}  (Fy = {sheet.Fy:g} ksi)"),
+    bu = pr.get("type") == "BU"
+    if bu:
+        pr, plates = _bu_view(pr)
+    p.kv([("Section", f"{pr['label'] if bu else sheet.shape}  (Fy = {sheet.Fy:g} ksi)"),
           ("Span", getattr(sheet, "span_text", None) or f"{sheet.span_ft:g} ft, simply supported"),
           ("Bracing", sheet.bracing_text),
-          ] + ([("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"),
+          ] + (plates if bu else []) + ([("Dimensions", f"d = {pr['d']:g} in, bf = {pr['bf']:g} in"),
                 ("", f"tf = {pr['tf']:g} in, tw = {pr['tw']:g} in"),
                 ("Properties", f"Zx = {pr['Zx']:g} in3, Sx = {pr['Sx']:g} in3"),
                 ("", f"Ix = {pr['Ix']:g} in4, ry = {pr['ry']:g} in"),
-                ("", f"rts = {pr['rts']:g} in, J = {pr['J']:g} in4, ho = {pr['ho']:g} in")] if hss_kind is None else
+                ("", (f"rts = {pr['rts']:g} in, " if pr.get("rts") else "") + f"J = {pr['J']:g} in4, ho = {pr['ho']:g} in")] if hss_kind is None else
                [("Dimensions", (f"OD = {pr['OD']:g} in" if hss_kind == "round" else f"H = {pr['Ht']:g} in, B = {pr['B']:g} in") + f", design t = {pr['tdes']:g} in"),
                 ("Properties", f"Zx = {pr['Zx']:g} in3, Sx = {pr['Sx']:g} in3"),
                 ("", f"Ix = {pr['Ix']:g} in4, ry = {pr['ry']:g} in, J = {pr['J']:g} in4")]) + [
-          ("Source", "AISC Shapes Database v16.0")])
+          ("Source", pr.get("source") or "AISC Shapes Database v16.0")])
     bottom_left = p.y
     x0, w = 338, 166
     c.setFillColorRGB(*BLUE); c.setFont(FB, 8); c.drawString(x0, top - 4, "LOADING SKETCH")
@@ -461,8 +480,11 @@ def _steel_beam_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     sx = 536
     c.setFillColorRGB(*BLUE); c.setFont(FB, 8); c.drawCentredString(sx, top - 4, "SECTION")
     if hss_kind is None:
-        (memberart.channel_section if pr.get("type") in ("C", "MC") else memberart.steel_section)(
-            c, sx, top - 38, 40, 46, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
+        if pr.get("type") == "BU":
+            memberart.steel_section(c, sx, top - 38, 40, 46, pr["d"], pr["bft"], pr["tft"], pr["tw"], None, pr["bfb"], pr["tfb"])
+        else:
+            (memberart.channel_section if pr.get("type") in ("C", "MC") else memberart.steel_section)(
+                c, sx, top - 38, 40, 46, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
         c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawCentredString(sx, top - 72, "to scale")
     else:
         _hss_section(c, sx - 6, top - 36, 40.0, dict(kind=hss_kind, OD=pr.get("OD"), H=pr.get("Ht"), B=pr.get("B"), t=pr["tdes"]))
@@ -529,7 +551,11 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     hss_kind = {"HSS-RECT": "rect", "HSS-ROUND": "round", "PIPE": "round"}.get(pr.get("type"))
     depth_in = pr["d"] if hss_kind is None else (pr["OD"] if hss_kind == "round" else pr["Ht"])
     p.head("Member")
-    p.kv([("Section", f"{sheet.shape}  (Fy = {sheet.Fy:g} ksi)"),
+    bu = pr.get("type") == "BU"
+    if bu:
+        pr, plates = _bu_view(pr)
+    p.kv([("Section", f"{pr['label'] if bu else sheet.shape}  (Fy = {sheet.Fy:g} ksi)"),
+          *(plates if bu else []),
           ("Height", f"{sheet.height_ft:g} ft"),
           ("Unbraced Length", f"x axis {sheet.Lx_ft:g} ft, y axis {sheet.Ly_ft:g} ft"),
           ("Effective Length", f"Kx = {sheet.Kx:g}, Ky = {sheet.Ky:g}  ({sheet.k_source})"),
@@ -539,7 +565,7 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
             [("Dimensions", (f"OD = {pr['OD']:g} in" if hss_kind == "round" else f"H = {pr['Ht']:g} in, B = {pr['B']:g} in") + f", design t = {pr['tdes']:g} in")]),
           ("Properties", f"A = {pr['A']:g} in2, rx = {pr['rx']:g} in, ry = {pr['ry']:g} in"),
           ("", f"Ix = {pr['Ix']:g} in4, Iy = {pr['Iy']:g} in4, Zx = {pr['Zx']:g} in3, Zy = {pr['Zy']:g} in3"),
-          ("Source", "AISC Shapes Database v16.0")])
+          ("Source", pr.get("source") or "AISC Shapes Database v16.0")])
     bottom_left = p.y
     # column standing up, with its load and supports
     ex, eh = 440, 62
@@ -573,7 +599,10 @@ def _steel_column_pdf(sheet, path, job, code, date, page=1, pages=1, combos=()):
     sx = 530
     _sketch_title(c, sx, top, "SECTION", centred=True)
     if hss_kind is None:
-        memberart.steel_section(c, sx, top - 44, 46, 50, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
+        if pr.get("type") == "BU":
+            memberart.steel_section(c, sx, top - 44, 46, 50, pr["d"], pr["bft"], pr["tft"], pr["tw"], None, pr["bfb"], pr["tfb"])
+        else:
+            memberart.steel_section(c, sx, top - 44, 46, 50, pr["d"], pr["bf"], pr["tf"], pr["tw"], pr.get("kdes"))
     else:
         _hss_section(c, sx - 4, top - 40, 40.0, dict(kind=hss_kind, OD=pr.get("OD"), H=pr.get("Ht"), B=pr.get("B"), t=pr["tdes"]))
     if hss_kind is None:

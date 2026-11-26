@@ -103,6 +103,30 @@ def _cb(res, a, b):
     return steel_beam.cb_factor(Mmax, MA, MB, MC), Mmax
 
 
+def _bu_welds(sheet, props, method):
+    """Built-up section: the flange-to-web weld shear flow at the largest shear, stated (the welds are not checked on the beam sheet)."""
+    if props.get("type") != "BU":
+        return
+    d, yb, Ix = props["d"], props["yb"], props["Ix"]
+    Q = max(props["bft"] * props["tft"] * (d - yb - props["tft"] / 2), props["bfb"] * props["tfb"] * (yb - props["tfb"] / 2))
+    V = max((r.demand for r in sheet.rows if r.check == "shear"), default=0.0)
+    sheet.assumptions.append(f"Built-up section: flanges welded continuously to the web. The welds are not checked on this sheet; the shear flow they carry at "
+                             f"the largest shear is V Q / Ix = {V:.2f} x {Q:.1f} / {Ix:,.0f} = {V * Q / Ix:.2f} kip/in. ({method} level, both welds together).")
+
+
+def _signed(check, props, Fy, Lb_in, Cb, method, M_seg, M_abs):
+    """[(moment, check result)] for one segment. A singly symmetric built-up section is checked for its largest positive moment with the top
+    flange in compression and its largest negative moment with the bottom flange in compression; any other section once for the largest
+    moment either way."""
+    if props.get("type") == "BU" and not props.get("symmetric"):
+        pos, neg = max(float(np.max(M_seg)), 0.0), max(-float(np.min(M_seg)), 0.0)
+        out = [(pos, check(props, Fy, Lb_in, Cb, method, compression="top"))]
+        if neg > 1e-9:
+            out.append((neg, check(props, Fy, Lb_in, Cb, method, compression="bottom")))
+        return out
+    return [(M_abs, check(props, Fy, Lb_in, Cb, method))]
+
+
 def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
         include_self_weight, self_weight_case="D", spans=None, overhang_left=0.0, overhang_right=0.0, fixed=False):
     """bracing: "continuous", or a list of brace locations in ft (ends are added)."""
@@ -141,7 +165,7 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
     if include_self_weight:
         all_loads.append(dict(case=self_weight_case, kind="uniform", w=props["W"] / 1000.0,
                               label=f"self-weight {props['W']:.0f} lb/ft"))
-        assumptions.append(f"Beam self-weight ({props['W']:.0f} lb/ft, {shapes.SOURCE}) added "
+        assumptions.append(f"Beam self-weight ({props['W']:.0f} lb/ft, {props.get('source') or shapes.SOURCE}) added "
                            f"to load case {self_weight_case}.")
     else:
         assumptions.append("Beam self-weight is NOT added separately; it is taken as "
@@ -215,15 +239,14 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
         sheet.reactions[cb.name] = (res.reactions[0.0], res.reactions[float(span_ft)])
         Vmax = res.V_abs_max()[0]
         if segs is None:
-            chk = check(props, Fy, 0.0, 1.0, method)
             Mmax = float(np.max(np.abs(res.M)))
-            cand = [(Mmax, chk, 0.0, 1.0, (0.0, span_ft))]
+            cand = [(M_, chk, 0.0, 1.0, (0.0, span_ft)) for M_, chk in _signed(check, props, Fy, 0.0, 1.0, method, res.M, Mmax)]
         else:
             cand = []
             for a, b in segs:
                 Cb, Mseg = _cb(res, a, b)
-                chk = check(props, Fy, (b - a) * 12, Cb, method)
-                cand.append((Mseg, chk, (b - a), Cb, (a, b)))
+                sg = (res.x >= a - 1e-9) & (res.x <= b + 1e-9)
+                cand += [(M_, chk, (b - a), Cb, (a, b)) for M_, chk in _signed(check, props, Fy, (b - a) * 12, Cb, method, res.M[sg], Mseg)]
         Mseg, chk, Lb, Cb, seg = max(cand, key=lambda c: c[0] / c[1].M_avail)
         m_row = Row("flexure", cb.name, Mseg, chk.M_avail / 12, "kip-ft",
                     "AISC 360-22 Ch. F: " + chk.governs,
@@ -309,6 +332,7 @@ def run(mark, shape, Fy, span_ft, loads, combos, defl_checks, bracing, method,
             f"{E:.0f} x {props['Ix']:.0f}"))
     if not defl_checks:
         sheet.assumptions.append("No deflection limit was given; deflection is not checked.")
+    _bu_welds(sheet, props, method)
     return sheet
 
 
@@ -362,11 +386,11 @@ def _run_continuous(mark, shape, Fy, lay, all_loads, combos, defl_checks, segs, 
                     Lb, Cb = (b - a), (steel_beam.cb_factor(Mseg * 12, MA, MB, MC) if Mseg > 1e-9 else 1.0)
                     if lay.fixed and (a <= 1e-9 or b >= L_ft - 1e-9):
                         Cb = 1.0                                   # a segment that reaches the free end of a cantilever (Sect. F1)
-                chk = check(props, Fy, Lb * 12, Cb, method)
-                row = Row("flexure", cb.name, Mseg, chk.M_avail / 12, "kip-ft", "AISC 360-22 Ch. F: " + chk.governs,
-                          f"Lb = {Lb:g} ft, Cb = {Cb:.2f}, segment {a:g} to {b:g} ft")
-                if worst_m is None or row.dc > worst_m[0].dc:
-                    worst_m = (row, chk, res)
+                for Mseg_, chk in _signed(check, props, Fy, Lb * 12, Cb, method, res.M[m] / 12.0, Mseg):
+                    row = Row("flexure", cb.name, Mseg_, chk.M_avail / 12, "kip-ft", "AISC 360-22 Ch. F: " + chk.governs,
+                              f"Lb = {Lb:g} ft, Cb = {Cb:.2f}, segment {a:g} to {b:g} ft")
+                    if worst_m is None or row.dc > worst_m[0].dc:
+                        worst_m = (row, chk, res)
             v_row = Row("shear", cb.name, Vmax, chk.V_avail, "kip", getattr(chk, "v_source", "AISC 360-22 Sect. G2.1"))
             if worst_v is None or v_row.dc > worst_v.dc:
                 worst_v = v_row
@@ -399,4 +423,5 @@ def _run_continuous(mark, shape, Fy, lay, all_loads, combos, defl_checks, segs, 
             "of live and snow load on one cantilever or both (ASCE/SEI 7-22 Sect. 4.3.3, 7.5.1).",
             "The bottom flange is braced at the support and at the listed brace points only; Cb = 1.0 for a segment that reaches a free end (AISC 360-22 Sect. F1).",
             "Reactions shown are for both cantilevers loaded. The connection to the column and the column are checked separately."]
+    _bu_welds(sheet, props, method)
     return sheet

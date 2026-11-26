@@ -115,7 +115,7 @@ def run(mark, shape, Fy, height_ft, loads, combos, Kx, Ky, k_source, method,
         sw = props["W"] * height_ft / 1000.0
         all_loads.append(dict(case=self_weight_case, P=sw,
                               label=f"self-weight {props['W']:.0f} lb/ft x {height_ft:g} ft"))
-        assumptions.append(f"Column self-weight ({props['W']:.0f} lb/ft, {shapes.SOURCE}) added "
+        assumptions.append(f"Column self-weight ({props['W']:.0f} lb/ft, {props.get('source') or shapes.SOURCE}) added "
                            f"to load case {self_weight_case}.")
     else:
         assumptions.append("Column self-weight is NOT added separately; it is taken as "
@@ -139,6 +139,8 @@ def run(mark, shape, Fy, height_ft, loads, combos, Kx, Ky, k_source, method,
                           "AISC 360-22 Sect. E2 User Note (recommended limit, not a requirement)",
                           "governing Lc / r"))
     sheet.steps = list(chk.lines)
+    if props.get("type") == "BU":
+        sheet.not_checked.append("the flange-to-web welds of the built-up section")
     if sway:
         _sway(sheet, chk, list(lateral), combos, tuple(sway), list(leaning), list(drift_checks))
     elif leaning or drift_checks:

@@ -92,7 +92,8 @@ def _read_grid_anchorage(r, rod_d, grade, default_fc=None):
 FORMS = {
     "steel_beam": dict(
         title="Steel Beam", code="AISC 360-22", mark="B",
-        fields=[F("shape", "Section", "shape_any", help="W, M, S or HP shape, C or MC channel, square, rectangular or round HSS, or pipe"), F("Fy", "Fy", unit="ksi"),
+        fields=[F("shape", "Section", "shape_any", help="W, M, S or HP shape, C or MC channel, square, rectangular or round HSS, or pipe; or a welded "
+                  "built-up I as BU top flange / web / bottom flange, each width x thickness in inches, for example BU 14x2 / 62x1/2 / 14x2"), F("Fy", "Fy", unit="ksi"),
                 F("support_type", "Supports", "select", options=["bearing supports (spans)", "one support, fixed (cantilevers each side of a column)"], required=False,
                   help="blank = bearing supports; for a beam fixed to one column, leave Span blank and give the cantilever lengths in the two overhang boxes"),
                 F("span", "Span", unit="ft", required=False),
@@ -116,7 +117,8 @@ FORMS = {
                                                 F("ratio", "Span /"), F("source", "Source", "text")])]),
     "steel_column": dict(
         title="Steel Column", code="AISC 360-22", mark="C",
-        fields=[F("shape", "Section", "shape_col", help="W, M, S or HP shape, HSS or pipe"), F("Fy", "Fy", unit="ksi"), F("height", "Height", unit="ft"),
+        fields=[F("shape", "Section", "shape_col", help="W, M, S or HP shape, HSS or pipe; or a welded built-up I as BU top flange / web / bottom flange "
+                  "(width x thickness, inches), for example BU 12x3/4 / 11x1/2 / 12x3/4"), F("Fy", "Fy", unit="ksi"), F("height", "Height", unit="ft"),
                 F("ends", "Top of column", "select",
                   options=["held sideways (braced)", "free about x (cantilever, strong axis)",
                            "free about y (cantilever, weak axis)", "free both ways (cantilever)"]),
@@ -5155,7 +5157,7 @@ def model_frame_sway(project, members):
                     except ValueError:
                         Lb_pos = Ltot
                 Lb_neg = max(mlen[e_] for e_ in B["beam_elems"][mark]) if not br.startswith("at") else Lb_pos
-                cp, cn = _sb.check(pr, Fy, Lb_pos, 1.0, method_), _sb.check(pr, Fy, Lb_neg, 1.0, method_)
+                cp, cn = _sb.check(pr, Fy, Lb_pos, 1.0, method_, compression="top"), _sb.check(pr, Fy, Lb_neg, 1.0, method_, compression="bottom")
                 strength[mark] = dict(Mpos=cp.M_avail, Mneg=cn.M_avail, V=cp.V_avail, Pc=_sc.check(pr, Fy, Ltot, max(Lb_pos, Lb_neg), method=method_).P_avail,
                                       Pt=Fy * pr["A"] * (0.9 if method_ == "LRFD" else 1 / 1.67), Lb_neg=Lb_neg, Lb_pos=Lb_pos, pr=pr, Fy=Fy, neg={}, pts=br.startswith("at"))
         except Exception as e:

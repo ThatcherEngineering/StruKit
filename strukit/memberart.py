@@ -29,9 +29,18 @@ def steel_elevation(c, x, y, w, h, d_in, tf_in):
     c.rect(x, y, w, tf, fill=1, stroke=0); c.rect(x, y + h - tf, w, tf, fill=1, stroke=0)
 
 
-def steel_section(c, cx, cy, box_w, box_h, d, bf, tf, tw, k=None):
-    """Cut section of an I-shape, to scale, centred on (cx, cy) inside box_w x box_h.
-    Returns the scale used (points per inch)."""
+def steel_section(c, cx, cy, box_w, box_h, d, bf, tf, tw, k=None, bfb=None, tfb=None):
+    """Cut section of an I-shape, to scale, centred on (cx, cy) inside box_w x box_h. bfb, tfb: a bottom flange of its own (a built-up,
+    singly symmetric plate section; drawn as welded plates, no fillets). Returns the scale used (points per inch)."""
+    if bfb is not None:
+        s = min(box_w / max(bf, bfb), box_h / d)
+        D, TW = d * s, tw * s
+        y0 = cy - D / 2
+        c.setLineWidth(0.7); c.setStrokeColorRGB(*STEEL_LINE); c.setFillColorRGB(*STEEL_FILL)
+        c.rect(cx - bfb * s / 2, y0, bfb * s, tfb * s, fill=1, stroke=1)
+        c.rect(cx - TW / 2, y0 + tfb * s, TW, D - (tf + tfb) * s, fill=1, stroke=1)
+        c.rect(cx - bf * s / 2, y0 + D - tf * s, bf * s, tf * s, fill=1, stroke=1)
+        return s
     s = min(box_w / bf, box_h / d)
     D, B, TF, TW = d * s, bf * s, tf * s, tw * s
     r = max(0.0, min(((k - tf) if k else 0.0) * s, (B - TW) / 2 - 0.5, (D - 2 * TF) / 2 - 0.5))
