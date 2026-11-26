@@ -5,6 +5,8 @@ the picture to draw. Nothing is defaulted; see base_plate.py and footing_moment.
 calculations and their sources.
 """
 import math
+
+import numpy as np
 from dataclasses import dataclass, field
 
 from . import anchorage as anch, base_plate, footing, footing_moment, shapes, shearwall, snow, wind
@@ -5279,7 +5281,8 @@ def tension_rod_sheet(mark, rod_d, Fy, Fu, steel_source, length_ft, loads, combo
     return sheet
 
 
-def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, restraint, self_weight, loads, combos, method, defl=()):
+def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, restraint, self_weight, loads, combos, method, defl=(), spans=None, oh_left=0.0,
+                     oh_right=0.0):
     """Single angle as a simply supported beam, AISC 360-22 Sect. F10, G3 and H2 (see anglebeam). loads: dict(case, kind "uniform" (w kip/ft,
     the full span) or "point" (P kips at x ft), dir "down" or "sideways"). restraint: "none", "midspan" (lateral-torsional restraint at
     midspan) or "continuous"."""
@@ -5320,7 +5323,21 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
         raise WorksheetError(f"{mark}: sideways loads on an angle with continuous lateral-torsional restraint are not covered")
     if restraint == "continuous" and axl:
         raise WorksheetError(f"{mark}: axial load on an angle with continuous lateral-torsional restraint is not covered")
-    geometric = restraint == "continuous" or (g["equal"] and not side and not axl)
+    multi = bool((spans and len(spans) > 1) or (oh_left or 0) > 0 or (oh_right or 0) > 0)
+    lay = None
+    if multi:
+        from . import contbeam
+        if restraint == "midspan":
+            raise WorksheetError(f"{mark}: restraint at midspan only is for a single simple span; use none (braced at the supports) or continuous")
+        if axl:
+            raise WorksheetError(f"{mark}: axial load on a continuous or overhanging angle is not covered")
+        try:
+            lay = contbeam.layout(L, spans or [L], oh_left or 0.0, oh_right or 0.0)
+        except ValueError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        if any(x.get("dir") == "sideways" and x["case"] in contbeam.PATTERN_CASES for x in lds):
+            raise WorksheetError(f"{mark}: sideways live loads on a continuous angle (arranged span by span) are not covered")
+    geometric = restraint == "continuous" or (g["equal"] and not side and not axl and not multi)
     comp = None
     if axl:                                                              # Sect. H2: axial strength by Sect. E3 / E7 (Lc = L, minor axis) and D2
         try:
@@ -5334,8 +5351,36 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
     lrfd = method == "LRFD"
     fb, fv = (0.90, 0.90) if lrfd else (1 / 1.67, 1 / 1.67)
     xs = sorted(set([L * i / 96 for i in range(97)] + [x["x"] for x in lds if x["kind"] == "point"]))
+    cases_ = [(cb.name, cb.factors, None) for cb in combos]
+    if multi:
+        Lt = lay.total
+        for x in lds:
+            if x["kind"] == "point" and not (0 <= x["x"] <= Lt + 1e-9):
+                raise WorksheetError(f"{mark}: a point load at {x['x']:g} ft is off the {Lt:g} ft angle")
+        conv = lambda x: dict(kind="uniform", w=x["w"], x1_ft=0.0, x2_ft=Lt) if x["kind"] == "uniform" else dict(kind="point", P=x["P"], x_ft=x["x"])
+        by_d, by_s = {}, {}
+        for x in lds:
+            (by_s if x.get("dir") == "sideways" else by_d).setdefault(x["case"], []).append(conv(x))
+        bas_d = contbeam.Basis(lay, 1.0, by_d) if by_d else None
+        bas_s = contbeam.Basis(lay, 1.0, by_s) if by_s else None
+        xs = sorted(set([Lt * i / 192 for i in range(193)] + [x["x"] for x in lds if x["kind"] == "point"] + list(lay.supports)))
+        cases_ = []
+        for cb in combos:
+            rs = bas_s.solve([(cb.factors.get(c_, 0.0), ld) for c_, lst in by_s.items() for ld in lst]) if bas_s else None
+            arrs = contbeam.arrangements(lay, by_d, cb.factors) if by_d else [(None, [])]
+            for k_, (_, items) in enumerate(arrs):
+                rd = bas_d.solve(items) if (bas_d and items) else None
+                if rd is None and rs is None:
+                    continue
+                arr = dict(d=rd, s=rs)
+                cases_.append((cb.name + (f" (live arrangement {k_ + 1})" if len(arrs) > 1 else ""), cb.factors, arr))
 
-    def MV(x, fac, d):
+    def MV(x, fac, d, arr=None):
+        if arr is not None:
+            r_ = arr["d" if d == "down" else "s"]
+            if r_ is None:
+                return 0.0, 0.0
+            return float(np.interp(x * 12.0, r_.x, r_.M)) / 12.0, float(np.interp(x * 12.0, r_.x, r_.V))
         M = V = 0.0
         for ld in lds:
             if ld.get("dir", "down") != d:
@@ -5353,6 +5398,9 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
         return M, V
 
     segs = [(0.0, L)] if restraint != "midspan" else [(0.0, L / 2), (L / 2, L)]
+    if multi:
+        pts_ = sorted(set([0.0, lay.total] + list(lay.supports)))
+        segs = list(zip(pts_[:-1], pts_[1:])) if restraint != "continuous" else [(0.0, lay.total)]
     def cb_of(fun, s0, s1):
         q = [abs(fun(s0 + (s1 - s0) * k / 4)) for k in (1, 2, 3)]
         mx = max(abs(fun(x)) for x in xs if s0 - 1e-9 <= x <= s1 + 1e-9)
@@ -5362,35 +5410,48 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
     Ln = footing_line
     best = None
     vmax = dict(v=(0.0, None), s=(0.0, None))
-    for cb in combos:
-        fac = cb.factors
-        Mv = {x: MV(x, fac, "down")[0] for x in xs}
-        Ms = {x: MV(x, fac, "sideways")[0] for x in xs}
+    for cbn, fac, arr in cases_:
+        Mv = {x: MV(x, fac, "down", arr)[0] for x in xs}
+        Ms = {x: MV(x, fac, "sideways", arr)[0] for x in xs}
         for x in xs:
             for key, d in (("v", "down"), ("s", "sideways")):
-                V = abs(MV(x, fac, d)[1])
+                V = abs(MV(x, fac, d, arr)[1])
+                if arr is not None:
+                    r_ = arr["d" if d == "down" else "s"]
+                    if r_ is not None:
+                        V = max(V, float(np.max(np.abs(r_.V))))
                 if V > vmax[key][0]:
-                    vmax[key] = (V, cb.name)
-        if geometric:
+                    vmax[key] = (V, cbn)
+        if geometric and multi:                                          # continuous restraint: positive and negative moments, each flange in turn
+            gflip = ab.geometry(a, vertical, "down" if toe == "up" else "up")
+            for sgn, gg in ((1, g), (-1, gflip)):
+                mx = max(sgn * m for m in Mv.values())
+                if mx <= 1e-9:
+                    continue
+                r = ab.geometric_strength(a, gg, Fy, "continuous", lay.total * 12, 1.0)
+                ratio = mx / (fb * r["Mn"] / 12)
+                if best is None or ratio > best[0]:
+                    best = (ratio, cbn, dict(M=sgn * mx, r=r, Cb=1.0, Lb=lay.total))
+        elif geometric:
             if min(Mv.values()) < -1e-9:
-                raise WorksheetError(f"{mark}: {cb.name} bends the angle upward; uplift on an angle designed about its geometric axis is not covered")
+                raise WorksheetError(f"{mark}: {cbn} bends the angle upward; uplift on an angle designed about its geometric axis is not covered")
             for s0, s1 in segs:
                 mx = max(m for x, m in Mv.items() if s0 - 1e-9 <= x <= s1 + 1e-9)
                 if mx <= 0:
                     continue
                 if restraint == "midspan" and Mv[min(xs, key=lambda x: abs(x - L / 2))] < 0.99 * max(Mv.values()):
-                    raise WorksheetError(f"{mark}: under {cb.name} the largest moment is not at midspan; the restraint must be at the point of largest moment "
+                    raise WorksheetError(f"{mark}: under {cbn} the largest moment is not at midspan; the restraint must be at the point of largest moment "
                                          "(Sect. F10.2(2)(ii))")
                 Cb = cb_of(lambda x: MV(x, fac, "down")[0], s0, s1) if restraint != "continuous" else 1.0
                 r = ab.geometric_strength(a, g, Fy, {"none": "none", "midspan": "max", "continuous": "continuous"}[restraint], (s1 - s0) * 12, Cb)
                 ratio = mx / (fb * r["Mn"] / 12)
                 if best is None or ratio > best[0]:
-                    best = (ratio, cb.name, dict(M=mx, r=r, Cb=Cb, Lb=(s1 - s0)))
+                    best = (ratio, cbn, dict(M=mx, r=r, Cb=Cb, Lb=(s1 - s0)))
         else:
             for s0, s1 in segs:
                 Pr = Pof(fac)
                 if axl and Pr > 0 and (1.0 if method == "LRFD" else 1.6) * Pr >= min(Pe1w_, Pe1z_):
-                    raise WorksheetError(f"{mark}: under {cb.name} the axial load is over the elastic buckling load of the angle")
+                    raise WorksheetError(f"{mark}: under {cbn} the axial load is over the elastic buckling load of the angle")
                 for x in xs:
                     if not (s0 - 1e-9 <= x <= s1 + 1e-9):
                         continue
@@ -5399,12 +5460,15 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
                     Bw, Bz = B[0] * z_hat[0] + B[1] * z_hat[1], B[0] * w_hat[0] + B[1] * w_hat[1]
                     if abs(Bw) < 1e-9 and abs(Bz) < 1e-9 and not (axl and Pr):
                         continue
-                    def bw_fun(xx, fac=fac):
-                        b_ = (MV(xx, fac, "sideways")[0], MV(xx, fac, "down")[0])
+                    def bw_fun(xx, fac=fac, arr=arr):
+                        b_ = (MV(xx, fac, "sideways", arr)[0], MV(xx, fac, "down", arr)[0])
                         return b_[0] * z_hat[0] + b_[1] * z_hat[1]
                     Cb = min(cb_of(bw_fun, s0, s1), 1.5)
+                    bws = [bw_fun(xx) for xx in xs if s0 - 1e-9 <= xx <= s1 + 1e-9]
+                    tol = 1e-6 * max(1e-9, max(abs(q) for q in bws))
+                    neg = max(bws) > tol and min(bws) < -tol              # reverse curvature in the segment: negative beta_w (Commentary F10.2)
                     try:
-                        st = ab.principal_strengths(a, g, Fy, pts, Bw, Bz, (s1 - s0) * 12, Cb)
+                        st = ab.principal_strengths(a, g, Fy, pts, Bw, Bz, (s1 - s0) * 12, Cb, neg_beta=neg)
                     except ab.AngleBeamError as e:
                         raise WorksheetError(f"{mark}: {e}")
                     cw, cz = fb * st["Mnw"] / 12, fb * st["Mnz"] / 12
@@ -5421,7 +5485,7 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
                         it = ab.interaction(pts, Bw, Bz, cw, cz)
                     k = max(it, key=lambda q: abs(it[q]))
                     if best is None or abs(it[k]) > best[0]:
-                        best = (abs(it[k]), cb.name, dict(x=x, Mv=Mv[x], Ms=Ms[x], Bw=Bw, Bz=Bz, st=st, cw=cw, cz=cz, it=it, point=k, Cb=Cb, Lb=(s1 - s0), pts=pts, ax=ax))
+                        best = (abs(it[k]), cbn, dict(x=x, Mv=Mv[x], Ms=Ms[x], Bw=Bw, Bz=Bz, st=st, cw=cw, cz=cz, it=it, point=k, Cb=Cb, Lb=(s1 - s0), pts=pts, ax=ax))
     if best is None:
         raise WorksheetError(f"{mark}: no combination puts a moment on the angle")
     ratio, worst, d = best
@@ -5432,11 +5496,12 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
         r = d["r"]
         steps += [Ln("Design about the geometric x axis", "Sect. F10", "", "AISC 360-22 Sect. F10",
                      "continuous lateral-torsional restraint" if restraint == "continuous" else "equal-leg angle bent about a geometric axis, Sect. F10.2(2)"),
-                  Ln("Required moment Mx", d["M"], "kip-ft", worst, f"Lb = {d['Lb']:g} ft, Cb = {d['Cb']:.2f} (Eq. F1-1)" if restraint != "continuous" else "")]
+                  Ln("Required moment Mx", abs(d["M"]), "kip-ft", worst, (f"Lb = {d['Lb']:g} ft, Cb = {d['Cb']:.2f} (Eq. F1-1)" if restraint != "continuous" else "")
+                     + ("; negative moment, the bottom in compression" if d["M"] < 0 else ""))]
         for nm, val, txt in r["limits"]:
             steps.append(Ln(f"{nm}: Mn", val, "kip-in", "AISC 360-22 Sect. F10", txt))
         steps.append(Ln("Available flexural strength", fb * r["Mn"] / 12, "kip-ft", "Sect. F1", f"{r['governs']} governs; Mn = {r['Mn']:.1f} kip-in.; phi = 0.90, Omega = 1.67"))
-        rows.append(Row("Flexure about the geometric x axis", worst, d["M"], fb * r["Mn"] / 12, "kip-ft", "AISC 360-22 Sect. F10", r["governs"]))
+        rows.append(Row("Flexure about the geometric x axis", worst, abs(d["M"]), fb * r["Mn"] / 12, "kip-ft", "AISC 360-22 Sect. F10", r["governs"]))
     else:
         st, pts = d["st"], d["pts"]
         steps += [Ln("Design about the principal axes", "Sect. F10, H2", "", "AISC 360-22 Sect. F10", "moments resolved on the major (w) and minor (z) principal axes"),
@@ -5478,16 +5543,21 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
                 sv.append(dict(kind=x["kind"], dir=x.get("dir", "down"), **({"w": f * x["w"] / 12.0} if x["kind"] == "uniform" else {"P": f * x["P"], "x": x["x"] * 12.0})))
         if not sv:
             raise WorksheetError(f"{mark}: deflection '{dc.label}': none of its load cases has a load on the angle")
-        df = ab.deflection(a, g, L * 12.0, sv, restraint)
-        lim = L * 12.0 / dc.ratio
+        if multi:
+            df, lim, seg_txt = _angle_multi_deflection(a, g, lay, lds, dc, restraint, ab, contbeam)
+            if df is None:
+                raise WorksheetError(f"{mark}: deflection '{dc.label}': none of its load cases has a load on the angle")
+        else:
+            df = ab.deflection(a, g, L * 12.0, sv, restraint)
+            lim, seg_txt = L * 12.0 / dc.ratio, f"L / {dc.ratio:g}"
         how = ("about the geometric axis, I = %.2f in4" % g["Ix"] if restraint == "continuous" else
                f"loads resolved on the principal axes, Iw = {a['Iw']:g}, Iz = {a['Iz']:g} in4; vector sum")
         steps.append(Ln(f"Deflection, {dc.label}", f"{df['d']:.3f} in", "", "AISC 360-22 Commentary Sect. F10.2" if restraint != "continuous" else "statics",
                         f"at {df['x'] / 12:.2f} ft: {df['dv']:.3f} in. down, {df['dh']:.3f} in. sideways; {how}; E = 29,000 ksi"))
-        rows.append(Row(f"Deflection, {dc.label}", "service", df["d"], lim, "in", f"L / {dc.ratio:g}; {dc.source.strip()}",
+        rows.append(Row(f"Deflection, {dc.label}", "service", df["d"], lim, "in", f"{seg_txt}; {dc.source.strip()}",
                         "resultant of the vertical and sideways components" if restraint != "continuous" else "vertical"))
     info = [("Section", f"{shapes.normalize(shape)}, Fy = {Fy:g} ksi ({steel_source.strip()})"),
-            ("Span", f"{L:g} ft, simply supported; ends braced"),
+            ("Span", (lay.describe() + "; braced at the supports" if multi else f"{L:g} ft, simply supported; ends braced")),
             ("Orientation", orient + "; the horizontal leg points away from the heel"),
             ("Restraint", {"none": "no lateral-torsional restraint between the ends", "midspan": "lateral-torsional restraint at midspan",
                            "continuous": "continuous lateral-torsional restraint"}[restraint])]
@@ -5500,6 +5570,9 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
         load_lines.append(f"{x['case']:<3} {abs(x['P']):>9.2f} kip  axial     {'compression' if x['P'] > 0 else 'tension'}, through the centroid" + (f"   {x['label']}" if x.get("label") else ""))
     assumptions = ["Down loads act vertically; sideways loads act horizontally, from the toe of the horizontal leg toward the heel when positive.",
                    "Loads act through the shear center (the heel); torsion is not considered."]
+    if multi:
+        assumptions.append("Continuous over its supports (uniform stiffness); live load arranged span by span (ASCE/SEI 7-22 Sect. 4.3.3) for the vertical loads; "
+                           "each support braces the angle; where the major-axis moment reverses within an unbraced length, the negative beta_w is used for it.")
     if axl:
         assumptions.append("Axial load acts through the centroid; length for buckling and for the second-order factors the span, K = 1.0, both ends pinned; "
                            "Cm = 1.0 (transverse loading).")
@@ -5509,17 +5582,74 @@ def angle_beam_sheet(mark, shape, Fy, steel_source, span_ft, vertical, toe, rest
                         assumptions, (["deflection (no limit entered)"] if not defl else []) + ([] if axl else ["axial load"]) + ["the end connections", "bearing at the supports"]
                         + (["tensile rupture at the end connections"] if any(x["P"] < 0 for x in axl) else []))
     sheet.blocks.append(dict(title="Loading and Section", head="Loading and Section", picture=("angle_beam", dict(
-        L=L, loads=[dict(kind="uniform", w=x["w"] * 1000, case=x["case"]) if x["kind"] == "uniform" else dict(kind="point", P=x["P"] * 1000, x_ft=x["x"], case=x["case"])
+        L=(lay.total if multi else L), supports=(list(lay.supports) if multi else None), loads=[dict(kind="uniform", w=x["w"] * 1000, case=x["case"]) if x["kind"] == "uniform" else dict(kind="point", P=x["P"] * 1000, x_ft=x["x"], case=x["case"])
                     for x in lds if x.get("dir", "down") == "down"],
         side=[f"{x['case']} {x['w'] * 1000:,.0f} plf" if x["kind"] == "uniform" else f"{x['case']} {x['P'] * 1000:,.0f} lb at {x['x']:g} ft" for x in lds if x.get("dir") == "sideways"],
         axial=[(f"{x['case']} {abs(x['P']):.2f} kip {'compression' if x['P'] > 0 else 'tension'}", x["P"] > 0) for x in axl],
         Lv=g["Lv"], Lh=g["Lh"], t=g["t"], toe=toe, shape=shapes.normalize(shape)))))
-    fac = next(cb for cb in combos if cb.name == worst).factors
-    dx = [L * i / 48 for i in range(49)]
-    sheet.diagram = dict(combo=worst, note="vertical loads", x=dx, V=[MV(x, fac, "down")[1] * 1000 for x in dx], M=[MV(x, fac, "down")[0] * 1000 for x in dx])
+    fac, arr_w = next((fc, ar) for nm_, fc, ar in cases_ if nm_ == worst)
+    Ld_ = lay.total if multi else L
+    dx = sorted(set([Ld_ * i / 96 for i in range(97)] + (list(lay.supports) if multi else [])))
+    sheet.diagram = dict(combo=worst, note="vertical loads", x=dx, V=[MV(x, fac, "down", arr_w)[1] * 1000 for x in dx], M=[MV(x, fac, "down", arr_w)[0] * 1000 for x in dx])
     sheet.angle_beam = dict(ratio=ratio, worst=worst, geometric=geometric, detail=d)
+    sheet.reactions = {}                                                 # vertical reactions at the supports, kips, every span loaded
+    for cb in combos:
+        if multi:
+            rd = bas_d.solve([(cb.factors.get(c_, 0.0), ld) for c_, lst in by_d.items() for ld in lst]) if bas_d else None
+            sheet.reactions[cb.name] = tuple((rd.reactions[min(rd.reactions, key=lambda k: abs(k - s_ * 12))] if rd is not None else 0.0) for s_ in lay.supports)
+        else:
+            sheet.reactions[cb.name] = (MV(0.0, cb.factors, "down")[1], -MV(L, cb.factors, "down")[1])
     return sheet
 
+
+
+
+def _angle_multi_deflection(a, g, lay, lds, dc, restraint, ab, contbeam):
+    """Deflection of a continuous or overhanging single angle under the service loads of one deflection check: the down loads arranged span by
+    span (live), each load direction solved with EI = 1 and resolved on the principal axes as anglebeam.deflection does; the largest resultant
+    over each span (limit span / ratio) and overhang (2 x overhang / ratio), the worst ratio to its limit. Returns (dict(x in., dv, dh, d), limit,
+    text)."""
+    E_ = ab.E
+    Lt = lay.total
+    conv = lambda x, f: dict(kind="uniform", w=f * x["w"], x1_ft=0.0, x2_ft=Lt) if x["kind"] == "uniform" else dict(kind="point", P=f * x["P"], x_ft=x["x"])
+    by_d, by_s = {}, {}
+    for x in lds:
+        f = dc.factors.get(x["case"], 0.0)
+        if f:
+            (by_s if x.get("dir") == "sideways" else by_d).setdefault(x["case"], []).append(conv(x, 1.0))
+    bd = contbeam.Basis(lay, 1.0, by_d) if by_d else None
+    bs = contbeam.Basis(lay, 1.0, by_s) if by_s else None
+    rs = bs.solve([(dc.factors.get(c_, 0.0), ld) for c_, lst in by_s.items() for ld in lst]) if bs else None
+    w_hat, z_hat, _ = ab.principal_points(a, g)
+    best = None
+    for _, items in (contbeam.arrangements(lay, by_d, dc.factors) if by_d else [(None, [])]):
+        rd = bd.solve(items) if (bd and items) else None
+        if rd is None and rs is None:
+            continue
+        xs = (rd.x if rd is not None else rs.x)
+        for x0, x1, label, Ld in lay.segments:
+            lim = (2 * Ld if ("overhang" in label or "cantilever" in label) else Ld) * 12.0 / dc.ratio
+            for xi in xs:
+                if not (x0 * 12 - 1e-6 <= xi <= x1 * 12 + 1e-6):
+                    continue
+                kd = float(np.interp(xi, rd.x, rd.defl)) if rd is not None else 0.0      # deflection x EI in the load direction
+                ks = float(np.interp(xi, rs.x, rs.defl)) if rs is not None else 0.0
+                if restraint == "continuous":
+                    dv, dh = kd / (E_ * g["Ix"]), 0.0
+                else:
+                    ux = uy = 0.0
+                    for k, F in ((kd, (0.0, -1.0)), (ks, (-1.0, 0.0))):
+                        if not k:
+                            continue
+                        fw, fz = F[0] * w_hat[0] + F[1] * w_hat[1], F[0] * z_hat[0] + F[1] * z_hat[1]
+                        uw, uz = k * fw / (E_ * a["Iz"]), k * fz / (E_ * a["Iw"])
+                        ux += uw * w_hat[0] + uz * z_hat[0]; uy += uw * w_hat[1] + uz * z_hat[1]
+                    dv, dh = -uy, ux
+                d = (dv * dv + dh * dh) ** 0.5
+                if best is None or d / lim > best[0]["d"] / best[1]:
+                    best = (dict(x=xi, dv=dv, dh=dh, d=d), lim, (f"2 x {Ld:g} ft overhang / {dc.ratio:g}" if ("overhang" in label or "cantilever" in label)
+                                                                 else f"{Ld:g} ft span / {dc.ratio:g}"))
+    return best
 
 def crane_runway_sheet(mark, beam, Fy, beam_source, span_ft, rail_plf, rail_note, kind, class_basis, capacity, trolley, wheel, wheel_source, n, spacing,
                        powered, share, share_source, combos, method, defl=None, spans=None, lb_wheel=None, lb_source=""):

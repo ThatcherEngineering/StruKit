@@ -2214,11 +2214,17 @@ def _angle_beam_picture(c, top, d):
     c.setFillColorRGB(0.74, 0.79, 0.86); c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
     c.rect(x0, yb - 6, x1 - x0, 6, fill=1, stroke=1)
     c.setLineWidth(0.6)
-    for xx in (x0, x1):
+    sups = d.get("supports")
+    for xx in ([x0 + (x1 - x0) * s_ / L for s_ in sups] if sups else (x0, x1)):
         p_ = c.beginPath(); p_.moveTo(xx, yb - 6); p_.lineTo(xx - 5, yb - 14); p_.lineTo(xx + 5, yb - 14); p_.close()
         c.drawPath(p_, fill=0, stroke=1)
     _beam_loads(c, x0, x1, yb, L, loads)
-    memberart._dim_h(c, x0, x1, yb - 24, f"span {L:g} ft", FR, ext_from=yb - 14)
+    if sups:
+        marks = sorted(set([0.0, L] + list(sups)))
+        for a_, b_ in zip(marks[:-1], marks[1:]):
+            memberart._dim_h(c, x0 + (x1 - x0) * a_ / L, x0 + (x1 - x0) * b_ / L, yb - 24, f"{b_ - a_:g} ft", FR, ext_from=yb - 14)
+    else:
+        memberart._dim_h(c, x0, x1, yb - 24, f"span {L:g} ft", FR, ext_from=yb - 14)
     yl = yb - 44
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawString(x0, yl, d["shape"] + " (down loads drawn; plf and lb)")
