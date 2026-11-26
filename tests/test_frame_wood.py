@@ -52,3 +52,29 @@ def test_2026_011_wood_frame_agrees_with_takedown():
             if td > 100:
                 assert fr_ == pytest.approx(td, rel=0.05), (c["mark"], case)
     assert any("Rows of joists" in n for n in r["notes"]) and any("Wood members are in the frame" in n for n in r["notes"])
+
+
+def test_wood_checks_from_the_frame_match_their_sheets_and_hand():
+    """Sway run (ASD) checks of wood members from the frame forces: the 2026-011 built-up posts equal their own sheets' compression ratios
+    (pinned posts carry axial load only), the LVL beams their sheets' bending ratios; NDS Eq. 3.9-3 by hand for a 6x6 post."""
+    d = json.load(open(os.path.join(os.path.dirname(__file__), "data", "job_2026_011_model.strukit")))
+    lk = calc.model_links(d["project"], d["members"])
+    g = calc.lateral_governing(d["project"], lk["members"])
+    r = calc.model_frame_sway(d["project"], g["members"])
+    assert r["problems"] == []
+    by = {c["mark"]: c for c in r["columns"] + r["beams"]}
+    for mk, row in (("Column A", "compression"), ("Post under Beam B", "compression"), ("Floor Beam C", "bending"), ("Roof Beam A", "bending")):
+        m = next(m for m in g["members"] if m["values"]["mark"] == mk)
+        sheet, _, _ = calc.build(m["kind"], m["values"], d["project"])
+        own = next(x.dc for x in sheet.rows if x.check == row)
+        assert by[mk]["ratio"] == pytest.approx(own, rel=0.02), mk
+    # hand: 6x6 No. 2 DF-L post, 9 ft pinned, P = 5 kips, strong-axis M = 10 kip-in., D + L (CD 1.0)
+    W = calc._wood_frame_strength("wood_post", POST, 108.0)
+    val, eq = calc._wood_frame_ratio(W, 5.0, 10.0, 0.0, 0.0, 1.0, 108.0, 108.0, 0.0)
+    A, S = 5.5 * 5.5, 5.5 ** 3 / 6
+    fc, fb = 5000 / A, 10000 / S
+    FcE = 0.822 * 470000 / (108 / 5.5) ** 2
+    aa = FcE / 700.0
+    CP = (1 + aa) / 1.6 - ((((1 + aa) / 1.6) ** 2) - aa / 0.8) ** 0.5
+    hand = (fc / (700 * CP)) ** 2 + fb / (750 * (1 - fc / FcE))
+    assert val == pytest.approx(hand, rel=1e-6) and eq == "NDS Eq. 3.9-3"

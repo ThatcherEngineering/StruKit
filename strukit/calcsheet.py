@@ -1076,10 +1076,20 @@ def _cover_pdf(cover, path, job, code, date, page=1, pages=1):
             continue
         p.y -= 2; p.room(40); p.head(title)
         for expr, src in rows_:
-            p.room(12)
+            words, lines_, cur_ = src.split(), [], ""                 # the source wraps inside the right margin
+            for w_ in words:
+                t_ = (cur_ + " " + w_).strip()
+                if cur_ and c.stringWidth(t_, FR, 7.5) > RM - LM - 200:
+                    lines_.append(cur_); cur_ = w_
+                else:
+                    cur_ = t_
+            lines_.append(cur_)
+            p.room(12 + 9 * (len(lines_) - 1))
             c.setFont(FM, 8); c.setFillColorRGB(*INK); c.drawString(LM, p.y, expr)
-            c.setFont(FR, 7.5); c.setFillColorRGB(*GREY); c.drawString(LM + 200, p.y, src)
-            p.y -= 10.5
+            c.setFont(FR, 7.5); c.setFillColorRGB(*GREY)
+            for k_, ln_ in enumerate(lines_):
+                c.drawString(LM + 200, p.y - 9 * k_, ln_)
+            p.y -= 10.5 + 9 * (len(lines_) - 1)
     p.y -= 2; p.room(50); p.head("Contents")
     def header():
         c.setFont(FB, 7.5); c.setFillColorRGB(*GREY)

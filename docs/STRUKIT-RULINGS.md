@@ -234,3 +234,17 @@ be able to size a larger square/rectangular footer at that point load." Built 0.
 - Rows of joists or rafters (members with a spacing) and I-joists are not frame members; their loads reach the frame through the load path.
 - Wood members are not checked from the frame forces; their own sheets (NDS) are the check.
 
+## 2026-11-25 20:20, shear walls and wood checks in the 3D frame (0.232.0), applied (not ruled; tell Zach at the check-in)
+- Shear wall stiffness in the frame: the design shear over the SDPWS Eq. 4.3-1 deflection of its own sheet (a secant stiffness at the design
+  load; segments in parallel). It needs the end post area and E and the anchorage slip typed on the wall screen; without them the wall is
+  left out of the frame and reported.
+- Force-transfer walls: Eq. 4.3-1 for each pier over the full wall height, the sheathing above and below the openings not counted (softer
+  than the wall, so more drift).
+- In the frame each level is tied by a stiff diaphragm (the walls' design shears still come from the flexible wall-line distribution).
+  Existing walls are not in the frame; the new walls take all the lateral load there.
+- Column tops bearing on or under wood beams are pinned in the frame (a post cap).
+- Wood members checked from the frame forces (ASD projects): NDS Eq. 3.9-1 to 3.9-3, 3.7 and shear at every station; CD from each
+  combination; Cr, Cfu, CM, Ct, Ci = 1.0 (wet service or incised members only on their own sheets); a beam's strong-axis buckling length is
+  the length between frame joints; CP for built-up columns with Kf in the stack direction. LVL Ft taken without a length factor. Glulam and
+  Weyerhaeuser beams carrying axial force from the frame are reported (no Fc or Ft in StruKit's tables for them).
+

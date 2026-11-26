@@ -20,6 +20,11 @@ Lm = {m["values"]["mark"]: m for m in lat["members"]}
 
 proj = copy.deepcopy(grav["project"])
 proj["name"] = "Humbargar Residence Addition, building model (test)"
+# the full ASCE/SEI 7-22 lists, with wind and seismic, so the 3D frame runs the lateral cases (Sect. 2.3.1, 2.4.1; seismic Sect. 2.3.6, 2.4.5)
+from strukit import loadcombos as _lc
+_eq = _lc.seismic(float(lat["members"][[m["values"]["mark"] for m in lat["members"]].index("Seismic")]["values"]["SDS"]), 1.0, True)
+proj["combos_asd"] = [dict(c) for c in _lc.ASD] + _eq["ASD"]
+proj["combos_lrfd"] = [dict(c) for c in _lc.LRFD] + _eq["LRFD"]
 proj["model"] = dict(levels=[dict(name="Foundation", elev="0"), dict(name="Main floor", elev="9.5"), dict(name="Roof", elev="19")],
                      grids_x=[dict(name="1", at="0"), dict(name="2", at="9.0833"), dict(name="3", at="11.2"), dict(name="4", at="18.1667"), dict(name="5", at="27.25")],
                      grids_y=[dict(name="A", at="0"), dict(name="B", at="4.5"), dict(name="C", at="14.896"), dict(name="D", at="29.75")],
@@ -75,6 +80,9 @@ for mk, top, p1, p2 in (("Line 1, main level", "Roof", (0, 0), (27.25, 0)), ("Li
     w_ = put(Lm[mk], at_level=top, at_x1=p1[0], at_y1=p1[1], at_x2=p2[0], at_y2=p2[1])
     if w_["values"].get("hd_model"):
         w_["values"]["hd_sdc"] = "A or B"                     # sheet S0: Seismic Design Category B
+    # stiffness for the 3D frame (test inputs): end posts (2) 2x6 No. 2 Douglas Fir-Larch, E from NDS Supplement Table 4A; anchorage slip
+    # the STHD14 deflection of catalog C-C-2026 p. 67 note 5 (at the allowable load, the larger of its values)
+    w_["values"].update(chord_A="16.5", chord_E="1600000", slip="0.164")
 for mk, p1, p2 in (("Footing Line 1", (0, 0), (27.25, 0)), ("Footing Line A", (0, 0), (0, 29.75)), ("Footing Line B", (27.25, 0), (27.25, 22.58))):
     put(G["Continuous Footing"], mk, at_x1=p1[0], at_y1=p1[1], at_x2=p2[0], at_y2=p2[1])
 for mk in ("Wind", "Seismic"):

@@ -35,6 +35,7 @@ class Member3D:
     up: tuple = None             # a vector that, with the member axis, fixes local z; None = the default described above
     release_i: tuple = ()        # local rotations released at the end: any of "my", "mz", "mx"
     release_j: tuple = ()
+    nsub: int = None             # elements in a second-order run; None = the run's n_sub (1 for a straight two-force bar)
 
 
 @dataclass
@@ -55,7 +56,7 @@ class Frame3D:
     def node(self, name, x, y, z):
         self.nodes[name] = (float(x), float(y), float(z))
 
-    def member(self, name, i, j, E, G, A, Iy, Iz, J, up=None, release_i=(), release_j=()):
+    def member(self, name, i, j, E, G, A, Iy, Iz, J, up=None, release_i=(), release_j=(), nsub=None):
         for n in (i, j):
             if n not in self.nodes:
                 raise Frame3DError(f"frame: member {name} uses joint {n}, which is not defined")
@@ -63,7 +64,7 @@ class Frame3D:
             raise Frame3DError(f"frame: two members are named {name}")
         if min(E, G, A, Iy, Iz, J) <= 0:
             raise Frame3DError(f"frame: member {name} needs positive E, G, A, Iy, Iz and J")
-        self.members.append(Member3D(name, i, j, E, G, A, Iy, Iz, J, up, tuple(release_i), tuple(release_j)))
+        self.members.append(Member3D(name, i, j, E, G, A, Iy, Iz, J, up, tuple(release_i), tuple(release_j), nsub))
 
     def support(self, node, kind):
         """kind: "fixed", "pin", "roller_z", or six 0/1 flags (ux, uy, uz, rx, ry, rz), 1 = held."""
@@ -177,12 +178,13 @@ class Frame3D:
             T = np.zeros((12, 12))
             for b in range(4):
                 T[3 * b:3 * b + 3, 3 * b:3 * b + 3] = R
-            chain = [idx[m.i]] + [6 * (n_nodes + q) for q in range(nsub - 1)] + [idx[m.j]]
-            n_nodes += nsub - 1
-            for k in range(nsub):
-                rel = ([self.REL[r] for r in m.release_i] if k == 0 else []) + ([6 + self.REL[r] for r in m.release_j] if k == nsub - 1 else [])
+            ns = min(nsub, m.nsub) if m.nsub else nsub
+            chain = [idx[m.i]] + [6 * (n_nodes + q) for q in range(ns - 1)] + [idx[m.j]]
+            n_nodes += ns - 1
+            for k in range(ns):
+                rel = ([self.REL[r] for r in m.release_i] if k == 0 else []) + ([6 + self.REL[r] for r in m.release_j] if k == ns - 1 else [])
                 dofs = list(range(chain[k], chain[k] + 6)) + list(range(chain[k + 1], chain[k + 1] + 6))
-                elems.append((m.name, k, dofs, L / nsub, T, rel))
+                elems.append((m.name, k, dofs, L / ns, T, rel))
         n = 6 * n_nodes
         F0 = np.zeros(n)
         for nd, load in (node_loads or {}).items():
