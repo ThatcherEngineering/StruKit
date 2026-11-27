@@ -4524,35 +4524,107 @@ def _snow_drift_picture(c, top, d):
 
 
 def _perforated_wall_picture(c, top, d):
-    """Elevation of a perforated shear wall to scale: sheathing, openings, the full-height
-    segment lengths, opening widths, the height, the shear and the chord forces."""
+    """Elevation of a sheathed shear wall with openings, to scale, drawn as built: the sheathing face with its 4 x 8 ft panel joints, the
+    framing behind it dashed (studs at 16 in., the bottom plate and the double top plate, king and jack studs at each opening, the end
+    posts heavier), the openings, a hold-down at each end of the wall, and for force transfer the strap and blocking along the top and
+    bottom of each opening; the full-height segment lengths, opening widths and height dimensioned, the shear and the chord forces."""
     Lw, h = d["L"], d["h"]
-    sc = min((RM - LM - 130) / Lw, 84.0 / h)
+    sc = min((RM - LM - 130) / Lw, 118.0 / h)
     _sketch_title(c, LM + 6, top - 4, "ELEVATION")
     x0, y0 = LM + 50, top - 36 - h * sc
     W, H = Lw * sc, h * sc
-    c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setFillColorRGB(*memberart.WOOD_FILL)
+    ops = sorted(d["openings"], key=lambda o: o["x"])
+    inside = lambda x, y: any(o["x"] - 1e-6 < x < o["x"] + o["w"] + 1e-6 and o["sill"] - 1e-6 < y < o["sill"] + o["h"] + 1e-6 for o in ops)
+    # sheathing face
+    c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setFillColorRGB(0.94, 0.88, 0.76)
     c.rect(x0, y0, W, H, fill=1, stroke=1)
-    c.setFillColorRGB(1, 1, 1); c.setLineWidth(0.6)
-    for o in d["openings"]:
+    c.saveState()                                            # strand texture of the panels, clipped off the openings
+    pth = c.beginPath(); pth.rect(x0, y0, W, H)
+    for o in ops:
+        pth.rect(x0 + o["x"] * sc, y0 + o["sill"] * sc, o["w"] * sc, o["h"] * sc)
+    c.clipPath(pth, stroke=0, fill=0, fillMode=1)
+    import random as _r
+    rnd = _r.Random(int(Lw * 13 + h * 7))
+    c.setStrokeColorRGB(0.80, 0.70, 0.52); c.setLineWidth(0.35)
+    for _ in range(int(W * H / 22)):
+        px, py, ln = x0 + rnd.uniform(0, W), y0 + rnd.uniform(0, H), rnd.uniform(1.5, 3.5)
+        a = rnd.uniform(-0.6, 0.6)
+        c.line(px, py, px + ln, py + ln * a)
+    c.restoreState()
+    c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setLineWidth(0.5)       # panel joints: 4 ft sheets, 8 ft long
+    xx = 4.0
+    while xx < Lw - 1e-6:
+        c.line(x0 + xx * sc, y0, x0 + xx * sc, y0 + H)
+        xx += 4.0
+    if h > 8.0 + 1e-6:
+        c.line(x0, y0 + 8.0 * sc, x0 + W, y0 + 8.0 * sc)
+    # framing behind, dashed
+    c.setStrokeColorRGB(0.45, 0.32, 0.18); c.setLineWidth(0.35); c.setDash(2.2, 1.6)
+    c.line(x0, y0 + 0.125 * sc, x0 + W, y0 + 0.125 * sc)                            # bottom plate
+    c.line(x0, y0 + H - 0.25 * sc, x0 + W, y0 + H - 0.25 * sc)                      # double top plate
+    c.line(x0, y0 + H - 0.125 * sc, x0 + W, y0 + H - 0.125 * sc)
+    k = 1
+    while k * 16.0 / 12.0 < Lw - 0.2:                                              # studs at 16 in.
+        xs = k * 16.0 / 12.0
+        segs, yy, ys_ = [], 0.0, [0.0]
+        for o in ops:
+            if o["x"] < xs < o["x"] + o["w"]:
+                segs += [(0.0, o["sill"]), (o["sill"] + o["h"], h)]
+        for a, b in (segs or [(0.0, h)]):
+            if b - a > 1e-6:
+                c.line(x0 + xs * sc, y0 + a * sc, x0 + xs * sc, y0 + b * sc)
+        k += 1
+    for o in ops:                                                                   # king and jack studs, header and sill lines
+        for xq in (o["x"] - 0.0625, o["x"] - 0.1875, o["x"] + o["w"] + 0.0625, o["x"] + o["w"] + 0.1875):   # jack, then king, each side
+            c.line(x0 + xq * sc, y0, x0 + xq * sc, y0 + H)
+        c.line(x0 + o["x"] * sc, y0 + (o["sill"] + o["h"]) * sc + 1.2, x0 + (o["x"] + o["w"]) * sc, y0 + (o["sill"] + o["h"]) * sc + 1.2)
+        if o["sill"] > 0:
+            c.line(x0 + o["x"] * sc, y0 + o["sill"] * sc - 1.2, x0 + (o["x"] + o["w"]) * sc, y0 + o["sill"] * sc - 1.2)
+    c.setDash()
+    c.setLineWidth(0.8)                                                             # end posts (chords), dashed heavier
+    c.setDash(3, 1.6)
+    for xe in (x0 + 2.0, x0 + W - 2.0):
+        c.line(xe, y0, xe, y0 + H)
+    c.setDash()
+    # openings
+    c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setLineWidth(0.7)
+    for o in ops:
         c.rect(x0 + o["x"] * sc, y0 + o["sill"] * sc, o["w"] * sc, o["h"] * sc, fill=1, stroke=1)
+    # force transfer: strap and blocking along the top and bottom of each opening, across the piers beside it
+    if d.get("ftao"):
+        segs_ = d.get("segs") or []
+        c.setFillColorRGB(0.55, 0.58, 0.62); c.setStrokeColorRGB(0.30, 0.33, 0.37); c.setLineWidth(0.3)
+        for o in ops:
+            xl = max([s_["x"] for s_ in segs_ if s_["x"] + s_["b"] <= o["x"] + 1e-6] or [o["x"]])
+            xr = min([s_["x"] + s_["b"] for s_ in segs_ if s_["x"] >= o["x"] + o["w"] - 1e-6] or [o["x"] + o["w"]])
+            for yl in ([o["sill"]] if o["sill"] > 0 else []) + [o["sill"] + o["h"]]:
+                c.rect(x0 + xl * sc + 1, y0 + yl * sc - 0.9, (xr - xl) * sc - 2, 1.8, fill=1, stroke=1)
+    # hold-downs at the ends: bracket on the end post, anchor rod into the foundation
+    c.setFillColorRGB(*memberart.STEEL_FILL); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+    for xe, sg in ((x0, 1), (x0 + W, -1)):
+        bx = xe + sg * 2.5 - (4.0 if sg < 0 else 0.0)
+        c.rect(bx, y0 + 1.0, 4.0, 11.0, fill=1, stroke=1)
+        c.setLineWidth(0.9); c.line(bx + 2.0, y0 - 5.0, bx + 2.0, y0 + 4.0); c.setLineWidth(0.5)
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.6); c.line(x0 - 14, y0, x0 + W + 14, y0)
+    # loads and dimensions
     c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.8)
     c.line(x0 + 2, y0 + H + 6, x0 + W - 2, y0 + H + 6); c.line(x0 + W - 2, y0 + H + 6, x0 + W - 6, y0 + H + 8)
     c.line(x0 + W - 2, y0 + H + 6, x0 + W - 6, y0 + H + 4)
     c.setFont(FR, 6.5); c.drawCentredString(x0 + W / 2, y0 + H + 10, f"V = {d['V']:,.0f} lb")
     marks = [0.0]
-    for o in sorted(d["openings"], key=lambda o: o["x"]):
+    for o in ops:
         marks += [o["x"], o["x"] + o["w"]]
     marks.append(Lw)
     for a, b in zip(marks[:-1], marks[1:]):
         if b - a > 1e-6:
-            memberart._dim_h(c, x0 + a * sc, x0 + b * sc, y0 - 9, f"{b - a:g}" if (b - a) * sc < 24 else f"{b - a:g} ft", FR, ext_from=y0)
-    memberart._dim_h(c, x0, x0 + W, y0 - 21, f"{Lw:g} ft", FR, ext_from=y0 - 9)
-    memberart._dim_v(c, y0, y0 + H, x0 + W + 8, f"{h:g} ft", FR, ext_from=x0 + W)
+            memberart._dim_h(c, x0 + a * sc, x0 + b * sc, y0 - 11, f"{b - a:g}" if (b - a) * sc < 24 else f"{b - a:g} ft", FR, ext_from=y0 - 6)
+    memberart._dim_h(c, x0, x0 + W, y0 - 23, f"{Lw:g} ft", FR, ext_from=y0 - 11)
+    memberart._dim_v(c, y0, y0 + H, x0 + W + 10, f"{h:g} ft", FR, ext_from=x0 + W)
     c.setFont(FR, 6); c.setFillColorRGB(*GREY)
-    c.drawRightString(x0 - 4, y0 + 2, f"T {d['T']:,.0f}"); c.drawString(x0 + W + 4, y0 - 6, f"C {d['T']:,.0f}")
-    _small(c, (LM + RM) / 2, y0 - 41, "to scale; openings shown white; chord forces in lb")
-    return y0 - 47
+    c.drawRightString(x0 - 4, y0 + 4, f"T {d['T']:,.0f}"); c.drawString(x0 + W + 4, y0 - 7, f"C {d['T']:,.0f}")
+    _small(c, (LM + RM) / 2, y0 - 43, "to scale; sheathing face with 4 x 8 ft panel joints, framing behind dashed, hold-down at each end"
+           + ("; strap and blocking along the top and bottom of each opening" if d.get("ftao") else "") + "; chord forces in lb")
+    return y0 - 55
 
 
 def _shear_wall_picture(c, top, d):
