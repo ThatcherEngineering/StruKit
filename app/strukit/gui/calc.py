@@ -9,7 +9,7 @@ import math
 import re
 
 from .. import calcsheet, glulam, ijoist, scl, shapes, shearwall, snow, wood, ws_conn, ws_footing, ws_frame, ws_more, ws_steel_beam, ws_steel_column, ws_wood
-from .. import holddowns
+from .. import holddowns, simpson
 from ..footing import FootingInputError
 from ..steel_beam import SteelInputError
 from ..ws_steel_beam import Combo, DeflCheck, WorksheetError
@@ -1361,6 +1361,19 @@ FORMS = {
                 F("steel_source", "Where that allowable tension comes from", "text", required=False)],
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Force pulling the side member off the main member, on the group of screws, by load case; the project's ASD combinations are applied.")]),
+    "joist_hanger": dict(
+        title="Joist Hanger (Simpson Strong-Tie, face mount)", code="Simpson C-C-2026", mark="JH",
+        fields=[F("joist", "Joist", "select", options=simpson.joist_sizes(), help="solid sawn; DBL, TPL, QUAD = 2, 3, 4 plies"),
+                F("species", "Species group", "select", options=["DF/SP", "SPF/HF"], help="of the joist and the carrying member; DF/SP also for SCL of G 0.50 or more"),
+                F("model", "Hanger", "select", options=["lightest that works"] + simpson.models(), help="the catalog's face-mount hangers for solid sawn lumber (pp. 114-123)"),
+                F("nailing", "Nailing (HU / HUC and others with two rows)", "select", options=["Min.", "Max."], required=False, help="blank = maximum nailing"),
+                F("download", "Download, ASD", unit="lb"),
+                F("duration", "Load duration of the download", "select", options=list(simpson.DURATIONS)),
+                F("uplift", "Uplift, ASD (wind or earthquake)", unit="lb", required=False),
+                F("carrying", "Carrying member", "select", options=["3x or larger, or a beam", "2x (header nails shortened)"]),
+                F("end_grain", "Nailed into the end grain of the carrying member", "select", options=["no", "yes"], required=False),
+                F("load_source", "Where the loads come from", "text", help="for example: reaction of joist J1")],
+        tables=[]),
     "bolted_connection": dict(
         title="Bolted Connection", code="NDS 2018", mark="BC",
         fields=[F("D", "Bolt diameter", "select", options=["1/2", "5/8", "3/4", "7/8", "1"], unit="in"),
@@ -3016,6 +3029,12 @@ def _build(kind, values, project):
                                             end_grain=bool(yes(r.text("end_grain", False))), edge=r.num("edge", False), end=r.num("end", False),
                                             spacing=r.num("spacing", False), steel=st_, steel_source=r.text("steel_source", False) or "",
                                             steel_side=r.text("side_kind", False) == "steel", bearing=brg), "simple", {}
+    if kind == "joist_hanger":
+        j, sp, mdl, dl, du = r.text("joist"), r.text("species"), r.text("model"), r.num("download"), r.text("duration")
+        car, src = r.text("carrying"), r.text("load_source")
+        r.done()
+        return ws_more.joist_hanger_sheet(mark, j, sp, mdl, dl, du, r.num("uplift", False) or 0.0, (car or "").startswith("2x"),
+                                          (r.text("end_grain", False) or "").startswith("y"), r.text("nailing", False), src), "simple", {}
     if kind in ("bolted_connection", "lag_connection"):
         cb = combos(project, r.miss, "ASD")
         Dt = r.text("D")
