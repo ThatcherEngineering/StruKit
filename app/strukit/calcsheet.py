@@ -3700,39 +3700,83 @@ def _stiffened_seat_picture(c, top, d):
 
 
 def _guard_picture(c, top, d):
-    """Elevation of three posts and the top rail, schematic: the 200 lb load at mid-span and
-    at the top of a post, the uniform load along the rail where it applies, post spacing and
-    guard height dimensioned."""
+    """Guard elevation, to scale: three posts and the top rail drawn as tubes (corner lines on HSS, shading on pipe), the rail running over
+    the post tops and broken off past the end posts, each post on a base plate (or welded to the top flange of the channel stringer, drawn
+    with its flanges), the 200 lb load at mid-span and at a post top, the uniform load where it applies, spacing and height dimensioned;
+    beside it the rail and the post cut to scale."""
     S, h = d["S"], d["h"]
-    sc = min(100.0 / S, 62.0 / h)
-    x0 = (LM + RM) / 2 - S * sc
-    yb = top - 40 - h * sc
+    rd, pd = d.get("rail_d"), d.get("post_d")
+    sc = min(80.0 / S, 70.0 / h)
+    x0 = LM + 70
+    ch = d.get("channel")
+    yb = top - 38 - h * sc
     yt = yb + h * sc
-    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.6); c.line(x0 - 26, yb, x0 + 2 * S * sc + 26, yb)
-    c.setStrokeColorRGB(*INK); c.setLineWidth(2.2)
-    for k in range(3):
-        c.line(x0 + k * S * sc, yb, x0 + k * S * sc, yt)
-    c.setLineWidth(2.6); c.line(x0 - 6, yt, x0 + 2 * S * sc + 6, yt)
+    dim = lambda q: ((q["OD"] if q["kind"] == "round" else q["H"]) if q else 1.5)
+    rw = max(dim(rd) * sc / 12, 3.0)                     # rail depth, to scale (not less than a visible tube)
+    pw = max((pd["OD"] if pd and pd["kind"] == "round" else (pd["B"] if pd else 1.5)) * sc / 12, 3.0)
+    xe = x0 + 2 * S * sc
+    # what the posts stand on
+    if ch:
+        cd_ = ch["d"] * sc / 12
+        memberart.w_side(c, x0 - 22, yb - cd_, xe - x0 + 44, cd_, max(ch["tf"] * sc / 12, 1.2), vertical=False)
+        _break_v(c, x0 - 22, yb - cd_ - 2, yb + 2); _break_v(c, xe + 22, yb - cd_ - 2, yb + 2)
+        ybase = yb
+        c.setFillColorRGB(*GREY); c.setFont(FR, 6); c.drawString(xe + 28, yb - cd_ / 2 - 2, f"{ch['name']} stringer")
+    else:
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.6); c.line(x0 - 22, yb - 3, xe + 22, yb - 3)
+        c.setLineWidth(0.35)
+        xx = x0 - 21
+        while xx + 3 <= xe + 22:
+            c.line(xx, yb - 6, xx + 3, yb - 3); xx += 4
+        ybase = yb
+    for k in range(3):                                   # posts, each on its plate or welded to the flange
+        xp = x0 + k * S * sc
+        if not ch:
+            c.setFillColorRGB(*memberart.STEEL_FILL); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+            c.rect(xp - pw / 2 - 3, yb - 3, pw + 6, 3, fill=1, stroke=1)
+        memberart.hss_elevation(c, xp - pw / 2, ybase, pw, yt - rw / 2 - ybase, max((pd or {}).get("t", 0.12) * sc / 12, 0.6),
+                                rnd=bool(pd and pd["kind"] == "round"))
+        _weld_marks(c, xp, ybase, pw)
+    memberart.hss_elevation(c, x0 - 18, yt - rw / 2, xe - x0 + 36, rw, max((rd or {}).get("t", 0.12) * sc / 12, 0.6),
+                            rnd=bool(rd and rd["kind"] == "round"), vertical=False)
+    _break_v(c, x0 - 18, yt - rw / 2 - 2, yt + rw / 2 + 2); _break_v(c, xe + 18, yt - rw / 2 - 2, yt + rw / 2 + 2)
+    # loads, one at a time
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.8)
-    _arrow_down(c, x0 + S * sc / 2, yt + 17, yt + 3, head=3)
-    c.setFont(FR, 6.5); c.drawCentredString(x0 + S * sc / 2, yt + 20, "200 lb, any direction")
-    _arrow(c, x0 + S * sc - 22, yt - 6, x0 + S * sc - 3, yt - 6, head=3)
-    c.drawRightString(x0 + S * sc - 24, yt - 8, "200 lb")
+    _arrow_down(c, x0 + S * sc / 2, yt + rw / 2 + 16, yt + rw / 2 + 2, head=3)
+    c.setFont(FR, 6.5); c.drawCentredString(x0 + S * sc / 2, yt + rw / 2 + 19, "200 lb, any direction")
+    _arrow(c, x0 + S * sc - 24, yt - rw / 2 - 8, x0 + S * sc - pw / 2 - 2, yt - rw / 2 - 8, head=3)
+    c.drawRightString(x0 + S * sc - 26, yt - rw / 2 - 10, "200 lb")
     if d.get("uniform"):
-        xa, xb = x0 + S * sc + 6, x0 + 2 * S * sc - 6
-        c.setLineWidth(0.45); c.line(xa, yt + 11, xb, yt + 11)
+        xa, xb = x0 + S * sc + 6, xe - 6
+        c.setLineWidth(0.45); c.line(xa, yt + rw / 2 + 11, xb, yt + rw / 2 + 11)
         n = max(int((xb - xa) / 10), 3)
         for j in range(n + 1):
-            _arrow_down(c, xa + (xb - xa) * j / n, yt + 11, yt + 3, head=1.6)
-        c.drawCentredString((xa + xb) / 2, yt + 14, "or 50 lb/ft")
+            _arrow_down(c, xa + (xb - xa) * j / n, yt + rw / 2 + 11, yt + rw / 2 + 2, head=1.6)
+        c.drawCentredString((xa + xb) / 2, yt + rw / 2 + 14, "or 50 lb/ft")
     c.setFillColorRGB(*GREY); c.setFont(FR, 6)
-    c.drawString(x0 + 2 * S * sc + 10, yt - 2, f"top rail {d['rail']}")
-    c.drawString(x0 + 2 * S * sc + 10, yb + h * sc / 2, f"posts {d['post']}")
-    memberart._dim_h(c, x0, x0 + S * sc, yb - 10, f"S {S:g} ft", FR, ext_from=yb)
-    memberart._dim_h(c, x0 + S * sc, x0 + 2 * S * sc, yb - 10, f"{S:g} ft", FR, ext_from=yb)
-    memberart._dim_v(c, yb, yt, x0 - 46, f"h {h:g} ft", FR)
-    _small(c, (LM + RM) / 2, yb - 28, "elevation, to scale; loads are applied one at a time, in the direction that governs")
-    return yb - 34
+    c.drawString(xe + 28, yt - 2, f"top rail {d['rail']}")
+    c.drawString(xe + 28, (yb + yt) / 2 - 2, f"posts {d['post']}")
+    ylo = yb - (ch["d"] * sc / 12 if ch else 6)
+    memberart._dim_h(c, x0, x0 + S * sc, ylo - 10, f"{S:g} ft", FR, ext_from=ylo - 2)
+    memberart._dim_h(c, x0 + S * sc, xe, ylo - 10, f"{S:g} ft", FR, ext_from=ylo - 2)
+    memberart._dim_v(c, yb, yt, x0 - 30, f"{h:g} ft", FR, ext_from=x0 - pw / 2)
+    _small(c, (x0 + xe) / 2, ylo - 28, "elevation, to scale; loads one at a time, in the direction that governs")
+    # the rail and a post, cut to scale
+    xs = RM - 100
+    for j, (q, nm) in enumerate(((rd, f"top rail {d['rail']}"), (pd, f"post {d['post']}"))):
+        if q:
+            _hss_section(c, xs + j * 62, yt - 20, 34.0, q)
+            c.setFillColorRGB(*INK); c.setFont(FR, 6.5); c.drawCentredString(xs + j * 62, yt + 4, "top rail" if j == 0 else "post")
+    _small(c, xs + 31, yt - 70, "sections, to scale (in.)")
+    return min(ylo - 34, yt - 78)
+
+
+def _weld_marks(c, xp, y, w):
+    """A small fillet at each side of a post at its base (the post is welded to what it stands on)."""
+    c.setFillColorRGB(*memberart.STEEL_LINE)
+    for sg in (-1, 1):
+        x_ = xp + sg * w / 2
+        t = c.beginPath(); t.moveTo(x_, y); t.lineTo(x_ + sg * 2.2, y); t.lineTo(x_, y + 2.2); t.close(); c.drawPath(t, fill=1, stroke=0)
 
 
 def _hss_section(c, cx, cy, box, d):
@@ -3813,16 +3857,30 @@ def _stair_sketch(c, x0, top, w, sheet, st):
     scale, supports at each end, the uniform loads on the horizontal projection, the run and
     the rise dimensioned. Returns the y used as the underside for the layout below."""
     run, rise = sheet.span_ft * 12.0, st["rise_total_in"]
-    s_ = min((w - 44) / run, 44.0 / rise)
+    s_ = min((w - 44) / run, 50.0 / rise)
     xa, ya = x0 + 8, top - 100
     xb, yb = xa + run * s_, ya + rise * s_
     n = max(int(round(rise / st["riser_in"])), 1)
-    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(3.0); c.line(xa, ya, xb, yb)
-    c.setLineWidth(0.5); c.setStrokeColorRGB(*GREY)
-    for k in range(n):                                    # treads and risers
-        x1, y1 = xa + run * s_ * k / n, ya + rise * s_ * k / n
-        x2, y2 = xa + run * s_ * (k + 1) / n, ya + rise * s_ * (k + 1) / n
-        c.line(x1, y1, x1, y2); c.line(x1, y2, x2, y2)
+    pr_ = sheet.props
+    d_in, tf_in = pr_.get("d") or 12.0, pr_.get("tf") or 0.5
+    L_ = math.hypot(run, rise)
+    ux, uy = run / L_, rise / L_                          # along the stringer; nx, ny square to it, upward
+    nx, ny = -uy, ux
+    D, TF = max(d_in * s_, 4.0), max(tf_in * s_, 0.9)
+    def band(o1, o2, fill):                               # a strip parallel to the slope, o1 to o2 from the work line, ends cut plumb
+        e1, e2 = o1 / ny, o2 / ny                         # plumb offsets at the ends
+        pth = c.beginPath()
+        pth.moveTo(xa, ya + e1); pth.lineTo(xb, yb + e1); pth.lineTo(xb, yb + e2); pth.lineTo(xa, ya + e2); pth.close()
+        c.setFillColorRGB(*fill); c.drawPath(pth, fill=1, stroke=1)
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+    band(-D / 2, D / 2, memberart.STEEL_FILL)             # the channel seen from the stair side: web, flanges along both edges
+    band(D / 2 - TF, D / 2, (0.64, 0.69, 0.75)); band(-D / 2, -D / 2 + TF, (0.64, 0.69, 0.75))   # flanges seen edge-on
+    top_e = (D / 2) / ny                                  # plumb height of the stringer top edge above the work line
+    tt = max(1.25 * s_, 1.2)                              # treads: plates on clips at each riser, nosing on the line of nosings
+    c.setFillColorRGB(0.90, 0.92, 0.94); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+    for k in range(1, n + 1):
+        xn, yn = xa + run * s_ * k / n, ya + rise * s_ * k / n + top_e * 0.35
+        c.rect(xn - st["tread_in"] * s_, yn - tt, st["tread_in"] * s_ + 1.0, tt, fill=1, stroke=1)
     c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.9)
     for xx, yy in ((xa, ya), (xb, yb)):
         t = c.beginPath(); t.moveTo(xx, yy - 2); t.lineTo(xx - 5, yy - 11); t.lineTo(xx + 5, yy - 11); t.close()
@@ -3834,7 +3892,14 @@ def _stair_sketch(c, x0, top, w, sheet, st):
     for k in range(m + 1):
         _arrow_down(c, xa + (xb - xa) * k / m, yl + 9, yl, head=1.8)
     uni = [f"{ld['case']} {ld['w']:.3f}" for ld in sheet.loads if ld["kind"] == "uniform"]
-    c.setFont(FM, 6.5); c.drawString(x0, top - 15, "w = " + " + ".join(uni) + " kip/ft of run")
+    wt_ = "w = " + " + ".join(uni) + " kip/ft of run"
+    c.setFont(FM, 6.5)
+    if c.stringWidth(wt_, FM, 6.5) > w + 20:                # too long beside the section: two lines
+        half = len(uni) // 2 + len(uni) % 2
+        c.drawString(x0, top - 13, "w = " + " + ".join(uni[:half]) + " +")
+        c.drawString(x0 + 8, top - 21, " + ".join(uni[half:]) + " kip/ft of run")
+    else:
+        c.drawString(x0, top - 15, wt_)
     memberart._dim_h(c, xa, xb, ya - 16, f"run {sheet.span_ft:g} ft", FR, ext_from=ya - 11)
     memberart._dim_v(c, ya, yb, xb + 10, f"{rise:.1f} in", FR, ext_from=xb)
     c.setFillColorRGB(*GREY); c.setFont(FR, 6)
