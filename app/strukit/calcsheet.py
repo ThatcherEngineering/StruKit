@@ -1798,6 +1798,8 @@ def _block_picture(c, top, pic):
         return _model3d_picture(c, top, d)
     if name == "shear_wall":
         return _shear_wall_picture(c, top, d)
+    if name == "sill_anchor":
+        return _sill_anchor_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -4521,6 +4523,71 @@ def _snow_drift_picture(c, top, d):
         memberart._dim_v(c, ybase, ybase + d["step"] * sy, wx - 24 - (10 if d.get("gap") else 0), f"{d['step']:g} ft", FR, ext_from=wx - 18 - (14 if d.get("gap") else 0))
     _small(c, (LM + RM) / 2, ybase - 32, "sections through the roof step; not to scale")
     return ybase - 38
+
+
+def _sill_anchor_picture(c, top, d):
+    """Section across the wall at an anchor bolt, to scale: the concrete stem wall cut short below the bolt, the bottom plate in end
+    grain with the stud above it broken off and the sheathing on its face, the plate washer and nut, the bolt dashed in the concrete to
+    its headed nut or hook; embedment, edge distance, foundation width and plate dimensioned."""
+    fw, pt, pw, D, hef = d["fwidth"], d["sill_t"], d["sill_w"], d["D"], d["hef"]
+    off = d.get("offset") if d.get("offset") is not None else pw / 2.0
+    ce = d["edge"]
+    hshow = hef + 4.0
+    sc = min(170.0 / max(fw + 10.0, pw + 10.0), 150.0 / (hshow + pt + 9.0))
+    cx0 = LM + 130                                             # outer (sheathed) face of the stem wall
+    yt = top - 10 - (pt + 7.5) * sc                            # top of the concrete
+    memberart._concrete(c, cx0, yt - hshow * sc, fw * sc, hshow * sc, seed=17)
+    memberart._break_h(c, cx0, cx0 + fw * sc, yt - hshow * sc - 1)
+    xb = cx0 + ce * sc                                         # the bolt
+    px = xb - off * sc                                         # the plate's sheathed edge
+    c.saveState()                                              # bottom plate, end grain
+    memberart.wood_section(c, px + pw * sc / 2, yt + pt * sc / 2, pw * sc, pt * sc, pw, pt)
+    c.restoreState()
+    st_h = 7.0 * sc                                            # the stud above, broken off
+    c.saveState(); c.translate(px, yt + pt * sc); c.rotate(90)
+    memberart.wood_elevation(c, 0, -pw * sc, st_h, pw * sc); c.restoreState()
+    memberart._break_h(c, px, px + pw * sc, yt + pt * sc + st_h - 1)
+    c.setFillColorRGB(0.93, 0.86, 0.70); c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setLineWidth(0.5)   # sheathing on the outer face
+    c.rect(px - 0.5 * sc, yt + 0.5 * sc, 0.5 * sc, pt * sc + st_h - 1.5 * sc, fill=1, stroke=1)
+    ww, wt = d.get("washer_w") or 3.0, d.get("washer_t") or 0.229
+    c.setFillColorRGB(0.62, 0.66, 0.72); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+    c.rect(xb - ww * sc / 2, yt + pt * sc, ww * sc, max(wt * sc, 1.0), fill=1, stroke=1)         # plate washer
+    nh = max(0.55 * D * sc, 2.0)
+    c.setFillColorRGB(0.42, 0.47, 0.54); c.rect(xb - 0.8 * D * sc, yt + pt * sc + max(wt * sc, 1.0), 1.6 * D * sc, nh, fill=1, stroke=1)
+    c.setFillColorRGB(0.70, 0.74, 0.79); c.rect(xb - D * sc / 2, yt + pt * sc + max(wt * sc, 1.0) + nh, D * sc, max(0.4 * D * sc, 1.2), fill=1, stroke=1)
+    c.setDash(2, 1.4); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)          # bolt hidden in the plate and the concrete
+    yb_ = yt - hef * sc
+    c.line(xb - D * sc / 2, yt + pt * sc, xb - D * sc / 2, yb_); c.line(xb + D * sc / 2, yt + pt * sc, xb + D * sc / 2, yb_)
+    if d.get("hooked"):
+        eh = d.get("eh") or 3 * D
+        c.line(xb - D * sc / 2, yb_, xb + (eh + D / 2) * sc, yb_); c.line(xb + D * sc / 2, yb_ + D * sc, xb + (eh + D / 2) * sc, yb_ + D * sc)
+        c.line(xb + (eh + D / 2) * sc, yb_, xb + (eh + D / 2) * sc, yb_ + D * sc)
+    else:
+        c.line(xb - 0.8 * D * sc, yb_, xb + 0.8 * D * sc, yb_); c.line(xb - 0.8 * D * sc, yb_ - 0.55 * D * sc, xb + 0.8 * D * sc, yb_ - 0.55 * D * sc)
+        c.line(xb - 0.8 * D * sc, yb_, xb - 0.8 * D * sc, yb_ - 0.55 * D * sc); c.line(xb + 0.8 * D * sc, yb_, xb + 0.8 * D * sc, yb_ - 0.55 * D * sc)
+    c.setDash()
+    memberart._dim_v(c, yb_, yt, cx0 - 12, f"hef {hef:g} in", FR, ext_from=xb - D * sc)
+    if c.stringWidth(f"{ce:g} in", FR, 6) > (xb - cx0) - 4:   # a short edge distance: its figure beside the dimension
+        memberart._dim_h(c, cx0, xb, yt - hshow * sc - 12, "", FR, ext_from=yt - hshow * sc)
+        c.setFont(FR, 6); c.setFillColorRGB(0.23, 0.28, 0.34); c.drawRightString(cx0 - 4, yt - hshow * sc - 14, f"{ce:g} in")
+    else:
+        memberart._dim_h(c, cx0, xb, yt - hshow * sc - 12, f"{ce:g} in", FR, ext_from=yt - hshow * sc)
+    memberart._dim_h(c, cx0, cx0 + fw * sc, yt - hshow * sc - 24, f"{fw:g} in", FR, ext_from=yt - hshow * sc - 12)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.2)
+    tx = cx0 + fw * sc + 60
+    notes = [(yt + pt * sc + st_h * 0.6, px + pw * sc * 0.6, "stud, broken off; sheathing on the outer face"),
+             (yt + pt * sc + 1.5, xb + ww * sc / 2 - 1, f"plate washer {ww:g} x {d.get('washer_l') or 3.0:g} x {wt:g} in, nut"),
+             (yt + pt * sc / 2, px + pw * sc - 2, f"bottom plate {pt:g} x {pw:g} in"),
+             (yt - hef * sc / 2, xb + D * sc / 2, f"{D:g} in {d['grade']}, " + ("hooked" if d.get("hooked") else "headed")),
+             (yt - hshow * sc + 6, cx0 + fw * sc - 4, f"concrete, f'c {d['fc']:,.0f} psi")]
+    last = None
+    for (y_, xt_, t_) in sorted(notes, key=lambda q: -q[0]):  # notes with leaders, clear of each other
+        yy = y_ if last is None or last - y_ >= 9 else last - 9
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.35); c.line(xt_, y_, tx - 3, yy + 1.5)
+        c.setFillColorRGB(*GREY); c.circle(xt_, y_, 0.7, fill=1, stroke=0)
+        c.setFillColorRGB(*INK); c.drawString(tx, yy - 0.5, t_); last = yy
+    _small(c, cx0 + fw * sc / 2 + 40, yt - hshow * sc - 40, "section across the wall at an anchor bolt, to scale; bolt hidden lines dashed")
+    return yt - hshow * sc - 46
 
 
 def _anchor_bolt_marks(c, xa, xb, y0, sc, ab):

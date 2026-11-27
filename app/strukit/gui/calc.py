@@ -929,7 +929,19 @@ FORMS = {
                 F("ab_sill_G_source", "Anchor bolts: where that G comes from", "text", required=False),
                 F("ab_washer", "Anchor bolts: plate washer, width x length x thickness", "text", unit="in", required=False,
                   help="blank = 3 x 3 x 0.229 (the SDPWS minimum)"),
-                F("ab_offset", "Anchor bolts: bolt centre to the sheathed edge of the plate", unit="in", required=False, help="blank = centred on the plate")],
+                F("ab_offset", "Anchor bolts: bolt centre to the sheathed edge of the plate", unit="in", required=False, help="blank = centred on the plate"),
+                F("ab_fc", "Anchor bolts in concrete: f'c", unit="psi", required=False, help="blank = the bolts in the concrete are not checked (ACI 318-19 Ch. 17)"),
+                F("ab_grade", "Anchor bolts in concrete: rod grade", "select", options=["ASTM F1554 Grade 36", "ASTM F1554 Grade 55", "ASTM A307 Grade A"], required=False),
+                F("ab_type", "Anchor bolts in concrete: end in the concrete", "select", options=["headed (heavy hex nut)", "hooked (L bolt)"], required=False),
+                F("ab_eh", "Anchor bolts in concrete: hook extension, eh", unit="in", required=False, help="hooked bolts: 3 to 4.5 bolt diameters"),
+                F("ab_hef", "Anchor bolts in concrete: embedment, hef", unit="in"  , required=False),
+                F("ab_edge", "Anchor bolts in concrete: bolt to the nearer foundation face", unit="in", required=False),
+                F("ab_fwidth", "Anchor bolts in concrete: foundation (stem wall) width", unit="in", required=False),
+                F("ab_fdepth", "Anchor bolts in concrete: concrete depth below the plate", unit="in", required=False),
+                F("ab_cracked", "Anchor bolts in concrete: concrete", "select", options=["cracked", "uncracked"], required=False, help="blank = cracked"),
+                F("ab_sdc", "Anchor bolts in concrete, seismic: Seismic Design Category", "select", options=["A or B", "C to F"], required=False),
+                F("ab_omega", "Anchor bolts in concrete, seismic C to F: overstrength factor", required=False, help="ACI 318-19 17.10.6.3(c); ASCE 7-22 Table 12.2-1"),
+                F("ab_omega_source", "Anchor bolts in concrete: where that factor comes from", "text", required=False)],
         tables=[]),
     "ftao_wall": dict(
         title="Wood Shear Wall, Force Transfer Around Openings", code="SDPWS-2021", mark="FT",
@@ -961,6 +973,18 @@ FORMS = {
                 F("ab_washer", "Anchor bolts: plate washer, width x length x thickness", "text", unit="in", required=False,
                   help="blank = 3 x 3 x 0.229 (the SDPWS minimum)"),
                 F("ab_offset", "Anchor bolts: bolt centre to the sheathed edge of the plate", unit="in", required=False, help="blank = centred on the plate"),
+                F("ab_fc", "Anchor bolts in concrete: f'c", unit="psi", required=False, help="blank = the bolts in the concrete are not checked (ACI 318-19 Ch. 17)"),
+                F("ab_grade", "Anchor bolts in concrete: rod grade", "select", options=["ASTM F1554 Grade 36", "ASTM F1554 Grade 55", "ASTM A307 Grade A"], required=False),
+                F("ab_type", "Anchor bolts in concrete: end in the concrete", "select", options=["headed (heavy hex nut)", "hooked (L bolt)"], required=False),
+                F("ab_eh", "Anchor bolts in concrete: hook extension, eh", unit="in", required=False, help="hooked bolts: 3 to 4.5 bolt diameters"),
+                F("ab_hef", "Anchor bolts in concrete: embedment, hef", unit="in"  , required=False),
+                F("ab_edge", "Anchor bolts in concrete: bolt to the nearer foundation face", unit="in", required=False),
+                F("ab_fwidth", "Anchor bolts in concrete: foundation (stem wall) width", unit="in", required=False),
+                F("ab_fdepth", "Anchor bolts in concrete: concrete depth below the plate", unit="in", required=False),
+                F("ab_cracked", "Anchor bolts in concrete: concrete", "select", options=["cracked", "uncracked"], required=False, help="blank = cracked"),
+                F("ab_sdc", "Anchor bolts in concrete, seismic: Seismic Design Category", "select", options=["A or B", "C to F"], required=False),
+                F("ab_omega", "Anchor bolts in concrete, seismic C to F: overstrength factor", required=False, help="ACI 318-19 17.10.6.3(c); ASCE 7-22 Table 12.2-1"),
+                F("ab_omega_source", "Anchor bolts in concrete: where that factor comes from", "text", required=False),
                 F("chord_A", "Deflection: end post area", unit="in2", required=False, help="with E and slip: the wall's deflection on the sheet (APA T555, the piers by SDPWS Eq. 4.3-1) and its stiffness in the 3D frame"),
                 F("chord_E", "Deflection: end post E", unit="psi", required=False),
                 F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
@@ -998,6 +1022,21 @@ FORMS = {
                 F("ab_washer", "Anchor bolts: plate washer, width x length x thickness", "text", unit="in", required=False,
                   help="blank = 3 x 3 x 0.229 (the SDPWS minimum)"),
                 F("ab_offset", "Anchor bolts: bolt centre to the sheathed edge of the plate", unit="in", required=False, help="blank = centred on the plate"),
+                F("ab_fc", "Anchor bolts in concrete: f'c", unit="psi", required=False, help="blank = the bolts in the concrete are not checked (ACI 318-19 Ch. 17)"),
+                F("ab_grade", "Anchor bolts in concrete: rod grade", "select", options=["ASTM F1554 Grade 36", "ASTM F1554 Grade 55", "ASTM A307 Grade A"], required=False),
+                F("ab_type", "Anchor bolts in concrete: end in the concrete", "select", options=["headed (heavy hex nut)", "hooked (L bolt)"], required=False),
+                F("ab_eh", "Anchor bolts in concrete: hook extension, eh", unit="in", required=False, help="hooked bolts: 3 to 4.5 bolt diameters"),
+                F("ab_hef", "Anchor bolts in concrete: embedment, hef", unit="in"  , required=False),
+                F("ab_edge", "Anchor bolts in concrete: bolt to the nearer foundation face", unit="in", required=False),
+                F("ab_fwidth", "Anchor bolts in concrete: foundation (stem wall) width", unit="in", required=False),
+                F("ab_fdepth", "Anchor bolts in concrete: concrete depth below the plate", unit="in", required=False),
+                F("ab_cracked", "Anchor bolts in concrete: concrete", "select", options=["cracked", "uncracked"], required=False, help="blank = cracked"),
+                F("ab_sdc", "Anchor bolts in concrete, seismic: Seismic Design Category", "select", options=["A or B", "C to F"], required=False),
+                F("ab_omega", "Anchor bolts in concrete, seismic C to F: overstrength factor", required=False, help="ACI 318-19 17.10.6.3(c); ASCE 7-22 Table 12.2-1"),
+                F("ab_omega_source", "Anchor bolts in concrete: where that factor comes from", "text", required=False),
+                F("ab_Fc_perp", "Bottom plate uplift: plate Fc-perp", unit="psi", required=False, help="blank = the plate uplift between bolts is not checked"),
+                F("ab_Fb", "Bottom plate uplift: plate Fb flatwise, with CF and Cfu", unit="psi", required=False),
+                F("ab_wood_source", "Bottom plate uplift: where those values come from", "text", required=False),
                 F("chord_A", "Deflection: end post area", unit="in2", required=False),
                 F("chord_E", "Deflection: end post E", unit="psi", required=False),
                 F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
@@ -1887,8 +1926,27 @@ def _ab_values(r):
             ww, wl, wt = [float(eval(x_.strip().replace("-", "+"), {"__builtins__": {}})) for x_ in wtxt.lower().split("x")]
         except Exception:
             r.miss.append("Anchor bolts: give the plate washer as width x length x thickness, for example 3 x 3 x 0.229")
-    return dict(D=D, s=r.num("ab_s", False), sill_t=st, sill_w=sw, sill_G=sg, sill_G_source=r.text("ab_sill_G_source", False) or "",
-                washer_w=ww, washer_l=wl, washer_t=wt, offset=r.num("ab_offset", False))
+    out = dict(D=D, s=r.num("ab_s", False), sill_t=st, sill_w=sw, sill_G=sg, sill_G_source=r.text("ab_sill_G_source", False) or "",
+               washer_w=ww, washer_l=wl, washer_t=wt, offset=r.num("ab_offset", False))
+    if r.num("ab_fc", False):
+        hooked = (r.text("ab_type", False) or "").startswith("hooked")
+        out.update(fc=r.num("ab_fc", False), grade=r.text("ab_grade", False) or "", hooked=hooked,
+                   eh=r.num("ab_eh", True, label="Anchor bolts in concrete: hook extension") if hooked else None,
+                   hef=r.num("ab_hef", True, label="Anchor bolts in concrete: embedment"), edge=r.num("ab_edge", True, label="Anchor bolts in concrete: bolt to the nearer face"),
+                   fwidth=r.num("ab_fwidth", True, label="Anchor bolts in concrete: foundation width"),
+                   fdepth=r.num("ab_fdepth", True, label="Anchor bolts in concrete: concrete depth"),
+                   cracked=(r.text("ab_cracked", False) or "cracked") == "cracked", sdc_high=(r.text("ab_sdc", False) or "") == "C to F",
+                   omega=r.num("ab_omega", False), omega_source=r.text("ab_omega_source", False) or "")
+        if not out["grade"]:
+            r.miss.append("Anchor bolts in concrete: the rod grade is blank")
+        if not r.text("ab_type", False):
+            r.miss.append("Anchor bolts in concrete: say whether the bolt is headed or hooked")
+        if out["omega"] and not out["omega_source"]:
+            r.miss.append("Anchor bolts in concrete: where the overstrength factor comes from is blank")
+    if r.num("ab_Fc_perp", False):
+        out.update(Fc_perp=r.num("ab_Fc_perp", False), Fb=r.num("ab_Fb", True, label="Bottom plate uplift: Fb flatwise"),
+                   wood_source=r.text("ab_wood_source", True))
+    return out
 
 
 def _with_ab(mark, ab, panel, spacing, G, load, method_, other, sheet):

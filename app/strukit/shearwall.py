@@ -36,6 +36,7 @@ Table 4.3A note 2, moisture above 19 percent (note 5), anchor bolts and plate wa
 
 Units: lb, ft, plf; Ga in kips/in.; chord area in2, E in psi; deflection in inches.
 """
+import math
 from dataclasses import dataclass, field
 
 from .steel_beam import Line
@@ -558,3 +559,33 @@ def anchor_bolts(v_plf, D, sill_t, G, load, method, spacing_in=None, plate_w=3.5
         lines.append(Line("plate washer to the sheathed edge", f"{gap:.3g} in.", "", "SDPWS-2021 4.3.6.4.3",
                           f"no limit: nominal unit shear {vn_side:,.0f} plf on a side, not over 400 plf"))
     return dict(Z=Z, Zp=Zp, s_max=s_max, rows=rows, lines=lines, gap=gap, mode=r["mode"])
+
+
+def plate_uplift(t_plf, s_in, plate_t, plate_w, D, Fc_perp, Fb_flat, method, washer_w=3.0, washer_l=3.0):
+    """Uplift of a perforated shear wall bottom plate at full-height sheathing (SDPWS-2021 4.3.6.4.2.1: t = v max, plf) held down by
+    the anchor bolts at spacing s_in. Washer bearing across the grain: (washer area less the hole) x Fc-perp' with Cb = (lb + 0.375) / lb
+    for the washer length along the plate (NDS 2018 3.10.4; CD does not apply, Table 4.3.1); plate bending flatwise between the bolts,
+    a simple span s under t (M = t s^2 / 8), S = b t^2 / 6, Fb' = Fb x CD 1.6 (ASD) or x KF 2.54 x phi 0.85 x lambda 1.0 (LRFD);
+    Fb_flat is the reference flatwise value with the size and flat use factors already applied. LRFD bearing: KF 1.67, phi 0.90.
+    Returns dict(rows, lines)."""
+    for nm, v in (("anchor bolt spacing", s_in), ("plate thickness", plate_t), ("plate width", plate_w), ("Fc-perp", Fc_perp), ("Fb", Fb_flat)):
+        if v is None or v <= 0:
+            raise ShearWallError(f"bottom plate uplift: the {nm} is needed")
+    T = t_plf * s_in / 12.0
+    A = washer_w * washer_l - math.pi * (D + 1 / 16) ** 2 / 4
+    Cb = (washer_l + 0.375) / washer_l if washer_l < 6.0 else 1.0
+    Fcp = Fc_perp * Cb * (1.0 if method == "ASD" else 1.67 * 0.90)
+    M = t_plf / 12.0 * s_in ** 2 / 8.0
+    S = plate_w * plate_t ** 2 / 6.0
+    Fbp = Fb_flat * (1.6 if method == "ASD" else 2.54 * 0.85)
+    lines = [Line("uplift on each bolt, t s", T, "lb", "SDPWS-2021 4.3.6.4.2.1", f"t = v max = {t_plf:,.0f} plf; s = {s_in:g} in."),
+             Line("washer bearing area, less the bolt hole", A, "in2", "geometry", f"{washer_w:g} x {washer_l:g} in.; hole {D + 1 / 16:g} in."),
+             Line("Fc-perp' = Fc-perp Cb" + ("" if method == "ASD" else " KF phi"), Fcp, "psi", "NDS 2018 3.10.4, Table 4.3.1" + ("" if method == "ASD" else ", N1, N2"),
+                  f"Fc-perp = {Fc_perp:g} psi; Cb = {Cb:.3f} for a {washer_l:g} in. bearing length"),
+             Line("plate bending between bolts, M = t s^2 / 8", M, "lb-in", "statics", "simple span between bolts"),
+             Line("S flatwise = b t^2 / 6", S, "in3", "geometry", f"{plate_w:g} x {plate_t:g} in."),
+             Line("Fb' (flatwise)", Fbp, "psi", "NDS 2018 Table 4.3.1" + ("" if method == "ASD" else ", N1 to N3"),
+                  f"Fb = {Fb_flat:g} psi with CF and Cfu; " + ("CD = 1.6" if method == "ASD" else "KF 2.54, phi 0.85, lambda 1.0"))]
+    rows = [("bottom plate uplift: washer bearing", T, Fcp * A, "lb", "NDS 2018 3.10; SDPWS-2021 4.3.6.4.2.1", f"{A:.2f} in2 x {Fcp:,.0f} psi"),
+            ("bottom plate uplift: plate bending between bolts", M / S, Fbp, "psi", "NDS 2018 3.3; SDPWS-2021 4.3.6.4.2.1", f"M / S, s = {s_in:g} in.")]
+    return dict(rows=rows, lines=lines, T=T)

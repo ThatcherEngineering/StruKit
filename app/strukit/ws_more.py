@@ -6559,9 +6559,58 @@ def add_anchor_bolts(mark, sheet, ab, panel, spacing, G, load, method, other=Non
                              "and spacing at least 4 D along the plate, edge distance at least 1.5 D (NDS Table 12.5.1A, 12.5.1C); the plate "
                              "bears on the concrete.")
     sheet.not_checked = [t for t in sheet.not_checked if "anchor bolts and plate washers" not in t]
-    sheet.not_checked.append("the anchor bolts in the concrete (ACI 318-19 Chapter 17)")
-    if getattr(sheet.wall, "Co", None) is not None:
-        sheet.not_checked.append("uplift anchorage of the bottom plate at full-height sheathing (SDPWS 4.3.6.4.2.1)")
+    perf = getattr(sheet.wall, "Co", None) is not None
+    t_up = v if perf else 0.0                             # SDPWS 4.3.6.4.2.1: uplift t = v max at full-height sheathing
+    if perf and ab.get("Fc_perp"):
+        if not ab.get("s"):
+            raise WorksheetError(f"{mark}: the bottom plate uplift check needs the anchor bolt spacing")
+        try:
+            u = shearwall.plate_uplift(t_up, ab["s"], ab["sill_t"], ab["sill_w"], ab["D"], ab["Fc_perp"], ab.get("Fb"), method,
+                                       ab.get("washer_w") or 3.0, ab.get("washer_l") or 3.0)
+        except shearwall.ShearWallError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        for chk, dem, cap, unit, src, note in u["rows"]:
+            sheet.rows.append(Row(chk, f"{load}, {method}", dem, cap, unit, src, note))
+        sheet.blocks.append(dict(title="Bottom Plate Uplift", head="Bottom Plate Uplift", steps=u["lines"]))
+        sheet.info.append(("Bottom Plate", f"Fc-perp = {ab['Fc_perp']:g} psi, Fb flatwise = {ab['Fb']:g} psi ({(ab.get('wood_source') or '').strip()})"))
+    elif perf:
+        sheet.not_checked.append("uplift of the bottom plate at full-height sheathing between the anchor bolts (SDPWS 4.3.6.4.2.1)")
+    if ab.get("fc"):
+        from . import anchorage
+        if not ab.get("s"):
+            raise WorksheetError(f"{mark}: the anchor bolt check in the concrete needs the anchor bolt spacing")
+        if method == "ASD":                               # strength level: ASD shear of 0.6 W or 0.7 E back to W or E
+            k_, ktxt = (1 / 0.6, "/ 0.6 (ASD 0.6 W to strength level W)") if load == "wind" else (1 / 0.7, "/ 0.7 (ASD 0.7 E to strength level E)")
+        else:
+            k_, ktxt = 1.0, "(LRFD, strength level)"
+        om = ab.get("omega") if (load == "seismic" and ab.get("sdc_high")) else None
+        if load == "seismic" and ab.get("sdc_high") and not om:
+            raise WorksheetError(f"{mark}: Seismic Design Category C to F: give the overstrength factor for the anchor bolts (ACI 318-19 17.10.6.3(c))")
+        f_ = k_ * (om or 1.0)
+        Vu, Nu = v * ab["s"] / 12.0 * f_, t_up * ab["s"] / 12.0 * f_
+        try:
+            cc = anchorage.sill_anchor(ab["D"], ab["grade"], ab["hef"], ab["fc"], ab["edge"], ab["fwidth"], ab["fdepth"], ab["s"], Vu, Nu,
+                                       ab.get("cracked", True), ab.get("hooked", False), ab.get("eh"))
+        except anchorage.AnchorageError as e:
+            raise WorksheetError(f"{mark}: {e}")
+        lines = [shearwall.Line("shear on each bolt, strength level, Vua", Vu, "lb", "statics; ACI 318-19 17.10.6.3(c)" if om else "statics",
+                                f"v s {ktxt}" + (f" x Omega-0 {om:g} ({(ab.get('omega_source') or '').strip()})" if om else ""))]
+        if Nu > 0:
+            lines.append(shearwall.Line("uplift on each bolt, strength level, Nua", Nu, "lb", "SDPWS-2021 4.3.6.4.2.1", f"t s, the same factor"))
+        sheet.blocks.append(dict(title="Anchor Bolts in the Concrete", head="Anchor Bolts in the Concrete (ACI 318-19 Chapter 17)", steps=lines + cc["lines"],
+                                 picture=("sill_anchor", dict(fwidth=ab["fwidth"], sill_t=ab["sill_t"], sill_w=ab["sill_w"], D=ab["D"], hef=ab["hef"],
+                                                              offset=ab.get("offset"), edge=ab["edge"], washer_w=ab.get("washer_w"), washer_l=ab.get("washer_l"),
+                                                              washer_t=ab.get("washer_t"), hooked=ab.get("hooked"), eh=ab.get("eh"), grade=ab["grade"], fc=ab["fc"]))))
+        for chk, dem, cap, src, note in cc["modes"]:
+            unit = "" if "together" in chk else "lb"
+            sheet.rows.append(Row(chk, f"{load}, strength", dem, cap, unit, src, note))
+        sheet.info.append(("Foundation", f"f'c = {ab['fc']:,.0f} psi, {'cracked' if ab.get('cracked', True) else 'uncracked'}; bolts {ab['grade']}, "
+                           + (f"hooked, eh = {ab['eh']:g} in." if ab.get("hooked") else "headed") + f", hef = {ab['hef']:g} in., {ab['edge']:g} in. from the nearer face; "
+                           f"foundation {ab['fwidth']:g} in. wide, {ab['fdepth']:g} in. deep"))
+        sheet.assumptions.append("Anchor bolts in the concrete: cast in, Condition B (no supplementary reinforcement), no edge reinforcement; the wall shear acts "
+                                 "along the foundation, parallel to its faces; each bolt takes the shear and uplift of one spacing.")
+    else:
+        sheet.not_checked.append("the anchor bolts in the concrete (ACI 318-19 Chapter 17)")
     s_draw = ab.get("s") or max(6.0, math.floor(min(a["s_max"], 72.0) / 6.0) * 6.0)
     for b_ in sheet.blocks:                               # the bolts on the wall elevation
         if b_.get("picture") and b_["picture"][0] in ("shear_wall", "perforated_wall"):
