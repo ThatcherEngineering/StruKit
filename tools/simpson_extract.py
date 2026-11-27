@@ -1,6 +1,6 @@
 """Read the face-mount joist hanger tables of the Simpson Strong-Tie Wood Construction Connectors catalog C-C-2026 into a data file.
 
-    python tools/simpson_extract.py <path to C-C-2026.pdf> [out.json]
+    python tools/simpson_extract.py <path to C-C-2026.pdf> [facemount | topflange] [out.json]
 
 Pages read (catalog page numbers): 114 to 118, Face-Mount Hangers - Solid Sawn Lumber (DF/SP); 119 to 123, the same for SPF/HF.
 Each table row: joist size group, model, gauge, W, H, B, min./max. nailing, header and joist fasteners, allowable loads (lb) for
@@ -11,15 +11,20 @@ import json
 import re
 import sys
 
-PAGES = [(p, "DF/SP") for p in range(114, 119)] + [(p, "SPF/HF") for p in range(119, 124)]
+TABLES = {
+    "facemount": ("Face-Mount Hangers - Solid Sawn Lumber, pp. 114-123", [(p, "DF/SP") for p in range(114, 119)] + [(p, "SPF/HF") for p in range(119, 124)]),
+    "topflange": ("Top-Flange Hangers - Solid Sawn Lumber, pp. 142-146", [(p, "DF/SP") for p in range(142, 145)] + [(p, "SPF/HF") for p in range(145, 147)]),
+}
 COLS = ["size", "model", "ga", "W", "H", "B", "minmax", "header", "joist", "uplift", "floor", "snow", "roof", "ici"]
-HEAD = {"Size": "size", "Model": "model", "Ga.": "ga", "W": "W", "H": "H", "B": "B", "Min./": "minmax", "Header": "header",
+HEAD = {"Size": "size", "Model": "model", "Ga.": "ga", "W": "W", "H": "H", "B": "B", "TF": "TF", "Min./": "minmax", "Header": "header",
         "Uplift": "uplift", "Floor": "floor", "Snow": "snow", "Roof": "roof", "Installed": "ici"}
 
 
 def frac(t):
     """'1 9/16' or '1 9⁄16' or '7' to a float."""
     t = t.replace("⁄", "/").strip()
+    if " to " in t:                                       # a range (adjustable width): the smaller value
+        t = t.split(" to ")[0]
     v = 0.0
     for part in t.split():
         if "/" in part:
@@ -40,8 +45,9 @@ def page_rows(pg, species, page_no):
     hdr = {}
     joist_x = []
     y_head = 0.0
+    ym = min(w["top"] for w in words if w["text"] == "Model")
     for w in words:
-        if w["top"] > 200:
+        if abs(w["top"] - ym) > 25:                       # the table header only (not the Hanger Selector badge)
             continue
         if w["text"] in ("Uplift", "Floor", "Snow", "Roof", "(160)", "(100)", "(115)", "(125)"):
             y_head = max(y_head, w["bottom"])
@@ -91,10 +97,13 @@ def page_rows(pg, species, page_no):
             c = col((w["x0"] + w["x1"]) / 2, w["x0"])
             cells.setdefault(c, []).append(w["text"])
         cells = {k: " ".join(v) for k, v in cells.items()}
-        if num(cells.get("uplift", "")) is None or num(cells.get("floor", "")) is None:
+        if num(cells.get("floor", "")) is None or (num(cells.get("uplift", "")) is None and cells.get("uplift", "").strip() != "—"):
             continue
         top0 = min(w["top"] for w in ws)
         near = [m for m in mlines if abs(m["top"] - top0) < 10.5]
+        if not all(cells.get(k_) for k_ in ("W", "H", "B")):
+            print("skipped (no dimensions):", page_no, " | ".join(f"{k}={v}" for k, v in cells.items()), file=sys.stderr)
+            continue
         model = (min(near, key=lambda m: abs(m["top"] - top0))["text"] if near else "") or last_model
         if not model:
             continue
@@ -102,20 +111,22 @@ def page_rows(pg, species, page_no):
         top = min(w["top"] for w in ws)
         g, _ = group(top)
         rows.append(dict(species=species, page=page_no, joist=g, model=model, ga=int(num(cells.get("ga", "0")) or 0),
-                         W=frac(cells["W"]), H=frac(cells["H"]), B=frac(cells["B"]), nailing=cells.get("minmax", "—").replace("—", "").strip(),
-                         header=cells.get("header", ""), joist_fast=cells.get("joist", ""), uplift=num(cells["uplift"]), floor=num(cells["floor"]),
+                         W=frac(cells["W"]), H=frac(cells["H"]), B=frac(cells["B"]), W_text=cells["W"].replace("⁄", "/"), nailing=cells.get("minmax", "—").replace("—", "").strip(),
+                         TF=frac(cells["TF"]) if cells.get("TF") else None,
+                         header=cells.get("header", ""), joist_fast=cells.get("joist", ""), uplift=num(cells["uplift"]) or 0.0, floor=num(cells["floor"]),
                          snow=num(cells["snow"]), roof=num(cells["roof"])))
     return rows
 
 
-def main(path, out="strukit/data/simpson_facemount.json"):
+def main(path, which="facemount", out=None):
     import pdfplumber
     pdf = pdfplumber.open(path)
+    title, pages = TABLES[which]
     rows = []
-    for page_no, species in PAGES:
+    for page_no, species in pages:
         rows += page_rows(pdf.pages[page_no - 1], species, page_no)
-    with open(out, "w") as f:
-        json.dump(dict(source="Simpson Strong-Tie catalog C-C-2026, Face-Mount Hangers - Solid Sawn Lumber, pp. 114-123", rows=rows), f, indent=0)
+    with open(out or f"strukit/data/simpson_{which}.json", "w") as f:
+        json.dump(dict(source="Simpson Strong-Tie catalog C-C-2026, " + title, rows=rows), f, indent=0)
     print(len(rows), "rows")
 
 

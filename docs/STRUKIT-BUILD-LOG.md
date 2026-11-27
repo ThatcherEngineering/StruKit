@@ -1229,3 +1229,12 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - Source: the S. K. Ghosh Associates reproduction of 1905.1.8 with the ACI 318-19 references (the ICC text could not be fetched);
   the IBC stays on the missing references list to confirm.
 - Tests: the exception met, one condition missed (end distance, bolt size), seismic without overstrength (`tests/test_anchor_bolts.py`).
+
+## 2026-11-27 02:29 MST — 0.280.0 Simpson top-flange joist hangers (Simpson products, part 2)
+- (Zach: "Do your next".) **Joist Hanger screen: new box "Hanger type"** (face mount or top flange; blank = face mount). Top-flange
+  hangers for solid sawn lumber: all 204 rows of catalog C-C-2026 pp. 142-146 (DF/SP and SPF/HF), read by the same tool (now with
+  the TF column, "—" uplift read as no uplift capacity, width ranges at their smaller value) and checked both ways against the page
+  text. One adjustable-height row (WP7.50, 8x8, H 7-1/2 to 30 in.) is not read. The table loads are used as printed (no load
+  duration increase, p. 136 note 4); a 2x nailer, welded installation or end grain is refused (the nailer table, p. 136, is not built).
+  Picture: the top flange over the carrying member with its nails, dimensioned TF, and in the section the flanges on the beam behind.
+- Tests: five rows copied by hand (pp. 142, 146), the choice with uplift, the refusals (`tests/test_simpson.py`).

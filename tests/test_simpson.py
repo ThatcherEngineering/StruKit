@@ -66,3 +66,38 @@ def test_on_the_screen(tmp_path):
     for vv in (v, dict(v, joist="DBL 2x10", model="HU210-2", nailing="Min.", carrying="2x (header nails shortened)"), dict(v, joist="6x12", model="lightest that works")):
         s = calc.build("joist_hanger", vv, proj)[0]
         calcsheet.simple_pdf(s, str(tmp_path / f"jh_{vv['joist'].replace(' ', '')}.pdf"), "Job", "Simpson C-C-2026", "Nov 26, 2026")
+
+
+TF_HAND = [  # species, joist, model, uplift, floor, snow, roof, TF, page (catalog pp. 142, 146)
+    ("DF/SP", "2x4", "PF24", 300, 1255, 1255, 1255, 1.0625, 142),
+    ("DF/SP", "2x6", "JB26", 0, 995, 995, 995, 1.3125, 142),
+    ("DF/SP", "DBL 2x10", "HUS210-2TF", 2315, 3735, 4065, 4275, 1.5, 142),
+    ("DF/SP", "2x10", "BA210 (Max.)", 1275, 4720, 4720, 4720, 2.5, 142),
+    ("SPF/HF", "4x14", "WP414", 0, 2230, 2230, 2230, 2.1875, 146),
+]
+
+
+@pytest.mark.parametrize("sp,joist,model,up,fl,sn,rf,tf,page", TF_HAND)
+def test_top_flange_rows_match_the_catalog(sp, joist, model, up, fl, sn, rf, tf, page):
+    rows = [r for r in simpson.rows_of("topflange") if r["species"] == sp and r["joist"] == joist and r["model"] == model]
+    assert rows, (sp, joist, model)
+    r = rows[0]
+    assert (r["uplift"], r["floor"], r["snow"], r["roof"], r["TF"], r["page"]) == (up, fl, sn, rf, tf, page)
+
+
+def test_top_flange_choice_and_limits(tmp_path):
+    """2x10 DF/SP, 1,500 lb floor and 200 lb uplift: JB210A (260 / 1,685 lb, p. 142) is the first top-flange model that carries both;
+    a hanger with "—" uplift is not chosen when there is uplift; a 2x nailer or end grain is not covered."""
+    h = simpson.facemount("2x10", "DF/SP", "lightest that works", 1500, "floor (100)", 200, kind="topflange")
+    assert h["row"]["model"] == "JB210A" and h["allow_up"] == 260
+    j = simpson.facemount("2x6", "DF/SP", "lightest that works", 900, "floor (100)", 100, kind="topflange")
+    assert j["row"]["model"] != "JB26" and j["allow_up"] >= 100
+    assert simpson.facemount("2x10", "DF/SP", "BA210", 4000, "roof (125)", kind="topflange")["allow_down"] == 4720
+    with pytest.raises(simpson.SimpsonError):
+        simpson.facemount("2x10", "DF/SP", "JB210A", 1000, "floor (100)", two_by=True, kind="topflange")
+    from strukit import calcsheet
+    v = dict(mark="JH4", type="top flange", joist="2x10", species="DF/SP", model="lightest that works", download="1500", duration="floor (100)",
+             uplift="200", carrying="3x or larger, or a beam", load_source="joist J2")
+    s = calc.build("joist_hanger", v, dict(job="t", name="t", method="ASD"))[0]
+    assert "top flange" in s.title and all(r.status == "OK" for r in s.rows)
+    calcsheet.simple_pdf(s, str(tmp_path / "tf.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
