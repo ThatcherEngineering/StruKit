@@ -1158,3 +1158,11 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   Structures, 2nd Ed. 2022, Sect. 10.3; WoodWorks slides, Malone 2023, read online: they name the method, but their different-height
   example prints no results). Added to the missing references log; not built without it.
 - Tests: the flag, and no flag for one clear height with equal or different sills (`tests/test_ftao.py`).
+
+## 2026-11-26 20:52 MST — 0.275.0 shear wall with openings: elevation to the visual standard
+- **Force Transfer Around Openings and perforated shear wall elevations** are drawn as built: the sheathing face with its strand texture
+  and 4 x 8 ft panel joints, the framing behind it dashed (studs at 16 in., bottom plate, double top plate, king and jack studs at each
+  opening, the end posts heavier), the openings, a hold-down with its anchor rod at each end, and (force transfer) the strap and
+  blocking along the top and bottom of each opening across the piers beside it. Larger than before; dimensions, shear and chord forces
+  as before.
+- Tests: every existing FTAO and perforated wall sheet prints without overlap.

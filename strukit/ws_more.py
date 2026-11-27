@@ -729,7 +729,7 @@ def ftao_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, L1, Lo, L2
          "construction requirements of SDPWS 4.3.6 and 4.3.7.1", "deflection"])
     sheet.blocks.append(dict(title="Wall Forces", head="Wall Forces", steps=[], text=text,
                              picture=("perforated_wall", dict(h=h, L=w["L"], openings=[dict(x=L1, w=Lo, h=ho, sill=w["sill"])],
-                                                              segs=[dict(x=0.0, b=L1, counted=L1), dict(x=L1 + Lo, b=L2, counted=L2)], V=V, T=T))))
+                                                              segs=[dict(x=0.0, b=L1, counted=L1), dict(x=L1 + Lo, b=L2, counted=L2)], V=V, T=T, ftao=True))))
     if defl:
         _ftao_deflection_block(mark, sheet, h, [dict(L=L1, v=w["vh"]), dict(L=L2, v=w["vh"])], w["Ga"], defl)
     sheet.wall = w
@@ -815,7 +815,7 @@ def _ftao_multi_sheet(mark, panel, spacing, panel_type, G, G_source, h, piers, o
          "hold-downs and their connections", "anchor bolts and plate washers (SDPWS 4.3.6.4.3)", "collector over the full length of the wall and its connection to the diaphragm (SDPWS 4.3.2.2 item 5)",
          "construction requirements of SDPWS 4.3.6 and 4.3.7.1", "deflection"])
     sheet.blocks.append(dict(title="Wall Forces", head="Wall Forces", steps=[], text=text,
-                             picture=("perforated_wall", dict(h=h, L=w["L"], openings=ops, segs=segs, V=V, T=T))))
+                             picture=("perforated_wall", dict(h=h, L=w["L"], openings=ops, segs=segs, V=V, T=T, ftao=True))))
     if defl:
         n_ = len(w["openings"])
         _ftao_deflection_block(mark, sheet, h, [dict(L=p_["L"], v=p_["v"]) for p_ in w["piers"]], w["Ga"], defl)
