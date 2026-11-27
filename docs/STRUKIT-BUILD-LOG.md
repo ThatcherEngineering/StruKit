@@ -1148,3 +1148,13 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Moment diagram:** values are written after every diagram is drawn, on a white ground, so no line runs through them.
 - The moment block now stays on the first page when it fits.
 - Tests: section lookup for the drawing, an HSS-column frame prints without overlap (`tests/test_hss.py`).
+
+## 2026-11-26 20:37 MST — 0.274.0 force-transfer walls: openings of different clear heights flagged (Next 3)
+- (Zach: "keep going".) Checked APA T555's several-openings method with openings of different clear heights: the shear lines beside
+  the openings do not net zero (for example 744 lb and 617 lb out on a 10 ft wall, 5,000 lb). With one clear height and different
+  sills they balance. The Force Transfer Around Openings sheet now adds a FLAG row, "openings of one clear height (APA T555
+  method)", when the heights differ and the lines do not balance, instead of reporting the wall OK.
+- The method for different heights is the transfer diaphragm method (Malone, Breneman and Rice, The Analysis of Irregular Shaped
+  Structures, 2nd Ed. 2022, Sect. 10.3; WoodWorks slides, Malone 2023, read online: they name the method, but their different-height
+  example prints no results). Added to the missing references log; not built without it.
+- Tests: the flag, and no flag for one clear height with equal or different sills (`tests/test_ftao.py`).

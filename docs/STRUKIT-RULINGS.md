@@ -72,6 +72,10 @@ Dated entries. Each is Zach's own decision; open questions live in the proposal 
 Every number cites its source; nothing assumed silently; each module validated against an independent reference before use; flags hard or accepted with reason and date; jurisdiction data in a table; same run contract as HydroKit; calc-package-quality reports; private GitHub repo from day one; StruKit chat writes no LISP and never writes to drawings; ambiguous provisions shown both ways for Zach to rule (shown to Zach in chat, not on the sheet; see 2026-11-23). Every picture is drawn to a high visual detail standard: members and connections look like the real thing (see 2026-11-26 02:26).
 
 ## Open (not ruled)
+- **Force-transfer walls with openings of different clear heights (0.274.0, tell Zach):** APA T555 balances only when the openings
+  have one clear height (sills may differ). With different heights the shear lines beside the openings do not net zero, so StruKit
+  now flags the wall ("openings of one clear height") instead of reporting it OK. The transfer diaphragm method (Malone, Breneman and
+  Rice, 2nd Ed. 2022, Sect. 10.3) covers it; it waits on that book or legible worked examples. Zach has not ruled.
 - **Two stiffeners on a stiffened seat to an HSS face (0.270.0, tell Zach at the check-in):** DG24 Sect. 5.2.6 names double stiffeners
   without a procedure. StruKit gives each stiffener R / 2 at 0.8 W (DG24 Eq. 2-6 and punching under each; each T-weld for R / 2), also
   checks the pair as one plate g + ts wide carrying R, keeps both on the flat, and checks the seat plate as a simple span g under R at

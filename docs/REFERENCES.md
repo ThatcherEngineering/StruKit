@@ -54,6 +54,7 @@ row as more wait on it, and move a row to "Received" when Zach supplies the docu
 | A method for an HSS rafter on an HSS column cap plate (a reference, or Zach's own as a Thatcher Engineering standard) | the 2026-030 style knee | carport knee on a cap plate | 2026-11-24 |
 | TMS 402/602-16 in a copy that opens normally | CMU walls | CMU walls | 2026-11-20 |
 | ASABE EP484 / EP486 | post-frame diaphragms and post embedment | post-frame | 2026-11-20 |
+| Malone, Breneman and Rice, The Analysis of Irregular Shaped Structures: Wood Diaphragms and Shear Walls, 2nd Ed. (McGraw-Hill, 2022), Ch. 10, Sect. 10.3 (the transfer diaphragm method); or WoodWorks "FTAO Analysis for Complex Shear Wall Openings" (Malone, 2023) with legible worked examples | force-transfer shear walls with openings of different heights (T555 does not close equilibrium on the lines beside openings of different heights; the WoodWorks slides read online name the method but their different-height example prints no results) | Next 3 (FTAO, openings of different heights) | 2026-11-26 |
 | Zach's wind drift limit and its source | the drift checks under wind (the boxes stay blank) | drift under wind | 2026-11-24 |
 
 Received: AISC Design Guide 1 (2026-11-23); NDS 2018 and Supplement; SDPWS 2021; ASCE 7-22; AISC 360-22; Design Examples v16; DG24; DG39

@@ -102,3 +102,19 @@ def test_deflection_one_and_two_openings(tmp_path):
     assert [x["h"] for x in apa["cases"]] == [7.0, 10.0, 8.0, 7.0, 10.0, 8.0]      # APA's heights, kept in the function, not used on the sheet
     assert m.wall_defl["delta"] == pytest.approx(sum(x["d"] for x in c) / 6)
     calcsheet.simple_pdf(m, str(tmp_path / "ftd.pdf"), "Job", "SDPWS-2021", "Nov 26, 2026")
+
+
+def test_openings_of_different_heights_are_flagged(tmp_path):
+    """APA T555 closes equilibrium for openings of one clear height (sills may differ: ha + hb is then the same). With different clear
+    heights the shear lines beside the openings do not net zero, so the sheet flags the wall (no published method for openings of
+    different heights is on file; see docs/REFERENCES.md)."""
+    args = ("FT", "Sheathing, 15/32 in, 8d common", 4, "OSB", 0.5, "DF-L", 10.0, 2.0, 4.0, 4.5, 5.0, 3.0, 4000.0, "wind", "ASD", "test")
+    m = ws_more.ftao_wall_sheet(*args, more=[dict(w=6.0, ho=6.5, sill=0.5, pier=3.5)])
+    r = [x for x in m.rows if x.check.startswith("openings of one clear height")]
+    assert len(r) == 1 and r[0].status == "FLAG" and r[0].demand == pytest.approx(1.5)
+    w = shearwall.ftao_multi("Sheathing, 15/32 in, 8d common", 4, "OSB", 0.5, 10.0, [2.0, 4.5, 3.5],
+                             [dict(w=4.0, ho=5.0, sill=3.0), dict(w=6.0, ho=6.5, sill=0.5)], 4000.0, "wind", "ASD")
+    assert max(abs(c) for c in w["checks"][1:-1]) > 1.0                  # the lines beside the openings do not balance
+    for sill in (3.0, 2.0):                                              # one clear height, sills equal or not: balanced, no flag
+        same = ws_more.ftao_wall_sheet(*args, more=[dict(w=6.0, ho=5.0, sill=sill, pier=3.5)])
+        assert not any(x.check.startswith("openings of one clear height") for x in same.rows)
