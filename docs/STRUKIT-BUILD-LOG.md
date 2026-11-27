@@ -1130,3 +1130,12 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - New optional box on the isolated footing and footing-with-moment screens: "Steel column section (for the drawing)". A footing linked
   to a base plate takes the plate's column.
 - Tests: every support variant prints without overlapping text (`tests/test_footing.py`).
+
+## 2026-11-26 19:41 MST — 0.272.0 guard and stair stringer pictures to the visual standard (Next 1, part)
+- (Zach: "Yes do it".) **Guard elevation:** the rail and posts are drawn to scale as tubes (corner lines on square HSS, shading on
+  pipe), the rail running over the post tops and broken off past the end posts. Each post stands on a base plate, or is welded to the
+  top flange of the channel stringer, which is drawn with its flanges and broken off. Loads and the spacing and height are dimensioned.
+  Beside it the rail and the post are cut to scale.
+- **Stair stringer sketch:** the channel is drawn at its depth along the slope with both flanges, the treads at each riser, the
+  supports, run and rise. The load text wraps to two lines when it would run into the section.
+- Tests: the guard picture data and both variants print without overlap (`tests/test_hss.py`).

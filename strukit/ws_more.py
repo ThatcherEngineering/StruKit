@@ -2638,7 +2638,9 @@ def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_sour
                          "(50 lb on 1 ft2, ASCE/SEI 7-22 Sect. 4.5.1.2)", "rail splices and the rail to post connection", "deflection of the guard",
                          "axial load in the posts", "a separate handrail and its brackets"],
                         picture=None)
-    sheet.blocks.append(dict(title="Guard Elevation", head="Guard Elevation", picture=("guard", dict(S=S, h=h, rail=rail, post=post, uniform=uniform))))
+    tube = lambda q: dict(kind="round" if "OD" in q else "rect", OD=q.get("OD"), B=q.get("B"), H=q.get("Ht"), t=q["tdes"])
+    gpic = dict(S=S, h=h, rail=shapes.normalize(rail), post=shapes.normalize(post), uniform=uniform, rail_d=tube(pr), post_d=tube(pp))
+    sheet.blocks.append(dict(title="Guard Elevation", head="Guard Elevation", picture=("guard", gpic)))
     flange = None
     if stringer:
         # Post welded to the top flange of a channel stringer: AISC Design Guide 34 Sect. 7.3.3, Eq. 7-1, and Example 10.1.8.
@@ -2666,6 +2668,7 @@ def guard_sheet(mark, rail, rail_Fy, rail_Fy_source, post, post_Fy, post_Fy_sour
                                  "effective width, one post alone, with no stiffener.")
         sheet.not_checked[0] = "the post to stringer weld, and torsion and bending of the stringer from the guard load"
         flange = dict(Beff=Beff, Z=Zw, S=Sw, Mn=Mn, Mc=Mc)
+        gpic["channel"] = dict(name=shapes.normalize(stringer), d=ch["d"], bf=ch["bf"], tf=ch["tf"], tw=ch["tw"])
     sheet.guard = dict(cases=cases, Mr=Mr, Vr=Vr, Mp=Mpst, Vp=Vpst, flange=flange)
     return sheet
 

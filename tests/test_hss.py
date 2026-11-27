@@ -314,3 +314,17 @@ def test_guard_post_base_loads_for_the_base_plate_screen():
     assert st["M"] == pytest.approx(1120.0) and st["V"] == pytest.approx(320.0) and "guard load" in sv["name"]
     assert calc.reactions("guard", dict(v, post=""), dict(method="ASD"))["messages"]
     assert "error" in calc.reactions("wood_beam", {}, {})
+
+
+def test_guard_picture_draws_the_tubes_and_the_stringer(tmp_path):
+    """The guard elevation draws the rail and posts as the tubes they are (picture standard): the picture carries the rail and post
+    sections and, when the posts stand on a channel, the channel's dimensions; both variants print without overlapping text."""
+    from strukit import calcsheet, ws_more
+    s = ws_more.guard_sheet("GD", "PIPE1-1/4STD", 35, "ASTM A53 Gr. B", "HSS1-1/2X1-1/2X1/4", 46, "ASTM A500 Gr. B", 4, 3.5, True, "", "ASD")
+    d = [b for b in s.blocks if b.get("picture")][0]["picture"][1]
+    assert d["rail_d"]["kind"] == "round" and d["rail_d"]["OD"] == pytest.approx(1.66) and d["post_d"]["kind"] == "rect" and "channel" not in d
+    calcsheet.simple_pdf(s, str(tmp_path / "g1.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")
+    s2 = ws_more.guard_sheet("GD", "HSS1.900X0.145", 35, "a", "HSS2X2X1/4", 46, "b", 5, 3.5, True, "", "ASD", stringer="MC12X10.6", stringer_Fy=36, stringer_Fy_source="A36")
+    d2 = [b for b in s2.blocks if b.get("picture")][0]["picture"][1]
+    assert d2["channel"]["d"] == pytest.approx(12.0)
+    calcsheet.simple_pdf(s2, str(tmp_path / "g2.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")
