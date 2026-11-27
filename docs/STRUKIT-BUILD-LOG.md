@@ -1139,3 +1139,12 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Stair stringer sketch:** the channel is drawn at its depth along the slope with both flanges, the treads at each riser, the
   supports, run and rise. The load text wraps to two lines when it would run into the section.
 - Tests: the guard picture data and both variants print without overlap (`tests/test_hss.py`).
+
+## 2026-11-26 19:57 MST — 0.273.0 moment frame pictures to the visual standard (Next 1, done)
+- **Frame elevation** is now its own full-width block, larger, with each member drawn as its section: W shapes with both flanges,
+  HSS columns as tubes with their corner lines. Gravity loads that act on the same members the same way share one row of arrows
+  (labelled, for example, "D 0.9 + L 1.2 k/ft") instead of stacking up into the story above. Member names sit on a white ground;
+  a short ridge piece is named above it.
+- **Moment diagram:** values are written after every diagram is drawn, on a white ground, so no line runs through them.
+- The moment block now stays on the first page when it fits.
+- Tests: section lookup for the drawing, an HSS-column frame prints without overlap (`tests/test_hss.py`).

@@ -930,6 +930,30 @@ def _frame_xy(lay, x0, y0, w, h):
     return (lambda n: (ox + s * (lay.nodes[n][0] - min(xs)), y0 + s * (lay.nodes[n][1] - min(ys)))), s
 
 
+def _frame_member_shape(name):
+    """Drawing data for a frame member's section: kind, depth, flange or wall thickness."""
+    from . import shapes
+    try:
+        h = shapes.hss(name)
+        return dict(kind="hss", d=h.get("OD") or h["Ht"], t=h["tdes"], round=h.get("type") != "HSS-RECT")
+    except Exception:
+        pass
+    try:
+        w = shapes.get(name)
+        return dict(kind="w", d=w["d"], tf=w["tf"])
+    except Exception:
+        return None
+
+
+def _knockout(c, x, y, text, size, left=False, color=None, font=None):
+    """Text on a white ground so it reads where it crosses a drawn line (left: text starts at x; else centred)."""
+    f_ = font or FR
+    wd = c.stringWidth(text, f_, size)
+    xl = x if left else x - wd / 2
+    c.setFillColorRGB(1, 1, 1); c.rect(xl - 1, y - 1.5, wd + 2, size + 1.5, fill=1, stroke=0)
+    c.setFillColorRGB(*(color or GREY)); c.setFont(f_, size); c.drawString(xl, y, text)
+
+
 def _draw_frame(c, lay, x0, y0, w, h, band=3.2, labels=True, light=False):
     """The frame to scale: members as steel bands, pinned or fixed bases."""
     import math as _m
@@ -941,15 +965,20 @@ def _draw_frame(c, lay, x0, y0, w, h, band=3.2, labels=True, light=False):
         if light:
             c.setStrokeColorRGB(0.55, 0.58, 0.62); c.setLineWidth(0.8); c.line(0, 0, L, 0)
         else:
-            memberart.steel_elevation(c, 0, -band / 2, L, band, 10.0, 0.9)
+            sh_ = _frame_member_shape(m.shape)                 # drawn as what it is: a W with its flanges, an HSS with its corner lines
+            if sh_ and sh_["kind"] == "hss":
+                memberart.hss_elevation(c, 0, -band / 2, L, band, max(band * sh_["t"] / sh_["d"], 0.5), rnd=sh_["round"], vertical=False)
+            else:
+                memberart.w_side(c, 0, -band / 2, L, band, max(band * (sh_["tf"] / sh_["d"] if sh_ else 0.08), 0.8), vertical=False)
         c.restoreState()
         if labels:
-            c.setFillColorRGB(*GREY); c.setFont(FR, 5.5)
             mx, my = (x1 + x2) / 2, (y1 + y2) / 2
             if m.role == "column":
-                c.drawString(mx + band, my - 2, m.name)
+                _knockout(c, mx + band / 2 + 2, my - 2.5, m.name, 5.5, left=True)
+            elif L < 34:                                    # a short member (a ridge piece): its name above, clear of the columns
+                _knockout(c, mx, max(y1, y2) + band / 2 + 3, m.name, 5.5)
             else:
-                c.drawCentredString(mx, my + band + 1.5, m.name)
+                _knockout(c, mx, my - band / 2 - 7.5, m.name, 5.5)
     c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK)
     for n, kind in lay.supports.items():
         x, y = xy(n)
@@ -972,9 +1001,18 @@ def _frame_loads(c, lay, xy, loads):
     import math as _m
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC)
     stack, jstack = {}, {}
+    merged, order = {}, []                                 # loads on the same members the same way share one row of arrows
     for ld in loads:
         if ld.get("auto"):
             continue
+        if "on" in ld:
+            key = (tuple(lay.names(ld["on"])), ld.get("dir", "gravity"), ld.get("kind"))
+            if key not in merged:
+                merged[key] = dict(ld, parts=[]); order.append(merged[key])
+            merged[key]["parts"].append(f"{ld['case']} {ld['w']:g}")
+        else:
+            order.append(ld)
+    for ld in order:
         if "on" in ld:
             names = list(lay.names(ld["on"]))
             side = ld.get("dir", "gravity") == "x"
@@ -1005,7 +1043,8 @@ def _frame_loads(c, lay, xy, loads):
                     ends.append((xl - 3, yl + off + 5))
             if ends:                                       # one label for the load, at its left end
                 lx, ly = min(ends)
-                c.setFont(FR, 5.5); c.drawRightString(lx, ly, f"{ld['case']} {ld['w']:g} k/ft")
+                txt = " + ".join(ld["parts"]) + " k/ft"
+                c.setFont(FR, 5.5); c.drawRightString(lx, ly, txt); c.setFillColorRGB(*LOADC)
         else:
             node = ld["node"] if "node" in ld else lay.levels[ld["level"]][0]
             if node not in lay.nodes:
@@ -1044,7 +1083,7 @@ def _moment_on_frame(c, sheet, x0, y0, w, h):
     mmax = max(float(max(abs(v) for v in M)) for _, M in sheet.diagram.values()) or 1.0
     k = 18.0 / mmax
     col = (0.54, 0.35, 0.0)
-    placed = []
+    placed, texts = [], []
     for m in lay.members:
         st, M = sheet.diagram[m.name]
         (x1, y1), (x2, y2) = xy(m.i), xy(m.j)
@@ -1068,8 +1107,9 @@ def _moment_on_frame(c, sheet, x0, y0, w, h):
             step = -1 if f > 0.5 else 1
             lx += ux * 9 * step; ly += uy * 9 * step
         placed.append((lx, ly))
-        c.setFillColorRGB(*col); c.setFont(FM, 6)
-        c.drawCentredString(lx, ly, f"{abs(M[i]):.0f}")
+        texts.append((lx, ly, f"{abs(M[i]):.0f}"))
+    for lx, ly, t_ in texts:                               # values last, on a white ground, so no diagram line runs through them
+        _knockout(c, lx, ly, t_, 6, color=col, font=FM)
     c.setStrokeColorRGB(*INK)
 
 
@@ -1089,12 +1129,20 @@ def _frame_pdf(sheet, path, job, code, date, page=1, pages=1):
         for k, t in enumerate(_split(f"{role.title()}s {nm}: {shp}, braced out of plane at {lb:.3g} ft", 62)):
             p.text(t, x=LM + (8 if k else 0))
     p.text(f"Fy = {sheet.Fy:g} ksi; section properties from the AISC Shapes Database v16.0")
-    bottom_left = p.y
-    _sketch_title(c, 338, top, "ELEVATION")
-    xy_, _s = _draw_frame(c, lay, 368, top - 104, 150, 50)
+    p.room(215)
+    p.y -= 4
+    p.head("Elevation and Loads")
+    ytop = p.y
+    hh = 128
+    xs_ = [q[0] for q in lay.nodes.values()]; ys_ = [q[1] for q in lay.nodes.values()]
+    sc_ = min(270 / (max(xs_) - min(xs_) or 1.0), hh / (max(ys_) - min(ys_) or 1.0))
+    hh = sc_ * (max(ys_) - min(ys_))                       # top of the frame just under the load rows
+    xy_, _s = _draw_frame(c, lay, LM + 120, ytop - 30 - hh, 270, hh + 0.01, band=5.0)
     _frame_loads(c, lay, xy_, sheet.loads)
-    _small(c, 448, top - 118, "frame to scale; member depth and load arrows not to scale; loads in kips and kip/ft")
-    p.y = min(bottom_left, top - 122) - 2
+    ylow = min(xy_(n)[1] for n in lay.supports) - 12
+    _small(c, (LM + RM) / 2, ylow - 4, "frame to scale; member depth and load arrows not to scale; loads in kips and kip/ft, "
+           "cases on the same members added on one row of arrows")
+    p.y = ylow - 18
 
     p.head("Loads")
     for ld in sheet.loads:
@@ -1126,7 +1174,7 @@ def _frame_pdf(sheet, path, job, code, date, page=1, pages=1):
         p.text(f"{cb.name}{mark}", font=FM, size=8, dy=10)
         p.text(cb.source, size=7.5, color=GREY, x=LM + 12)
 
-    p.room(150)
+    p.room(146)
     p.y -= 4
     g = sheet.governing
     p.head(f"Bending Moment (kip-ft), {g['combo']}" + (f", {g['label']}" if g["label"] else ""))

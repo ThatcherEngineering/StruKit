@@ -328,3 +328,14 @@ def test_guard_picture_draws_the_tubes_and_the_stringer(tmp_path):
     d2 = [b for b in s2.blocks if b.get("picture")][0]["picture"][1]
     assert d2["channel"]["d"] == pytest.approx(12.0)
     calcsheet.simple_pdf(s2, str(tmp_path / "g2.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")
+
+
+def test_frame_members_drawn_as_their_shapes(tmp_path):
+    """The frame elevation draws each member as its section (picture standard): W shapes with flanges, HSS columns as tubes."""
+    from strukit import calcsheet
+    from strukit.gui import calc
+    assert calcsheet._frame_member_shape("W16X40")["kind"] == "w" and calcsheet._frame_member_shape("HSS10X10X1/2")["kind"] == "hss"
+    assert calcsheet._frame_member_shape("nothing") is None
+    proj = dict(job="t", name="t", method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L + 0.5S", source="t"), dict(expr="1.2D + 1.0W + L + 0.5S", source="t")],
+                combos_asd=[])
+    calc.sheet_pdf("frame", dict(FRAME, col_shape="HSS10x10x1/2"), proj, str(tmp_path / "fr.pdf"))
