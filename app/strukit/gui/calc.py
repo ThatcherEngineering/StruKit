@@ -919,7 +919,17 @@ FORMS = {
                 F("above_source", "Stacked walls: where that force comes from", "text", required=False, help="for example: shear wall SW3, main level"),
                 F("chord_A", "Deflection: end post area", unit="in2", required=False),
                 F("chord_E", "Deflection: end post E", unit="psi", required=False),
-                F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
+                F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False),
+                F("ab_d", "Anchor bolts: diameter", "select", options=["1/2", "5/8", "3/4", "7/8", "1"], unit="in", required=False,
+                  help="blank = anchor bolts not checked; bolt in the bottom plate by NDS 12.3 (Table 12E basis) and the plate washer by SDPWS 4.3.6.4.3"),
+                F("ab_s", "Anchor bolts: spacing", unit="in", required=False, help="blank = the sheet gives the largest spacing"),
+                F("ab_sill_t", "Anchor bolts: bottom plate thickness", unit="in", required=False, help="1.5 for a 2x plate"),
+                F("ab_sill_w", "Anchor bolts: bottom plate width", unit="in", required=False, help="3.5 for a 2x4, 5.5 for a 2x6"),
+                F("ab_sill_G", "Anchor bolts: bottom plate specific gravity", required=False, help="blank = the wall framing G"),
+                F("ab_sill_G_source", "Anchor bolts: where that G comes from", "text", required=False),
+                F("ab_washer", "Anchor bolts: plate washer, width x length x thickness", "text", unit="in", required=False,
+                  help="blank = 3 x 3 x 0.229 (the SDPWS minimum)"),
+                F("ab_offset", "Anchor bolts: bolt centre to the sheathed edge of the plate", unit="in", required=False, help="blank = centred on the plate")],
         tables=[]),
     "ftao_wall": dict(
         title="Wood Shear Wall, Force Transfer Around Openings", code="SDPWS-2021", mark="FT",
@@ -941,6 +951,16 @@ FORMS = {
                 F("hd_sdc", "Strap tie, seismic: Seismic Design Category", "select", options=["A or B", "C to F"], required=False),
                 F("above_T", "Stacked walls: chord force from the wall above", unit="lb", required=False),
                 F("above_source", "Stacked walls: where that force comes from", "text", required=False),
+                F("ab_d", "Anchor bolts: diameter", "select", options=["1/2", "5/8", "3/4", "7/8", "1"], unit="in", required=False,
+                  help="blank = anchor bolts not checked; bolt in the bottom plate by NDS 12.3 (Table 12E basis) and the plate washer by SDPWS 4.3.6.4.3"),
+                F("ab_s", "Anchor bolts: spacing", unit="in", required=False, help="blank = the sheet gives the largest spacing"),
+                F("ab_sill_t", "Anchor bolts: bottom plate thickness", unit="in", required=False, help="1.5 for a 2x plate"),
+                F("ab_sill_w", "Anchor bolts: bottom plate width", unit="in", required=False, help="3.5 for a 2x4, 5.5 for a 2x6"),
+                F("ab_sill_G", "Anchor bolts: bottom plate specific gravity", required=False, help="blank = the wall framing G"),
+                F("ab_sill_G_source", "Anchor bolts: where that G comes from", "text", required=False),
+                F("ab_washer", "Anchor bolts: plate washer, width x length x thickness", "text", unit="in", required=False,
+                  help="blank = 3 x 3 x 0.229 (the SDPWS minimum)"),
+                F("ab_offset", "Anchor bolts: bolt centre to the sheathed edge of the plate", unit="in", required=False, help="blank = centred on the plate"),
                 F("chord_A", "Deflection: end post area", unit="in2", required=False, help="with E and slip: the wall's deflection on the sheet (APA T555, the piers by SDPWS Eq. 4.3-1) and its stiffness in the 3D frame"),
                 F("chord_E", "Deflection: end post E", unit="psi", required=False),
                 F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
@@ -963,6 +983,21 @@ FORMS = {
                 F("v_source", "Where the shear comes from", "text"),
                 F("holddown", "10d nails: hold-down on the inside face of the end post", "select", options=["yes", "no"], required=False,
                   help="Table 4.3A note 10"),
+                F("hd_model", "Hold-down", "select", options=holddowns.MODELS, required=False, help="Simpson Strong-Tie catalog C-C-2026; blank = hold-down not checked"),
+                F("hd_stem", "Strap tie: stem wall width", "select", options=["6", "8"], unit="in", required=False),
+                F("hd_position", "Strap tie: position on the wall", "select", options=holddowns.POSITIONS, required=False),
+                F("hd_cracked", "Strap tie: concrete", "select", options=["cracked", "uncracked"], required=False),
+                F("hd_sdc", "Strap tie, seismic: Seismic Design Category", "select", options=["A or B", "C to F"], required=False),
+                F("ab_d", "Anchor bolts: diameter", "select", options=["1/2", "5/8", "3/4", "7/8", "1"], unit="in", required=False,
+                  help="blank = anchor bolts not checked; bolt in the bottom plate by NDS 12.3 (Table 12E basis) and the plate washer by SDPWS 4.3.6.4.3"),
+                F("ab_s", "Anchor bolts: spacing", unit="in", required=False, help="blank = the sheet gives the largest spacing"),
+                F("ab_sill_t", "Anchor bolts: bottom plate thickness", unit="in", required=False, help="1.5 for a 2x plate"),
+                F("ab_sill_w", "Anchor bolts: bottom plate width", unit="in", required=False, help="3.5 for a 2x4, 5.5 for a 2x6"),
+                F("ab_sill_G", "Anchor bolts: bottom plate specific gravity", required=False, help="blank = the wall framing G"),
+                F("ab_sill_G_source", "Anchor bolts: where that G comes from", "text", required=False),
+                F("ab_washer", "Anchor bolts: plate washer, width x length x thickness", "text", unit="in", required=False,
+                  help="blank = 3 x 3 x 0.229 (the SDPWS minimum)"),
+                F("ab_offset", "Anchor bolts: bolt centre to the sheathed edge of the plate", unit="in", required=False, help="blank = centred on the plate"),
                 F("chord_A", "Deflection: end post area", unit="in2", required=False),
                 F("chord_E", "Deflection: end post E", unit="psi", required=False),
                 F("slip", "Deflection: anchorage slip at the design load", unit="in", required=False)],
@@ -1835,6 +1870,43 @@ def build(kind, values, project):
     return out
 
 
+def _ab_values(r):
+    """The anchor bolt boxes of a wall screen, or None when no anchor bolt diameter is chosen."""
+    d_ = r.text("ab_d", False)
+    if not d_:
+        return None
+    D = {"1/2": 0.5, "5/8": 0.625, "3/4": 0.75, "7/8": 0.875, "1": 1.0}.get(d_)
+    st, sw = r.num("ab_sill_t", True, label="Anchor bolts: bottom plate thickness"), r.num("ab_sill_w", True, label="Anchor bolts: bottom plate width")
+    sg = r.num("ab_sill_G", False)
+    if sg is not None and not r.text("ab_sill_G_source", False):
+        r.miss.append("Anchor bolts: where the bottom plate G comes from is blank")
+    wtxt = r.text("ab_washer", False)
+    ww = wl = wt = None
+    if wtxt:
+        try:
+            ww, wl, wt = [float(eval(x_.strip().replace("-", "+"), {"__builtins__": {}})) for x_ in wtxt.lower().split("x")]
+        except Exception:
+            r.miss.append("Anchor bolts: give the plate washer as width x length x thickness, for example 3 x 3 x 0.229")
+    return dict(D=D, s=r.num("ab_s", False), sill_t=st, sill_w=sw, sill_G=sg, sill_G_source=r.text("ab_sill_G_source", False) or "",
+                washer_w=ww, washer_l=wl, washer_t=wt, offset=r.num("ab_offset", False))
+
+
+def _with_ab(mark, ab, panel, spacing, G, load, method_, other, sheet):
+    """The wall sheet with its anchor bolt checks added when anchor bolts are chosen."""
+    if ab:
+        ws_more.add_anchor_bolts(mark, sheet, ab, panel, spacing, G, load, method_, other)
+    return sheet
+
+
+def _hd_values(r):
+    """The hold-down boxes of a wall screen, or None when no hold-down is chosen."""
+    if not r.text("hd_model", False):
+        return None
+    return dict(model=r.text("hd_model", False), stem=r.text("hd_stem", False), position=r.text("hd_position", False),
+                cracked={"cracked": True, "uncracked": False}.get(r.text("hd_cracked", False)),
+                sdc_high={"A or B": False, "C to F": True}.get(r.text("hd_sdc", False)))
+
+
 def _build(kind, values, project):
     """Returns (sheet, pdf kind, keyword arguments for the calc sheet)."""
     form = FORMS[kind]
@@ -2601,8 +2673,9 @@ def _build(kind, values, project):
         vs, sd_ = r.text("v_source"), r.text("sides") or ""
         hdm = r.text("hd_model", False)
         more = r.rows("more")
+        ab_ = _ab_values(r)
         r.done()
-        return ws_more.ftao_wall_sheet(mark, args[0], int(args[1]), *args[2:], m, vs, yes(r.text("holddown", False)), 2 if sd_.startswith("both") else 1,
+        return _with_ab(mark, ab_, args[0], args[1], args[3], args[12], m, None, ws_more.ftao_wall_sheet(mark, args[0], int(args[1]), *args[2:], m, vs, yes(r.text("holddown", False)), 2 if sd_.startswith("both") else 1,
                                        above_T=r.num("above_T", False) or 0.0, above_source=r.text("above_source", False) or "",
                                        holddown=(dict(model=hdm, stem=r.text("hd_stem", False), position=r.text("hd_position", False),
                                                       cracked={"cracked": True, "uncracked": False}.get(r.text("hd_cracked", False)),
@@ -2610,7 +2683,7 @@ def _build(kind, values, project):
                                        more=more or None,
                                        defl=(dict(A=float(str(values.get("chord_A")).replace(",", "")), E=float(str(values.get("chord_E")).replace(",", "")),
                                                   Da=float(str(values.get("slip")).replace(",", "")))
-                                             if all(str(values.get(k_) or "").strip() for k_ in ("chord_A", "chord_E", "slip")) else None)), "simple", {}
+                                             if all(str(values.get(k_) or "").strip() for k_ in ("chord_A", "chord_E", "slip")) else None))), "simple", {}
     if kind == "perforated_wall":
         m = method(project, r.miss)
         panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")
@@ -2619,9 +2692,11 @@ def _build(kind, values, project):
         ops = r.rows("openings")
         if not ops:
             r.miss.append("No opening is entered (a wall without openings is a Wood Shear Wall)")
+        ab_ = _ab_values(r)
         r.done()
-        return ws_more.perforated_wall_sheet(mark, panel, int(sp), pt, G, gs, h, Lw, ops, V, load, m, vs, yes(r.text("holddown", False)),
-                                             sides, r.num("chord_E", False), r.num("chord_A", False), r.num("slip", False)), "simple", {}
+        return _with_ab(mark, ab_, panel, sp, G, load, m, None, ws_more.perforated_wall_sheet(mark, panel, int(sp), pt, G, gs, h, Lw, ops, V, load, m, vs, yes(r.text("holddown", False)),
+                                             sides, r.num("chord_E", False), r.num("chord_A", False), r.num("slip", False),
+                                             holddown=_hd_values(r))), "simple", {}
     if kind == "shear_wall":
         m = method(project, r.miss)
         panel, sp, pt = r.text("panel"), r.text("spacing"), r.text("panel_type")
@@ -2645,8 +2720,9 @@ def _build(kind, values, project):
         dead = r.num("dead", False)
         if dead and r.num("dead_factor", False) is None:
             r.miss.append("Uplift: dead load factor is blank")
+        ab_ = _ab_values(r)
         r.done()
-        return ws_more.shear_wall_sheet(mark, panel, int(sp), pt, G, gs, h, lengths, V, load, m, vs, yes(r.text("holddown", False)),
+        return _with_ab(mark, ab_, panel, sp, G, load, m, oth, ws_more.shear_wall_sheet(mark, panel, int(sp), pt, G, gs, h, lengths, V, load, m, vs, yes(r.text("holddown", False)),
                                         r.num("arm_offset", False) or 0.0, r.num("chord_E", False), r.num("chord_A", False),
                                         r.num("slip", False), sides=sides, blocked=blocked, stud_spacing=int(ss_) if ss_ else None,
                                         field_nails=int(fn_) if fn_ else None, dead_plf=dead or 0.0,
@@ -2654,7 +2730,7 @@ def _build(kind, values, project):
                                         above_T=r.num("above_T", False) or 0.0, above_source=r.text("above_source", False) or "",
                                         holddown=(dict(model=r.text("hd_model", False), stem=r.text("hd_stem", False), position=r.text("hd_position", False),
                                                        cracked={"cracked": True, "uncracked": False}.get(r.text("hd_cracked", False)),
-                                                       sdc_high={"A or B": False, "C to F": True}.get(r.text("hd_sdc", False))) if r.text("hd_model", False) else None)), "simple", {}
+                                                       sdc_high={"A or B": False, "C to F": True}.get(r.text("hd_sdc", False))) if r.text("hd_model", False) else None))), "simple", {}
     if kind == "wind_kzt":
         shape, ex, eb, H, Lh, gs, x = r.text("shape"), r.text("exposure"), r.text("exposure_basis"), r.num("H"), r.num("Lh"), r.text("geometry_source"), r.num("x")
         side, loc = r.text("side"), yes(r.text("located"))

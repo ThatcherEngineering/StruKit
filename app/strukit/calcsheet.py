@@ -4523,6 +4523,25 @@ def _snow_drift_picture(c, top, d):
     return ybase - 38
 
 
+def _anchor_bolt_marks(c, xa, xb, y0, sc, ab):
+    """Foundation anchor bolts along a bottom plate, to scale (sc points per ft): the first 12 in. from each end, then at the spacing;
+    each bolt seen through the sheathing, dashed below the plate into the concrete, with its plate washer."""
+    s_ft = ab["s"] / 12.0
+    L = (xb - xa) / sc
+    xs, x = [], 1.0
+    while x < L - 1.0 + 1e-6:
+        xs.append(x); x += s_ft
+    if L > 2.0 and (not xs or L - 1.0 - xs[-1] > 0.25):
+        xs.append(L - 1.0)
+    for xf in xs:
+        px = xa + xf * sc
+        c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(0.8); c.setDash(1.6, 1.0)
+        c.line(px, y0 - 6.0, px, y0 + 3.2); c.setDash()
+        c.setFillColorRGB(*memberart.STEEL_FILL); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+        c.rect(px - 1.6, y0 + 1.2, 3.2, 1.0, fill=1, stroke=1)
+    return len(xs)
+
+
 def _perforated_wall_picture(c, top, d):
     """Elevation of a sheathed shear wall with openings, to scale, drawn as built: the sheathing face with its 4 x 8 ft panel joints, the
     framing behind it dashed (studs at 16 in., the bottom plate and the double top plate, king and jack studs at each opening, the end
@@ -4606,6 +4625,11 @@ def _perforated_wall_picture(c, top, d):
         c.rect(bx, y0 + 1.0, 4.0, 11.0, fill=1, stroke=1)
         c.setLineWidth(0.9); c.line(bx + 2.0, y0 - 5.0, bx + 2.0, y0 + 4.0); c.setLineWidth(0.5)
     c.setStrokeColorRGB(*GREY); c.setLineWidth(0.6); c.line(x0 - 14, y0, x0 + W + 14, y0)
+    if d.get("ab"):                                       # anchor bolts along each length of bottom plate (none across a door)
+        cuts = [0.0] + [v_ for o in ops if o["sill"] <= 1e-6 for v_ in (o["x"], o["x"] + o["w"])] + [Lw]
+        for a_, b_ in zip(cuts[0::2], cuts[1::2]):
+            if b_ - a_ > 1e-6:
+                _anchor_bolt_marks(c, x0 + a_ * sc, x0 + b_ * sc, y0, sc, d["ab"])
     # loads and dimensions
     c.setStrokeColorRGB(*INK); c.setFillColorRGB(*INK); c.setLineWidth(0.8)
     c.line(x0 + 2, y0 + H + 6, x0 + W - 2, y0 + H + 6); c.line(x0 + W - 2, y0 + H + 6, x0 + W - 6, y0 + H + 8)
@@ -4623,7 +4647,9 @@ def _perforated_wall_picture(c, top, d):
     c.setFont(FR, 6); c.setFillColorRGB(*GREY)
     c.drawRightString(x0 - 4, y0 + 4, f"T {d['T']:,.0f}"); c.drawString(x0 + W + 4, y0 - 7, f"C {d['T']:,.0f}")
     _small(c, (LM + RM) / 2, y0 - 43, "to scale; sheathing face with 4 x 8 ft panel joints, framing behind dashed, hold-down at each end"
-           + ("; strap and blocking along the top and bottom of each opening" if d.get("ftao") else "") + "; chord forces in lb")
+           + ("; strap and blocking along the top and bottom of each opening" if d.get("ftao") else "")
+           + (f"; anchor bolts {d['ab']['D']:g} in. at {d['ab']['s']:g} in." + ("" if d["ab"]["given"] else " (the spacing found)") + ", 12 in. from the plate ends"
+              if d.get("ab") else "") + "; chord forces in lb")
     return y0 - 55
 
 
@@ -4654,9 +4680,13 @@ def _shear_wall_picture(c, top, d):
         c.setFont(FR, 6); c.setFillColorRGB(*GREY)
         c.drawCentredString(x, y0 - 22, f"T {s['T']:,.0f}"); c.drawCentredString(x + w, y0 - 22, f"C {s.get('C', s['T']):,.0f}")
         memberart._dim_h(c, x, x + w, y0 - 9, f"{s['b']:g} ft", FR, ext_from=y0)
+        if d.get("ab"):
+            _anchor_bolt_marks(c, x, x + w, y0, sc, d["ab"])
         x += w + gap
     memberart._dim_v(c, y0, y0 + d["h"] * sc, x - gap + 8, f"{d['h']:g} ft", FR, ext_from=x - gap)
-    _small(c, (LM + RM) / 2, y0 - 32, "segments drawn to scale, side by side; chord forces in lb; framing lines are schematic")
+    _small(c, (LM + RM) / 2, y0 - 32, "segments drawn to scale, side by side; chord forces in lb; framing lines are schematic"
+           + (f"; anchor bolts {d['ab']['D']:g} in. at {d['ab']['s']:g} in." + ("" if d["ab"]["given"] else " (the spacing found)") + ", 12 in. from the plate ends"
+              if d.get("ab") else ""))
     return y0 - 38
 
 
