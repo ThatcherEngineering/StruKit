@@ -766,6 +766,13 @@ def _ftao_multi_sheet(mark, panel, spacing, panel_type, G, G_source, h, piers, o
         rows.append(Row(f"corner zones of pier {i + 1}", f"{load}, {method}", max(abs(p["vc"]), p["vF"]), w["v_cap"], "plf", src + "; APA T555",
                         f"the larger of (R - F) / L = {p['vc']:.0f} plf and F / L = {p['vF']:.0f} plf"))
     rows.append(Row("wall pier length", "", 2.0, min(piers), "ft", "SDPWS-2021 4.3.2.2 item 2", "2 ft minimum"))
+    oo = w["openings"]
+    diff = max(abs(a["ho"] - b["ho"]) for a in oo for b in oo)
+    imb = max([abs(c_) for c_ in w["checks"][1:-1]] or [0.0])
+    if diff > 1e-6 and imb > 0.5:                        # T555 balances only for openings of one clear height
+        rows.append(Row("openings of one clear height (APA T555 method)", "", diff, 0.0, "ft", "APA T555",
+                        f"the opening heights differ by {diff:g} ft; the shear lines beside them do not balance (largest {imb:,.0f} lb), so this "
+                        "method does not cover the wall"))
     hd = None
     if holddown:
         hd, row = _holddown_row(mark, holddown, T, G, load, method)
