@@ -3977,13 +3977,20 @@ def _diaphragm_picture(c, top, d):
     c.setFillColorRGB(*INK); c.setFont(FR, 6)
     at = " at the line" if cant else ""
     tC, tT = f"chord, C = {d['T']:,.0f} lb{at}", f"chord, T = {d['T']:,.0f} lb{at}"
-    if c.stringWidth(tC, FR, 6) > w_ - 8:                                       # a narrow plan: the chord forces beside the line of resistance
+    fits = c.stringWidth(tC, FR, 6) <= w_ - 8
+    if fits and d.get("opening"):                                               # a clear stretch of chord between the openings' framing
+        cuts = sorted([(r_["xs"], r_["xe"]) for r_ in (d.get("regions") or [d["opening"]])])
+        edges = [0.0] + [v_ for ab_ in cuts for v_ in ab_] + [L]
+        fits = max(edges[k + 1] - edges[k] for k in range(0, len(edges), 2)) * s > c.stringWidth(tC, FR, 6) + 6
+    if not fits:                                                                # the chord forces beside the line of resistance
         c.drawRightString(x0 - 8, y1 - 3, tC); c.drawRightString(x0 - 8, y0 - 1, tT)
     else:
         xm = (x0 + x1) / 2
         op = d.get("opening")
-        if op:                                                                  # clear of the opening and its framing
-            segs = [(0.0, op["xs"]), (op["xe"], L)]
+        if op:                                                                  # clear of the openings and their framing
+            cuts = sorted([(r_["xs"], r_["xe"]) for r_ in (d.get("regions") or [op])])
+            edges = [0.0] + [v_ for ab_ in cuts for v_ in ab_] + [L]
+            segs = [(edges[k], edges[k + 1]) for k in range(0, len(edges), 2)]
             a_, b_ = max(segs, key=lambda q: q[1] - q[0])
             xm = x0 + (a_ + b_) / 2 * s
             half = c.stringWidth(tC, FR, 6) / 2 + 3
@@ -3995,75 +4002,101 @@ def _diaphragm_picture(c, top, d):
     if cant:
         c.setFont(FR, 6); c.drawString(x1 + 4, y0 + h_ / 2 - 2, "open edge")
     op = d.get("opening")
-    if op:
-        _opening_in_plan(c, op, x0, y0, s, small=True)
+    regs = d.get("regions") or ([op] if op else [])
+    for rg in regs:
+        _opening_in_plan(c, rg, x0, y0, s, small=True)
     _small(c, (LM + RM) / 2, y0 - 28, "plan, to scale; the heavy line at the left is the line of resistance, the dashed edge is open" if cant else
            "plan, to scale; heavy lines at the ends are the lines of resistance")
-    if not op:
+    if not regs:
         return y0 - 34
-    return _opening_enlarged(c, y0 - 46, op, d)
+    y_ = y0 - 46
+    for k, rg in enumerate(regs, 1):
+        y_ = _opening_enlarged(c, y_, rg, d, title=("REGION AROUND THE OPENING" + ("S" if rg.get("multi") else "") + ", ENLARGED"
+                                                     + (f" ({k} OF {len(regs)})" if len(regs) > 1 else ""))) - 12
+    return y_ + 12
 
 
-def _opening_in_plan(c, op, x0, y0, s, small=False, sy=None):
-    """The opening, its framing (members across the depth at its ends, along its sides) extended into the diaphragm, and the region of the
-    force-transfer analysis dashed. (x0, y0): the plan's corner at the support / line of resistance and the chord the opening is measured from."""
+def _opening_in_plan(c, op, x0, y0, s, small=False, sy=None, holes=None, yt=None):
+    """The opening(s) of one region, their framing (members across the depth at the ends, along each opening side) extended into the
+    diaphragm, and the region of the force-transfer analysis dashed. (x0, y0): the plan's corner at the support / line of resistance and the
+    chord the openings are measured from. holes: [(y0, b)] in the same units as op (default: the region's openings)."""
     sy = sy or s
-    ox, oy, ow, oh = x0 + op["x0"] * s, y0 + op["y0"] * sy, op["a"] * s, op["b"] * sy
+    holes = holes or [(o["y0"], o["b"]) for o in (op.get("openings") or [dict(y0=op["y0"], b=op["b"])])]
+    ox, ow = x0 + op["x0"] * s, op["a"] * s
     rx0, rx1 = x0 + op["xs"] * s, x0 + op["xe"] * s
-    yt = y0 + (op["d1"] + op["b"] + op["d2"]) * sy
+    yt = yt if yt is not None else y0 + (sum(op["piers"]) + sum(b_ for _, b_ in holes) if op.get("piers") else op["d1"] + op["b"] + op["d2"]) * sy
     tw = 1.6 if small else 3.2                                          # drawn width of the framing members
     c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5); c.setDash(2.5, 2); c.rect(rx0, y0, rx1 - rx0, yt - y0, fill=0, stroke=1); c.setDash()
-    for yy in (oy, oy + oh):                                            # along the opening sides, over the region
-        memberart.wood_elevation(c, rx0, yy - tw / 2, rx1 - rx0, tw, seed=int(yy) % 9)
+    for hy, hb in holes:                                                # along the opening sides, over the region
+        for yy in (y0 + hy * sy, y0 + (hy + hb) * sy):
+            memberart.wood_elevation(c, rx0, yy - tw / 2, rx1 - rx0, tw, seed=int(yy) % 9)
     for xx in (ox, ox + ow):                                            # across the depth at the opening ends, chord to chord
         c.saveState(); c.translate(xx + tw / 2, y0); c.rotate(90)
         memberart.wood_elevation(c, 0, 0, yt - y0, tw, seed=int(xx) % 7)
         c.restoreState()
-    c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*INK); c.setLineWidth(0.6)
-    c.rect(ox + tw / 2, oy + tw / 2, ow - tw, oh - tw, fill=1, stroke=1)          # the hole, with the usual cross
-    c.setLineWidth(0.35); c.line(ox + tw / 2, oy + tw / 2, ox + ow - tw / 2, oy + oh - tw / 2); c.line(ox + tw / 2, oy + oh - tw / 2, ox + ow - tw / 2, oy + tw / 2)
+    for hy, hb in holes:
+        oy, oh = y0 + hy * sy, hb * sy
+        c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*INK); c.setLineWidth(0.6)
+        c.rect(ox + tw / 2, oy + tw / 2, ow - tw, oh - tw, fill=1, stroke=1)          # the hole, with the usual cross
+        c.setLineWidth(0.35); c.line(ox + tw / 2, oy + tw / 2, ox + ow - tw / 2, oy + oh - tw / 2); c.line(ox + tw / 2, oy + oh - tw / 2, ox + ow - tw / 2, oy + tw / 2)
 
 
-def _opening_enlarged(c, top, op, d):
-    """Enlarged plan of the region around the opening, depth W by Lr: the nine zones of the force-transfer analysis with their unit shears,
-    the framing at the opening drawn as wood members with their forces, and every length dimensioned."""
-    W, Lr = op["d1"] + op["b"] + op["d2"], op["Lr"]
-    _sketch_title(c, LM + 6, top, "REGION AROUND THE OPENING, ENLARGED")
-    s = sy = min(300.0 / Lr, 120.0 / W)
+def _opening_enlarged(c, top, op, d, title="REGION AROUND THE OPENING, ENLARGED"):
+    """Enlarged plan of the region around the opening(s), depth W by Lr: the zones of the force-transfer analysis with their unit shears (the
+    strips beside and between openings, their corner zones, the full depth each side of the openings), the framing at the openings drawn as
+    wood members with their forces, and every length dimensioned."""
+    holes = op.get("openings") or [dict(y0=op["y0"], b=op["b"])]
+    piers = op.get("piers") or [op["d1"], op["d2"]]
+    rows_ = []                                                          # (kind, size, index) from the first chord up
+    for i, dpr in enumerate(piers):
+        rows_.append(("strip", dpr, i))
+        if i < len(holes):
+            rows_.append(("hole", holes[i]["b"], i))
+    W = sum(r_[1] for r_ in rows_)
+    Lr = op["Lr"]
+    _sketch_title(c, LM + 6, top, title)
+    s = sy = min(300.0 / Lr, 140.0 / W)
     to_scale = True
-    if min(op["e1"], op["a"], op["e2"]) * s < 30 or min(op["d1"], op["b"], op["d2"]) * sy < 14:     # too small to label: lengths not to scale
-        s, sy, to_scale = 1.0, 1.0, False
+    if min(op["e1"], op["a"], op["e2"]) * s < 30 or min(r_[1] for r_ in rows_) * sy < 14:     # too small to label: lengths not to scale
+        to_scale = False
         xs_ = [max(44.0, min(110.0, v_ * 300.0 / Lr)) for v_ in (op["e1"], op["a"], op["e2"])]
-        ys_ = [max(16.0, min(60.0, v_ * 120.0 / W)) for v_ in (op["d1"], op["b"], op["d2"])]
+        ys_ = [max(16.0, min(50.0, r_[1] * 140.0 / W)) for r_ in rows_]
     else:
         xs_ = [v_ * s for v_ in (op["e1"], op["a"], op["e2"])]
-        ys_ = [v_ * sy for v_ in (op["d1"], op["b"], op["d2"])]
+        ys_ = [r_[1] * sy for r_ in rows_]
     wr, hr = sum(xs_), sum(ys_)
     x0 = (LM + RM) / 2 - wr / 2 + 10
     y1 = top - 30
     y0 = y1 - hr
     xs = [x0, x0 + xs_[0], x0 + xs_[0] + xs_[1], x0 + wr]
-    ys = [y0, y0 + ys_[0], y0 + ys_[0] + ys_[1], y1]
-    s1, s2 = op["strips"]
-    zone = {(0, 0): s1["vc"], (2, 0): s1["vc"], (1, 0): s1["v"], (0, 2): s2["vc"], (2, 2): s2["vc"], (1, 2): s2["v"], (0, 1): op["va"], (2, 1): op["va"]}
+    ys = [y0]
+    for h_ in ys_:
+        ys.append(ys[-1] + h_)
+    sts = op["strips"]
+    zone = {}
+    for j, (kind, _, i) in enumerate(rows_):
+        if kind == "strip":
+            zone[(0, j)] = zone[(2, j)] = sts[i]["vc"]; zone[(1, j)] = sts[i]["v"]
+        else:
+            zone[(0, j)] = zone[(2, j)] = op["va"]
     for (i, j), v in zone.items():                                      # sheathing zones, shaded by unit shear
         f = 0.97 - 0.16 * min(1.0, abs(v) / max(op["v_max"], 1.0))
         c.setFillColorRGB(f, f + 0.01, f + 0.03); c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4)
         c.rect(xs[i], ys[j], xs[i + 1] - xs[i], ys[j + 1] - ys[j], fill=1, stroke=1)
     c.setStrokeColorRGB(*INK); c.setLineWidth(1.8); c.line(x0, y0, x0 + wr, y0); c.line(x0, y1, x0 + wr, y1)        # the chords
-    _opening_in_plan(c, dict(op, x0=xs_[0], xs=0.0, xe=wr, y0=ys_[0], b=ys_[1], d1=ys_[0], d2=ys_[2], a=xs_[1]), x0, y0, 1.0)
+    hole_px = [(ys[j] - y0, ys[j + 1] - ys[j]) for j, r_ in enumerate(rows_) if r_[0] == "hole"]
+    _opening_in_plan(c, dict(op, x0=xs_[0], xs=0.0, xe=wr, a=xs_[1]), x0, y0, 1.0, holes=hole_px, yt=y1)
     c.setFillColorRGB(*INK); c.setFont(FR, 6)
     for (i, j), v in zone.items():
         cx, cy = (xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2
         t = f"{v:,.0f} plf"
         if c.stringWidth(t, FR, 6) < xs[i + 1] - xs[i] - 4 and ys[j + 1] - ys[j] > 9:
             c.drawCentredString(cx, cy - 2, t)
-    # member forces: along the sides at the right, across the depth at the top
+    # member forces: along the opening sides at the right of each opening, across the depth at the top
     c.setFillColorRGB(*INK); c.setFont(FR, 6)
-    if ys[2] - ys[1] >= 10:
-        c.drawString(x0 + wr + 6, ys[1] - 2, f"{op['N_side']:,.0f} lb"); c.drawString(x0 + wr + 6, ys[2] - 2, f"{op['N_side']:,.0f} lb")
-    else:
-        c.drawString(x0 + wr + 6, (ys[1] + ys[2]) / 2 - 2, f"{op['N_side']:,.0f} lb each")
+    for j, r_ in enumerate(rows_):
+        if r_[0] == "hole":
+            c.drawString(x0 + wr + 6, (ys[j] + ys[j + 1]) / 2 - 2, f"{op['N_side']:,.0f} lb each side")
     if xs[2] - xs[1] >= 34:
         c.drawCentredString(xs[1], y1 + 5, f"{op['F_end']:,.0f} lb"); c.drawCentredString(xs[2], y1 + 5, f"{op['F_end']:,.0f} lb")
     else:
@@ -4074,13 +4107,10 @@ def _opening_enlarged(c, top, op, d):
     c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.6)
     za, zb = ys[0] + (ys[1] - ys[0]) * 0.25, ys[0] + (ys[1] - ys[0]) * 0.75
     _arrow(c, x0 - 5, zb, x0 - 5, za, head=3.0)
-    za, zb = ys[2] + (ys[3] - ys[2]) * 0.25, ys[2] + (ys[3] - ys[2]) * 0.75
+    za, zb = ys[-2] + (ys[-1] - ys[-2]) * 0.25, ys[-2] + (ys[-1] - ys[-2]) * 0.75
     _arrow(c, x0 + wr + 5, za, x0 + wr + 5, zb, head=3.0)
     c.setFont(FR, 6)
-    if ys[3] - ys[2] > 16:
-        c.drawString(x0 + wr + 10, (ys[2] + ys[3]) / 2 - 2, f"V = {op['V']:,.0f} lb")
-    else:
-        c.drawString(x0 + wr + 6, y1 + 5, f"V = {op['V']:,.0f} lb")
+    c.drawString(x0 + wr + 6, y1 + 5, f"V = {op['V']:,.0f} lb")
     g = lambda v: f"{v:g}"
     yb = y0 - 9
     memberart._dim_h(c, xs[0], xs[1], yb, f"e1 = {g(op['e1'])}", FR, ext_from=y0)
@@ -4088,10 +4118,10 @@ def _opening_enlarged(c, top, op, d):
     memberart._dim_h(c, xs[2], xs[3], yb, f"e2 = {g(op['e2'])}", FR, ext_from=y0)
     memberart._dim_h(c, xs[0], xs[3], yb - 14, f"Lr = {g(Lr)} ft", FR)
     xl = x0 - 14
-    memberart._dim_v(c, ys[0], ys[1], xl, f"d1 = {g(op['d1'])}", FR, ext_from=x0)
-    memberart._dim_v(c, ys[1], ys[2], xl, f"b = {g(op['b'])}", FR, ext_from=x0)
-    memberart._dim_v(c, ys[2], ys[3], xl, f"d2 = {g(op['d2'])}", FR, ext_from=x0)
-    _small(c, (LM + RM) / 2, yb - 30, ("enlarged plan to scale" if to_scale else "enlarged plan, not to scale") + ", lengths in ft; unit shear in each zone of sheathing; framing at the opening drawn as wood with the largest "
+    for j, r_ in enumerate(rows_):
+        lab = (f"d = {g(r_[1])}" if r_[0] == "strip" else f"b = {g(r_[1])}")
+        memberart._dim_v(c, ys[j], ys[j + 1], xl, lab, FR, ext_from=x0)
+    _small(c, (LM + RM) / 2, yb - 30, ("enlarged plan to scale" if to_scale else "enlarged plan, not to scale") + ", lengths in ft; unit shear in each zone of sheathing; framing at the openings drawn as wood with the largest "
            "axial force of the members along the opening sides (right) and across the depth (top), tension or compression as the load reverses; chords at top and bottom")
     return yb - 44
 

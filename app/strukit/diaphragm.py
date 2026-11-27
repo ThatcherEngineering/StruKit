@@ -239,3 +239,80 @@ def opening(L, W, w, cant, x0, a, y0, b, e1, e2):
     v_max = max(va, max(max(s_["v"], abs(s_["vc"]), s_["vF"]) for s_ in strips))
     return dict(V=V, xs=xs, xe=xe, Lr=Lr, H=H, va=va, O=O, strips=strips, d1=d1, d2=d2, x0=x0, a=a, y0=y0, b=b, e1=e1, e2=e2,
                 F_end=max(s_["F"] for s_ in strips), N_side=max(s_["N"] for s_ in strips), checks=checks, v_max=v_max, v_plain=V / W)
+
+
+def openings(L, W, w, cant, ops):
+    """Several interior openings (each dict x0, a, y0, b, e1, e2 as in opening()). Openings with the same position and length along the span
+    (x0, a, e1, e2 equal) side by side across the depth share one region: the APA T555 analysis for several openings in a line (as
+    shearwall.ftao_multi) turned flat, the strips between and beside them as the piers. Regions of different groups must not overlap.
+    Returns a list of region results; a single opening gives opening()'s result."""
+    if not ops:
+        return []
+    groups = {}
+    for o in ops:
+        groups.setdefault((round(o["x0"], 6), round(o["a"], 6), round(o["e1"], 6), round(o["e2"], 6)), []).append(o)
+    spans = []
+    for k in groups:
+        spans.append((k[0] - k[2], k[0] + k[1] + k[3], k))
+    spans.sort()
+    for (s0, e0, k0), (s1, e1_, k1) in zip(spans, spans[1:]):
+        if s1 < e0 - 1e-9:
+            raise DiaphragmError("diaphragm openings: the regions around two openings overlap along the span (openings side by side across the depth "
+                                 "must have the same position, length and framing extensions; others must be far enough apart that their extensions do not overlap)")
+    out = []
+    for k, grp in groups.items():
+        if len(grp) == 1:
+            out.append(opening(L, W, w, cant, **{q: grp[0][q] for q in ("x0", "a", "y0", "b", "e1", "e2")}))
+        else:
+            out.append(_openings_in_line(L, W, w, cant, grp))
+    return out
+
+
+def _openings_in_line(L, W, w, cant, grp):
+    o0 = grp[0]
+    x0, a, e1, e2 = o0["x0"], o0["a"], o0["e1"], o0["e2"]
+    gr = sorted(grp, key=lambda o: o["y0"])
+    piers, y = [], 0.0
+    for o in gr:
+        if o["b"] <= 0 or o["y0"] < y + 1e-9:
+            raise DiaphragmError("diaphragm openings: openings side by side across the depth overlap or touch, or one reaches the chord")
+        piers.append(o["y0"] - y)
+        y = o["y0"] + o["b"]
+    if W - y <= 1e-9:
+        raise DiaphragmError("diaphragm openings: an opening reaches the far chord")
+    piers.append(W - y)
+    base = opening(L, W, w, cant, x0, a, gr[0]["y0"], gr[0]["b"], e1, e2)              # region, V and the checks of opening() on the span
+    V, Lr = base["V"], base["Lr"]
+    H = V * Lr / W
+    va = H / (e1 + e2)
+    n = len(gr)
+    F = [[0.0, 0.0] for _ in piers]
+    T = [[0.0, 0.0] for _ in piers]
+    for j, o in enumerate(gr):
+        dl, dr = piers[j], piers[j + 1]
+        O = va * o["b"]
+        F[j][1], F[j + 1][0] = O * dl / (dl + dr), O * dr / (dl + dr)
+        T[j][1], T[j + 1][0] = dl * o["b"] / (dl + dr), dr * o["b"] / (dl + dr)
+    strips = []
+    for i, d in enumerate(piers):
+        v = (V / W) * (d + T[i][0] + T[i][1]) / d
+        R = v * d
+        sF = F[i][0] + F[i][1]
+        vc = (R - sF) / d
+        strips.append(dict(d=d, F=sF, T=T[i][0] + T[i][1], v=v, R=R, vc=vc, vF=sF / d))
+    # members along the opening sides: each opening edge against the strip beside it
+    N_side = max(abs(va - strips[i]["vc"]) * max(e1, e2) for j in range(n) for i in (j, j + 1))
+    # members across the depth at the opening ends: the running force from one chord to the other
+    run, N_end = 0.0, 0.0
+    for i, s_ in enumerate(strips):
+        run += (s_["vc"] - s_["v"]) * s_["d"]
+        N_end = max(N_end, abs(run))
+        if i < n:
+            run += va * gr[i]["b"]
+            N_end = max(N_end, abs(run))
+    checks = [strips[0]["vc"] * (e1 + e2) + strips[0]["v"] * a - H, strips[-1]["vc"] * (e1 + e2) + strips[-1]["v"] * a - H, run]
+    for j in range(n):                                                    # the lines at each opening's sides net zero (T555)
+        checks += [va * (e1 + e2) - strips[j]["vc"] * (e1 + e2) - strips[j]["v"] * a, strips[j + 1]["vc"] * (e1 + e2) + strips[j + 1]["v"] * a - va * (e1 + e2)]
+    v_max = max(va, max(max(s_["v"], abs(s_["vc"]), s_["vF"]) for s_ in strips))
+    return dict(base, multi=True, openings=[dict(y0=o["y0"], b=o["b"]) for o in gr], strips=strips, H=H, va=va, O=sum(va * o["b"] for o in gr),
+                F_end=N_end, N_side=N_side, checks=checks, v_max=v_max, d1=piers[0], d2=piers[-1], piers=piers)
