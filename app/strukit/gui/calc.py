@@ -511,6 +511,8 @@ FORMS = {
                 F("hss_P", "HSS column: axial load at the joint", unit="kip", required=False, help="at the project's design method, for Qf (Eq. K1-6); 0 if none"),
                 F("hss_M", "HSS column: moment at the joint", unit="kip-ft", required=False),
                 F("hss_source", "HSS column: where the column loads come from", "text", required=False),
+                F("hss_n", "HSS column: stiffeners", "select", options=["one, centred", "two"], required=False, help="blank = one, centred under the beam web"),
+                F("hss_g", "HSS column: two stiffeners, centre to centre", unit="in", required=False, help="both on the flat of the face"),
                 F("top_t", "Top angle thickness", unit="in", required=False), F("top_leg", "Top angle vertical leg", unit="in", required=False),
                 F("top_attach", "Top angle attachment", "select", options=["two bolts through each leg", "welded along the toes only"], required=False)],
         tables=[T("loads", "End reaction", [CASE, F("P", "R", unit="kip"), F("label", "Note", "text", required=False)]),
@@ -2295,7 +2297,10 @@ def _build(kind, values, project):
         if str(values.get("hss_col") or "").strip():
             hss_ = dict(shape=str(values.get("hss_col")).strip(), face=str(values.get("hss_face") or "B"), Fy=r.num("hss_Fy", True, label="HSS column: Fy"),
                         Fu=r.num("hss_Fu", True, label="HSS column: Fu"), Fy_source=r.text("hss_Fy_source", True),
-                        P=r.num("hss_P", True, label="HSS column: axial load at the joint"), M=r.num("hss_M", False) or 0.0, source=r.text("hss_source", True))
+                        P=r.num("hss_P", True, label="HSS column: axial load at the joint"), M=r.num("hss_M", False) or 0.0, source=r.text("hss_source", True),
+                        n=2 if str(values.get("hss_n") or "").startswith("two") else 1)
+            if hss_["n"] == 2:
+                hss_["g"] = r.num("hss_g", True, label="HSS column: two stiffeners, centre to centre")
             try:
                 col_ = shapes.hss(hss_["shape"])
             except Exception:

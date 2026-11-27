@@ -3547,7 +3547,7 @@ def _stiffened_seat_picture(c, top, d):
         memberart._dim_h(c, xf, xB, ys + tf * sc + 30, f"B = {d['B']:g} in", FR, ext_from=ys + tf * sc + 2)
     c.setFont(FR, 6); c.setFillColorRGB(*INK)
     c.drawString(xf + W * sc + 46, ystf + L * sc * 0.62, f"seat PL {tp:g} in, lb = {d['lb']:.3g} in")
-    c.drawString(xf + W * sc + 46, ystf + L * sc * 0.62 - 8, (f"two angles {ts:g} in, {2 * bo['n']} bolts" if bo else f"stiffener PL {ts:g} in"))
+    c.drawString(xf + W * sc + 46, ystf + L * sc * 0.62 - 8, (f"two angles {ts:g} in, {2 * bo['n']} bolts" if bo else (f"two stiffeners PL {ts:g} in" if (d.get("n_stiff") or 1) == 2 else f"stiffener PL {ts:g} in")))
     if not bo:
         c.drawString(xf + W * sc + 46, ystf + L * sc * 0.62 - 16, f"{d['weld']:g} in fillets to the support")
     yl = ystf - 30
@@ -3556,22 +3556,31 @@ def _stiffened_seat_picture(c, top, d):
     # plan section, cut above the seat plate, where the support is a W shape or an HSS
     if hssc:
         s2 = min(6.0, 150.0 / (max(hssc["H"], hssc["B"]) + W + 6))
-        xq = RM - 30 - (W + 6) * s2
+        xq = RM - 30 - (W + 6) * s2 - (40 if (d.get("n_stiff") or 1) == 2 else 0)     # room for the spacing dimension
         cq = ys - tp * sc - 30
         memberart.hss_plan(c, xq - hssc["H"] * s2 / 2, cq, hssc["H"] * s2, hssc["B"] * s2, hssc["t"] * s2)
-        bw_ = min(d.get("bbf") or 7.0, hssc["B"] - 1.0)
+        g2 = d.get("g") or 0.0
+        two = (d.get("n_stiff") or 1) == 2
+        bw_ = min(max(d.get("bbf") or 7.0, (g2 + ts + 1.0) if two else 0.0), hssc["B"] - 1.0)
         c.setFillColorRGB(0.90, 0.92, 0.95); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
         c.rect(xq, cq - bw_ / 2 * s2, (W + 0.5) * s2, bw_ * s2, fill=1, stroke=1)
-        c.setDash(2, 1.5); c.rect(xq, cq - ts * s2 / 2, W * s2, ts * s2, fill=0, stroke=1); c.setDash()
+        c.setDash(2, 1.5)
+        for yo_ in ((-g2 / 2, g2 / 2) if two else (0.0,)):                  # stiffener(s) below the seat plate, hidden
+            c.rect(xq, cq + yo_ * s2 - ts * s2 / 2, W * s2, ts * s2, fill=0, stroke=1)
+        c.setDash()
         xb2 = xq + 0.5 * s2
         c.setFillColorRGB(*memberart.STEEL_CUT)
         c.rect(xb2, cq - max(d.get("tw", 0.4) * s2, 1.2) / 2, (W + 5) * s2, max(d.get("tw", 0.4) * s2, 1.2), fill=1, stroke=1)
         _break_v(c, xb2 + (W + 5) * s2, cq - bw_ / 2 * s2 - 2, cq + bw_ / 2 * s2 + 2)
         c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*INK)
         xBp = xq + max(W / 2, 2.625) * s2
+        gb_ = min(max(1.75, (g2 + ts) / 2 + 0.75) if two else 1.75, bw_ / 2 - 0.75)   # seat bolts clear of the stiffeners
         for sg in (1, -1):
-            c.circle(xBp, cq + sg * min(1.75, bw_ / 2 - 1.0) * s2, max(1.6, 0.4 * s2), fill=1, stroke=1)
+            c.circle(xBp, cq + sg * gb_ * s2, max(1.6, 0.4 * s2), fill=1, stroke=1)
         hb = hssc["B"] * s2 / 2
+        if two:
+            xg_ = xq + (W + 5.5) * s2 + 14                                  # past the broken-off beam
+            memberart._dim_v(c, cq - g2 / 2 * s2, cq + g2 / 2 * s2, xg_, f"{g2:g} in c/c", FR, ext_from=xq + W * s2 + 2)
         memberart._dim_v(c, cq - hb, cq + hb, xq - hssc["H"] * s2 - 10, f"{hssc['B']:g} in face", FR, ext_from=xq - hssc["H"] * s2)
         _small(c, xq - hssc["H"] * s2 * 0.5 + 10, cq - hb - 14, "plan, cut above the seat, to scale")
         low = min(low, cq - hb - 20)

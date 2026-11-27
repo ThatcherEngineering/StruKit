@@ -4367,30 +4367,68 @@ def stiffened_seat_sheet(mark, beam, beam_Fy, beam_source, W, L, ts, stiff_Fy, s
         U_ = abs(hss.get("P") or 0.0) / (Fc_ * col["A"]) + abs(hss.get("M") or 0.0) * 12.0 / (Fc_ * S_)
         if U_ > 1.0:
             raise WorksheetError(f"{mark}: the column is used past its strength at the joint (U = {U_:.2f})")
+        two = int(hss.get("n") or 1) == 2
+        g2 = float(hss.get("g") or 0.0) if two else 0.0
+        if two and g2 <= ts + 1e-9:
+            raise WorksheetError(f"{mark}: give the spacing of the two stiffeners, centre to centre, more than the stiffener thickness")
         beta_, eta_ = ts / Bf, L / Bf
         Qf_ = min(1.0, 1 - 0.3 * U_ * (1 + U_))                             # AISC 360-22 Sect. K1.3(c)(3), longitudinal plate: Eq. K1-3
-        Mn_ = Fy_h * t_h ** 2 * L * (1 / (2 * eta_) + 2 / math.sqrt(1 - beta_) + eta_ / (1 - beta_)) * Qf_       # AISC Design Guide 24 Eq. 2-6
+        eq26 = lambda b_: Fy_h * t_h ** 2 * L * (1 / (2 * eta_) + 2 / math.sqrt(1 - b_) + eta_ / (1 - b_)) * Qf_   # AISC Design Guide 24 Eq. 2-6
+        Mn_ = eq26(beta_)
         Mc_ = av(Mn_, 1.00, 1.50)
         Mr_ = R * 0.8 * W
-        hs = dict(col=shapes.normalize(hss["shape"]), Bf=Bf, Hs=Hs, t=t_h, U=U_, Qf=Qf_, Mn=Mn_, Mc=Mc_, Mr=Mr_, punch=av(Fu_h * t_h * L ** 2 / 5.0, 0.75, 2.00),
-                  beta=beta_, eta=eta_, face="H" if onH else "B")
         flat = Bf - 4.5 * col["tnom"]
+        if two:                                                             # each stiffener R / 2; also the pair as one plate g + ts wide carrying R
+            beta2 = (g2 + ts) / Bf
+            if beta2 >= 1.0 - 1e-9:
+                raise WorksheetError(f"{mark}: the two stiffeners, {g2:g} in. apart, do not fit on the {Bf:g} in. HSS face")
+            Mn2 = eq26(beta2)
+            Mc2 = av(Mn2, 1.00, 1.50)
+        punch_ = av(Fu_h * t_h * L ** 2 / 5.0, 0.75, 2.00)
+        Mr1 = Mr_ / 2.0 if two else Mr_
+        hs = dict(col=shapes.normalize(hss["shape"]), Bf=Bf, Hs=Hs, t=t_h, U=U_, Qf=Qf_, Mn=Mn_, Mc=Mc_, Mr=Mr_, Mr1=Mr1, punch=punch_,
+                  beta=beta_, eta=eta_, face="H" if onH else "B", n=2 if two else 1, g=g2)
+        if two:
+            hs.update(beta2=beta2, Mn2=Mn2, Mc2=Mc2)
         steps += [Ln("HSS column utilization at the joint, U", U_, "", "AISC 360-22 Eq. K1-6", f"P = {abs(hss.get('P') or 0):g} kip, M = {abs(hss.get('M') or 0):g} kip-ft "
                      f"({(hss.get('source') or '').strip()}); Fc = {Fc_:g} ksi, A = {col['A']:g} in2, S = {S_:g} in3"),
                   Ln("Chord-stress factor, Qf", Qf_, "", "AISC 360-22 Sect. K1.3(c)(3), Eq. K1-3", f"longitudinal plate: 1 - 0.3 U (1 + U), not over 1.0; beta = ts / B = {beta_:.3f}"),
                   Ln("HSS face plastification, stiffener in-plane bending, Mn", Mn_, "kip-in", "AISC Design Guide 24 (2nd Ed.) Eq. 2-6; AISC Manual (16th Ed.) Eq. 9-46",
                      f"Fy t^2 L [1 / (2 eta) + 2 / (1 - beta)^0.5 + eta / (1 - beta)] Qf; t = {t_h:g} in., L = {L:g} in., B = {Bf:g} in., eta = L / B = {eta_:.3f}; " + fac(1.00, 1.50)),
                   Ln("Moment on the face, R x 0.8 W", Mr_, "kip-in", "AISC Manual (15th Ed.) Part 10", f"W = {W:g} in.")]
-        rows += [Row("HSS face plastification under the stiffener", worst, Mr_, Mc_, "kip-in", "AISC Design Guide 24 (2nd Ed.) Sect. 5.1.2, Eq. 2-6", f"Qf = {Qf_:.3g}"),
-                 Row("HSS wall shear yielding (punching) under the stiffener", worst, Mr_, av(Fu_h * t_h * L ** 2 / 5.0, 0.75, 2.00), "kip-in",
-                     "AISC Design Guide 24 (2nd Ed.) Sect. 5.1.1; AISC Manual (16th Ed.) Eq. 10-10" + ("a" if lrfd else "b"), f"Fu t L^2 / 5 against R x 0.8 W"),
-                 Row("Stiffener on the flat of the HSS face", "", ts, flat, "in", "AISC Design Guide 24 (2nd Ed.)", f"flat = B - 4.5 t nominal = {flat:.3g} in.")]
+        if two:
+            steps += [Ln("Two stiffeners: moment on the face under each, R x 0.8 W / 2", Mr1, "kip-in", "AISC Design Guide 24 (2nd Ed.) Sect. 5.2.6",
+                         f"double stiffeners, {g2:g} in. centre to centre, the reaction shared equally"),
+                      Ln("Two stiffeners together as one plate g + ts wide, Mn", Mn2, "kip-in", "AISC Design Guide 24 (2nd Ed.) Eq. 2-6",
+                         f"beta = (g + ts) / B = {beta2:.3f}; the yield lines around both stiffeners at once; " + fac(1.00, 1.50))]
+        each = " (each stiffener, R x 0.8 W / 2)" if two else ""
+        rows += [Row("HSS face plastification under the stiffener" + ("s, each" if two else ""), worst, Mr1, Mc_, "kip-in", "AISC Design Guide 24 (2nd Ed.) Sect. 5.1.2, Eq. 2-6", f"Qf = {Qf_:.3g}" + each),
+                 *([Row("HSS face plastification, both stiffeners together", worst, Mr_, Mc2, "kip-in", "AISC Design Guide 24 (2nd Ed.) Sect. 5.1.2, Eq. 2-6",
+                        f"one plate g + ts = {g2 + ts:.3g} in. wide; Qf = {Qf_:.3g}")] if two else []),
+                 Row("HSS wall shear yielding (punching) under the stiffener" + ("s, each" if two else ""), worst, Mr1, punch_, "kip-in",
+                     "AISC Design Guide 24 (2nd Ed.) Sect. 5.1.1; AISC Manual (16th Ed.) Eq. 10-10" + ("a" if lrfd else "b"), f"Fu t L^2 / 5 against R x 0.8 W" + (" / 2" if two else "")),
+                 Row("Stiffener" + ("s" if two else "") + " on the flat of the HSS face", "", g2 + ts if two else ts, flat, "in", "AISC Design Guide 24 (2nd Ed.)",
+                     (f"outside to outside g + ts; " if two else "") + f"flat = B - 4.5 t nominal = {flat:.3g} in.")]
+        if two:                                                             # each stiffener's T-shaped weld carries half the reaction
+            for i_, rw_ in enumerate(rows):
+                if rw_.check == "Stiffener-to-support welds":
+                    rows[i_] = Row("Stiffener-to-support welds, each stiffener", worst, R / 2.0, Rw, "kip", "AISC Manual (15th Ed.) Part 10; AISC 360-22 Eq. J2-4",
+                                   f"{weld:g} in. T-shaped weld, L = {L:g} in., W = {W:g} in.; R / 2 on each")
+        if two:                                                             # the seat plate spans between the stiffeners under the beam web
+            Zs, Ss = W * tseat ** 2 / 4.0, W * tseat ** 2 / 6.0
+            Mns = min(stiff_Fy * Zs, 1.6 * stiff_Fy * Ss)
+            Ms = R * g2 / 4.0
+            rows.append(Row("Seat plate bending between the stiffeners", worst, Ms, av(Mns, 0.90, 1.67), "kip-in", "AISC 360-22 Eq. F11-1",
+                            f"R g / 4, the beam web midway; plate W = {W:g} in. wide, {tseat:g} in. thick, Fy = {stiff_Fy:g} ksi"))
+            steps.append(Ln("Seat plate between the stiffeners: Mn = Fy Z, not over 1.6 Fy S", Mns, "kip-in", "AISC 360-22 Eq. F11-1",
+                            f"Z = W t^2 / 4 = {Zs:.3g} in3; simple span g = {g2:g} in. under R at mid-span; " + fac(0.90, 1.67)))
     if top:
         rows += [Row("Top angle thickness", "", 0.25, top["t"], "in", "AISC Manual (15th Ed.) Part 10, Figure 10-10", "1/4 in. minimum"),
                  Row("Top angle vertical leg", "", 4.0, top["leg"], "in", "AISC Manual (15th Ed.) Part 10, Figure 10-10", "4 in. minimum; " + top["attach"])]
     info = [("Beam", f"{shapes.normalize(beam)}, d = {dd:g} in., tw = {tw:g} in., tf = {tf:g} in., kdes = {k:g} in., Fy = {beam_Fy:g} ksi ({beam_source.strip()})"),
             ("Stiffener", (f"two angles, outstanding legs {W:g} in., {ts:g} in. thick, {L:g} in. long, Fy = {stiff_Fy:g} ksi, Fu = {bolted['Fu']:g} ksi ({stiff_source.strip()})" if bolted else
-                           f"PL {ts:g} x {W:g} x {L:g} in., Fy = {stiff_Fy:g} ksi ({stiff_source.strip()})") + f"; seat plate {tseat:g} in. thick"),
+                           (f"two PL {ts:g} x {W:g} x {L:g} in., {hs['g']:g} in. centre to centre" if (hs and hs["n"] == 2) else f"PL {ts:g} x {W:g} x {L:g} in.")
+                           + f", Fy = {stiff_Fy:g} ksi ({stiff_source.strip()})") + f"; seat plate {tseat:g} in. thick"),
             (("Bolts", f"two vertical rows of {int(bolted['n'])} - {bolted['d']:g} in. {bolted['group']}-{bolted['threads']} through the angle legs and the support, "
                        f"spacing {bolted['s']:g} in., bottom edge {bolted['lev']:g} in.") if bolted else
              ("Welds", f"{weld:g} in. fillets, FEXX = {FEXX:g} ksi: both sides of the stiffener for its length, and the seat plate 0.2 L = {0.2 * L:.3g} in. each side")),
@@ -4405,7 +4443,9 @@ def stiffened_seat_sheet(mark, beam, beam_Fy, beam_source, W, L, ts, stiff_Fy, s
                    else [(cb.name, cb.source) for cb in combos])
     sheet = SimpleSheet(mark, "Stiffened Seated Connection (all bolted, angle stiffener)" if bolted else "Stiffened Seated Connection (welded to the support, bolted to the beam)", "Connection", method, info, load_lines, combo_lines,
                         "Calculation", steps, rows,
-                        ["The stiffener carries the whole end reaction, applied at 0.8 W from the face of the support.",
+                        [("The two stiffeners share the end reaction equally, applied at 0.8 W from the face of the support; the seat plate carries the reaction "
+                          "from the beam web, midway between them, to the stiffeners as a simple span." if (hs and hs["n"] == 2) else
+                          "The stiffener carries the whole end reaction, applied at 0.8 W from the face of the support."),
                          ("The angle legs are finished to bear under the seat plate." if bolted else
                           "The stiffener is finished to bear under the seat plate; the weld of the seat plate to the stiffener is at least as strong as the horizontal part of the T-shaped weld."),
                          "The beam is bolted to the seat plate and is not welded to it; a top angle at the top flange holds the beam in place."],
@@ -4417,7 +4457,8 @@ def stiffened_seat_sheet(mark, beam, beam_Fy, beam_source, W, L, ts, stiff_Fy, s
                                                                                               support=(hs["col"] if hs else support), t_sup=t_sup, lb=lb, sup=(dict(kind="hss", B=hs["Bf"], H=hs["Hs"], t=hs["t"], name=hs["col"]) if hs else
                                                                                                                                    _support_shape(web_col + " web" if web_col else support)),
                                                                                               bbf=bm["bf"], tw=tw, bolted=(dict(n=int(bolted["n"]), s=bolted["s"], lev=bolted["lev"], d=bolted["d"]) if bolted else None),
-                                                                                              top=top, B=B if wl else None))))
+                                                                                              top=top, B=B if wl else None,
+                                                                                              n_stiff=hs["n"] if hs else 1, g=hs["g"] if hs else 0.0))))
     sheet.conn = dict(R=R, lb=lb, R1=R1, R2=R2, R5=R5, R6=R6, Wy=Wy, Wc=Wc, Ry=Ry, Rc=Rc, Rw=Rw, Rw0=Rw0, tmin=tmin, ts_min=ts_min, f=f, bolted=bo, web=wl, hss=hs)
     return sheet
 
