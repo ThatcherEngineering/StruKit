@@ -72,6 +72,11 @@ Dated entries. Each is Zach's own decision; open questions live in the proposal 
 Every number cites its source; nothing assumed silently; each module validated against an independent reference before use; flags hard or accepted with reason and date; jurisdiction data in a table; same run contract as HydroKit; calc-package-quality reports; private GitHub repo from day one; StruKit chat writes no LISP and never writes to drawings; ambiguous provisions shown both ways for Zach to rule (shown to Zach in chat, not on the sheet; see 2026-11-23). Every picture is drawn to a high visual detail standard: members and connections look like the real thing (see 2026-11-26 02:26).
 
 ## Open (not ruled)
+- **Two stiffeners on a stiffened seat to an HSS face (0.270.0, tell Zach at the check-in):** DG24 Sect. 5.2.6 names double stiffeners
+  without a procedure. StruKit gives each stiffener R / 2 at 0.8 W (DG24 Eq. 2-6 and punching under each; each T-weld for R / 2), also
+  checks the pair as one plate g + ts wide carrying R, keeps both on the flat, and checks the seat plate as a simple span g under R at
+  mid-span (AISC 360-22 F11) without the beam flange's help. The last check is the conservative side (a stiff beam flange bridging the
+  stiffeners would relieve the plate) and often sets a thick seat plate. Zach has not ruled.
 - Proposal section 8, items 2-3 (ASD as default; which schedules first). On the StruKit screens the design method is a required choice per project; nothing defaults.
 - Findings section 3, items 1-7 (`STRUKIT-JURIS-FINDINGS-2026-11-20.md`).
 - Which checks print at the member on the sheets (size and mark only, or D/C too).

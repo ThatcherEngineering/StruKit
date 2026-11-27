@@ -1102,3 +1102,17 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation:** no published diaphragm example is on file. Cross-checked against the T555 shear wall routine (`shearwall.ftao_multi`,
   itself tested against APA's published two-window wall) with the inputs mapped (wall length = W, height = Lr, opening height = a, sheathing
   below = e2): strip shears, corner zones and corner forces agree; Σ v d = V; every shear line nets zero (`tests/test_diaphragm.py`).
+
+## 2026-11-26 18:43 MST — 0.270.0 two stiffeners on a stiffened seat to an HSS face (Next 1)
+- (Zach: "Yes go".) **Stiffened Seat screen, HSS face: new boxes "stiffeners" (one, centred / two) and "two stiffeners, centre to centre".**
+  AISC Design Guide 24 (2nd Ed.) Sect. 5.2.6 allows single or double stiffeners but gives no procedure for two; applied (conservative, not
+  ruled; in the rulings file):
+  - each stiffener takes R / 2 at 0.8 W: face plastification (DG24 Eq. 2-6) and punching (Manual Eq. 10-10) under each, and each
+    stiffener's T-shaped weld for R / 2;
+  - the pair also checked as one longitudinal plate g + ts wide carrying R (Eq. 2-6 with beta = (g + ts) / B), the yield lines around both;
+  - both stiffeners on the flat (g + ts not over B − 4.5 t);
+  - the seat plate as a simple span g between the stiffeners under R at mid-span (the beam web), AISC 360-22 Eq. F11-1, plate W wide;
+    the beam flange's help is not taken.
+- Picture: both stiffeners hidden under the seat plate in the plan, the spacing dimensioned, the seat bolts drawn clear of them.
+- **Validation: by hand** (no published example): the Example II.A-14 seat on an HSS16x16x5/8 with stiffeners 6 in. apart
+  ().

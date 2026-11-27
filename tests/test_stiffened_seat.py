@@ -118,3 +118,46 @@ def test_bolted_angle_leg_width_to_thickness():
                                          [dict(case="D", P=2.0), dict(case="L", P=4.0)], COMB["LRFD"], "LRFD", bolted=bo)
         r = {x.check: x for x in s.rows}["Stiffener angle outstanding leg, W / t"]
         assert r.demand == pytest.approx(W / 0.375) and r.capacity == pytest.approx(0.45 * (29000 / 36) ** 0.5) and (r.status != "FLAG") == ok
+
+
+def test_two_stiffeners_on_an_hss_face_by_hand(tmp_path):
+    """Double stiffeners (AISC Design Guide 24 (2nd Ed.) Sect. 5.2.6: "single or double stiffeners"); no published procedure or example, checked
+    by hand. The Example II.A-14 seat and reaction (LRFD R = 125.2 kips, W = 7, L = 15, ts = 5/8 in.) on an HSS16x16x5/8 (t design 0.581 in.,
+    Fy 50, Fu 62 ksi), two stiffeners 6 in. centre to centre, no column load (Qf = 1); eta = 15 / 16 = 0.9375.
+      Each stiffener R x 0.8 W / 2 = 350.6 kip-in.; Eq. 2-6 with beta = 0.625 / 16: 50 (0.581)^2 (15)[1 / 1.875 + 2 / (0.961)^0.5 + 0.9375 / 0.961]
+      = 898.6 kip-in.; punching 0.75 (62)(0.581)(15)^2 / 5 = 1,215.7 kip-in.
+      Both together as one plate g + ts = 6.625 in. wide: beta = 0.414; Mn = 1,201.6 kip-in. against R x 0.8 W = 701.1 kip-in.
+      Flat = 16 - 4.5 (0.625) = 13.19 in. >= 6.625 in.
+      Seat plate spanning 6 in. with R at mid-span: Mu = 125.2 (6) / 4 = 187.8 kip-in.; 0.9 (50)(7)(0.375)^2 / 4 = 11.07 kip-in. (Eq. F11-1): fails,
+      as it should for a 3/8 in. plate bridging 6 in. under the whole reaction."""
+    from strukit import shapes
+    col = shapes.hss("HSS16X16X5/8")
+    t = col["tdes"]
+    hss = dict(shape="HSS16X16X5/8", face="B", Fy=50, Fu=62, Fy_source="ASTM A500 Gr. C", P=0.0, M=0.0, source="t", n=2, g=6.0)
+    s = ws_more.stiffened_seat_sheet("SS3", "W21X68", 50, "ASTM A992", 7, 15, 0.625, 50, "ASTM A572 Gr. 50", 0.375, 0.3125, 70, "HSS16X16X5/8 face",
+                                     t, 62, LOADS, COMB["LRFD"], "LRFD", hss=hss)
+    h = s.conn["hss"]
+    assert h["n"] == 2 and h["Mr1"] == pytest.approx(125.2 * 5.6 / 2) and h["Mn"] == pytest.approx(898.55, abs=0.05)
+    assert h["Mn2"] == pytest.approx(1201.58, abs=0.05) and h["beta2"] == pytest.approx(6.625 / 16) and h["punch"] == pytest.approx(1215.74, abs=0.05)
+    r = {x.check: x for x in s.rows}
+    assert r["HSS face plastification under the stiffeners, each"].demand == pytest.approx(350.56)
+    assert r["HSS face plastification, both stiffeners together"].capacity == pytest.approx(1201.58, abs=0.05)
+    assert r["Stiffeners on the flat of the HSS face"].demand == pytest.approx(6.625) and r["Stiffeners on the flat of the HSS face"].capacity == pytest.approx(13.1875)
+    sp = r["Seat plate bending between the stiffeners"]
+    assert sp.demand == pytest.approx(187.8) and sp.capacity == pytest.approx(0.9 * 50 * 7 * 0.375 ** 2 / 4)
+    assert r["Stiffener-to-support welds, each stiffener"].demand == pytest.approx(62.6)
+    with pytest.raises(Exception):                                    # the pair must fit on the face
+        ws_more.stiffened_seat_sheet("SS3", "W21X68", 50, "a", 7, 15, 0.625, 50, "s", 0.375, 0.3125, 70, "h", t, 62, LOADS, COMB["LRFD"], "LRFD",
+                                     hss=dict(hss, g=15.5))
+    from strukit.gui import calc
+    from strukit import calcsheet
+    v = dict(mark="SS3", beam="W21X68", beam_Fy="50", beam_source="ASTM A992", W="7", L="15", ts="0.625", stiff_Fy="50", stiff_source="ASTM A572 Gr. 50",
+             tseat="1.5", weld="0.3125", FEXX="70", hss_col="HSS16X16X5/8", hss_Fy="50", hss_Fu="62", hss_Fy_source="ASTM A500 Gr. C", hss_P="0", hss_M="0",
+             hss_source="column takedown", hss_n="two", hss_g="6", top_t="0.25", top_leg="4", top_attach="welded along the toes only",
+             loads=[dict(case="D", P="21", label=""), dict(case="L", P="62.5", label="")])
+    proj = dict(job="t", name="t", method="LRFD", combos_lrfd=[dict(expr="1.2D + 1.6L", source="t")], combos_asd=[])
+    sc = calc.build("stiffened_seat", v, proj)[0]
+    assert sc.conn["hss"]["n"] == 2 and sc.conn["hss"]["g"] == 6
+    with pytest.raises(calc.Missing):
+        calc.build("stiffened_seat", dict(v, hss_g=""), proj)
+    calcsheet.simple_pdf(sc, str(tmp_path / "ss_hss2.pdf"), "Job", "AISC 360-22", "Nov 26, 2026")
