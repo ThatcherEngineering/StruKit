@@ -31,7 +31,7 @@ page number in the PDF file, not the printed page number. More page numbers are 
 | SDPWS 2021 with commentary | `721340051-Special-Design-Provisions-...pdf` | Shear walls and diaphragms: Tables 4.2A, 4.2C, 4.3A (pdf pp. 33, 35); Sect. 4.2.6 open front structures (pdf p. 27); Commentary Example C4.2.6.1-2, Eq. 4.2-2 (pdf p. 99, image). |
 | AWC shear wall slides; WoodWorks mid-rise slides | `318966905-Shearwall-Design-Examples.pdf`; `471022586-Lateral-Design-...pdf` | Background and factor tables only. |
 | Boise and Weyerhaeuser code reports and guides | `ESR-1040...`, `ESR-1153.pdf`, `ESR-1336.pdf`, `ESR-1387.pdf`, `GLM-5000...`, `LVL-*`, `MTP-W7000...`, `MTP-W7010...` | LVL, PSL, LSL, glulam, I-joists. |
-| Simpson C-C-2026 catalog | `Simpson\C-C-2026.pdf` | Hold-downs (pp. 59-67). |
+| Simpson C-C-2026 catalog | `Simpson\C-C-2026.pdf` | Hold-downs (pp. 59-67); face-mount joist hangers for solid sawn lumber (tables pp. 114-118 DF/SP, 119-123 SPF/HF; notes pp. 26, 110, 112, 118), read into `strukit/data/simpson_facemount.json` by `tools/simpson_extract.py`. |
 | TMS 402/602-16 | `715304102-TMS-402-602-16-Masonry-Code.pdf` | Sign-in protected; cannot be read. Do not work around it. |
 
 Not on file: see the missing references log below.

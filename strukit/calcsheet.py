@@ -1800,6 +1800,8 @@ def _block_picture(c, top, pic):
         return _shear_wall_picture(c, top, d)
     if name == "sill_anchor":
         return _sill_anchor_picture(c, top, d)
+    if name == "joist_hanger":
+        return _joist_hanger_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -4523,6 +4525,78 @@ def _snow_drift_picture(c, top, d):
         memberart._dim_v(c, ybase, ybase + d["step"] * sy, wx - 24 - (10 if d.get("gap") else 0), f"{d['step']:g} ft", FR, ext_from=wx - 18 - (14 if d.get("gap") else 0))
     _small(c, (LM + RM) / 2, ybase - 32, "sections through the roof step; not to scale")
     return ybase - 38
+
+
+def _lumber_dims(label):
+    """Dressed size (b, d) in inches of a joist label such as '2x10', 'DBL 2x8' or '6x12' (NDS Supplement Table 1B)."""
+    import re as _re
+    plies = {"DBL": 2, "TPL": 3, "QUAD": 4}.get(label.split()[0], 1) if " " in label else 1
+    b, d = [int(x) for x in _re.findall(r"\d+", label)[-2:]]
+    tb = {2: 1.5, 3: 2.5, 4: 3.5}.get(b, b - 0.5)
+    td = (d - 0.5 if b >= 5 else {2: 1.5, 3: 2.5, 4: 3.5, 6: 5.5, 8: 7.25}.get(d, d - 0.75))
+    return tb * plies, td, plies
+
+
+def _joist_hanger_picture(c, top, d):
+    """Face-mount joist hanger, to scale: a side elevation (the carrying member cut, in end grain; the joist in elevation with its grain,
+    seated in the hanger; the hanger's side plate with its nails and its flange on the header face) and a section looking along the joist
+    (the joist cut in end grain inside the U of the hanger, the flanges nailed to the header face behind). W, H and B dimensioned."""
+    W, H, B = d["W"], d["H"], d["B"]
+    jb, jd, plies = _lumber_dims(d["joist"])
+    t = max(d["ga"] and {12: 0.105, 14: 0.075, 16: 0.06, 18: 0.048, 20: 0.036}.get(d["ga"], 0.06), 0.03)
+    hb, hd = 3.5, jd + 3.0                                  # the carrying member drawn: depiction only, not dimensioned
+    sc = min(7.0, 120.0 / (hd + 3), 150.0 / (hb + B + 10))
+    # side elevation
+    x0, ytop = LM + 40, top - 20
+    yb = ytop - hd * sc
+    memberart.wood_section(c, x0 + hb * sc / 2, yb + hd * sc / 2, hb * sc, hd * sc, hb, hd, plies=2 if d.get("two_by") else 1)
+    jx0 = x0 + hb * sc + 0.0
+    jy0 = yb + 1.0 * sc                                     # joist seated 1 in. above the header bottom (depiction)
+    memberart.wood_elevation(c, jx0, jy0, (B + 9.0) * sc, jd * sc)
+    _break_v(c, jx0 + (B + 9.0) * sc, jy0 - 2, jy0 + jd * sc + 2)
+    c.setFillColorRGB(*memberart.STEEL_FILL); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+    T = max(t * sc, 0.9)
+    c.rect(jx0, jy0 - T, B * sc, T, fill=1, stroke=1)                       # seat under the joist
+    p_ = c.beginPath(); p_.moveTo(jx0, jy0 - T); p_.lineTo(jx0 + B * sc, jy0 - T); p_.lineTo(jx0 + B * sc, jy0 + H * sc * 0.55)
+    p_.lineTo(jx0 + B * sc * 0.35, jy0 + H * sc); p_.lineTo(jx0, jy0 + H * sc); p_.close()
+    c.setFillColorRGB(0.80, 0.84, 0.88); c.drawPath(p_, fill=1, stroke=1)   # side plate seen face on
+    c.setFillColorRGB(*memberart.STEEL_CUT); c.rect(jx0 - T, jy0 - T, T, H * sc + T, fill=1, stroke=1)   # flange on the header face, edge on
+    c.setFillColorRGB(1, 1, 1)
+    for k in range(3):                                     # joist nails through the side plate
+        c.circle(jx0 + B * sc * 0.55, jy0 + H * sc * (0.2 + 0.18 * k), max(0.12 * sc, 0.9), fill=1, stroke=1)
+    if d.get("double"):                                    # double-shear nails driven at an angle through the joist into the header
+        c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
+        for k in range(2):
+            yy = jy0 + H * sc * (0.3 + 0.3 * k)
+            c.line(jx0 + B * sc * 0.55, yy, jx0 - 1.2 * sc, yy - 1.0 * sc)
+        c.setDash()
+    memberart._dim_h(c, jx0, jx0 + B * sc, jy0 - T - 10, f"B {B:g}", FR, ext_from=jy0 - T)
+    memberart._dim_v(c, jy0 - T, jy0 + H * sc, jx0 + (B + 9.0) * sc + 10, f"H {H:g}", FR, ext_from=jx0 + (B + 9.0) * sc + 3)
+    _small(c, x0 + (hb + B + 9) * sc / 2, yb - 22, "side view, to scale (in.)")
+    # section looking along the joist
+    sx = RM - 120
+    fl = 1.1                                                # flange width each side (depiction)
+    c.saveState()
+    memberart.wood_elevation(c, sx - (W / 2 + fl + 2.0) * sc, yb, (W + 2 * fl + 4.0) * sc, hd * sc)   # header face behind
+    c.restoreState()
+    memberart.wood_section(c, sx, jy0 + jd * sc / 2, jb * sc, jd * sc, jb, jd, plies=plies)
+    c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+    c.rect(sx - W * sc / 2 - T, jy0 - T, W * sc + 2 * T, T, fill=1, stroke=1)                 # seat, cut
+    for sg in (-1, 1):
+        xw = sx + sg * W * sc / 2 + (0 if sg > 0 else -T)
+        c.rect(xw, jy0 - T, T, H * sc + T, fill=1, stroke=1)                                 # sides, cut
+        c.setFillColorRGB(*memberart.STEEL_FILL)
+        xf = sx + sg * (W * sc / 2 + T) + (0 if sg > 0 else -fl * sc)
+        c.rect(xf, jy0 + 0.2 * sc, fl * sc, H * sc - 0.2 * sc, fill=1, stroke=1)              # flanges on the header face
+        c.setFillColorRGB(1, 1, 1)
+        for k in range(3):
+            c.circle(xf + fl * sc / 2, jy0 + H * sc * (0.25 + 0.25 * k), max(0.12 * sc, 0.8), fill=1, stroke=1)
+        c.setFillColorRGB(*memberart.STEEL_CUT)
+    memberart._dim_h(c, sx - W * sc / 2, sx + W * sc / 2, jy0 - T - 10, f"W {W:g}", FR, ext_from=jy0 - T)
+    _small(c, sx, yb - 22, "section looking along the joist, to scale (in.)")
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawCentredString((x0 + RM - 120) / 2 + 30, ytop + 6, f"{d['model']}, {d['ga']} ga, on a {d['joist']} joist")
+    return yb - 30
 
 
 def _sill_anchor_picture(c, top, d):

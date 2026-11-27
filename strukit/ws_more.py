@@ -6617,3 +6617,45 @@ def add_anchor_bolts(mark, sheet, ab, panel, spacing, G, load, method, other=Non
             b_["picture"][1]["ab"] = dict(s=s_draw, D=ab["D"], given=bool(ab.get("s")))
     sheet.anchor_bolts = a
     return sheet
+
+
+def joist_hanger_sheet(mark, joist, species, model, download, duration, uplift, two_by, end_grain, nailing, load_source, header_label=""):
+    """Simpson Strong-Tie face-mount joist hanger, solid sawn lumber (simpson.facemount): catalog C-C-2026 allowable loads (ASD)."""
+    from . import simpson
+    if not (load_source or "").strip():
+        raise WorksheetError(f"{mark}: where the hanger loads come from is blank")
+    try:
+        h = simpson.facemount(joist, species, model, download, duration, uplift, two_by, end_grain, nailing)
+    except simpson.SimpsonError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    r = h["row"]
+    src = f"{simpson.SOURCE}, p. {r['page']}"
+    L = footing_line
+    steps = [L(f"{r['model']}{' (' + r['nailing'].rstrip('.') + '. nailing)' if r['nailing'] else ''}, {r['ga']} ga", f"W {r['W']:g}, H {r['H']:g}, B {r['B']:g} in.", "", src,
+               f"header {r['header']}; joist {r['joist_fast']}"),
+             L(f"table download, {[k for k, v in simpson.DURATIONS.items() if v == h['col']][0]} load duration", r[h["col"]], "lb", src, f"{species} table"),
+             L("table uplift (160)", r["uplift"], "lb", src, "wind or earthquake; no further increase (footnote 1, p. 118)")]
+    if h["factor"] != 1.0:
+        steps.append(L("adjustment", h["factor"], "", src, "; ".join(h["notes"])))
+    steps += [L("allowable download", h["allow_down"], "lb", src, ""), L("allowable uplift", h["allow_up"], "lb", src, "")]
+    if h["picked"]:
+        steps.insert(0, L("hanger chosen", r["model"], "", src, "the first model in the catalog table for this joist (lowest installed cost index first) that carries the loads"))
+    rows = [Row(f"hanger {k}", "ASD", dem, cap, "lb", src, "") for k, dem, cap in h["rows"]]
+    info = [("Joist", f"{joist}, {species}; " + ("2x carrying member" if two_by else "carrying member 3x or larger, or a beam") + (", nailed into its end grain" if end_grain else "")),
+            ("Hanger", f"Simpson Strong-Tie {r['model']}, {r['ga']} ga, face mount; W {r['W']:g} x H {r['H']:g} x B {r['B']:g} in."
+             + (f"; {r['nailing'].lower()} nailing" if r["nailing"] else "")),
+            ("Fasteners", f"header {r['header']}{' (shortened to 0.148 x 1-1/2 for the 2x carrying member)' if two_by and h['factor'] < 1 else ''}; joist {r['joist_fast']}"),
+            ("Loads", f"download {download:,.0f} lb, {[k for k, v in simpson.DURATIONS.items() if v == h['col']][0]} load duration"
+             + (f"; uplift {uplift:,.0f} lb" if uplift else "") + f" ({load_source.strip()})")]
+    sheet = SimpleSheet(mark, "Joist Hanger (Simpson Strong-Tie, face mount)", "Connection", "ASD", info, [], [], "Allowable Loads", steps, rows,
+                        ["Allowable stress design; the loads are at the ASD level.",
+                         "Installed as the catalog requires: every specified fastener, nails driven at an angle through the joist into the header "
+                         "where the model calls for double-shear nailing, joist slope not over 1/4:12, seat not modified."],
+                        ["the carrying member and the joist themselves (bending, shear, bearing)", "cross-grain tension where the carrying member is a "
+                         "truss chord (footnote 4, p. 118)", "corrosion protection of the hanger and fasteners for the exposure"],
+                        picture=None)
+    sheet.blocks.append(dict(title="Hanger", head="Hanger", picture=("joist_hanger", dict(W=r["W"], H=r["H"], B=r["B"], ga=r["ga"], model=r["model"], joist=joist,
+                                                                                        two_by=two_by, header_label=header_label,
+                                                                                        double="LUS" in r["model"] or "HUS" in r["model"] or "HGUS" in r["model"]))))
+    sheet.hanger = h
+    return sheet

@@ -1201,3 +1201,19 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation: by hand** (no published sill-bolt example on file): the 5/8 in. bolt in an 8 in. stem wall, every mode
   (`tests/test_anchor_bolts.py`); the ACI pieces reuse the breakout functions validated against AISC Design Guide 1.
 - Readings applied (conservative, not ruled), including the IBC sill-plate exception not applied: in the rulings file.
+
+## 2026-11-26 22:33 MST — 0.278.0 Simpson face-mount joist hangers (Simpson products, part 1)
+- **New screen: Joist Hanger (Simpson Strong-Tie, face mount).** Joist size (2x4 to 8x16, double, triple and quad plies), species
+  group (DF/SP or SPF/HF), hanger (any face-mount model of catalog C-C-2026 pp. 114-123, or "lightest that works": the first in the
+  catalog table for that joist, lowest installed cost index first, that carries the loads), min. or max. nailing, download with its
+  load duration (floor 100, snow 115, roof 125), uplift (160), carrying member (3x or larger / 2x with the header nails shortened:
+  x 0.64 for 0.162 in. nails, x 0.77 for 0.148 in., catalog pp. 26 and 112; SDS-screw hangers refused on 2x), end grain (x 0.67,
+  p. 110). Sheet: the model, gauge, W, H, B, fasteners, table values with page, adjustments, download and uplift checks.
+  Picture: side view (carrying member in end grain, the joist with grain seated in the hanger, side plate with nails, double-shear
+  nails dashed, flange on the header face) and a section along the joist (the U of the hanger cut around the joist, flanges nailed to
+  the header face); W, H, B dimensioned.
+- **Data:** all 416 rows of the face-mount solid sawn tables read by `tools/simpson_extract.py` (column positions from the table
+  header, size groups from the rule lines) into `strukit/data/simpson_facemount.json`; checked both ways against the page text
+  (every row's loads appear on its page, every text row is in the data).
+- **Validation:** ten rows copied by hand from pp. 114, 115, 119, 120; the choice and the adjustments by hand (`tests/test_simpson.py`).
+- Next Simpson families: top-flange hangers, hurricane ties, post bases and column caps, straps, angles.

@@ -79,7 +79,7 @@ Every number cites its source; nothing assumed silently; each module validated a
     half the spacing each way. The sill-plate exception (in-plane shear breakout and pryout need not be computed for 5/8 in. bolts,
     7 in. embedment, 1-3/4 in. edge, 2x or 3x plates) is in the IBC's amendments to ACI 318, which is not on file; until Zach rules
     or supplies the IBC, it is not applied. A 5/8 in. bolt 1-3/4 in. from the face of a 2,500 psi stem wall at 48 in. then flags
-    at about 240 plf ASD wind.
+    above about 200 plf ASD wind.
   - Bottom plate bending between bolts under the perforated wall uplift t = v max is a simple span, M = t s^2 / 8 (the higher of the
     simple and continuous readings).
   Zach has not ruled.
