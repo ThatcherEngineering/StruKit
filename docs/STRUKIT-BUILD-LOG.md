@@ -1082,3 +1082,11 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation: by hand** on the 6 ft L4x4x1/4 pinned to two fixed-base columns: the frame gives Mw = Mz = (P L / 4) / 2^0.5 = 20.4 kip-in. and
   the ratio equals Mw / Mcw + Mz / Mcz (`tests/test_angle_beam.py`).
 - 0.267.1: the frame sheet's reference for an angle printed "Eq. Eq. H2-1"; now "Eq. H2-1".
+
+## 2026-11-26 17:15 MST — 0.268.0 quick-start column Fy source; angle leg direction in the 3D frame (Next 1, 2)
+- (Zach: the 0.265.0 to 0.267.1 readings are ruled; a reading is fine when it is the conservative one of those available.)
+- **Bent quick start:** new box "Where the column Fy comes from"; it is written to every HSS column the quick start places, so the column's own
+  sheet no longer stops for it (W-shape columns have no such box).
+- **Steel Beam screen, single angle: "horizontal leg points left / right"** (looking from the first end to the second; blank = left). In the
+  3D frame the section is mirrored for "right" (the same vertical deflection, the sideways deflection reversed).
+- Tests: the quick start fills the source; the mirrored angle (`tests/test_job_2026_030_west.py`, `tests/test_angle_beam.py`).

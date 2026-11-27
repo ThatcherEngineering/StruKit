@@ -1041,7 +1041,7 @@ function modelCard(changed) {
   const n1 = (v, d = 1) => (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toLocaleString();
   const bentFields = [["n", "Number of bents"], ["spacing", "Bent spacing, ft (one number, or a list)"], ["end_start", "Roof past the first bent, ft"], ["end_end", "Roof past the last bent, ft"],
     ["col_spacing", "Column spacing across the bent, ft"], ["cant_low", "Rafter cantilever past line A, ft"], ["cant_high", "Rafter cantilever past line B, ft"], ["height", "Height to the top of the line A columns, ft"], ["slope", "Roof rise in 12, up toward line B (blank = level)"],
-    ["col_shape", "Column section"], ["col_Fy", "Column Fy, ksi"], ["raf_shape", "Rafter section"], ["raf_Fy", "Rafter Fy, ksi"], ["D", "Roof dead load, psf"], ["S", "Roof snow load, psf"], ["Lr", "Roof live load, psf"],
+    ["col_shape", "Column section"], ["col_Fy", "Column Fy, ksi"], ["col_Fy_source", "Where the column Fy comes from (for example ASTM A500 Grade C)"], ["raf_shape", "Rafter section"], ["raf_Fy", "Rafter Fy, ksi"], ["D", "Roof dead load, psf"], ["S", "Roof snow load, psf"], ["Lr", "Roof live load, psf"],
     ["eave_shape", "Eave beam section along the building, moment-connected (optional)"], ["eave_Fy", "Eave beam Fy, ksi"], ["eave_bays", "Portal bays with eave beams (bay numbers, or all)"],
     ["strut_shape", "Eave strut section in the other bays, pinned (optional)"], ["strut_Fy", "Eave strut Fy, ksi"],
     ["eave_trib", "Roof width on each eave beam or strut, ft (blank = none)"],

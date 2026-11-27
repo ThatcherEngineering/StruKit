@@ -107,6 +107,8 @@ FORMS = {
                   help="a single angle (for example L4x4x1/4) is checked as on the Single-Angle Beam screen (AISC 360-22 F10, H2); either for equal legs"),
                 F("angle_toe", "Single angle: toe of the vertical leg", "select", options=["up", "down"], required=False),
                 F("angle_source", "Single angle: where Fy comes from", "text", required=False),
+                F("angle_leg_side", "Single angle: horizontal leg points (3D frame)", "select", options=["left", "right"], required=False,
+                  help="looking along the beam from its first end to its second; blank = left. Sets the angle's principal axes in the 3D frame"),
                 F("self_weight", "Add self-weight", "select", options=["yes", "no"]),
                 F("bu_a", "Built-up: transverse stiffener clear spacing, a", "text", unit="in", required=False,
                   help="blank = no transverse stiffeners; one spacing = stiffeners at a along the girder; a list (for example 42, 90) = panel by panel from each support, no stiffeners beyond"),
@@ -4892,7 +4894,10 @@ def _model_frame_build(project, members, sway=False):
                 sy_ = _np.cross([0.0, 0.0, 1.0], xd)
                 if _np.linalg.norm(sy_) > 1e-9:
                     sy_ = sy_ / _np.linalg.norm(sy_)
-                    up_ = tuple(sec["angle_n"][0] * sy_ + sec["angle_n"][1] * _np.cross(xd, sy_))
+                    vz_ = _np.cross(xd, sy_)                        # up, square to the member
+                    if str(v.get("angle_leg_side") or "").strip().lower().startswith("right"):
+                        sy_ = -sy_                                  # the horizontal leg toward the right: the section mirrored
+                    up_ = tuple(sec["angle_n"][0] * sy_ + sec["angle_n"][1] * vz_)
             fr.member(nm, names[i], names[i + 1], sec["E"], sec["G"], sec["A"], sec["Ix"], sec["Iy"], sec["J"], up=up_,
                       release_i=("my", "mz") if (i == 0 and not mom_i) else (), release_j=("my", "mz") if (i == len(cl) - 2 and not mom_j) else ())
             beam_elems.setdefault(v["mark"], []).append(nm)
@@ -6223,6 +6228,7 @@ def bent_building(project, members, spec):
     cl, ch = num("cant_low", "Cantilever past the first column line", False, 0) or 0.0, num("cant_high", "Cantilever past the second column line", False, 0) or 0.0
     e0, e1 = num("end_start", "Roof past the first bent", False, 0) or 0.0, num("end_end", "Roof past the last bent", False, 0) or 0.0
     cFy, rFy = num("col_Fy", "Column Fy", low=1), num("raf_Fy", "Rafter Fy", low=1)
+    cFy_src = str(sp.get("col_Fy_source") or "").strip()                       # every number cites its source: the column's Fy source goes on its screen
     rise = (num("slope", "Roof rise in 12", False, 0) or 0.0) / 12.0
     pitched = str(sp.get("roof") or "").strip().lower().startswith("pitch")
     xr = num("ridge", "Ridge from column line A", False, 0)
@@ -6307,7 +6313,7 @@ def bent_building(project, members, spec):
         for line, y in (("A", 0.0), ("B", cs)):
             v = dict(mark=f"{pre}C{i}{line}", shape=col, Fy=g(cFy), height=g(H), self_weight="yes", loads=[], at_level="Roof", at_base="Base", at_x1=g(x), at_y1=g(y),
                      at_base_fix=base_txt)
-            v.update(dict(Fy_source="", Kx="1.0", Ky="1.0", k_source="direct analysis method (the frame run)", moments=[]) if kind_col == "hss_column" else
+            v.update(dict(Fy_source=cFy_src, Kx="1.0", Ky="1.0", k_source="direct analysis method (the frame run)", moments=[]) if kind_col == "hss_column" else
                      dict(ends="held sideways (braced)", Kx="1.0", Ky="1.0", k_source="direct analysis method (the frame run)", lateral=[], leaning=[], drift=[]))
             new.append(dict(kind=kind_col, values=v))
         rows = [dict(case=c, kind="uniform", mag=f"{q * trib / 1000:.5f}", x1="", x2="", label=f"roof {dict(D='dead', S='snow', Lr='live')[c]} load {q:g} psf x {trib:g} ft")

@@ -218,6 +218,12 @@ def test_angle_in_the_3d_frame_and_on_the_steel_beam_screen():
     assert dz / geo == pytest.approx(1.5 * (1 / 4.82 + 1 / 1.19), rel=0.01) and dy / geo == pytest.approx(1.5 * (1 / 1.19 - 1 / 4.82), rel=0.02)
     s, kind, _ = calc.build("steel_beam", bm["values"], proj)
     assert s.title == "Single-Angle Beam" and kind == "simple"
+    # the horizontal leg pointing right instead of left mirrors the section: the same vertical deflection, the sideways one reversed
+    bm_r = dict(bm, values=dict(bm["values"], angle_leg_side="right"))
+    fr2 = calc._model_frame_build(proj, [bm_r, col("C1", 0), col("C2", 6)], sway=True)["fr"]
+    mid2 = next(n for n, (x, y, z) in fr2.nodes.items() if abs(x - 36.0) < 1e-6 and abs(z - 120.0) < 1e-6)
+    res2 = fr2.solve({mid2: (0, 0, -1.0, 0, 0, 0)}, [])
+    assert res2.disp[mid2][2] == pytest.approx(res.disp[mid][2], rel=1e-6) and res2.disp[mid2][1] == pytest.approx(-res.disp[mid][1], rel=1e-6)
 
 
 def test_angle_checked_from_the_3d_frame_forces():

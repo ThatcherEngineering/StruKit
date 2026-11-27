@@ -489,3 +489,10 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
 ## 2026-11-26 16:45, angles from the 3D frame forces (0.267.0), applied (not ruled)
 - Eq. H2-1 with the axial and both moment terms added at full value (worst signs together), the smaller strength of the two moment signs,
   the negative beta_w and Cb = 1.0, so no tracking of which toe is in compression.
+
+## 2026-11-26, reply to the 0.265.0 to 0.267.1 check-in — Zach's ruling (do not ask again)
+- **"As long as those are conservative compared to the other option I am okay with it. Sounds good keep going."** Ruled as applied: the
+  flange-to-web weld reading (point load over lb + 5 tf, added as a vector to the largest shear flow, kds not taken) and the angle-from-frame
+  reading (H2-1 terms added, the weaker moment sign, negative beta_w, Cb = 1.0). Both are the conservative side of their alternatives
+  (the shear at the load, kds = 1.5; tracking the signs at the toes). Standing: a reading is acceptable to Zach when it is the conservative
+  one of the readings available; still record each and tell him.

@@ -74,6 +74,12 @@ def test_bent_building_fills_the_model_like_the_west_carport():
     assert [l["name"] for l in out["project"]["model"]["levels"]] == ["Base", "Roof"] and len(out["project"]["model"]["grids_x"]) == 8
     run = calc.model_frame_sway(out["project"], out["members"])
     assert run["problems"] == [] and len(run["columns"]) == 16 and all(c["ratio"] < 1 for c in run["columns"])
+    # the column Fy source typed in the quick start reaches each HSS column screen, so its own sheet is complete
+    src = calc.bent_building(proj, [], dict(spec, col_Fy_source="ASTM A500 Grade C"))
+    c1 = next(m for m in src["members"] if m["values"]["mark"] == "C1A")
+    msg = lambda v: " ".join(calc.results("hss_column", v, proj).get("messages") or [])
+    assert c1["values"]["Fy_source"] == "ASTM A500 Grade C" and "Fy" not in msg(c1["values"])        # only its loads (from the frame) are still to come
+    assert "Fy" in msg(by["C1A"]["values"])                                                          # without it the screen asks for the source
     # the same marks again are refused, a prefix lets a second building in; bad input is listed and nothing is added
     again = calc.bent_building(out["project"], out["members"], spec)
     assert again["added"] == 0 and "already in the project" in again["problems"][0]
