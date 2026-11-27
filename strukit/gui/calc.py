@@ -302,6 +302,8 @@ FORMS = {
                 F("fc", "f'c", unit="psi"), F("fy", "fy", unit="psi"), F("conc_pcf", "Concrete weight", unit="pcf"),
                 F("col_x", "Column, x", unit="in"), F("col_y", "Column, y", unit="in"),
                 F("supported", "Column is", "select", options=["steel", "wood", "concrete"]),
+                F("col_shape", "Steel column section (for the drawing)", "text", required=False,
+                  help="for example HSS4x4x1/4, Pipe 4 STD or W8x31; drawn as that shape. Blank draws a plain steel outline"),
                 F("plate_x", "Base plate, x", unit="in", required=False), F("plate_y", "Base plate, y", unit="in", required=False),
                 F("bar", "Bar size #"), F("n_x", "Bars in x"), F("n_y", "Bars in y"), F("cover", "Clear cover", unit="in"),
                 F("bottom", "Lowest bars run in", "select", options=["x", "y"]),
@@ -1521,6 +1523,8 @@ FORMS = {
                 F("fc", "f'c", unit="psi"), F("fy", "fy", unit="psi"), F("conc_pcf", "Concrete weight", unit="pcf"),
                 F("col_x", "Column, in the direction of the moment", unit="in"), F("col_y", "Column, other way", unit="in"),
                 F("supported", "Column is", "select", options=["steel", "wood", "concrete"]),
+                F("col_shape", "Steel column section (for the drawing)", "text", required=False,
+                  help="for example HSS4x4x1/4, Pipe 4 STD or W8x31; drawn as that shape. Blank draws a plain steel outline"),
                 F("plate_x", "Base plate, x", unit="in", required=False), F("plate_y", "Base plate, y", unit="in", required=False),
                 F("bar", "Bar size #"), F("n_x", "Bars in x"), F("n_y", "Bars in y"), F("cover", "Clear cover", unit="in"),
                 F("bottom", "Lowest bars run in", "select", options=["x", "y"]),
@@ -1795,6 +1799,8 @@ def link_foundations(members):
                     o = "x"
                 px, py = (N_, B_) if o == "x" else (B_, N_)
                 v.update(supported="steel", plate_x=f"{px:g}", plate_y=f"{py:g}")
+                if not str(v.get("col_shape") or "").strip() and str(pv.get("shape") or "").strip():
+                    v["col_shape"] = str(pv.get("shape")).strip()           # the drawing shows the column the plate carries
                 v["_link_note"] = f"Base plate: {p['values'].get('mark', '')}, {px:g} in. x {py:g} in., centred on the footing."
         out[i] = dict(m, values=v)
     return out
@@ -1972,6 +1978,7 @@ def _build(kind, values, project):
         for k in ("bar", "n_x", "n_y"):
             a[k] = int(a[k])
         fs = ws_footing.isolated(mark, src, sup, **a)
+        fs.col_shape = str(values.get("col_shape") or "").strip()
         if r.text("loads_from", False):
             fs.result.notes.append("Loads: " + r.text("loads_from", False) + ".")
         return fs, "footing", {}
@@ -3129,6 +3136,8 @@ def _build(kind, values, project):
         ss = ws_more.footing_moment_sheet(mark, src, sup, lim or "", **a)
         if r.text("loads_from", False):
             ss.assumptions.insert(0, "Loads: " + r.text("loads_from", False) + ".")
+        if ss.picture and ss.picture[0] == "footing_moment":
+            ss.picture[1]["shape"] = str(values.get("col_shape") or "").strip()
         return ss, "simple", {}
     raise WorksheetError(f"unknown worksheet '{kind}'")
 

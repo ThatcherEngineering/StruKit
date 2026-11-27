@@ -1115,4 +1115,17 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
     the beam flange's help is not taken.
 - Picture: both stiffeners hidden under the seat plate in the plan, the spacing dimensioned, the seat bolts drawn clear of them.
 - **Validation: by hand** (no published example): the Example II.A-14 seat on an HSS16x16x5/8 with stiffeners 6 in. apart
-  ().
+  (`tests/test_stiffened_seat.py`).
+
+## 2026-11-26 19:05 MST — 0.271.0 footing pictures to the visual standard (Next 2, part)
+- **Isolated footing, continuous footing and footing with moment: new section pictures**, to scale and dimensioned (width, thickness,
+  soil over the footing), drawn as built: native soil under the footing, backfill beside it up to grade with the earth symbol, the
+  concrete stippled with its bars at their cover, and the member it carries drawn as what it is (concrete pier or stem wall, grouted
+  masonry wall with its courses, sawn post with its grain, steel column as an HSS with its corner lines or a W shape with its flanges,
+  on its base plate), broken off where it continues. Notes with leaders name the bars, the cover and the member.
+- **Isolated footing plan**, larger and dimensioned: bars dashed below the top, the base plate, and the column cut above it (HSS wall
+  with rounded corners, W shape, end grain of a post, a concrete pier darker as cut).
+- The isolated footing section is now cut along the lowest bars (it was always cut along x).
+- New optional box on the isolated footing and footing-with-moment screens: "Steel column section (for the drawing)". A footing linked
+  to a base plate takes the plate's column.
+- Tests: every support variant prints without overlapping text (`tests/test_footing.py`).

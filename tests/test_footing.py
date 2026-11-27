@@ -196,3 +196,27 @@ def test_continuous_requires_the_dead_factor_and_stem_weight():
         cont(None)
     with pytest.raises(FootingInputError, match="stem_pcf"):
         cont(1.2, stem_pcf=None)
+
+
+def test_footing_pictures_draw_the_member_carried(tmp_path):
+    """The footing section and plan draw the member as what it is (picture standard): the steel column named on the screen is
+    read as an HSS or W shape; wood, concrete pier and masonry wall supports; every variant prints without overlapping text."""
+    from strukit import calcsheet
+    from strukit.gui import calc
+    assert calcsheet._footing_shape("HSS4x4x1/4")["kind"] == "hss" and calcsheet._footing_shape("HSS4.500x0.237")["round"]
+    w = calcsheet._footing_shape("W8x31")
+    assert w["kind"] == "w" and w["d"] == pytest.approx(8.0) and calcsheet._footing_shape("") is None and calcsheet._footing_shape("nonsense") is None
+    proj = dict(job="t", name="t")
+    iso = dict(mark="F1", B="4", L="4", h="12", fc="3000", fy="60000", conc_pcf="150", col_x="8", col_y="8", supported="steel", col_shape="W8x31",
+               plate_x="12", plate_y="12", bar="5", n_x="5", n_y="5", cover="3", bottom="x", P_service="20000", service_combo="D + L",
+               Pu="28000", strength_combo="1.2D + 1.6L", q_allow="1500", soil_source="IBC Table 1806.2", soil_depth="2", soil_pcf="110")
+    for v in (iso, dict(iso, bottom="y"), dict(iso, col_shape="HSS6x6x3/8", col_x="6", col_y="6"), dict(iso, supported="wood", col_shape="", col_x="5.5", col_y="5.5", plate_x="", plate_y=""),
+              dict(iso, supported="concrete", col_shape="", col_x="16", col_y="16", plate_x="", plate_y="")):
+        sh = calc.build("footing_iso", v, proj)[0]
+        assert sh.col_shape == v["col_shape"]
+        calc.sheet_pdf("footing_iso", v, proj, str(tmp_path / f"f_{v['supported']}_{v['bottom']}.pdf"))
+    cont = dict(mark="CF1", W="2", h="10", fc="3000", fy="60000", conc_pcf="150", wall="8", wall_kind="masonry", stem_h="", stem_pcf="",
+                bar_t="4", spacing_t="18", bar_l="4", n_l="2", cover="3", P_service="1500", service_combo="D + L", Pu="2100",
+                strength_combo="1.2D + 1.6L", dead_factor="1.2", q_allow="1500", soil_source="IBC Table 1806.2", soil_depth="", soil_pcf="")
+    for v in (cont, dict(cont, wall_kind="concrete", stem_h="36", stem_pcf="150", soil_depth="3", soil_pcf="110")):
+        calc.sheet_pdf("footing_cont", v, proj, str(tmp_path / f"c_{v['wall_kind']}.pdf"))

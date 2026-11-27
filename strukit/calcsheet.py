@@ -731,6 +731,105 @@ def _footing_load(c, cx, base, s, W_in, h_in, sup_h_in, label):
     c.line(cx - W_in * s / 2, base - 8, cx + W_in * s / 2, base - 8)
 
 
+def _footing_shape(name):
+    """The drawing data of a steel column named on the footing screen (HSS, pipe or W), or None."""
+    from . import shapes
+    if not (name or "").strip():
+        return None
+    try:
+        h = shapes.hss(name)
+        return dict(kind="hss", t=h["tdes"], round=h.get("type") != "HSS-RECT", label=shapes.normalize(name))
+    except Exception:
+        pass
+    try:
+        w = shapes.get(name)
+        return dict(kind="w", d=w["d"], bf=w["bf"], tf=w["tf"], tw=w["tw"], k=w.get("kdes"), label=shapes.normalize(name))
+    except Exception:
+        return None
+
+
+def _callout(c, x_tip, y_tip, x_txt, y_txt, text):
+    """A note with a leader to the part it names (text left-aligned at x_txt)."""
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.35)
+    c.line(x_tip, y_tip, x_txt - 2, y_txt + 2); c.circle(x_tip, y_tip, 0.7, fill=1, stroke=0)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6); c.drawString(x_txt, y_txt, text)
+
+
+def _footing_picture(p, sheet):
+    """Footing section (and plan, isolated), to scale and dimensioned, as built: soil, concrete, bars and the member it carries."""
+    i = sheet.inp
+    iso = sheet.kind == "isolated"
+    c = p.c
+    D = footing.BAR_DIA
+    shp = _footing_shape(getattr(sheet, "col_shape", "")) if iso and sheet.supported == "steel" else None
+    p.room(178)
+    p.head("Section" + (" and Plan" if iso else ""))
+    top = p.y
+    ytop = top - 24                                                     # room for the load label above the member
+    if iso:
+        cx, bw = LM + 140, 196
+        low = i.get("bottom_layer", "x")
+        n_dots = i["n_y"] if low == "x" else i["n_x"]
+        alng = "y" if low == "y" else "x"                                     # cut along the lowest bars: they show full length
+        W_in = (i["L_ft"] if alng == "y" else i["B_ft"]) * 12
+        sw, kind = (i["col_y_in"] if alng == "y" else i["col_x_in"]), sheet.supported
+        if shp and shp["kind"] == "w":                                       # depth along x in the plan: cut along y, the flange is seen
+            shp = dict(shp, flange_face=alng == "y")
+        sc_, g = memberart.footing_detail(c, cx, None, bw, 112, W_in, i["h_in"], sw, kind, i["cover_in"], D[i["bar"]], n_dots, D[i["bar"]],
+                                          plate_w_in=(i.get("plate_y_in") if alng == "y" else i.get("plate_x_in")), soil_depth_in=i.get("soil_depth_ft", 0) * 12, shape=shp, top_y=ytop)
+        lab = f"{i['P_service']:,.0f} lb service"
+        Wtxt = f"{W_in / 12:g} ft ({alng})"
+        oth = "x" if alng == "y" else "y"
+        cl = [(g["x1"] - g["cov"] - 6, g["yb"], f"({i['n_' + alng]}) #{i['bar']} in {alng}, lowest; {i['cover_in']:g} in clear cover"),
+              (g["dots"][-1] if g["dots"] else g["x1"] - 8, g["yd"] + 2, f"({i['n_' + oth]}) #{i['bar']} in {oth}")]
+        what = (shp["label"] if shp else ("wood post" if kind == "wood" else "concrete pier" if kind == "concrete" else "steel column"))
+        cl.append(((g["sup_l"] + g["sup_r"]) / 2 + 1, g["sup_top"] - 8, what + (f" on {i['plate_x_in']:g} x {i['plate_y_in']:g} in plate" if i.get("plate_x_in") else "")))
+    else:
+        cx, bw = LM + 160, 240
+        stem = i.get("stem_h_in", 0) or 0.0
+        sc_, g = memberart.footing_detail(c, cx, None, bw, 112, i["W_ft"] * 12, i["h_in"], i["wall_in"], i.get("wall_kind", "concrete"), i["cover_in"],
+                                          D[i["bar_t"]], i["n_l"], D[i["bar_l"]], stem_h_in=stem, soil_depth_in=i.get("soil_depth_ft", 0) * 12, top_y=ytop)
+        lab = f"{i['P_service_plf']:,.0f} lb/ft service"
+        Wtxt = f"{i['W_ft']:g} ft"
+        cl = [(g["x1"] - g["cov"] - 6, g["yb"], f"#{i['bar_t']} at {i['spacing_t_in']:g} in across, lowest"),
+              (g["dots"][-1] if g["dots"] else g["x1"] - 8, g["yd"] + 2, f"({i['n_l']}) #{i['bar_l']} lengthwise; {i['cover_in']:g} in clear cover"),
+              ((g["sup_l"] + g["sup_r"]) / 2 + 1, g["sup_top"] - 8, f"{i['wall_in']:g} in {i.get('wall_kind', 'concrete')} wall" + (f", {stem:g} in high" if stem else ""))]
+    base = g["y0"]
+    # load down the member and soil pressure under the footing (not to a force scale)
+    xm = (g["sup_l"] + g["sup_r"]) / 2
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
+    _arrow_down(c, xm, g["sup_top"] + 14, g["sup_top"] + 2)
+    c.setFont(FR, 6); c.drawCentredString(xm, g["sup_top"] + 16.5, lab)
+    c.setLineWidth(0.5)
+    for k in range(7):
+        xx = g["x0"] + (k + 0.5) * (g["x1"] - g["x0"]) / 7
+        _arrow(c, xx, g["ylo"] + 1, xx, base - 1.2, head=2.2)
+    # dimensions
+    xl = g["soil_l"] - 8                                                # thickness and soil depth on the left, notes on the right
+    memberart._dim_h(c, g["x0"], g["x1"], g["ylo"] - 7, Wtxt, FR, ext_from=base)
+    memberart._dim_v(c, base, g["top"], xl, f"{i['h_in']:g} in", FR, ext_from=g["x0"])
+    if i.get("soil_depth_ft"):
+        memberart._dim_v(c, g["top"], g["gy"], xl, f"{i['soil_depth_ft']:g} ft soil", FR, ext_from=g["soil_l"])
+    xr = g["soil_r"]
+    # notes with leaders, to the right of the dimensions
+    xt = xr + 16
+    ys = [base + 4, base + 16, g["sup_top"] - 6]
+    for (xt_, yt_, txt), yy in zip(cl, ys):
+        _callout(c, xt_, yt_, xt, yy, txt)
+    _small(c, cx, g["ylo"] - 22, "section, to scale; load and soil pressure arrows are not to a force scale")
+    low_y = g["ylo"] - 24
+    if iso:
+        pcx, pcy, box = RM - 70, top - 62, 104
+        s2, px0, py0, px1, py1 = memberart.footing_detail_plan(c, pcx, pcy, box, i["B_ft"] * 12, i["L_ft"] * 12, i["col_x_in"], i["col_y_in"],
+                                                               i["n_x"], i["n_y"], i["cover_in"], sheet.supported, i.get("plate_x_in"), i.get("plate_y_in"), shp)
+        memberart._dim_h(c, px0, px1, py0 - 8, f"{i['B_ft']:g} ft (x)", FR, ext_from=py0)
+        memberart._dim_v(c, py0, py1, px0 - 8, f"{i['L_ft']:g} ft (y)", FR, ext_from=px0)
+        _small(c, pcx, py0 - 26, "plan, to scale; bars dashed below the top")
+        low_y = min(low_y, py0 - 28)
+    p.y = low_y - 10
+
+
+
 def _footing_pdf(sheet, path, job, code, date, method="Strength design (LRFD)", page=1, pages=1):
     """Write the calc sheet for a ws_footing.FootingSheet (isolated or continuous)."""
     i, res = sheet.inp, sheet.result
@@ -767,34 +866,8 @@ def _footing_pdf(sheet, path, job, code, date, method="Strength design (LRFD)", 
     p.text("Soil source: " + sheet.soil_source, size=7.5, color=GREY)
     bottom_left = p.y
 
-    # pictures: section (always) and plan (isolated)
-    sec_cx = 400 if iso else 450
-    _sketch_title(c, sec_cx, top, "SECTION", centred=True)
-    base = top - (92 if iso else 106)
-    D = footing.BAR_DIA
-    if iso:
-        low = i.get("bottom_layer", "x")
-        n_dots = i["n_y"] if low == "x" else i["n_x"]
-        sc_ = memberart.footing_section(c, sec_cx, base, 110, 60, i["B_ft"] * 12, i["h_in"], i["col_x_in"],
-                                        sheet.supported, i["cover_in"], D[i["bar"]], n_dots, D[i["bar"]],
-                                        plate_w_in=i.get("plate_x_in"),
-                                        soil_depth_in=i.get("soil_depth_ft", 0) * 12)
-        _footing_load(c, sec_cx, base, sc_, i["B_ft"] * 12, i["h_in"], max(1.6 * i["h_in"], 12.0) + (0.25 if i.get("plate_x_in") else 0.0),
-                      f"{i['P_service']:,.0f} lb service")
-        _sketch_title(c, 516, top, "PLAN", centred=True)
-        memberart.footing_plan(c, 516, top - 52, 72, i["B_ft"] * 12, i["L_ft"] * 12, i["col_x_in"],
-                               i["col_y_in"], i["n_x"], i["n_y"], i["cover_in"],
-                               i.get("plate_x_in"), i.get("plate_y_in"))
-        _small(c, 516, base - 16, "to scale")
-    else:
-        sc_ = memberart.footing_section(c, sec_cx, base, 150, 76, i["W_ft"] * 12, i["h_in"], i["wall_in"],
-                                        "concrete", i["cover_in"], D[i["bar_t"]], i["n_l"], D[i["bar_l"]],
-                                        stem_h_in=i.get("stem_h_in", 0),
-                                        soil_depth_in=i.get("soil_depth_ft", 0) * 12)
-        _footing_load(c, sec_cx, base, sc_, i["W_ft"] * 12, i["h_in"], i.get("stem_h_in", 0) or max(1.6 * i["h_in"], 12.0),
-                      f"{i['P_service_plf']:,.0f} lb/ft service")
-    _small(c, sec_cx, base - 16, "to scale; load and soil pressure arrows are not to a force scale")
-    p.y = min(bottom_left, base - 21) - 2
+    p.y = bottom_left
+    _footing_picture(p, sheet)
 
     p.head("Loads")
     u = "lb" if iso else "lb/ft"
@@ -1477,8 +1550,9 @@ def _picture(c, top, pic):
     if name == "footing_moment":
         _sketch_title(c, 470, top, "SECTION AND SOIL PRESSURE", centred=True)
         base = top - 74
-        s = memberart.footing_section(c, 470, base, 150, 52, d["B"], d["h"], d["col"], d["supported"], d["cover"],
-                                      d["db"], d["n"], d["db"], plate_w_in=d["plate"], soil_depth_in=d["soil"])
+        shp_ = _footing_shape(d.get("shape")) if d["supported"] == "steel" else None
+        s, _g = memberart.footing_detail(c, 470, base, 150, 52, d["B"], d["h"], d["col"], d["supported"], d["cover"],
+                                         d["db"], d["n"], d["db"], plate_w_in=d["plate"], soil_depth_in=d["soil"], shape=shp_)
         x0, W = 470 - d["B"] * s / 2, d["B"] * s
         k = 20.0 / (d["qmax"] or 1.0)
         a = d["bearing"] * s
@@ -1494,7 +1568,7 @@ def _picture(c, top, pic):
         if sc:                                               # loading of the governing service case on the section (not to a force scale)
             import math as _m
             y_ftg = base + d["h"] * s
-            y_top = y_ftg + (max(1.6 * d["h"], 12.0) + (0.25 if d.get("plate") else 0.0)) * s
+            y_top = _g["sup_top"]
             c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9)
             _arrow_down(c, 470, y_top + 12, y_top + 1.5)
             c.setFont(FR, 6); c.drawRightString(470 - 4, y_top + 6, f"P {sc['P']:,.0f} lb")
@@ -1508,7 +1582,7 @@ def _picture(c, top, pic):
             if sc["V"]:
                 xs_ = 470 - d["col"] * s / 2
                 _arrow(c, xs_ - 22, y_ftg + 4, xs_ - 2, y_ftg + 4, head=3)
-                c.drawRightString(xs_ - 24, y_ftg + 2, f"V {sc['V']:,.0f} lb")
+                c.drawRightString(xs_ - 2, y_ftg + 8, f"V {sc['V']:,.0f} lb")
         _small(c, 470, base - 32, "section to scale; loads and soil pressure for the governing service case" + (f", {sc['name']}" if sc else ""))
         return base - 36
     return top
