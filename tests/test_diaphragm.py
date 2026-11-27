@@ -191,3 +191,42 @@ def test_opening_force_transfer_by_hand(tmp_path):
     d0 = calc.build("diaphragm", dict(v, op_a="", chord_A="16.5", chord_E="1400000"), proj)[0].diaphragm["defl"]
     d1 = calc.build("diaphragm", dict(v, chord_A="16.5", chord_E="1400000"), proj)[0].diaphragm
     assert d1["defl_opening"] == pytest.approx(0.5 * 24 * (260 - 5200 / 30) / 15000) and d1["defl"] == pytest.approx(d0 + d1["defl_opening"])
+
+
+def test_openings_in_line_cross_checked_with_t555_wall(tmp_path):
+    """Two openings side by side across the depth (diaphragm.openings): the APA T555 several-openings analysis turned flat. No published
+    diaphragm example is on file; the result is checked against the T555 shear wall routine (shearwall.ftao_multi, itself checked against
+    APA's published 20 ft two-window wall) with the inputs mapped: wall length = diaphragm depth W, wall height = region length Lr, piers =
+    strips, opening width = b, clear height = a, sheathing below = e2 (so above = e1). Span 60 ft, depth 30 ft, 200 plf; openings 8 ft along
+    the span at 12 ft from the support, 4 ft and 6 ft across at 6 ft and 16 ft from the chord (strips 6, 6, 8 ft); framing 8 ft each side.
+      V = 5,200 lb; Lr = 24 ft; H = 4,160 lb; va = 4,160/16 = 260 plf; sum of strip shears x widths = V."""
+    from strukit import shearwall as sw
+    ops = [dict(x0=12, a=8, y0=6, b=4, e1=8, e2=8), dict(x0=12, a=8, y0=16, b=6, e1=8, e2=8)]
+    (r,) = dp.openings(60, 30, 200, False, ops)
+    assert r["multi"] and r["piers"] == [6, 6, 8] and r["V"] == 5200 and r["H"] == pytest.approx(4160) and r["va"] == pytest.approx(260)
+    assert sum(s["v"] * s["d"] for s in r["strips"]) == pytest.approx(5200) and max(abs(c) for c in r["checks"]) < 1e-6
+    wall = sw.ftao_multi("Structural I, 15/32 in, 10d common", 4, "OSB", 0.5, 24, [6, 6, 8],
+                         [dict(w=4, ho=8, sill=8), dict(w=6, ho=8, sill=8)], 5200, "wind", "ASD", holddown_inside=False)
+    for s, p in zip(r["strips"], wall["piers"]):
+        assert s["v"] == pytest.approx(p["v"]) and s["vc"] == pytest.approx(p["vc"]) and s["vF"] == pytest.approx(p["vF"])
+    # a single opening through openings() is opening(); separate regions along the span; overlapping regions refused
+    one = dp.openings(60, 30, 200, False, ops[:1])[0]
+    assert one["va"] == pytest.approx(dp.opening(60, 30, 200, False, 12, 8, 6, 4, 8, 8)["va"]) and not one.get("multi")
+    two = dp.openings(60, 30, 200, False, [ops[0], dict(x0=40, a=4, y0=10, b=4, e1=4, e2=4)])
+    assert len(two) == 2
+    with pytest.raises(dp.DiaphragmError):
+        dp.openings(60, 30, 200, False, [ops[0], dict(x0=24, a=4, y0=10, b=4, e1=4, e2=4)])
+    with pytest.raises(dp.DiaphragmError):
+        dp.openings(60, 30, 200, False, [ops[0], dict(ops[1], y0=8)])
+    # screen and sheet
+    from strukit.gui import calc
+    from strukit import calcsheet
+    proj = dict(job="2026-000", name="Test", method="ASD", combos_asd=[dict(expr="D + 0.6W", source="ASCE/SEI 7-22 Sect. 2.4.1, combination 5a")])
+    v = dict(mark="DI3", panel="Structural I, 15/32 in, 10d common", face="2", edges="blocked", spacing="4", panel_type="OSB", G="0.50",
+             G_source="DF-L, NDS Table 12.3.3A", L="60", W="30", load="wind", w="200", w_source="sheet WM1, 0.6 W",
+             op_a="8", op_b="4", op_x0="12", op_y0="6", op_e1="8", op_e2="8",
+             more_openings=[dict(a="8", b="6", x0="12", y0="16", e1="8", e2="8"), dict(a="4", b="4", x0="40", y0="10", e1="4", e2="4")])
+    sheet, _, _ = calc.build("diaphragm", v, proj)
+    rows = [x for x in sheet.rows if x.check.startswith("Unit shear around the opening")]
+    assert len(rows) == 2 and rows[0].demand == pytest.approx(max(260, max(s["v"] for s in r["strips"])))
+    calcsheet._simple_pdf(sheet, str(tmp_path / "ops.pdf"), "2026-000", "SDPWS-2021", "2026-11-26")

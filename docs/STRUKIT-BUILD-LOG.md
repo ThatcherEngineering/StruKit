@@ -1090,3 +1090,18 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Steel Beam screen, single angle: "horizontal leg points left / right"** (looking from the first end to the second; blank = left). In the
   3D frame the section is mirrored for "right" (the same vertical deflection, the sideways deflection reversed).
 - Tests: the quick start fills the source; the mirrored angle (`tests/test_job_2026_030_west.py`, `tests/test_angle_beam.py`).
+
+## 2026-11-26 17:30 MST — 0.269.0 several openings in one diaphragm (Next 3)
+- **Wood Diaphragm screen: new table "More openings"** (a, b, support to near edge, chord to opening, e1, e2), on top of the one-opening boxes.
+  Openings side by side across the depth with the same position and length along the span (x0, a, e1, e2) are one region and are solved together
+  by the APA T555 several-openings method turned flat (`diaphragm.openings`, `_openings_in_line`): the strips beside and between the openings
+  are the piers; strip shear v = (V/W)(d + T)/d, corner zones (vd − F)/d, corner force per foot F/d; members along the opening sides
+  |va − vc| × the larger extension; members across the depth from the running force chord to chord. Openings elsewhere along the span are
+  separate regions, each with its own steps, check row and enlarged view. Regions that overlap along the span, and openings that touch or
+  overlap across the depth, are refused (no published method for them).
+- Deflection: the opening term is summed over the regions.
+- Picture: every opening in the plan; one enlarged view per region; the chord force labels move beside the line of resistance when no clear
+  stretch of chord between the openings' framing is long enough.
+- **Validation:** no published diaphragm example is on file. Cross-checked against the T555 shear wall routine (`shearwall.ftao_multi`,
+  itself tested against APA's published two-window wall) with the inputs mapped (wall length = W, height = Lr, opening height = a, sheathing
+  below = e2): strip shears, corner zones and corner forces agree; Σ v d = V; every shear line nets zero (`tests/test_diaphragm.py`).

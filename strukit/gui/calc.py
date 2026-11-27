@@ -1209,7 +1209,12 @@ FORMS = {
                   help="the length of full-depth diaphragm the members along the opening sides run into, toward the support (SDPWS 4.2.1)"),
                 F("op_e2", "Opening: framing extended past the opening, e2", unit="ft", required=False, help="the same, on the far side")],
         tables=[T("splices", "Chord splices (for deflection)", [F("x", "Distance to the nearest support", unit="ft"), F("slip", "Slip at the design load", unit="in")],
-                  help="Optional.")]),
+                  help="Optional."),
+                T("more_openings", "More openings", [F("a", "Length along the span, a", unit="ft"), F("b", "Width across, b", unit="ft"),
+                                                     F("x0", "Support to the near edge", unit="ft"), F("y0", "Chord to the opening, d1", unit="ft"),
+                                                     F("e1", "Framing extended before, e1", unit="ft"), F("e2", "Framing extended past, e2", unit="ft")],
+                  help="Optional. Openings side by side across the depth (same a, x0, e1 and e2) are solved together (APA T555 method); "
+                       "openings at other places along the span are separate regions and may not overlap.")]),
     "nailed_connection": dict(
         title="Nailed Connection (lateral)", code="NDS 2018", mark="NC",
         fields=[F("nail", "Nail", "select", options=["6d common", "7d common", "8d common", "10d common", "12d common", "16d common", "20d common", "30d common",
@@ -2761,6 +2766,9 @@ def _build(kind, values, project):
         opn = None
         if str(values.get("op_a") or "").strip():
             opn = dict(a=r.num("op_a"), b=r.num("op_b"), x0=r.num("op_x0"), y0=r.num("op_y0"), e1=r.num("op_e1"), e2=r.num("op_e2"))
+        more = [dict(a=x["a"], b=x["b"], x0=x["x0"], y0=x["y0"], e1=x["e1"], e2=x["e2"]) for x in r.rows("more_openings")]
+        if more:
+            opn = ([opn] if opn else []) + more
         r.done()
         return ws_more.diaphragm_sheet(mark, panel, int(face), 1 if case == "Case 1" else 2, pt, G, gs, L_, W_, w, ws, load, m,
                                        r.num("chord_E", False), r.num("chord_A", False), [(x["x"], x["slip"]) for x in sp],

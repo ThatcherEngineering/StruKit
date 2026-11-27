@@ -1561,31 +1561,38 @@ def diaphragm_sheet(mark, panel, face_in, case, panel_type, G, G_source, L, W, w
     if is_cant and r.get("length_max"):
         rows.append(Row("Cantilever length L'", "", L, r["length_max"], "ft", "SDPWS-2021 Sect. 4.2.6.1 item 4", "35 ft maximum"))
     op = None
+    regions = []
     if opening:
+        ol = opening if isinstance(opening, (list, tuple)) else [opening]
         try:
-            op = dp.opening(L, W, w, is_cant, opening["x0"], opening["a"], opening["y0"], opening["b"], opening["e1"], opening["e2"])
+            regions = dp.openings(L, W, w, is_cant, [dict(x0=o["x0"], a=o["a"], y0=o["y0"], b=o["b"], e1=o["e1"], e2=o["e2"]) for o in ol])
         except dp.DiaphragmError as e:
             raise WorksheetError(f"{mark}: {e}")
         except (KeyError, TypeError):
-            raise WorksheetError(f"{mark}: the opening needs its position, length, width and the framing extensions each side")
-        s1, s2 = op["strips"]
+            raise WorksheetError(f"{mark}: each opening needs its position, length, width and the framing extensions each side")
+        op = regions[0] if regions else None
         T555 = "force transfer around openings, APA T555 method"
-        steps += [Ln("opening", f"{op['a']:g} ft along the span x {op['b']:g} ft across", "", "", f"{op['x0']:g} ft from the {'line of resistance' if is_cant else 'support'}, "
-                      f"{op['y0']:g} ft from the chord"),
-                  Ln("region around the opening, Lr = e1 + a + e2", f"{op['Lr']:g} ft", "", "Sect. 4.2.1", f"framing at the opening extended e1 = {op['e1']:g} ft and e2 = {op['e2']:g} ft "
-                      f"into full-depth diaphragm (from {op['xs']:g} to {op['xe']:g} ft)"),
-                  Ln("shear at the region, V", op["V"], "lb", "statics", "the larger of the shears at the two ends of the region"),
-                  Ln("chord force change across the region, H = V Lr / W", op["H"], "lb", T555, ""),
-                  Ln("unit shear in the full depth each side of the opening, va = H / (e1 + e2)", op["va"], "plf", T555, ""),
-                  Ln("boundary force at each end of the opening, O = va b", op["O"], "lb", T555, ""),
-                  Ln("corner forces, O d / (d1 + d2)", f"{s1['F']:,.0f} lb and {s2['F']:,.0f} lb", "", T555, f"strips beside the opening d1 = {op['d1']:g} ft, d2 = {op['d2']:g} ft"),
-                  Ln("unit shear in the strips beside the opening, V / (d1 + d2)", s1["v"], "plf", T555, ""),
-                  Ln("corner zones, (v d - F) / d", f"{s1['vc']:.0f} plf and {s2['vc']:.0f} plf", "", T555, f"corner force per foot F / d: {s1['vF']:.0f} and {s2['vF']:.0f} plf"),
-                  Ln("members across the depth at the opening ends", op["F_end"], "lb", T555, "tension and compression; continuous from chord to chord"),
-                  Ln("members along the opening sides, |va - vc| x larger of e1, e2", op["N_side"], "lb", T555, f"tension and compression; continuous over the region, {op['Lr']:g} ft"),
-                  Ln("shear lines of the region: chord lines equal H, opening sides net zero", "; ".join(f"{(0.0 if abs(c) < 0.5 else c):,.0f}" for c in op["checks"]) + " lb", "", T555, "")]
-        rows.append(Row("Unit shear around the opening", load, op["v_max"], r["capacity"], "plf", "SDPWS-2021 Sect. 4.2.4, " + tab,
-                        "largest of the full-depth, strip and corner-zone shears and the corner force per foot"))
+        for k_, og in enumerate(regions, 1):
+            pre = f"region {k_}: " if len(regions) > 1 else ""
+            sts = og["strips"]
+            ops_ = og.get("openings") or [dict(y0=og["y0"], b=og["b"])]
+            desc = "; ".join(f"{o['b']:g} ft across, {o['y0']:g} ft from the chord" for o in ops_)
+            steps += [Ln(pre + ("openings" if len(ops_) > 1 else "opening"), f"{og['a']:g} ft along the span", "", "", f"{og['x0']:g} ft from the {'line of resistance' if is_cant else 'support'}; {desc}"),
+                      Ln(pre + "region around the opening, Lr = e1 + a + e2", f"{og['Lr']:g} ft", "", "Sect. 4.2.1", f"framing at the opening extended e1 = {og['e1']:g} ft and e2 = {og['e2']:g} ft "
+                         f"into full-depth diaphragm (from {og['xs']:g} to {og['xe']:g} ft)"),
+                      Ln(pre + "shear at the region, V", og["V"], "lb", "statics", "the larger of the shears at the two ends of the region"),
+                      Ln(pre + "chord force change across the region, H = V Lr / W", og["H"], "lb", T555, ""),
+                      Ln(pre + "unit shear in the full depth each side of the opening, va = H / (e1 + e2)", og["va"], "plf", T555, ""),
+                      Ln(pre + "boundary force at the opening ends, O = va b", og["O"], "lb", T555, "all the openings of the region" if len(ops_) > 1 else ""),
+                      Ln(pre + "strips beside the openings: d, v = (V / W)(d + T) / d", "; ".join(f"{s_['d']:g} ft: {s_['v']:.0f} plf" for s_ in sts), "", T555,
+                         "T the tributary width of the openings beside the strip"),
+                      Ln(pre + "corner zones, (v d - F) / d; corner force per foot F / d", "; ".join(f"{s_['vc']:.0f} / {s_['vF']:.0f} plf" for s_ in sts), "", T555,
+                         "corner forces " + ", ".join(f"{s_['F']:,.0f}" for s_ in sts) + " lb"),
+                      Ln(pre + "members across the depth at the opening ends", og["F_end"], "lb", T555, "tension and compression; continuous from chord to chord"),
+                      Ln(pre + "members along the opening sides, |va - vc| x larger of e1, e2", og["N_side"], "lb", T555, f"tension and compression; continuous over the region, {og['Lr']:g} ft"),
+                      Ln(pre + "shear lines of the region: chord lines equal H, opening sides net zero", "; ".join(f"{(0.0 if abs(c) < 0.5 else c):,.0f}" for c in og["checks"]) + " lb", "", T555, "")]
+            rows.append(Row("Unit shear around the opening" + (f"s, region {k_}" if len(regions) > 1 else ("s" if len(ops_) > 1 else "")), load, og["v_max"], r["capacity"], "plf",
+                            "SDPWS-2021 Sect. 4.2.4, " + tab, "largest of the full-depth, strip and corner-zone shears and the corner force per foot"))
     not_checked = ["the chords, their splices and connections for the chord force", "the transfer of the reactions to the walls or frames below (collectors, Sect. 4.1.9)",
                    ("the framing members, blocking and connections at the opening for the forces listed" if op else "openings in the diaphragm"), ("story drift at the edges with torsion and accidental torsion (Sect. 4.2.6.1 item 3)" if is_cant else
                                                   "torsion and open front conditions (Sect. 4.2.5, 4.2.6)"), "the panel layout and nailing against the cases of the " + tab + " figure"]
@@ -1601,13 +1608,13 @@ def diaphragm_sheet(mark, panel, face_in, case, panel_type, G, G_source, L, W, w
                      Ln("chord splice slip: sum(x Dc) / (2 W)", f"{r['defl_splice']:.3f} in", "", "Eq. 4.2-1",
                         "; ".join(f"{d:g} in. at {x:g} ft" for x, d in splice) if splice else "no splice slip entered"),
                      Ln("mid-span deflection", f"{r['defl']:.3f} in", "", "Eq. 4.2-1", "at the load level of the design method")])]
-        if op:
+        if regions:
             k_ = 1.0 if is_cant else 0.5
-            extra = k_ * op["Lr"] * max(0.0, op["v_max"] - op["v_plain"]) / (1000.0 * r["Ga"])
+            extra = sum(k_ * og["Lr"] * max(0.0, og["v_max"] - og["v_plain"]) for og in regions) / (1000.0 * r["Ga"])
             r["defl"] += extra
             r["defl_opening"] = extra
             steps += [Ln(f"added at the opening: {k_:g} Lr (v around the opening - V / W) / (1000 Ga)", f"{extra:.3f} in", "", "Eq. " + ("4.2-2" if is_cant else "4.2-1") + " shear term",
-                         f"the largest unit shear around the opening over the region, less the shear without the opening, {op['V'] / W:.0f} plf"),
+                         "each region: the largest unit shear around its openings over its length, less the shear without them (V / W)"),
                       Ln("deflection with the opening", f"{r['defl']:.3f} in", "", "", "")]
         if defl_limit is not None:
             rows.append(Row("Deflection at the free edge" if is_cant else "Mid-span deflection", load, r["defl"], defl_limit, "in",
@@ -1633,12 +1640,16 @@ def diaphragm_sheet(mark, panel, face_in, case, panel_type, G, G_source, L, W, w
          "The load w is entered at the level of the design method."],
         not_checked, picture=None)
     if op:
-        sheet.assumptions.append("One rectangular interior opening, framed with members across the depth at its ends and along its sides, each extended into full-depth "
+        nop = sum(len(og.get("openings") or [1]) for og in regions)
+        sheet.assumptions.append(("One rectangular interior opening" if nop == 1 else f"{nop} rectangular interior openings")
+                                 + ", framed with members across the depth at the opening ends and along the opening sides, each extended into full-depth "
                                  "diaphragm the lengths stated and connected to develop the forces listed (Sect. 4.2.1, 4.2.7.1). Sheathing in each zone takes a uniform unit "
-                                 "shear; the chords carry the moment of the whole diaphragm as without the opening.")
-    sheet.blocks.append(dict(title="Plan", picture=("diaphragm", dict(L=L, W=W, w=w, v=r["v"], R=r["reaction"], T=r["chord"], cant=is_cant, opening=op))))
+                                 "shear; the chords carry the moment of the whole diaphragm as without the openings."
+                                 + (" Openings side by side across the depth share one region and the same length along the span." if any(og.get("multi") for og in regions) else ""))
+    sheet.blocks.append(dict(title="Plan", picture=("diaphragm", dict(L=L, W=W, w=w, v=r["v"], R=r["reaction"], T=r["chord"], cant=is_cant, opening=op, regions=regions))))
     sheet.diaphragm = r
     sheet.opening = op
+    sheet.regions = regions
     return sheet
 
 
