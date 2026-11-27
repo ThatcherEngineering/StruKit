@@ -1368,15 +1368,16 @@ FORMS = {
         tables=[T("loads", "Load on the connection", [CASE, F("P", "Force", unit="lb"), F("label", "Note", "text", required=False)],
                   help="Force pulling the side member off the main member, on the group of screws, by load case; the project's ASD combinations are applied.")]),
     "joist_hanger": dict(
-        title="Joist Hanger (Simpson Strong-Tie, face mount)", code="Simpson C-C-2026", mark="JH",
-        fields=[F("joist", "Joist", "select", options=simpson.joist_sizes(), help="solid sawn; DBL, TPL, QUAD = 2, 3, 4 plies"),
+        title="Joist Hanger (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="JH",
+        fields=[F("type", "Hanger type", "select", options=list(simpson.KINDS), required=False, help="face mount (pp. 114-123) or top flange (pp. 142-146), solid sawn lumber; blank = face mount"),
+                F("joist", "Joist", "select", options=simpson.joist_sizes(), help="solid sawn; DBL, TPL, QUAD = 2, 3, 4 plies"),
                 F("species", "Species group", "select", options=["DF/SP", "SPF/HF"], help="of the joist and the carrying member; DF/SP also for SCL of G 0.50 or more"),
-                F("model", "Hanger", "select", options=["lightest that works"] + simpson.models(), help="the catalog's face-mount hangers for solid sawn lumber (pp. 114-123)"),
+                F("model", "Hanger", "select", options=["lightest that works"] + simpson.models(), help="the catalog's face-mount and top-flange hangers for solid sawn lumber"),
                 F("nailing", "Nailing (HU / HUC and others with two rows)", "select", options=["Min.", "Max."], required=False, help="blank = maximum nailing"),
                 F("download", "Download, ASD", unit="lb"),
                 F("duration", "Load duration of the download", "select", options=list(simpson.DURATIONS)),
                 F("uplift", "Uplift, ASD (wind or earthquake)", unit="lb", required=False),
-                F("carrying", "Carrying member", "select", options=["3x or larger, or a beam", "2x (header nails shortened)"]),
+                F("carrying", "Carrying member", "select", options=["3x or larger, or a beam", "2x (header nails shortened)"], help="face mount; top flange: a beam wide enough for the flange"),
                 F("end_grain", "Nailed into the end grain of the carrying member", "select", options=["no", "yes"], required=False),
                 F("load_source", "Where the loads come from", "text", help="for example: reaction of joist J1")],
         tables=[]),
@@ -3040,7 +3041,8 @@ def _build(kind, values, project):
         car, src = r.text("carrying"), r.text("load_source")
         r.done()
         return ws_more.joist_hanger_sheet(mark, j, sp, mdl, dl, du, r.num("uplift", False) or 0.0, (car or "").startswith("2x"),
-                                          (r.text("end_grain", False) or "").startswith("y"), r.text("nailing", False), src), "simple", {}
+                                          (r.text("end_grain", False) or "").startswith("y"), r.text("nailing", False), src,
+                                          kind=simpson.KINDS.get(r.text("type", False) or "face mount", "facemount")), "simple", {}
     if kind in ("bolted_connection", "lag_connection"):
         cb = combos(project, r.miss, "ASD")
         Dt = r.text("D")

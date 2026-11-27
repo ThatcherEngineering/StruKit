@@ -14,8 +14,10 @@ import json
 import os
 import re
 
-_DATA = None
+_DATA = {}
 SOURCE = "Simpson Strong-Tie catalog C-C-2026"
+KINDS = {"face mount": "facemount", "top flange": "topflange"}
+PAGES = {"facemount": "pp. 114-123", "topflange": "pp. 142-146"}
 DURATIONS = {"floor (100)": "floor", "snow (115)": "snow", "roof (125)": "roof"}
 
 
@@ -23,25 +25,29 @@ class SimpsonError(ValueError):
     pass
 
 
+def rows_of(kind="facemount"):
+    if kind not in _DATA:
+        with open(os.path.join(os.path.dirname(__file__), "data", f"simpson_{kind}.json")) as f:
+            _DATA[kind] = json.load(f)["rows"]
+    return _DATA[kind]
+
+
 def facemount_rows():
-    global _DATA
-    if _DATA is None:
-        with open(os.path.join(os.path.dirname(__file__), "data", "simpson_facemount.json")) as f:
-            _DATA = json.load(f)["rows"]
-    return _DATA
+    return rows_of("facemount")
 
 
 def joist_sizes():
     order = lambda g: (len(g.split()) > 1, ["", "DBL", "TPL", "QUAD"].index(g.split()[0]) if len(g.split()) > 1 else 0,
                        [int(x) for x in re.findall(r"\d+", g)])
-    return sorted({r["joist"] for r in facemount_rows()}, key=order)
+    return sorted({r["joist"] for k in KINDS.values() for r in rows_of(k)}, key=order)
 
 
 def models():
     out = []
-    for r in facemount_rows():
-        if r["model"] not in out:
-            out.append(r["model"])
+    for k in KINDS.values():
+        for r in rows_of(k):
+            if r["model"] not in out:
+                out.append(r["model"])
     return out
 
 
@@ -60,18 +66,24 @@ def header_factor(row, two_by):
     return 1.0, "2x carrying member: the table header nails fit"
 
 
-def facemount(joist, species, model, download, duration, uplift=0.0, two_by=False, end_grain=False, nailing=None):
-    """Check (or choose, model = "lightest that works") a face-mount hanger. Returns dict(row, allow_down, allow_up, factor, notes,
-    rows [(check, demand, capacity)])."""
+def facemount(joist, species, model, download, duration, uplift=0.0, two_by=False, end_grain=False, nailing=None, kind="facemount"):
+    """Check (or choose, model = "lightest that works") a face-mount or top-flange hanger. Returns dict(row, allow_down, allow_up, factor,
+    notes, rows [(check, demand, capacity)]). Top-flange hangers (catalog pp. 142-146): the carrying member must be solid sawn or SCL wide
+    enough for the top flange and its nails; installations on a 2x nailer or welded to steel (p. 136) are not covered, nor end grain;
+    a "—" uplift in the table is no uplift capacity; loads may not be increased for load duration (p. 136, note 4: the table's floor,
+    snow and roof columns are used as printed)."""
+    if kind == "topflange" and (two_by or end_grain):
+        raise SimpsonError("joist hanger: top-flange hangers on a 2x nailer or into end grain are not covered (catalog p. 136, nailer table)")
     if species not in ("DF/SP", "SPF/HF"):
         raise SimpsonError("joist hanger: the species group is DF/SP or SPF/HF")
     if duration not in DURATIONS:
         raise SimpsonError("joist hanger: choose the load duration of the download")
     if download is None or download < 0 or (uplift or 0) < 0:
         raise SimpsonError("joist hanger: the download and uplift must be zero or more")
-    cands = [r for r in facemount_rows() if r["joist"] == joist and r["species"] == species]
+    cands = [r for r in rows_of(kind) if r["joist"] == joist and r["species"] == species]
+    what = "face-mount" if kind == "facemount" else "top-flange"
     if not cands:
-        raise SimpsonError(f"joist hanger: no face-mount hanger for a {joist} joist in the {species} tables")
+        raise SimpsonError(f"joist hanger: no {what} hanger for a {joist} joist in the {species} tables")
     col = DURATIONS[duration]
 
     def capacity(r):
@@ -90,17 +102,18 @@ def facemount(joist, species, model, download, duration, uplift=0.0, two_by=Fals
             if d_ >= download - 1e-9 and u_ >= (uplift or 0.0) - 1e-9:
                 ok.append(r)
         if not ok:
-            raise SimpsonError(f"joist hanger: no {species} face-mount hanger for a {joist} joist carries {download:,.0f} lb down and {uplift or 0:,.0f} lb up")
+            raise SimpsonError(f"joist hanger: no {species} {what} hanger for a {joist} joist carries {download:,.0f} lb down and {uplift or 0:,.0f} lb up")
         row = ok[0]
     else:
         want = model.strip().upper()
-        mine = [r for r in cands if r["model"].upper() == want or want in [x.strip().upper() for x in r["model"].split("/")]]
+        base = lambda m_: m_.upper().replace("(MAX.)", "").strip()
+        mine = [r for r in cands if base(r["model"]) == want or r["model"].upper() == want or want in [x.strip().upper() for x in base(r["model"]).split("/")]]
         if not mine:
-            raise SimpsonError(f"joist hanger: {model} is not listed for a {joist} joist in the {species} tables (catalog pp. 114-123)")
+            raise SimpsonError(f"joist hanger: {model} is not listed for a {joist} joist in the {species} {what} tables (catalog {PAGES[kind]})")
         if nailing:
             mine = [r for r in mine if r["nailing"].lower().startswith(nailing.lower()[:3])] or mine
         row = mine[-1] if not nailing else mine[0]            # without a choice, the maximum nailing where there are two
     d_, u_, f, e, txt = capacity(row)
     notes = [n for n in (txt, "nailed into the end grain of the carrying member, x 0.67 (catalog p. 110)" if end_grain else "") if n]
     rows = [("download", download, d_), ("uplift", uplift or 0.0, u_)] if uplift else [("download", download, d_)]
-    return dict(row=row, allow_down=d_, allow_up=u_, factor=f * e, notes=notes, rows=rows, picked=pick, col=col)
+    return dict(row=row, allow_down=d_, allow_up=u_, factor=f * e, notes=notes, rows=rows, picked=pick, col=col, kind=kind)
