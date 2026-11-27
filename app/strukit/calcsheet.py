@@ -1802,6 +1802,8 @@ def _block_picture(c, top, pic):
         return _sill_anchor_picture(c, top, d)
     if name == "joist_hanger":
         return _joist_hanger_picture(c, top, d)
+    if name == "hurricane_tie":
+        return _hurricane_tie_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -4525,6 +4527,56 @@ def _snow_drift_picture(c, top, d):
         memberart._dim_v(c, ybase, ybase + d["step"] * sy, wx - 24 - (10 if d.get("gap") else 0), f"{d['step']:g} ft", FR, ext_from=wx - 18 - (14 if d.get("gap") else 0))
     _small(c, (LM + RM) / 2, ybase - 32, "sections through the roof step; not to scale")
     return ybase - 38
+
+
+def _hurricane_tie_picture(c, top, d):
+    """Hurricane tie, to scale: a section across the wall at a rafter: the double top plate cut in end grain on the stud below (broken
+    off), the rafter or truss chord in elevation bearing on the plate, cut short with break lines, and the tie on its face, nailed to the
+    rafter, the plates and (where the model calls for it) the stud; the uplift and lateral loads as arrows (F1 along the plate, into the page)."""
+    import math as _m
+    sc = 11.0
+    cx, yp = LM + 170, top - 120                             # plate top at the wall centre
+    pw, pt = 3.5, 1.5
+    memberart.wood_section(c, cx, yp - pt * sc / 2, pw * sc, pt * sc, pw, pt)                     # upper top plate
+    memberart.wood_section(c, cx, yp - 1.5 * pt * sc, pw * sc, pt * sc, pw, pt)                   # lower top plate
+    c.saveState(); c.translate(cx - pw * sc / 2, yp - 2 * pt * sc - 6.0 * sc); c.rotate(90)
+    memberart.wood_elevation(c, 0, -pw * sc, 6.0 * sc, pw * sc); c.restoreState()                # stud below, grain vertical
+    memberart._break_h(c, cx - pw * sc / 2, cx + pw * sc / 2, yp - 2 * pt * sc - 6.0 * sc)
+    ang = _m.atan2(5, 12)                                     # rafter at 5:12, bearing on the plate (depiction)
+    rd, rlen = 5.5, 16.0
+    c.saveState(); c.translate(cx - 6.5 * sc * _m.cos(ang), yp - 6.5 * sc * _m.sin(ang)); c.rotate(_m.degrees(ang))
+    memberart.wood_elevation(c, 0, 0, rlen * sc, rd * sc)
+    c.restoreState()
+    # the rafter's seat (bird's mouth) on the plate: the plates drawn again in front of the rafter
+    memberart.wood_section(c, cx, yp - pt * sc / 2, pw * sc, pt * sc, pw, pt)
+    memberart.wood_section(c, cx, yp - 1.5 * pt * sc, pw * sc, pt * sc, pw, pt)
+    # the tie: a steel strip on the near face, over the rafter and down the plates (and the stud)
+    c.setFillColorRGB(0.72, 0.76, 0.81); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+    w_ = 1.6 * sc
+    yb_ = yp - 2 * pt * sc - (4.0 * sc if d.get("studs") else 0.0)
+    c.rect(cx + 0.3 * sc, yb_, w_, yp - yb_ + 3.2 * sc, fill=1, stroke=1)
+    c.setFillColorRGB(1, 1, 1); c.setLineWidth(0.4)
+    ys = [yp + 1.6 * sc, yp + 2.6 * sc] if d.get("rafter") else []
+    ys += [yp - 0.75 * sc, yp - 2.25 * sc] if d.get("plates") else []
+    ys += [yp - 2 * pt * sc - 1.5 * sc, yp - 2 * pt * sc - 3.0 * sc] if d.get("studs") else []
+    for y_ in ys:
+        c.circle(cx + 0.3 * sc + w_ / 2, y_, 1.1, fill=1, stroke=1)
+    _knockout(c, cx + 0.3 * sc + w_ + 4, yp + 3.0 * sc, d["model"], 6.5, left=True, color=INK)
+    # loads
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9); c.setFont(FR, 6.5)
+    if d.get("uplift"):
+        _arrow(c, cx - 1.0 * sc, yp + 4.5 * sc, cx - 1.0 * sc, yp + 8.5 * sc, head=3)
+        c.drawRightString(cx - 1.0 * sc - 3, yp + 7.0 * sc, f"uplift {d['uplift']:,.0f} lb")
+    if d.get("F2"):                                         # across the plate, on the inside face below the rafter
+        xr_ = cx + 0.3 * sc + w_
+        _arrow(c, xr_ + 6.0 * sc, yp - 2.4 * sc, xr_ + 1.0, yp - 2.4 * sc, head=3)
+        c.drawString(xr_ + 6.3 * sc, yp - 2.4 * sc - 2, f"F2 {d['F2']:,.0f} lb, across the plate")
+    if d.get("F1"):
+        xo, yo = cx + pw * sc / 2 + 7.5 * sc, yp - 5.0 * sc
+        c.circle(xo, yo, 3.2, fill=0, stroke=1); c.line(xo - 2.2, yo - 2.2, xo + 2.2, yo + 2.2); c.line(xo - 2.2, yo + 2.2, xo + 2.2, yo - 2.2)
+        c.drawString(xo + 6, yo - 2, f"F1 {d['F1']:,.0f} lb, along the plate")
+    _small(c, cx + 40, yp - 2 * pt * sc - 6.0 * sc - 14, "section across the wall at a rafter, to scale (rafter slope shown 5:12); loads at the ASD level")
+    return yp - 2 * pt * sc - 6.0 * sc - 22
 
 
 def _lumber_dims(label):

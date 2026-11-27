@@ -117,3 +117,83 @@ def facemount(joist, species, model, download, duration, uplift=0.0, two_by=Fals
     notes = [n for n in (txt, "nailed into the end grain of the carrying member, x 0.67 (catalog p. 110)" if end_grain else "") if n]
     rows = [("download", download, d_), ("uplift", uplift or 0.0, u_)] if uplift else [("download", download, d_)]
     return dict(row=row, allow_down=d_, allow_up=u_, factor=f * e, notes=notes, rows=rows, picked=pick, col=col, kind=kind)
+
+
+# Seismic and hurricane ties, wood to wood (H/TSP), catalog C-C-2026 p. 300, copied row by row from the table (tests check every row's
+# loads against the page). Columns: model, gauge, nails to rafter / truss, to plates, to studs; DF/SP uplift, F1, F2; SPF/HF uplift,
+# F1, F2. Allowable loads (lb) for wind or earthquake (160), no further increase (p. 274 note 1; general notes pp. 288-289).
+# None = no value in the table (that direction is not rated). The column "uplift with 0.131 x 1-1/2 in. nails" is not used.
+TIES = [
+    ("H1A", 18, "(4) 0.131 x 1 1/2", "(4) 0.131 x 1 1/2", None, (545, 420, 265), (470, 360, 205)),
+    ("H1.81Z", 18, "(6) 0.131 x 1 1/2", "(4) 0.131 x 2 1/2", None, (540, 440, 170), (465, 380, 130)),
+    ("H2A", 18, "(5) 0.131 x 1 1/2", "(2) 0.131 x 1 1/2", "(5) 0.131 x 1 1/2", (525, 130, 55), (495, 130, 55)),
+    ("H2ASS", 18, "(5) 0.131 x 1 1/2", "(2) 0.131 x 1 1/2", "(5) 0.131 x 1 1/2", (400, 130, 55), (345, 130, 55)),
+    ("H2.5A", 18, "(5) 0.131 x 2 1/2", "(5) 0.131 x 2 1/2", None, (700, 110, 110), (615, 110, 110)),
+    ("H2.5ASS", 18, "(5) 0.131 x 2 1/2", "(5) 0.131 x 2 1/2", None, (440, 75, 70), (380, 75, 70)),
+    ("H2.5T", 18, "(5) 0.131 x 2 1/2", "(5) 0.131 x 2 1/2", None, (590, 135, 145), (565, 135, 145)),
+    ("H3", 18, "(4) 0.131 x 2 1/2", "(4) 0.131 x 2 1/2", None, (400, 210, 170), (365, 180, 145)),
+    ("H3SS", 18, "(4) 0.131 x 2 1/2", "(4) 0.131 x 2 1/2", None, (280, 145, 120), (225, 100, 85)),
+    ("H6 (to plates)", 16, None, "(8) 0.131 x 2 1/2", "(8) 0.131 x 2 1/2", (930, None, None), (800, None, None)),
+    ("H6 (to rim)", 16, "(8) 0.131 x 2 1/2", None, "(8) 0.131 x 2 1/2", (1230, None, None), (1065, None, None)),
+    ("H7Z", 16, "(4) 0.131 x 2 1/2", "(2) 0.131 x 1 1/2", "(8) 0.131 x 2 1/2", (830, 410, None), (715, 355, None)),
+    ("H8", 18, "(5) 0.148 x 1 1/2", "(5) 0.148 x 1 1/2", None, (780, 95, 90), (710, 95, 90)),
+    ("H8SS", 18, "(5) 0.148 x 1 1/2", "(5) 0.148 x 1 1/2", None, (610, 90, 120), (370, 90, 55)),
+    ("H10A (field bent)", 18, "(9) 0.148 x 1 1/2", "(9) 0.148 x 1 1/2", None, (780, 565, 285), (760, 485, 285)),
+    ("H10A", 18, "(9) 0.148 x 1 1/2", "(9) 0.148 x 1 1/2", None, (1040, 565, 285), (1015, 485, 285)),
+    ("H10ASS", 18, "(9) 0.148 x 1 1/2", "(9) 0.148 x 1 1/2", None, (970, 565, 170), (835, 485, 170)),
+    ("H10AR", 18, "(9) 0.148 x 1 1/2", "(9) 0.148 x 1 1/2", None, (1050, 490, 285), (905, 420, 285)),
+    ("H10S", 18, "(8) 0.131 x 1 1/2", "(8) 0.131 x 1 1/2", "(8) 0.131 x 2 1/2", (910, 660, 215), (785, 570, 185)),
+    ("H10A-2", 18, "(9) 0.148 x 1 1/2", "(9) 0.148 x 1 1/2", None, (1080, 680, 260), (930, 585, 225)),
+    ("H11Z", 18, "(6) 0.162 x 2 1/2", "(6) 0.162 x 2 1/2", None, (830, 525, 760), (715, 450, 655)),
+    ("H14 (13 nails to plates)", 18, "(12) 0.131 x 1 1/2", "(13) 0.131 x 2 1/2", None, (1275, 725, 285), (1050, 480, 245)),
+    ("H14 (15 nails to plates)", 18, "(12) 0.131 x 1 1/2", "(15) 0.131 x 2 1/2", None, (1340, 670, 230), (1050, 480, 245)),
+    ("TSP (0.148 x 1-1/2 to plates)", 16, "(9) 0.148 x 1 1/2", "(6) 0.148 x 1 1/2", None, (755, 310, 190), (650, 265, 160)),
+    ("TSP (0.148 x 3 to plates)", 16, "(9) 0.148 x 1 1/2", "(6) 0.148 x 3", None, (1015, 310, 190), (875, 265, 160)),
+]
+TIE_PAGE = 300
+
+
+def tie_models():
+    return [t[0] for t in TIES]
+
+
+def hurricane_tie(model, species, uplift, F1=0.0, F2=0.0):
+    """Seismic or hurricane tie (wood to wood), catalog p. 300. Each load against its allowable, and with loads in more than one
+    direction the unity equation of the catalog's general notes (p. 289, Option 1): U/Ua + F1/F1a + F2/F2a <= 1.0. A direction with
+    no table value cannot take load. model "first that works": the first tie in the catalog table order that passes. Returns dict."""
+    if species not in ("DF/SP", "SPF/HF"):
+        raise SimpsonError("hurricane tie: the species group is DF/SP or SPF/HF")
+    loads = (uplift or 0.0, F1 or 0.0, F2 or 0.0)
+    if min(loads) < 0 or max(loads) <= 0:
+        raise SimpsonError("hurricane tie: give the uplift and lateral loads (zero or more, not all zero)")
+
+    def check(t):
+        al = t[5] if species == "DF/SP" else t[6]
+        rows, unity = [], 0.0
+        for nm, dem, cap in zip(("uplift", "lateral F1 (parallel to the plate)", "lateral F2 (perpendicular to the plate)"), loads, al):
+            if dem > 0:
+                if cap is None:
+                    return None
+                rows.append((nm, dem, cap)); unity += dem / cap
+        if len(rows) > 1:
+            rows.append(("loads together, U/Ua + F1/F1a + F2/F2a", unity, 1.0))
+        return rows, al
+
+    if model.strip().lower() in ("first that works", "lightest that works"):
+        for t in TIES:
+            c_ = check(t)
+            if c_ and all(d <= c + 1e-9 for _, d, c in c_[0]):
+                break
+        else:
+            raise SimpsonError(f"hurricane tie: no tie on p. {TIE_PAGE} carries these loads; consider two ties or another connector")
+        picked = True
+    else:
+        t = next((x for x in TIES if x[0].lower() == model.strip().lower()), None)
+        if t is None:
+            raise SimpsonError(f"hurricane tie: {model} is not in the table on catalog p. {TIE_PAGE}")
+        c_ = check(t)
+        if c_ is None:
+            raise SimpsonError(f"hurricane tie: {t[0]} has no rated value in a direction that is loaded")
+        picked = False
+    rows, al = c_
+    return dict(tie=t, rows=rows, allow=al, picked=picked)
