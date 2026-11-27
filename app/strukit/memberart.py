@@ -193,10 +193,10 @@ CONC_FILL, CONC_LINE, CONC_DOT = (0.88, 0.88, 0.86), (0.25, 0.25, 0.25), (0.48, 
 SOIL_LINE, BAR = (0.40, 0.33, 0.22), (0.05, 0.05, 0.05)
 
 
-def _concrete(c, x, y, w, h, seed=3):
+def _concrete(c, x, y, w, h, seed=3, fill=None):
     """Concrete in section: light grey with the drafting stipple (dots and small
-    triangles for aggregate)."""
-    c.setLineWidth(0.7); c.setStrokeColorRGB(*CONC_LINE); c.setFillColorRGB(*CONC_FILL)
+    triangles for aggregate). fill: a darker grey for concrete cut by the plane where concrete beyond shows too."""
+    c.setLineWidth(0.7); c.setStrokeColorRGB(*CONC_LINE); c.setFillColorRGB(*(fill or CONC_FILL))
     c.rect(x, y, w, h, fill=1, stroke=1)
     rnd = random.Random(seed + int(w * 7 + h * 13))
     c.saveState()
@@ -585,3 +585,158 @@ def bolt_side(c, x1, y1, x2, y2, d, head_end=1):
         xn = b[0] + (ww if sgn > 0 else -ww - nh)
         box(xn, b[1], nh, nw, (0.42, 0.47, 0.54))
         box(xn + (nh if sgn > 0 else -d * 0.4), b[1], d * 0.4, d * 0.9, (0.70, 0.74, 0.79))
+
+
+SOIL_FILL, SOIL_FILL_NATIVE = (0.93, 0.89, 0.82), (0.90, 0.86, 0.78)
+
+
+def _soil(c, x, y, w, h, native=False, seed=5):
+    """Soil in section: a tan field with the earth symbol (short strokes in threes) for backfill, or with
+    sparse gravel dots added for the native soil under a footing."""
+    if w <= 0 or h <= 0:
+        return
+    c.saveState()
+    p = c.beginPath(); p.rect(x, y, w, h); c.clipPath(p, stroke=0, fill=0)
+    c.setFillColorRGB(*(SOIL_FILL_NATIVE if native else SOIL_FILL)); c.rect(x, y, w, h, fill=1, stroke=0)
+    rnd = random.Random(seed + int(w * 3 + h * 5))
+    c.setStrokeColorRGB(*SOIL_LINE); c.setLineWidth(0.3)
+    step = 9.0
+    yy = y + 3
+    row = 0
+    while yy < y + h:
+        xx = x + (4.5 if row % 2 else 0) + 2
+        while xx < x + w:
+            for k in range(3):
+                c.line(xx + 1.6 * k, yy, xx + 1.6 * k + 2.2, yy + 2.2)
+            xx += step
+        yy += 6.0; row += 1
+    if native:
+        c.setFillColorRGB(*SOIL_LINE)
+        for _ in range(int(w * h / 40)):
+            c.circle(x + rnd.uniform(0, w), y + rnd.uniform(0, h), 0.35, fill=1, stroke=0)
+    c.restoreState()
+
+
+def _masonry(c, x, y, w, h, course):
+    """Grouted masonry wall cut in section: 45-degree masonry hatch over grey, with the bed joints at each course."""
+    c.setLineWidth(0.7); c.setStrokeColorRGB(*CONC_LINE); c.setFillColorRGB(0.86, 0.84, 0.82)
+    c.rect(x, y, w, h, fill=1, stroke=1)
+    c.saveState()
+    p = c.beginPath(); p.rect(x, y, w, h); c.clipPath(p, stroke=0, fill=0)
+    c.setStrokeColorRGB(0.45, 0.42, 0.40); c.setLineWidth(0.3)
+    k = -h
+    while k < w:
+        c.line(x + k, y, x + k + h, y + h); k += 3.0
+    c.setStrokeColorRGB(*CONC_LINE); c.setLineWidth(0.5)
+    yy = y + course
+    while yy < y + h - 0.5:
+        c.line(x, yy, x + w, yy); yy += course
+    c.restoreState()
+
+
+def _break_h(c, x1, x2, y, color=(1, 1, 1)):
+    """A break line across a member cut short (x1 to x2 at y): a zigzag, the member removed above it."""
+    m = (x1 + x2) / 2
+    c.setFillColorRGB(*color); c.setStrokeColorRGB(*color)
+    c.rect(x1 - 1, y, x2 - x1 + 2, 4, fill=1, stroke=0)
+    c.setStrokeColorRGB(*CONC_LINE); c.setLineWidth(0.5)
+    pth = c.beginPath(); pth.moveTo(x1 - 2, y); pth.lineTo(m - 2, y); pth.lineTo(m - 0.5, y + 2.5); pth.lineTo(m + 0.5, y - 2.5)
+    pth.lineTo(m + 2, y); pth.lineTo(x2 + 2, y); c.drawPath(pth, fill=0, stroke=1)
+
+
+def footing_detail(c, cx, y0, box_w, box_h, W_in, h_in, sup_w_in, sup_kind, cover_in, db_low_in, n_dots, db_dot_in,
+                   plate_w_in=None, stem_h_in=0.0, soil_depth_in=0.0, shape=None, font="Helvetica", top_y=None):
+    """Section through a footing as built, to scale, bottom of footing at y0, centred on cx: native soil under it, backfill beside
+    it up to grade when soil over the footing is given, the footing concrete with its bars at their cover, and the member it carries
+    drawn as what it is (a concrete pier or stem wall, a grouted masonry wall, a sawn post with its grain, a steel column as an HSS
+    with its corner lines or a W shape with its flanges, on its base plate), cut short with a break line where it continues.
+    shape: dict(kind "hss" | "w", t or tf in in.) for a steel column. Returns (scale, dict of drawn coordinates)."""
+    sup_h = stem_h_in if stem_h_in else max(1.6 * h_in, soil_depth_in + 10.0, 14.0)
+    side = 10.0                                                     # soil drawn beside the footing, in.
+    s = min(box_w / (W_in + 2 * side), box_h / (h_in + sup_h + 6.0))
+    if y0 is None:                                                  # top_y given: the top of the drawing there
+        y0 = top_y - (sup_h + (0.75 if plate_w_in else 0.0) + h_in) * s
+    W, H, SW, SH = W_in * s, h_in * s, sup_w_in * s, sup_h * s
+    x0 = cx - W / 2
+    top = y0 + H
+    gy = top + soil_depth_in * s if soil_depth_in else top
+    _soil(c, x0 - side * s, y0 - 6 * s, W + 2 * side * s, 6 * s, native=True)
+    _soil(c, x0 - side * s, y0, side * s, gy - y0)
+    _soil(c, x0 + W, y0, side * s, gy - y0)
+    if soil_depth_in:
+        _soil(c, x0, top, W / 2 - SW / 2, gy - top, seed=9); _soil(c, cx + SW / 2, top, W / 2 - SW / 2, gy - top, seed=13)
+        _grade(c, x0 - side * s, cx - SW / 2, gy); _grade(c, cx + SW / 2, x0 + W + side * s, gy)
+    _concrete(c, x0, y0, W, H)
+    tp_ = top
+    if plate_w_in:
+        PW, PT = plate_w_in * s, max(0.75 * s, 1.6)
+        c.setFillColorRGB(*STEEL_FILL); c.setStrokeColorRGB(*STEEL_LINE); c.setLineWidth(0.5)
+        c.rect(cx - PW / 2, top, PW, PT, fill=1, stroke=1)
+        tp_ = top + PT
+    hs = tp_ + SH
+    if sup_kind == "concrete":
+        _concrete(c, cx - SW / 2, tp_, SW, SH, seed=11)
+    elif sup_kind == "masonry":
+        _masonry(c, cx - SW / 2, tp_, SW, SH, 8.0 * s)
+    elif sup_kind == "wood":
+        c.saveState(); c.translate(cx - SW / 2, tp_); c.rotate(90)
+        wood_elevation(c, 0, -SW, SH, SW); c.restoreState()
+    elif shape and shape.get("kind") == "hss":
+        hss_elevation(c, cx - SW / 2, tp_, SW, SH, shape.get("t", 0.25) * s, rnd=bool(shape.get("round")))
+    elif shape and shape.get("kind") == "w":                         # looking at the web, or at a flange when cut the other way
+        w_side(c, cx - SW / 2, tp_, SW, SH, shape.get("tf", 0.5) * s, web=(max(shape["tw"] * s, 1.0) if shape.get("flange_face") else None))
+    else:
+        c.setLineWidth(0.5); c.setStrokeColorRGB(*STEEL_LINE); c.setFillColorRGB(*STEEL_FILL)
+        c.rect(cx - SW / 2, tp_, SW, SH, fill=1, stroke=1)
+    if not stem_h_in:
+        _break_h(c, cx - SW / 2, cx + SW / 2, hs - 1.5)
+        hs -= 1.5
+    cov, dbl, dbd = cover_in * s, max(db_low_in * s, 1.0), max(db_dot_in * s, 1.6)
+    c.setStrokeColorRGB(*BAR); c.setFillColorRGB(*BAR); c.setLineWidth(dbl)
+    yb = y0 + cov + dbl / 2
+    c.line(x0 + cov, yb, x0 + W - cov, yb)
+    yd = y0 + cov + dbl + dbd / 2
+    dots = []
+    for i in range(n_dots):
+        xx = x0 + cov + dbd / 2 + (W - 2 * cov - dbd) * (i / (n_dots - 1) if n_dots > 1 else 0.5)
+        c.circle(xx, yd, dbd / 2, fill=1, stroke=0); dots.append(xx)
+    return s, dict(y0=y0, x0=x0, x1=x0 + W, top=top, gy=gy, sup_top=hs, sup_l=cx - SW / 2, sup_r=cx + SW / 2, yb=yb, yd=yd, dots=dots,
+                   soil_l=x0 - side * s, soil_r=x0 + W + side * s, ylo=y0 - 6 * s, cov=cov)
+
+
+def footing_detail_plan(c, cx, cy, box, B_in, L_in, col_x_in, col_y_in, n_x, n_y, cover_in, sup_kind="steel",
+                        plate_x_in=None, plate_y_in=None, shape=None):
+    """Plan of an isolated footing, to scale: the concrete with its bars each way (hidden, dashed), the base plate and the column cut
+    above it drawn as what it is (HSS wall with rounded corners and the hollow inside, W shape with flanges and web, sawn post end
+    grain, concrete pier stipple). Returns (scale, x0, y0, x1, y1)."""
+    s = min(box / B_in, box / L_in)
+    B, L = B_in * s, L_in * s
+    x0, y0 = cx - B / 2, cy - L / 2
+    _concrete(c, x0, y0, B, L, seed=21)
+    cov = cover_in * s
+    c.setStrokeColorRGB(*BAR); c.setLineWidth(0.5); c.setDash(3, 1.6)
+    for i in range(n_x):
+        yy = y0 + cov + (L - 2 * cov) * (i / (n_x - 1) if n_x > 1 else 0.5)
+        c.line(x0 + cov, yy, x0 + B - cov, yy)
+    for i in range(n_y):
+        xx = x0 + cov + (B - 2 * cov) * (i / (n_y - 1) if n_y > 1 else 0.5)
+        c.line(xx, y0 + cov, xx, y0 + L - cov)
+    c.setDash()
+    if plate_x_in:
+        c.setFillColorRGB(*STEEL_FILL); c.setStrokeColorRGB(*STEEL_LINE); c.setLineWidth(0.6)
+        c.rect(cx - plate_x_in * s / 2, cy - plate_y_in * s / 2, plate_x_in * s, plate_y_in * s, fill=1, stroke=1)
+    cw, ch = col_x_in * s, col_y_in * s
+    if sup_kind == "wood":
+        wood_section(c, cx, cy, cw, ch, col_x_in, col_y_in)
+    elif sup_kind == "concrete":
+        _concrete(c, cx - cw / 2, cy - ch / 2, cw, ch, seed=31, fill=(0.74, 0.74, 0.72))
+    elif shape and shape.get("kind") == "hss":
+        hss_plan(c, cx, cy, cw, ch, shape.get("t", 0.25) * s, rnd=bool(shape.get("round")))
+    elif shape and shape.get("kind") == "w":
+        c.saveState(); c.translate(cx, cy); c.rotate(90)
+        steel_section(c, 0, 0, ch, cw, shape["d"], shape["bf"], shape["tf"], shape["tw"], shape.get("k"))
+        c.restoreState()
+    else:
+        c.setFillColorRGB(*STEEL_CUT); c.setStrokeColorRGB(*STEEL_LINE); c.setLineWidth(0.5)
+        c.rect(cx - cw / 2, cy - ch / 2, cw, ch, fill=1, stroke=1); _hatch_rect(c, cx - cw / 2, cy - ch / 2, cw, ch)
+    return s, x0, y0, x0 + B, y0 + L
