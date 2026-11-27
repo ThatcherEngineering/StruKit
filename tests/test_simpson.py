@@ -101,3 +101,45 @@ def test_top_flange_choice_and_limits(tmp_path):
     s = calc.build("joist_hanger", v, dict(job="t", name="t", method="ASD"))[0]
     assert "top flange" in s.title and all(r.status == "OK" for r in s.rows)
     calcsheet.simple_pdf(s, str(tmp_path / "tf.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+
+
+def test_hurricane_tie_rows_against_the_catalog_page():
+    """Every tie row (catalog p. 300, copied by hand into simpson.TIES) must appear in the page text: its DF/SP uplift, F1, F2 and
+    SPF/HF uplift, F1, F2 in order on one line (the uplift-with-0.131 column between them)."""
+    import re
+    import subprocess
+    from pathlib import Path
+    pdf = Path("/mnt/user-data/uploads/StrucutralDesign/Simpson/C-C-2026.pdf")
+    if not pdf.exists():
+        pytest.skip("catalog not staged in this session")
+    t = subprocess.run(["pdftotext", "-layout", "-f", "300", "-l", "300", str(pdf), "-"], capture_output=True, text=True).stdout
+    f = lambda v: "—" if v is None else f"{v:,}"
+    for tie in simpson.TIES:
+        d_, s_ = tie[5], tie[6]
+        pat = r"\s+".join([re.escape(f(v)) for v in d_] + [r"\S+"] + [re.escape(f(v)) for v in s_])
+        assert re.search(pat, t), tie[0]
+
+
+def test_hurricane_tie_choice_and_unity():
+    """DF/SP, uplift 600, F1 150: H1A to H3 fail a direction; H7Z 600/830 + 150/410 = 1.09 and H10A field bent 600/780 + 150/565 = 1.03
+    fail the unity equation (p. 289, Option 1); H10A (1,040 / 565) gives 0.577 + 0.265 = 0.842."""
+    h = simpson.hurricane_tie("first that works", "DF/SP", 600, 150)
+    assert h["tie"][0] == "H10A" and h["rows"][-1][1] == pytest.approx(600 / 1040 + 150 / 565)
+    s = simpson.hurricane_tie("H2.5A", "SPF/HF", 400, 50, 50)
+    assert s["rows"][-1][1] == pytest.approx(400 / 615 + 50 / 110 + 50 / 110)
+    assert len(simpson.hurricane_tie("H2.5A", "DF/SP", 500)["rows"]) == 1          # one direction: no unity row
+    with pytest.raises(simpson.SimpsonError):
+        simpson.hurricane_tie("H6 (to plates)", "DF/SP", 500, 100)                # no F1 value in the table
+    with pytest.raises(simpson.SimpsonError):
+        simpson.hurricane_tie("first that works", "DF/SP", 5000)
+
+
+def test_hurricane_tie_screen(tmp_path):
+    from strukit import calcsheet
+    proj = dict(job="t", name="t", method="ASD")
+    v = dict(mark="HT1", model="first that works", species="DF/SP", uplift="600", F1="150", F2="80", load_source="rafter R1")
+    s = calc.build("hurricane_tie", v, proj)[0]
+    assert all(r.status == "OK" for r in s.rows)
+    with pytest.raises(calc.Missing):
+        calc.build("hurricane_tie", dict(v, uplift="", F1="", F2=""), proj)
+    calcsheet.simple_pdf(s, str(tmp_path / "ht.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")

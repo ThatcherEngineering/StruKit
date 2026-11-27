@@ -1238,3 +1238,13 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   duration increase, p. 136 note 4); a 2x nailer, welded installation or end grain is refused (the nailer table, p. 136, is not built).
   Picture: the top flange over the carrying member with its nails, dimensioned TF, and in the section the flanges on the beam behind.
 - Tests: five rows copied by hand (pp. 142, 146), the choice with uplift, the refusals (`tests/test_simpson.py`).
+
+## 2026-11-27 02:49 MST — 0.281.0 Simpson hurricane ties (Simpson products, part 3)
+- **New screen: Hurricane Tie (Simpson Strong-Tie).** The wood-to-wood seismic and hurricane ties of catalog C-C-2026 p. 300 (H1A to
+  H14, H6 to plates or rim, TSP; 25 rows copied into `simpson.TIES`), DF/SP or SPF/HF, uplift, F1 (along the plate) and F2 (across
+  the plate) at the ASD level; the tie by model or "first that works" (the first in the catalog table that passes). Each loaded
+  direction against its allowable (no value in the table: that direction cannot be loaded), and with more than one direction the
+  catalog's unity equation (p. 289, Option 1). Picture: a section across the wall at a rafter (double top plate in end grain on the
+  stud, the rafter seated on the plate, the tie on its face with its nails) with the loads.
+- **Validation:** every row's six loads found in order on p. 300 by a test that reads the page; the choice and the unity equation by hand
+  (`tests/test_simpson.py`). Reading applied (Option 1): in the rulings file.

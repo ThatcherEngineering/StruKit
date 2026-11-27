@@ -6685,3 +6685,37 @@ def joist_hanger_sheet(mark, joist, species, model, download, duration, uplift, 
                                                                                         double="LUS" in r["model"] or "HUS" in r["model"] or "HGUS" in r["model"]))))
     sheet.hanger = h
     return sheet
+
+
+def hurricane_tie_sheet(mark, model, species, uplift, F1, F2, load_source, pitch=None):
+    """Simpson Strong-Tie seismic or hurricane tie, wood to wood (simpson.hurricane_tie): catalog C-C-2026 p. 300, ASD."""
+    from . import simpson
+    if not (load_source or "").strip():
+        raise WorksheetError(f"{mark}: where the tie loads come from is blank")
+    try:
+        h = simpson.hurricane_tie(model, species, uplift, F1, F2)
+    except simpson.SimpsonError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    t = h["tie"]
+    src = f"{simpson.SOURCE}, p. {simpson.TIE_PAGE}"
+    L = footing_line
+    fast = "; ".join(f"{k} {v}" for k, v in (("rafter or truss", t[2]), ("plates", t[3]), ("studs", t[4])) if v)
+    steps = ([L("tie chosen", t[0], "", src, "the first tie in the catalog table that carries the loads, each direction and together")] if h["picked"] else [])
+    steps += [L(f"{t[0]}, {t[1]} ga", fast, "", src, ""),
+              L(f"allowable loads, {species}", ", ".join(f"{n} {('—' if v is None else f'{v:,}')}" for n, v in zip(("uplift", "F1", "F2"), h["allow"])), "lb",
+                src, "wind or earthquake (160); no further increase")]
+    rows = [Row(f"tie {n}", "ASD", d, c, "" if n.startswith("loads together") else "lb", src + (", p. 289 (unity equation)" if n.startswith("loads together") else ""), "")
+            for n, d, c in h["rows"]]
+    info = [("Tie", f"Simpson Strong-Tie {t[0]}, {t[1]} ga, seismic and hurricane tie, wood to wood; {species}"),
+            ("Fasteners", fast),
+            ("Loads", f"uplift {uplift or 0:,.0f} lb, F1 {F1 or 0:,.0f} lb (along the plate), F2 {F2 or 0:,.0f} lb (across the plate), ASD ({load_source.strip()})")]
+    sheet = SimpleSheet(mark, "Hurricane Tie (Simpson Strong-Tie)", "Connection", "ASD", info, [], [], "Allowable Loads", steps, rows,
+                        ["Allowable stress design for wind or earthquake; the loads are at the ASD level.",
+                         "One tie at the connection, installed as the catalog shows for the model, with every specified nail.",
+                         "Loads in more than one direction are combined by the catalog's unity equation (general notes, p. 289, Option 1)."],
+                        ["the rafter or truss, the plates and the studs themselves; cross-grain bending or tension in the members (p. 300 notes 4 and 5)",
+                         "the load path below the plates", "diaphragm boundary members (the F1 value does not replace them, p. 300 note 4)"], picture=None)
+    sheet.blocks.append(dict(title="Tie", head="Tie", picture=("hurricane_tie", dict(model=t[0], uplift=uplift or 0, F1=F1 or 0, F2=F2 or 0,
+                                                                                     studs=bool(t[4]), rafter=bool(t[2]), plates=bool(t[3])))))
+    sheet.tie = h
+    return sheet

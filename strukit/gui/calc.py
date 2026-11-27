@@ -1381,6 +1381,15 @@ FORMS = {
                 F("end_grain", "Nailed into the end grain of the carrying member", "select", options=["no", "yes"], required=False),
                 F("load_source", "Where the loads come from", "text", help="for example: reaction of joist J1")],
         tables=[]),
+    "hurricane_tie": dict(
+        title="Hurricane Tie (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="HT",
+        fields=[F("model", "Tie", "select", options=["first that works"] + simpson.tie_models(), help="seismic and hurricane ties, wood to wood (catalog p. 300)"),
+                F("species", "Species group", "select", options=["DF/SP", "SPF/HF"], help="of the lowest performing member, rafter or plates (catalog p. 289)"),
+                F("uplift", "Uplift, ASD", unit="lb", required=False),
+                F("F1", "Lateral F1, along the plate, ASD", unit="lb", required=False),
+                F("F2", "Lateral F2, across the plate, ASD", unit="lb", required=False),
+                F("load_source", "Where the loads come from", "text", help="for example: rafter R1 uplift, wind C&C")],
+        tables=[]),
     "bolted_connection": dict(
         title="Bolted Connection", code="NDS 2018", mark="BC",
         fields=[F("D", "Bolt diameter", "select", options=["1/2", "5/8", "3/4", "7/8", "1"], unit="in"),
@@ -3036,6 +3045,13 @@ def _build(kind, values, project):
                                             end_grain=bool(yes(r.text("end_grain", False))), edge=r.num("edge", False), end=r.num("end", False),
                                             spacing=r.num("spacing", False), steel=st_, steel_source=r.text("steel_source", False) or "",
                                             steel_side=r.text("side_kind", False) == "steel", bearing=brg), "simple", {}
+    if kind == "hurricane_tie":
+        mdl, sp, src = r.text("model"), r.text("species"), r.text("load_source")
+        up, f1, f2 = r.num("uplift", False) or 0.0, r.num("F1", False) or 0.0, r.num("F2", False) or 0.0
+        if not (up or f1 or f2):
+            r.miss.append("Give the uplift or a lateral load")
+        r.done()
+        return ws_more.hurricane_tie_sheet(mark, mdl, sp, up, f1, f2, src), "simple", {}
     if kind == "joist_hanger":
         j, sp, mdl, dl, du = r.text("joist"), r.text("species"), r.text("model"), r.num("download"), r.text("duration")
         car, src = r.text("carrying"), r.text("load_source")

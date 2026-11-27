@@ -72,6 +72,10 @@ Dated entries. Each is Zach's own decision; open questions live in the proposal 
 Every number cites its source; nothing assumed silently; each module validated against an independent reference before use; flags hard or accepted with reason and date; jurisdiction data in a table; same run contract as HydroKit; calc-package-quality reports; private GitHub repo from day one; StruKit chat writes no LISP and never writes to drawings; ambiguous provisions shown both ways for Zach to rule (shown to Zach in chat, not on the sheet; see 2026-11-23). Every picture is drawn to a high visual detail standard: members and connections look like the real thing (see 2026-11-26 02:26).
 
 ## Open (not ruled)
+- **Hurricane ties loaded in more than one direction (0.281.0, tell Zach):** the catalog (p. 289) allows Option 1, the unity
+  equation U/Ua + F1/F1a + F2/F2a <= 1.0, "for all connectors", or Option 2, each load not over 0.75 of its allowable, for some ties.
+  StruKit uses Option 1 (it applies to every tie); neither is the more conservative in every case. The "uplift with 0.131 x 1-1/2
+  nails" column and the stud-to-bottom-plate values (note 3) are not used; one tie per connection. Zach has not ruled.
 - **Anchor bolts in the concrete and perforated wall plate uplift (0.277.0, tell Zach):**
   - ASD wall shear is brought to strength level by / 0.6 (wind, 0.6 W) or / 0.7 (seismic, 0.7 E); seismic SDC C to F also x Omega-0
     (ACI 318-19 17.10.6.3(c)), typed in with its source.
