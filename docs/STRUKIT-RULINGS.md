@@ -72,6 +72,11 @@ Dated entries. Each is Zach's own decision; open questions live in the proposal 
 Every number cites its source; nothing assumed silently; each module validated against an independent reference before use; flags hard or accepted with reason and date; jurisdiction data in a table; same run contract as HydroKit; calc-package-quality reports; private GitHub repo from day one; StruKit chat writes no LISP and never writes to drawings; ambiguous provisions shown both ways for Zach to rule (shown to Zach in chat, not on the sheet; see 2026-11-23). Every picture is drawn to a high visual detail standard: members and connections look like the real thing (see 2026-11-26 02:26).
 
 ## Open (not ruled)
+- **Anchor bolts in the wall bottom plate (0.276.0, tell Zach):** each bolt alone (no group action, Cg = 1.0), dry service, end
+  distance and spacing taken as meeting NDS 12.5.1 (stated on the sheet); the bolt by the NDS 12.3 yield equations on the Table 12E
+  basis (concrete Fe 7,500 psi, 6 in. embedment); the plate shear is the largest segment or pier shear (perforated: v max). The
+  SDPWS 400 plf washer-edge rule uses the Table 4.3A nominal shear times the G factor per side, without the 10d 0.92 factor (the
+  higher value, so the rule applies sooner). Zach has not ruled.
 - **Force-transfer walls with openings of different clear heights (0.274.0, tell Zach):** APA T555 balances only when the openings
   have one clear height (sills may differ). With different heights the shear lines beside the openings do not net zero, so StruKit
   now flags the wall ("openings of one clear height") instead of reporting it OK. The transfer diaphragm method (Malone, Breneman and

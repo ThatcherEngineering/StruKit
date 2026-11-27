@@ -32,3 +32,18 @@ def test_on_the_shear_wall_sheet():
     s = ws_more.shear_wall_sheet(**kw, holddown=dict(model="smallest HDUE or DTT that works"))
     r = [x for x in s.rows if x.check == "hold-down tension"][0]
     assert abs(r.demand - 2250) < 1e-6 and r.capacity == 3790 and s.wall.holddown["model"] == "HDUE3-SDS3"
+
+
+def test_on_the_perforated_wall_sheet():
+    """The perforated wall checks the chosen hold-down for the tension at each end of the wall (SDPWS 4.3.6.4.2.1, T = V h / (Co sum Li))."""
+    from strukit.gui import calc
+    kw = dict(mark="PW", panel="Sheathing, 7/16 in, 8d common", spacing=6, panel_type="OSB", G=0.5, G_source="x", h=8, length=20.0,
+              openings=[dict(x=6.0, w=4.0, h=4.0, sill=3.0)], V=2000, load="wind", method="ASD", v_source="x")
+    s = ws_more.perforated_wall_sheet(**kw, holddown=dict(model="smallest HDUE or DTT that works"))
+    r = [x for x in s.rows if x.check == "hold-down tension"][0]
+    assert r.demand == pytest.approx(s.wall.T) and r.capacity >= r.demand
+    assert any(k == "Hold-Down" for k, _ in s.info) and not any(t.startswith("hold-downs and their connections") for t in s.not_checked)
+    v = dict(mark="PW", panel="Sheathing, 7/16 in, 8d common", spacing="6", panel_type="OSB", sides="one side", G="0.5", G_source="x", h="8", length="20",
+             load="wind", V="2000", v_source="x", hd_model="smallest HDUE or DTT that works", openings=[dict(x="6", w="4", h="4", sill="3")])
+    sc = calc.build("perforated_wall", v, dict(job="t", name="t", method="ASD"))[0]
+    assert any(x.check == "hold-down tension" for x in sc.rows)

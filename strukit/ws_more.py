@@ -604,8 +604,9 @@ def shear_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, lengths, 
 
 
 def perforated_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, length, openings, V, load, method, v_source,
-                          holddown_inside=None, sides=1, chord_E=None, chord_A=None, anchor_slip_in=None):
-    """Perforated wood structural panel shear wall, SDPWS-2021 (see shearwall.perforated).
+                          holddown_inside=None, sides=1, chord_E=None, chord_A=None, anchor_slip_in=None, holddown=None):
+    """Perforated wood structural panel shear wall, SDPWS-2021 (see shearwall.perforated). holddown: dict as on the shear wall screen
+    (holddowns.check), checked for the tension at each end of the wall.
     openings: dicts x, w, h (clear height), sill (for the drawing; 0 for a door), ft."""
     for nm, v in (("the source of the framing specific gravity", G_source), ("the source of the design shear", v_source)):
         if not (v or "").strip():
@@ -630,6 +631,11 @@ def perforated_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, leng
             ("Design Shear", f"{V:,.0f} lb, {load}, {method} ({v_source.strip()})")]
     if w.defl is not None:
         info.append(("Deflection", f"end posts A = {chord_A:g} in2, E = {chord_E:,.0f} psi; anchorage slip {anchor_slip_in:g} in"))
+    hd = None
+    if holddown:
+        hd, row = _holddown_row(mark, holddown, w.T, G, load, method)
+        rows.append(row)
+        info.append(("Hold-Down", f"Simpson Strong-Tie {hd['model']} at each end of the wall; deflection at the allowable load {hd['deflection']:g} in"))
     text = [f"Hold-down at each end of the wall: tension and compression {w.T:,.0f} lb",
             f"Bottom plate at full-height sheathing: shear anchorage and uplift {w.v_max:,.0f} plf"]
     if w.defl is not None:
@@ -639,7 +645,8 @@ def perforated_wall_sheet(mark, panel, spacing, panel_type, G, G_source, h, leng
         ["Designed as a perforated shear wall: framing and connections around the openings are not designed for force transfer "
          "(SDPWS 4.3.2.3).",
          "Chord forces are from overturning of the wall alone; dead load is not counted against uplift."],
-        ["hold-downs and their connections; dead load resisting uplift", "anchor bolts and plate washers for the shear and uplift "
+        [("hold-down anchor rod and its anchorage in the concrete; the post at the hold-down; dead load resisting uplift" if hd else
+          "hold-downs and their connections; dead load resisting uplift"), "anchor bolts and plate washers for the shear and uplift "
          "anchorage (SDPWS 4.3.6.4)", "compression at each end of each segment; end posts and bearing on the plate",
          "collector over the full length of the wall and its connection to the diaphragm (SDPWS 4.3.2.3)",
          "construction requirements of SDPWS 4.3.6 and 4.3.7.1"] + ([] if w.defl is not None else ["deflection (SDPWS 4.3.4.2)"]))
@@ -6509,4 +6516,55 @@ def wt_flange_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
                                                                                                g=g, leh=leh, le_b=le_b, bf=bbf, db=d, wt=shapes.normalize(wt), column=shapes.normalize(column)))))
     sheet.wt = dict(R1=R1, R2=R2, Rflb=Rflb, Rwly=Rwly, Rsly=Rsly, Rcr=Rcr(wq["Qf"]), Qf=wq["Qf"], U=wq["U"], Rfw=Rfw, Rb=Rb, per=per, Ag_s=Ag_s, An_s=An_s,
                     bs_cases=bs_cases, Rbs_f=Rbs_f, Mn_b=Mn_b)
+    return sheet
+
+
+def wall_plate_shear(sheet):
+    """Unit shear in the bottom plate of a shear wall sheet (plf): the largest segment or pier shear, or v max of a perforated wall."""
+    w = sheet.wall
+    if isinstance(w, dict):
+        if w.get("piers") and isinstance(w["piers"][0], dict):   # several openings (T555)
+            return max(p["v"] for p in w["piers"])
+        return w["vh"]
+    if getattr(w, "Co", None) is not None:                # perforated wall
+        return w.v_max
+    return max(s.v for s in w.segments)
+
+
+def add_anchor_bolts(mark, sheet, ab, panel, spacing, G, load, method, other=None):
+    """Adds the foundation anchor bolt and plate washer checks (shearwall.anchor_bolts) to a shear wall sheet. ab: dict D, s (in., or
+    None), sill_t, sill_w, sill_G (None: the wall G), sill_G_source, washer_w, washer_l, washer_t, offset (None: centred)."""
+    v = wall_plate_shear(sheet)
+    vn = []
+    for pnl, spc in ((panel, spacing),) + (((other["panel"], other["spacing"]),) if other else ()):
+        try:
+            vn_t = shearwall.TABLE_4_3A[shearwall.panel_key(pnl)][shearwall.SPACINGS.index(int(spc))][0]
+        except (shearwall.ShearWallError, ValueError):
+            continue
+        vn.append(vn_t * min(1.0, 1.0 - (0.5 - G)))
+    Gs = ab.get("sill_G") or G
+    try:
+        a = shearwall.anchor_bolts(v, ab["D"], ab["sill_t"], Gs, load, method, ab.get("s"), ab["sill_w"], ab.get("washer_w") or 3.0,
+                                   ab.get("washer_l") or 3.0, ab.get("washer_t") or 0.229, ab.get("offset"), max(vn or [0.0]))
+    except shearwall.ShearWallError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    for chk, dem, cap, unit, src, note in a["rows"]:
+        sheet.rows.append(Row(chk, f"{load}, {method}" if chk.startswith("anchor") else "", dem, cap, unit, src, note))
+    sheet.blocks.append(dict(title="Anchor Bolts and Plate Washers", head="Anchor Bolts and Plate Washers", steps=a["lines"]))
+    sheet.info.append(("Anchor Bolts", f"{ab['D']:g} in. diameter" + (f" at {ab['s']:g} in." if ab.get("s") else "")
+                       + f" through a {ab['sill_t']:g} x {ab['sill_w']:g} in. bottom plate, G = {Gs:g}"
+                       + (f" ({ab['sill_G_source'].strip()})" if ab.get("sill_G") and (ab.get("sill_G_source") or "").strip() else "")
+                       + f"; plate washers {ab.get('washer_w') or 3.0:g} x {ab.get('washer_l') or 3.0:g} x {ab.get('washer_t') or 0.229:g} in."))
+    sheet.assumptions.append("Anchor bolts: dry service, temperature to 100 F; each bolt acts alone (no group action); end distance at least 7 D "
+                             "and spacing at least 4 D along the plate, edge distance at least 1.5 D (NDS Table 12.5.1A, 12.5.1C); the plate "
+                             "bears on the concrete.")
+    sheet.not_checked = [t for t in sheet.not_checked if "anchor bolts and plate washers" not in t]
+    sheet.not_checked.append("the anchor bolts in the concrete (ACI 318-19 Chapter 17)")
+    if getattr(sheet.wall, "Co", None) is not None:
+        sheet.not_checked.append("uplift anchorage of the bottom plate at full-height sheathing (SDPWS 4.3.6.4.2.1)")
+    s_draw = ab.get("s") or max(6.0, math.floor(min(a["s_max"], 72.0) / 6.0) * 6.0)
+    for b_ in sheet.blocks:                               # the bolts on the wall elevation
+        if b_.get("picture") and b_["picture"][0] in ("shear_wall", "perforated_wall"):
+            b_["picture"][1]["ab"] = dict(s=s_draw, D=ab["D"], given=bool(ab.get("s")))
+    sheet.anchor_bolts = a
     return sheet

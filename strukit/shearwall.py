@@ -510,3 +510,51 @@ def ftao_deflection(h, piers, Ga, EA, Da):
             bend, shear, anch = 8 * v * hp ** 3 / (EA * b), v * hp / (1000.0 * Ga), hp * Da / b
             cases.append(dict(pier=i, dir=dr, h=hp, b=b, v=v, bend=bend, shear=shear, anch=anch, d=bend + shear + anch))
     return dict(cases=cases, delta=sum(c["d"] for c in cases) / len(cases))
+
+
+SILL_BOLTS = (0.5, 0.625, 0.75, 0.875, 1.0)
+
+
+def anchor_bolts(v_plf, D, sill_t, G, load, method, spacing_in=None, plate_w=3.5, washer_w=3.0, washer_l=3.0, washer_t=0.229,
+                 offset_in=None, vn_side=0.0):
+    """Foundation anchor bolts through the wall bottom plate (sill) into concrete, for the in-plane shear of the wall.
+    Bolt in the sill: NDS 2018 Sect. 12.3 yield limit equations, single shear, wood side member of thickness sill_t on concrete with
+    Fe = 7,500 psi and 6 in. embedment (the basis of NDS Table 12E, notes 2 to 4), load parallel to grain (along the wall), Fyb 45,000 psi.
+    Adjusted: ASD CD = 1.6 (NDS Table 2.3.2, wind or earthquake); LRFD KF = 3.32, phi = 0.65, lambda = 1.0 (NDS Table N1, N2, N3).
+    Plate washer: SDPWS-2021 4.3.6.4.3, at least 0.229 x 3 x 3 in., and, where the nominal unit shear capacity of the sheathing on a
+    side is over 400 plf, extending to within 1/2 in. of the edge of the bottom plate on that side. offset_in: bolt centre to the
+    sheathed edge of the plate (None: centred). v_plf at the design method's level. Returns dict(Z, Zp, s_max, rows, lines)."""
+    from . import dowel
+    if D not in SILL_BOLTS:
+        raise ShearWallError("anchor bolts: diameter 1/2, 5/8, 3/4, 7/8 or 1 in. (NDS Table 12E)")
+    if not sill_t or sill_t <= 0 or not plate_w or plate_w <= 0 or G is None or not 0.2 < G < 1.0:
+        raise ShearWallError("anchor bolts: the bottom plate thickness, width and specific gravity are needed")
+    if (load, method) not in FACTORS:
+        raise ShearWallError("anchor bolts: check the load and the design method")
+    r = dowel.lateral(D, sill_t, 6.0, dowel.fe(G, D, 0.0), 7500.0, dowel.BOLT_FYB, theta=0.0)
+    Z = r["Z"]
+    if method == "ASD":
+        Zp, adj = Z * 1.6, "CD = 1.6 (NDS Table 2.3.2, wind or earthquake)"
+    else:
+        Zp, adj = Z * 3.32 * 0.65 * 1.0, "KF = 3.32, phi = 0.65, lambda = 1.0 (NDS Tables N1 to N3)"
+    s_max = Zp / v_plf * 12.0 if v_plf > 0 else float("inf")
+    lines = [Line("anchor bolt in the bottom plate, Z (parallel to grain)", Z, "lb", "NDS 2018 Sect. 12.3, Eq. 12.3-1 to 12.3-6",
+                  f"D = {D:g} in., plate {sill_t:g} in. on concrete (Fe 7,500 psi, 6 in. embedment, NDS Table 12E basis), G = {G:g}; mode {r['mode']}"),
+             Line("Z' = Z x adjustments", Zp, "lb", "NDS 2018 Table 11.3.1", adj + "; CM = Ct = Cg = C-delta = 1.0"),
+             Line("largest anchor bolt spacing, Z' / v", s_max, "in", "statics", f"v = {v_plf:,.0f} plf at the bottom plate")]
+    rows = []
+    if spacing_in:
+        rows.append(("anchor bolts, shear per bolt", v_plf * spacing_in / 12.0, Zp, "lb", "NDS 2018 Sect. 12.3, Table 11.3.1; SDPWS-2021 4.3.6.4.1",
+                     f"{D:g} in. bolts at {spacing_in:g} in.; v s = {v_plf:,.0f} plf x {spacing_in / 12:.3g} ft"))
+    rows.append(("plate washer thickness", 0.229, washer_t, "in", "SDPWS-2021 4.3.6.4.3", "0.229 in. minimum"))
+    rows.append(("plate washer size", 3.0, min(washer_w, washer_l), "in", "SDPWS-2021 4.3.6.4.3", f"{washer_w:g} x {washer_l:g} in.; 3 x 3 in. minimum"))
+    off = plate_w / 2.0 if offset_in is None else offset_in
+    gap = off - washer_w / 2.0
+    if vn_side > 400.0 + 1e-9:
+        rows.append(("plate washer to the sheathed edge of the plate", gap, 0.5, "in", "SDPWS-2021 4.3.6.4.3",
+                     f"nominal unit shear {vn_side:,.0f} plf on a side, over 400 plf; plate {plate_w:g} in. wide, bolt "
+                     + ("centred" if offset_in is None else f"{offset_in:g} in. from the sheathed edge")))
+    else:
+        lines.append(Line("plate washer to the sheathed edge", f"{gap:.3g} in.", "", "SDPWS-2021 4.3.6.4.3",
+                          f"no limit: nominal unit shear {vn_side:,.0f} plf on a side, not over 400 plf"))
+    return dict(Z=Z, Zp=Zp, s_max=s_max, rows=rows, lines=lines, gap=gap, mode=r["mode"])

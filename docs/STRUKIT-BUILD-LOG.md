@@ -1167,3 +1167,20 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   blocking along the top and bottom of each opening across the piers beside it. Larger than before; dimensions, shear and chord forces
   as before.
 - Tests: every existing FTAO and perforated wall sheet prints without overlap.
+
+## 2026-11-26 21:24 MST — 0.276.0 hold-down on the perforated wall; anchor bolts and plate washers on the three wall screens
+- (Zach: "Yes to both".) **Perforated Wood Shear Wall:** the Simpson hold-down boxes of the shear wall screen (catalog C-C-2026),
+  checked for the tension at each end of the wall.
+- **Wood Shear Wall, Force Transfer Around Openings and Perforated Wood Shear Wall: new "Anchor bolts" boxes** (diameter, spacing,
+  bottom plate thickness and width, plate G and its source, plate washer, bolt offset). The sheet adds:
+  - the bolt in the bottom plate by the NDS 2018 12.3 yield limit equations on the NDS Table 12E basis (concrete Fe 7,500 psi,
+    6 in. embedment, Fyb 45,000 psi), parallel to grain; Z' with CD 1.6 (ASD) or KF 3.32, phi 0.65 (LRFD); the shear per bolt,
+    v x spacing, against Z'; the largest spacing Z' / v when no spacing is typed;
+  - SDPWS 4.3.6.4.3: the plate washer at least 0.229 x 3 x 3 in., and within 1/2 in. of the sheathed edge of the plate where the
+    nominal unit shear on a side is over 400 plf;
+  - the bolts drawn on the wall elevation (12 in. from the plate ends, then at the spacing; none across a door).
+  Not yet: the anchor bolts in the concrete (ACI 318 Chapter 17) and the perforated wall's bottom plate uplift (4.3.6.4.2.1);
+  both listed as not checked.
+- **Validation:** NDS Table 12E, ten values across G 0.42 to 0.67, plates 1-1/2 to 3-1/2 in., bolts 1/2 to 1 in. (within the
+  table's 10 lb rounding); the adjustments, spacing and washer edge by hand (`tests/test_anchor_bolts.py`, `tests/test_holddowns.py`).
+- Readings applied (conservative, not ruled): in the rulings file.
