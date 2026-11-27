@@ -106,3 +106,21 @@ def test_concrete_and_uplift_on_the_screens():
     assert r["bottom plate uplift: plate bending between bolts"].demand == pytest.approx(t / 12 * 48 ** 2 / 8 / (3.5 * 1.5 ** 2 / 6))
     assert r["anchor bolt steel, tension"].demand == pytest.approx(t * 4 / 0.6)
     assert not any("4.3.6.4.2.1" in x for x in pw.not_checked)
+
+
+def test_sill_plate_exception_ibc_1905_1_8():
+    """IBC 2021 Sect. 1905.1.8, exception 1 to ACI 318-19 17.10.6.2 (Zach 2026-11-27: apply it): 5/8 in. bolt, 7 in. embedment,
+    1-3/4 in. from the edge, 15 diameters (9.375 in.) from the concrete end, 2x plate: breakout and pryout in shear are not computed,
+    and for SDC C to F 17.10.6.3 is deemed satisfied (no overstrength). The bolt steel is still checked."""
+    con = dict(ab_fc="2500", ab_grade="ASTM F1554 Grade 36", ab_type="headed (heavy hex nut)", ab_hef="7", ab_edge="1.75", ab_fwidth="8",
+               ab_fdepth="24", ab_end="12")
+    s_ = calc.build("shear_wall", dict(BASE, **con, mark="SW1", blocking="blocked", h="9", lengths="8", V="2400"), PROJ)[0]
+    names = [x.check for x in s_.rows]
+    assert "anchor bolt steel, shear" in names and "anchor bolt pryout" not in names
+    assert not any(n.startswith("anchor bolt concrete breakout") for n in names) and all(x.status == "OK" for x in s_.rows)
+    seis = calc.build("shear_wall", dict(BASE, **con, mark="SW2", blocking="blocked", h="9", lengths="8", V="2400", load="seismic", ab_sdc="C to F"), PROJ)[0]
+    assert [x for x in seis.rows if x.check == "anchor bolt steel, shear"][0].demand == pytest.approx(300 * 4 / 0.7)
+    near = calc.build("shear_wall", dict(BASE, **dict(con, ab_end="8"), mark="SW3", blocking="blocked", h="9", lengths="8", V="2400"), PROJ)[0]
+    assert "anchor bolt pryout" in [x.check for x in near.rows]            # 8 in. < 15 x 5/8: the exception does not apply
+    big = calc.build("shear_wall", dict(BASE, **con, mark="SW4", blocking="blocked", h="9", lengths="8", V="2400", ab_d="3/4"), PROJ)[0]
+    assert "anchor bolt pryout" in [x.check for x in big.rows]

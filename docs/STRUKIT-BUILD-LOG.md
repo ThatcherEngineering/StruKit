@@ -1218,3 +1218,14 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   (every row's loads appear on its page, every text row is in the data).
 - **Validation:** ten rows copied by hand from pp. 114, 115, 119, 120; the choice and the adjustments by hand (`tests/test_simpson.py`).
 - Next Simpson families: top-flange hangers, hurricane ties, post bases and column caps, straps, angles.
+
+## 2026-11-27 02:12 MST — 0.279.0 IBC sill plate anchor bolt exception
+- (Zach: "Yes apply exemption".) Wall screens, anchor bolts in the concrete: IBC 2021 Sect. 1905.1.8, exception 1 to ACI 318-19
+  17.10.6.2. When every condition is met (bolt not over 5/8 in., embedment at least 7 in., at least 1-3/4 in. from the edge parallel
+  to the plate, at least 15 diameters from the concrete end, 2x or 3x plate), breakout and pryout in shear are not computed and
+  17.10.6.3 is deemed satisfied (no overstrength for SDC C to F); the bolt steel and any uplift checks remain. Applied for wind as
+  well (a Thatcher Engineering standard, as ruled). New box: nearest bolt to the end of the concrete. A condition not met is named
+  on the sheet and the full ACI checks run.
+- Source: the S. K. Ghosh Associates reproduction of 1905.1.8 with the ACI 318-19 references (the ICC text could not be fetched);
+  the IBC stays on the missing references list to confirm.
+- Tests: the exception met, one condition missed (end distance, bolt size), seismic without overstrength (`tests/test_anchor_bolts.py`).

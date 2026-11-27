@@ -6583,8 +6583,18 @@ def add_anchor_bolts(mark, sheet, ab, panel, spacing, G, load, method, other=Non
             k_, ktxt = (1 / 0.6, "/ 0.6 (ASD 0.6 W to strength level W)") if load == "wind" else (1 / 0.7, "/ 0.7 (ASD 0.7 E to strength level E)")
         else:
             k_, ktxt = 1.0, "(LRFD, strength level)"
-        om = ab.get("omega") if (load == "seismic" and ab.get("sdc_high")) else None
-        if load == "seismic" and ab.get("sdc_high") and not om:
+        # IBC 2021 Sect. 1905.1.8, exception 1 to ACI 318-19 17.10.6.2: anchor bolts of wood sill plates of light-frame walls need not
+        # have their in-plane shear strength by 17.7.2 (breakout) and 17.7.3 (pryout) computed when every condition is met
+        # (Thatcher Engineering standard: applied for wind as well as earthquake, Zach 2026-11-27).
+        conds = [("bolt nominal diameter not over 5/8 in.", ab["D"] <= 0.625 + 1e-9),
+                 ("embedment at least 7 in.", ab["hef"] >= 7.0 - 1e-9),
+                 ("at least 1-3/4 in. from the concrete edge parallel to the plate", ab["edge"] >= 1.75 - 1e-9),
+                 (f"at least 15 diameters ({15 * ab['D']:g} in.) from the concrete end across the plate",
+                  ab.get("end") is not None and ab["end"] >= 15 * ab["D"] - 1e-9),
+                 ("plate of 2 in. or 3 in. nominal thickness", ab["sill_t"] in (1.5, 2.5))]
+        exc = all(ok_ for _, ok_ in conds)
+        om = ab.get("omega") if (load == "seismic" and ab.get("sdc_high") and not exc) else None   # exception: 17.10.6.3 deemed satisfied
+        if load == "seismic" and ab.get("sdc_high") and not om and not exc:
             raise WorksheetError(f"{mark}: Seismic Design Category C to F: give the overstrength factor for the anchor bolts (ACI 318-19 17.10.6.3(c))")
         f_ = k_ * (om or 1.0)
         Vu, Nu = v * ab["s"] / 12.0 * f_, t_up * ab["s"] / 12.0 * f_
@@ -6597,10 +6607,21 @@ def add_anchor_bolts(mark, sheet, ab, panel, spacing, G, load, method, other=Non
                                 f"v s {ktxt}" + (f" x Omega-0 {om:g} ({(ab.get('omega_source') or '').strip()})" if om else ""))]
         if Nu > 0:
             lines.append(shearwall.Line("uplift on each bolt, strength level, Nua", Nu, "lb", "SDPWS-2021 4.3.6.4.2.1", f"t s, the same factor"))
-        sheet.blocks.append(dict(title="Anchor Bolts in the Concrete", head="Anchor Bolts in the Concrete (ACI 318-19 Chapter 17)", steps=lines + cc["lines"],
+        steps_ = lines + cc["lines"]
+        sheet.blocks.append(dict(title="Anchor Bolts in the Concrete", head="Anchor Bolts in the Concrete (ACI 318-19 Chapter 17)", steps=steps_,
                                  picture=("sill_anchor", dict(fwidth=ab["fwidth"], sill_t=ab["sill_t"], sill_w=ab["sill_w"], D=ab["D"], hef=ab["hef"],
                                                               offset=ab.get("offset"), edge=ab["edge"], washer_w=ab.get("washer_w"), washer_l=ab.get("washer_l"),
                                                               washer_t=ab.get("washer_t"), hooked=ab.get("hooked"), eh=ab.get("eh"), grade=ab["grade"], fc=ab["fc"]))))
+        if exc:
+            cc["modes"] = [m_ for m_ in cc["modes"] if m_[0] not in ("anchor bolt concrete breakout, shear along the edge", "anchor bolt pryout")
+                           and "together" not in m_[0]]
+            steps_.append(shearwall.Line("in-plane shear: breakout (17.7.2) and pryout (17.7.3) not computed", "all conditions met", "",
+                                        "IBC 2021 Sect. 1905.1.8, exception 1 to ACI 318-19 17.10.6.2" + ("" if load == "seismic" else "; Thatcher Engineering standard for wind"),
+                                        "; ".join(t_ for t_, _ in conds) + "; the shear in the plate by NDS Table 12E (above)"))
+            sheet.info.append(("Sill Plate Anchors", "IBC 2021 Sect. 1905.1.8 exception 1: breakout and pryout in shear not computed"))
+        else:
+            steps_.append(shearwall.Line("sill plate exception (IBC 2021 Sect. 1905.1.8, exception 1)", "not met", "", "IBC 2021 Sect. 1905.1.8",
+                                        "; ".join(t_ for t_, ok_ in conds if not ok_)))
         for chk, dem, cap, src, note in cc["modes"]:
             unit = "" if "together" in chk else "lb"
             sheet.rows.append(Row(chk, f"{load}, strength", dem, cap, unit, src, note))

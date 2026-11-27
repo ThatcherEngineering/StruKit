@@ -76,10 +76,13 @@ Every number cites its source; nothing assumed silently; each module validated a
   - ASD wall shear is brought to strength level by / 0.6 (wind, 0.6 W) or / 0.7 (seismic, 0.7 E); seismic SDC C to F also x Omega-0
     (ACI 318-19 17.10.6.3(c)), typed in with its source.
   - Concrete breakout in shear is always computed (2 Vcb parallel to the edge, 17.7.2.1(c)), with each bolt's projected area limited to
-    half the spacing each way. The sill-plate exception (in-plane shear breakout and pryout need not be computed for 5/8 in. bolts,
-    7 in. embedment, 1-3/4 in. edge, 2x or 3x plates) is in the IBC's amendments to ACI 318, which is not on file; until Zach rules
-    or supplies the IBC, it is not applied. A 5/8 in. bolt 1-3/4 in. from the face of a 2,500 psi stem wall at 48 in. then flags
-    above about 200 plf ASD wind.
+    half the spacing each way. The sill-plate exception: RULED by Zach 2026-11-27 ("Yes apply exemption"): IBC 2021 Sect. 1905.1.8, exception 1
+    to ACI 318-19 17.10.6.2, applied for wind and earthquake when every condition is met (bolt not over 5/8 in., embedment at least
+    7 in., at least 1-3/4 in. from the edge parallel to the plate, at least 15 diameters from the concrete end, 2x or 3x plate):
+    breakout and pryout in shear are not computed and 17.10.6.3 is deemed satisfied; the bolt steel is still checked. The wording
+    was read from the S. K. Ghosh Associates reproduction of 1905.1.8 (the ICC text could not be fetched); the IBC stays on the
+    missing list. Without the exception (any condition not met) a 5/8 in. bolt 1-3/4 in. from the face of a 2,500 psi stem wall
+    at 48 in. flags above about 200 plf ASD wind.
   - Bottom plate bending between bolts under the perforated wall uplift t = v max is a simple span, M = t s^2 / 8 (the higher of the
     simple and continuous readings).
   Zach has not ruled.
