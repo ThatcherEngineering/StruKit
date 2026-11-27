@@ -59,3 +59,50 @@ def test_on_the_three_wall_screens(tmp_path):
     for k_, s_ in (("sw", sw_), ("ft", ft), ("pw", pw)):
         from strukit import calcsheet
         calcsheet.simple_pdf(s_, str(tmp_path / f"{k_}.pdf"), "Job", "SDPWS-2021", "Nov 26, 2026")
+
+
+def test_anchor_bolt_in_the_concrete_by_hand():
+    """5/8 in. F1554 Grade 36 headed bolt, hef 7 in., f'c 2,500 psi, centred in an 8 in. stem wall 24 in. deep, bolts at 48 in.
+    (ACI 318-19 Chapter 17; no published sill-bolt example on file, checked by hand):
+      Ase = pi/4 (0.625 - 0.9743/11)^2 = 0.2260 in2; phi Vsa = 0.65 x 0.6 x 0.2260 x 58,000 = 5,112 lb.
+      Shear along the edge, ca1 = 4: AVco = 4.5 (4)^2 = 72, AVc = (6 + 6)(6) = 72 in2; le = min(7, 8 x 0.625) = 5 in.;
+      Vb = min(7 (5/0.625)^0.2 (0.625)^0.5 (2500)^0.5 (4)^1.5, 9 (2500)^0.5 (4)^1.5) = min(3,355, 3,600) = 3,355 lb;
+      Vcb = 2 x 3,355 = 6,710 (17.7.2.1(c)); phi = 0.70: 4,697 lb.
+      Pryout: ANc = (10.5 + 10.5)(4 + 4) = 168, ANco = 9 (7)^2 = 441 in2; psi_ed,N = 0.7 + 0.3 x 4 / 10.5 = 0.8143;
+      Nb = 24 (2500)^0.5 (7)^1.5 = 22,224 lb; Ncb = 6,894 lb; Vcp = 2 Ncb = 13,789; phi 0.70: 9,652 lb.
+      ASD wind 300 plf at 48 in.: Vua = 300 x 4 / 0.6 = 2,000 lb."""
+    from strukit import anchorage as A
+    r = A.sill_anchor(0.625, "ASTM F1554 Grade 36", 7.0, 2500.0, 4.0, 8.0, 24.0, 48.0, 2000.0)
+    m = {x[0]: x for x in r["modes"]}
+    assert m["anchor bolt steel, shear"][2] == pytest.approx(0.65 * 0.6 * 0.2260 * 58000, rel=1e-3)
+    assert r["Vcb"] == pytest.approx(6710, rel=2e-3) and m["anchor bolt concrete breakout, shear along the edge"][2] == pytest.approx(4697, rel=2e-3)
+    assert r["Ncb"] == pytest.approx(6894, rel=2e-3) and m["anchor bolt pryout"][2] == pytest.approx(9652, rel=2e-3)
+    h = A.sill_anchor(0.625, "ASTM F1554 Grade 36", 7.0, 2500.0, 4.0, 8.0, 24.0, 48.0, 2000.0, Nu=1000.0, hooked=True, eh=2.5)
+    assert h["Np"] == pytest.approx(0.9 * 2500 * 2.5 * 0.625)                 # Eq. 17.6.3.2.2b
+    with pytest.raises(A.AnchorageError):
+        A.sill_anchor(0.625, "ASTM F1554 Grade 36", 7.0, 2500.0, 4.0, 8.0, 24.0, 48.0, 2000.0, Nu=1.0, hooked=True, eh=1.0)
+
+
+def test_concrete_and_uplift_on_the_screens():
+    """On the screens: ASD shear brought to strength level (wind / 0.6); seismic SDC C to F needs the overstrength factor;
+    the perforated wall bottom plate uplift (SDPWS 4.3.6.4.2.1) by washer bearing (NDS 3.10.4, Cb = 3.375 / 3) and plate bending
+    flatwise between the bolts (t s^2 / 8)."""
+    con = dict(ab_fc="2500", ab_grade="ASTM F1554 Grade 36", ab_type="headed (heavy hex nut)", ab_hef="7", ab_edge="4", ab_fwidth="8", ab_fdepth="24")
+    s_ = calc.build("shear_wall", dict(BASE, **con, mark="SW1", blocking="blocked", h="9", lengths="8", V="2400"), PROJ)[0]
+    r = {x.check: x for x in s_.rows}
+    assert r["anchor bolt steel, shear"].demand == pytest.approx(300 * 4 / 0.6)
+    assert not any("ACI 318-19 Chapter 17" in t for t in s_.not_checked)
+    seis = dict(BASE, **con, mark="SW2", blocking="blocked", h="9", lengths="8", V="2400", load="seismic", ab_sdc="C to F")
+    with pytest.raises(Exception):
+        calc.build("shear_wall", seis, PROJ)
+    s2 = calc.build("shear_wall", dict(seis, ab_omega="3", ab_omega_source="ASCE 7-22 Table 12.2-1, A.15"), PROJ)[0]
+    assert [x for x in s2.rows if x.check == "anchor bolt steel, shear"][0].demand == pytest.approx(300 * 4 / 0.7 * 3)
+    pw = calc.build("perforated_wall", dict(BASE, **con, mark="PW1", h="8", length="20", V="2000", openings=[dict(x="6", w="4", h="4", sill="3")],
+                                            ab_Fc_perp="625", ab_Fb="1485", ab_wood_source="DF-L No. 2, NDS Supplement Table 4A, CF 1.5, Cfu 1.1"), PROJ)[0]
+    t = pw.wall.v_max
+    r = {x.check: x for x in pw.rows}
+    A_ = 9 - 3.141592653589793 * (0.6875) ** 2 / 4
+    assert r["bottom plate uplift: washer bearing"].demand == pytest.approx(t * 4) and r["bottom plate uplift: washer bearing"].capacity == pytest.approx(625 * 1.125 * A_)
+    assert r["bottom plate uplift: plate bending between bolts"].demand == pytest.approx(t / 12 * 48 ** 2 / 8 / (3.5 * 1.5 ** 2 / 6))
+    assert r["anchor bolt steel, tension"].demand == pytest.approx(t * 4 / 0.6)
+    assert not any("4.3.6.4.2.1" in x for x in pw.not_checked)

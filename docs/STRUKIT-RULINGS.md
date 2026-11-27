@@ -72,6 +72,17 @@ Dated entries. Each is Zach's own decision; open questions live in the proposal 
 Every number cites its source; nothing assumed silently; each module validated against an independent reference before use; flags hard or accepted with reason and date; jurisdiction data in a table; same run contract as HydroKit; calc-package-quality reports; private GitHub repo from day one; StruKit chat writes no LISP and never writes to drawings; ambiguous provisions shown both ways for Zach to rule (shown to Zach in chat, not on the sheet; see 2026-11-23). Every picture is drawn to a high visual detail standard: members and connections look like the real thing (see 2026-11-26 02:26).
 
 ## Open (not ruled)
+- **Anchor bolts in the concrete and perforated wall plate uplift (0.277.0, tell Zach):**
+  - ASD wall shear is brought to strength level by / 0.6 (wind, 0.6 W) or / 0.7 (seismic, 0.7 E); seismic SDC C to F also x Omega-0
+    (ACI 318-19 17.10.6.3(c)), typed in with its source.
+  - Concrete breakout in shear is always computed (2 Vcb parallel to the edge, 17.7.2.1(c)), with each bolt's projected area limited to
+    half the spacing each way. The sill-plate exception (in-plane shear breakout and pryout need not be computed for 5/8 in. bolts,
+    7 in. embedment, 1-3/4 in. edge, 2x or 3x plates) is in the IBC's amendments to ACI 318, which is not on file; until Zach rules
+    or supplies the IBC, it is not applied. A 5/8 in. bolt 1-3/4 in. from the face of a 2,500 psi stem wall at 48 in. then flags
+    at about 240 plf ASD wind.
+  - Bottom plate bending between bolts under the perforated wall uplift t = v max is a simple span, M = t s^2 / 8 (the higher of the
+    simple and continuous readings).
+  Zach has not ruled.
 - **Anchor bolts in the wall bottom plate (0.276.0, tell Zach):** each bolt alone (no group action, Cg = 1.0), dry service, end
   distance and spacing taken as meeting NDS 12.5.1 (stated on the sheet); the bolt by the NDS 12.3 yield equations on the Table 12E
   basis (concrete Fe 7,500 psi, 6 in. embedment); the plate shear is the largest segment or pier shear (perforated: v max). The

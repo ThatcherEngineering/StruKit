@@ -400,3 +400,81 @@ def tension_grid(da, nt, futa, fya, ductile, hef, Abrg, fc, ha, nx, sx, ny, sy, 
         L.append(Line("2.5 x least edge distance", 2.5 * min(cx1, cx2, cy1, cy2), "in", "17.6.4.1", "not less than hef: side-face blowout does not apply"))
     order = ["Nsa", "Ncb", "Npn"] + sorted(k for k in best if k.startswith("Nsb"))
     return dict(rows=[best[k] for k in order if k in best], lines=L, phi=dict(steel=phi_ts, concrete=phi_c, pullout=phi_p))
+
+
+UNC_TPI = {0.5: 13, 0.625: 11, 0.75: 10, 0.875: 9, 1.0: 8}
+SILL_GRADES = {"ASTM F1554 Grade 36": (58.0, 36.0), "ASTM F1554 Grade 55": (75.0, 55.0), "ASTM A307 Grade A": (60.0, 36.0)}
+
+
+def sill_anchor(da, grade, hef, fc, c_edge, width, depth, s, Vu, Nu=0.0, cracked=True, hooked=False, eh=None):
+    """One foundation anchor bolt of a line of bolts at spacing s along a wall bottom plate, cast in, ACI 318-19 Chapter 17, strength
+    level (Vu, Nu in lb per bolt). The shear acts along the wall, parallel to the foundation edges. c_edge: bolt centre to the nearer
+    face of the foundation; width: foundation width (the far face at width - c_edge); depth: concrete depth below the top.
+      steel: Nsa = Ase futa (Eq. 17.6.1.2), Vsa = 0.6 Ase futa (Eq. 17.7.1.2b), futa not over 1.9 fya or 125 ksi (17.6.1.2);
+      breakout in shear parallel to the edge: 2 Vcb with psi_ed,V = 1.0 (17.7.2.1(c)), the projected area of this bolt limited to
+      half the spacing each way along the edge (the bolts beside it carry their own shear); Vb by Eq. 17.7.2.2.1a and b;
+      pryout: Vcp = kcp Ncb (Eq. 17.7.3.1a); tension breakout Ncb (Eq. 17.6.2.1a), its area limited to half the spacing each way;
+      pullout: headed Np = 8 Abrg f'c (Eq. 17.6.3.2.2a, heavy hex nut), hooked Np = 0.9 f'c eh da (Eq. 17.6.3.2.2b, 3 da <= eh <= 4.5 da);
+      interaction 17.8 (Eq. 17.8.3) when both ratios exceed 0.2. phi: Table 17.5.3 (ductile steel 0.75 / 0.65; concrete Condition B
+      0.70; pullout and pryout 0.70). Returns dict(modes [(label, demand lb, design lb, source, note)], lines, ratio)."""
+    if da not in UNC_TPI:
+        raise AnchorageError("anchor bolt: 1/2 to 1 in. diameter")
+    if grade not in SILL_GRADES:
+        raise AnchorageError("anchor bolt: choose the rod grade")
+    for nm, v in (("embedment", hef), ("f'c", fc), ("edge distance", c_edge), ("foundation width", width), ("foundation depth", depth), ("spacing", s)):
+        if v is None or v <= 0:
+            raise AnchorageError(f"anchor bolt: the {nm} must be a positive number")
+    if c_edge > width - 1e-9:
+        raise AnchorageError("anchor bolt: the edge distance is more than the foundation width")
+    if hef >= depth:
+        raise AnchorageError("anchor bolt: the embedment is not less than the foundation depth")
+    if hooked and (eh is None or not 3 * da - 1e-9 <= eh <= 4.5 * da + 1e-9):
+        raise AnchorageError(f"anchor bolt: the hook extension eh must be 3 da to 4.5 da ({3 * da:g} to {4.5 * da:g} in.), ACI 318-19 17.6.3.2.2")
+    futa_, fya = SILL_GRADES[grade]
+    fu = min(futa_, 1.9 * fya, 125.0)
+    nt = UNC_TPI[da]
+    A_se = ase(da, nt)
+    phi_ts, phi_vs, phi_c, phi_p = 0.75, 0.65, 0.70, 0.70
+    psi_cN, psi_cP, psi_cV = (1.0, 1.0, 1.0) if cracked else (1.25, 1.4, 1.4)
+    c_far = width - c_edge
+    Nsa, Vsa = A_se * fu * 1000, 0.6 * A_se * fu * 1000
+    Ncb, dN = tension_breakout(hef, fc, 1, 0, 1, 0, s / 2, s / 2, c_edge, c_far, psi_cN)
+    Vcb, dV = shear_breakout(c_edge, 1, 0, s / 2, s / 2, depth, da, hef, fc, psi_cV, parallel=True)
+    kcp = 1.0 if hef < 2.5 else 2.0
+    Vcp = kcp * Ncb
+    if hooked:
+        Np, peq = psi_cP * 0.9 * fc * eh * da, "Eq. 17.6.3.2.2b"
+    else:
+        F = {0.5: 0.875, 0.625: 1.0625, 0.75: 1.25, 0.875: 1.4375, 1.0: 1.625}[da]   # heavy hex nut width across flats, ASME B18.2.2
+        Np, peq = psi_cP * 8 * hex_bearing_area(F, da) * fc, "Eq. 17.6.3.2.2a"
+    lines = [Line("Ase", A_se, "in2", "ACI 318-19 R17.6.1.2", f"{da:g} in., {nt} threads per in."),
+             Line("futa", fu, "ksi", "ACI 318-19 17.6.1.2", f"{grade}: futa {futa_:g}, fya {fya:g} ksi; not over 1.9 fya or 125 ksi"),
+             Line("Vsa = 0.6 Ase futa", Vsa, "lb", "ACI 318-19 Eq. 17.7.1.2b", f"phi = {phi_vs:g}"),
+             Line("Vcb, shear parallel to the edge = 2 x (AVc / AVco) psi_c,V psi_h,V Vb", Vcb, "lb", "ACI 318-19 17.7.2.1(c), Eq. 17.7.2.1a",
+                  f"ca1 = {dV['ca1']:.3g} in.; AVc = {dV['AVc']:.3g}, AVco = {dV['AVco']:.3g} in2 (half the spacing each way); psi_h = {dV['psi_h']:.3f}; "
+                  f"psi_c,V = {psi_cV:g}; Vb = {dV['Vb']:,.0f} lb; phi = {phi_c:g}"),
+             Line("Ncb", Ncb, "lb", "ACI 318-19 Eq. 17.6.2.1a, " + dN["eq"], f"hef = {dN['hef']:.3g} in.; ANc = {dN['ANc']:.3g}, ANco = {dN['ANco']:.3g} in2; "
+                  f"psi_ed,N = {dN['psi_ed']:.3f}; psi_c,N = {psi_cN:g}"),
+             Line("Vcp = kcp Ncb", Vcp, "lb", "ACI 318-19 Eq. 17.7.3.1a", f"kcp = {kcp:g}; phi = {phi_p:g}")]
+    modes = [("anchor bolt steel, shear", Vu, phi_vs * Vsa, "ACI 318-19 Eq. 17.7.1.2b", "per bolt"),
+             ("anchor bolt concrete breakout, shear along the edge", Vu, phi_c * Vcb, "ACI 318-19 17.7.2.1(c)", f"{c_edge:g} in. to the nearer face"),
+             ("anchor bolt pryout", Vu, phi_p * Vcp, "ACI 318-19 Eq. 17.7.3.1a", "")]
+    ratio_v = max(m[1] / m[2] for m in modes)
+    ratio = ratio_v
+    if Nu > 0:
+        lines += [Line("Nsa = Ase futa", Nsa, "lb", "ACI 318-19 Eq. 17.6.1.2", f"phi = {phi_ts:g}"),
+                  Line("Npn", Np, "lb", "ACI 318-19 " + peq, (f"hooked, eh = {eh:g} in." if hooked else "heavy hex nut") + f"; psi_c,P = {psi_cP:g}; phi = {phi_p:g}")]
+        tmodes = [("anchor bolt steel, tension", Nu, phi_ts * Nsa, "ACI 318-19 Eq. 17.6.1.2", ""),
+                  ("anchor bolt concrete breakout, tension", Nu, phi_c * Ncb, "ACI 318-19 Eq. 17.6.2.1a", ""),
+                  ("anchor bolt pullout", Nu, phi_p * Np, "ACI 318-19 " + peq, "")]
+        if not hooked and c_edge < 0.4 * hef:
+            Abrg = hex_bearing_area({0.5: 0.875, 0.625: 1.0625, 0.75: 1.25, 0.875: 1.4375, 1.0: 1.625}[da], da)
+            Nsb = 160 * c_edge * math.sqrt(Abrg) * math.sqrt(fc)
+            lines.append(Line("Nsb = 160 ca1 Abrg^0.5 f'c^0.5", Nsb, "lb", "ACI 318-19 Eq. 17.6.4.1", f"ca1 = {c_edge:g} in. < 0.4 hef; phi = {phi_c:g}"))
+            tmodes.append(("anchor bolt side-face blowout", Nu, phi_c * Nsb, "ACI 318-19 Eq. 17.6.4.1", ""))
+        modes += tmodes
+        ratio_n = max(m[1] / m[2] for m in tmodes)
+        if ratio_n > 0.2 and ratio_v > 0.2:
+            modes.append(("anchor bolt tension and shear together", ratio_n + ratio_v, 1.2, "ACI 318-19 Eq. 17.8.3", "Nua / phi Nn + Vua / phi Vn"))
+        ratio = max(ratio_n, ratio_v)
+    return dict(modes=modes, lines=lines, Vsa=Vsa, Vcb=Vcb, Vcp=Vcp, Ncb=Ncb, Np=Np, Nsa=Nsa, ratio=ratio)

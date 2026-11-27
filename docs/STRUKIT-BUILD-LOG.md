@@ -1187,3 +1187,17 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **Validation:** NDS Table 12E, ten values across G 0.42 to 0.67, plates 1-1/2 to 3-1/2 in., bolts 1/2 to 1 in. (within the
   table's 10 lb rounding); the adjustments, spacing and washer edge by hand (`tests/test_anchor_bolts.py`, `tests/test_holddowns.py`).
 - Readings applied (conservative, not ruled): in the rulings file.
+
+## 2026-11-26 22:12 MST — 0.277.0 anchor bolts in the concrete; perforated wall bottom plate uplift
+- (Zach: "do the things that aren't checked and then do the Simpson products".) **Wall screens, new "Anchor bolts in concrete"
+  boxes** (f'c, rod grade, headed or hooked, hook extension, embedment, edge distance, stem wall width and depth, cracked or not,
+  seismic SDC and Omega-0 with its source). ACI 318-19 Chapter 17 per bolt (`anchorage.sill_anchor`): steel shear (Eq. 17.7.1.2b),
+  breakout in shear parallel to the edge (2 Vcb, 17.7.2.1(c)), pryout (Eq. 17.7.3.1a); with uplift, steel tension, breakout
+  (Eq. 17.6.2.1a), pullout (headed Eq. 17.6.3.2.2a, hooked 17.6.3.2.2b), side-face blowout and the 17.8 interaction. Shear at
+  strength level (ASD / 0.6 wind, / 0.7 seismic; x Omega-0 for SDC C to F). New picture: a section across the wall at a bolt
+  (stem wall, plate in end grain, stud broken off, sheathing, washer and nut, the bolt dashed to its nut or hook), dimensioned.
+- **Perforated wall, bottom plate uplift** (SDPWS 4.3.6.4.2.1, t = v max): washer bearing across the grain (NDS 3.10.4, Cb) and the
+  plate bending flatwise between bolts (t s^2 / 8), with the plate Fc-perp and flatwise Fb typed in with their source.
+- **Validation: by hand** (no published sill-bolt example on file): the 5/8 in. bolt in an 8 in. stem wall, every mode
+  (`tests/test_anchor_bolts.py`); the ACI pieces reuse the breakout functions validated against AISC Design Guide 1.
+- Readings applied (conservative, not ruled), including the IBC sill-plate exception not applied: in the rulings file.
