@@ -3747,7 +3747,7 @@ def base_plate_biaxial_sheet(mark, shape, N, B, tp, Fy_plate, fc_psi, area_ratio
                          "Mx bends the column about its strong axis; the plate dimension N runs along the column depth."],
                         ["anchorage of the rods in the concrete (ACI 318-19 Chapter 17)", "shear at the base", "welds of the column to the plate", "axial tension with bending"])
     sheet.blocks.append(dict(title="Base Plate", head="Base Plate", picture=("base_biaxial", dict(N=N, B=B, d=dcol, b=bcol, tf=tfl, tw=p.get("tw") or tfl, k=p.get("kdes"), kind=col_kind, edge_N=edge_N,
-                                                                                                edge_B=edge_B, rod_d=rod_d))))
+                                                                                                edge_B=edge_B, rod_d=rod_d, tp=tp, hef=(anchorage or {}).get("hef"), shape=shapes.normalize(shape) if col_kind == "I" else shape))))
     sheet.biax = dict(fp=fp, m=m, n=n, rt=rt, t_bear=t_bear, cases=out, worst=w)
     if anchorage:
         fact = cases if method == "LRFD" else (cases_factored or [])
@@ -5349,7 +5349,7 @@ def tension_rod_sheet(mark, rod_d, Fy, Fu, steel_source, length_ft, loads, combo
     sheet = SimpleSheet(mark, "Steel Tension Rod", "Member", method, info, load_lines, [(cb.name, cb.source) for cb in combos], f"Calculation ({worst})", steps, rows,
                         ["Axial tension only; the rod carries no compression and no bending.", "The slenderness recommendation of AISC 360-22 Sect. D1 does not apply to rods."],
                         ["nuts, washers, clevises, turnbuckles and the parts the rod connects to", "upset or welded ends", "fatigue"])
-    sheet.blocks.append(dict(title="Loading", head="Loading", picture=("tension", dict(T=f"{T:.2f} kip ({worst})", shape=f"{rod_d:g} in. rod", L=length_ft))))
+    sheet.blocks.append(dict(title="Loading", head="Loading", picture=("tension", dict(T=f"{T:.2f} kip ({worst})", shape=f"{rod_d:g} in. rod", L=length_ft, rod=rod_d))))
     sheet.tension = dict(T=T, Ab=Ab, Pyc=Pyc, Rn=thr.Rn, Rc=thr.R_avail)
     return sheet
 
@@ -6289,7 +6289,7 @@ def through_plate_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_F
                           if cut else "The plate-to-HSS welds take the column axial force and the joint moment as an elastic weld group on the compression side, where they add.")],
                         ["the beam web shear connection", ("the HSS column" if cut else "the HSS column stub between the plates and the column above and below"), "orthogonal framing at the plates"])
     sheet.blocks.append(dict(title="Connection", head="Connection", picture=("through_plate", dict(cut=cut, ws=ws, H=H, B=Bx, t=tw_hss, bp=bp, tp=tp, n=int(n), s=s, g=g, L1=L1, le_p=le_p, le_f=le_f, d=d,
-                                                                                                    bf=bbf, db=db_, tf=tbf, beam=shapes.normalize(beam), column=shapes.normalize(column)))))
+                                                                                                    bf=bbf, db=db_, tf=tbf, beam_d=db_, beam_tf=tbf, beam=shapes.normalize(beam), column=shapes.normalize(column)))))
     sheet.tp = dict(R=R, Ag=Ag, An=An, Ry=Ry, Rr=Rr, KLr=KLr, Rc=Rc, rv=rv, per=per, Rb=Rb, Rbs_p=Rbs_p, Rbs_f=Rbs_f, Agv=Agv, Anv=Anv, Ant=Ant, Agv_f=Agv_f, Anv_f=Anv_f,
                     Ant_f=Ant_f, q=wq["q"], Pc=wq["Pc"], Mc=wq["Mc"], rw=rw, tmin=tmin, lw=lw, bs_cases=bs_cases, Mn_b=Mn_b, Mb=Mb, Afn=Afn, Runb=Runb, Rc_n=Pc_n)
     return sheet
@@ -6514,7 +6514,7 @@ def wt_flange_sheet(mark, beam, beam_Fy, beam_Fu, beam_source, column, col_Fy, c
                          "Bolt strengths are summed bolt by bolt (AISC 360-22 Sect. J3.11); deformation at the bolt holes at service load is a design consideration."],
                         ["the beam web shear connection", "the HSS column itself", "a reinforcing fillet on the flare-bevel welds"])
     sheet.blocks.append(dict(title="Connection", head="Connection", picture=("wt_flange", dict(Bw=Bw, Hc=Hc, t=t, L=L, bf_t=bf_t, tf_t=tf_t, d_t=t_["d"], tw_t=tw_t, n=int(n), s=s,
-                                                                                               g=g, leh=leh, le_b=le_b, bf=bbf, db=d, wt=shapes.normalize(wt), column=shapes.normalize(column)))))
+                                                                                               g=g, leh=leh, le_b=le_b, bf=bbf, db=d, beam_d=db_, beam_tf=tbf, beam=shapes.normalize(beam), wt=shapes.normalize(wt), column=shapes.normalize(column)))))
     sheet.wt = dict(R1=R1, R2=R2, Rflb=Rflb, Rwly=Rwly, Rsly=Rsly, Rcr=Rcr(wq["Qf"]), Qf=wq["Qf"], U=wq["U"], Rfw=Rfw, Rb=Rb, per=per, Ag_s=Ag_s, An_s=An_s,
                     bs_cases=bs_cases, Rbs_f=Rbs_f, Mn_b=Mn_b)
     return sheet
