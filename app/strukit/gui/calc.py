@@ -1416,6 +1416,18 @@ FORMS = {
                 F("clear_span", "Clear span between the members (coiled strap)", unit="in", required=False, help="for the cut length"),
                 F("load_source", "Where the tension comes from", "text", help="for example: chord splice, hold-down H1")],
         tables=[]),
+    "column_base": dict(
+        title="Column Base, Cast In (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="CB",
+        fields=[F("post", "Post", "select", options=["4x4", "4x6", "6x6", "6x8", "8x8"]),
+                F("model", "Base", "select", options=["first that works"] + [r[0] for r in simpson.COLUMN_BASES], help="CBSTQ / CBSQ, catalog p. 85"),
+                F("cracked", "Concrete cracked", "select", options=["yes", "no"]),
+                F("sdc", "Wind / seismic design category", "select", options=["A&B", "C-F"], help="wind uses A&B (detached 1- and 2-family dwellings in SDC C may use A&B, note 6)"),
+                F("download", "Download, ASD", unit="lb", required=False),
+                F("uplift", "Uplift, ASD", unit="lb", required=False),
+                F("F1", "Lateral F1, ASD (CBSTQ)", unit="lb", required=False, help="directions as the catalog p. 85 figure"),
+                F("F2", "Lateral F2, ASD (CBSTQ)", unit="lb", required=False),
+                F("load_source", "Where the loads come from", "text", help="for example: post P2 reaction")],
+        tables=[]),
     "mpbz": dict(
         title="Moment Post Base (Simpson Strong-Tie MPBZ)", code="Simpson C-C-2026", mark="MB",
         fields=[F("post", "Post", "select", options=["4x4", "6x6", "8x8"]),
@@ -3127,6 +3139,15 @@ def _build(kind, values, project):
         npe, cs = r.num("nails_per_end", False), r.num("clear_span", False)
         r.done()
         return ws_more.strap_sheet(mark, k_, mdl, sp, T_, fa, nl, npe, cs, src), "simple", {}
+    if kind == "column_base":
+        post, mdl, src, sdc = r.text("post"), r.text("model"), r.text("load_source"), r.text("sdc")
+        cr = bool(yes(r.text("cracked")))
+        dl, up = r.num("download", False) or 0.0, r.num("uplift", False) or 0.0
+        f1, f2 = r.num("F1", False) or 0.0, r.num("F2", False) or 0.0
+        if not (dl or up or f1 or f2):
+            r.miss.append("Give a load")
+        r.done()
+        return ws_more.column_base_sheet(mark, post, mdl, cr, sdc, dl, up, f1, f2, src), "simple", {}
     if kind == "mpbz":
         post, mdl, con, src = r.text("post"), r.text("model"), r.text("concrete"), r.text("load_source")
         cr, sdc = bool(yes(r.text("cracked"))), r.text("sdc")

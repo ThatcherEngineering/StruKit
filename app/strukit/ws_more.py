@@ -7004,3 +7004,41 @@ def mpbz_sheet(mark, model, post, concrete, cracked, sdc, download, uplift, late
         reinforced=concrete == "reinforced", cover=cov, download=download, uplift=uplift, lateral=lateral, moment=moment))))
     sheet.mpbz = h
     return sheet
+
+
+def column_base_sheet(mark, post, model, cracked, sdc, download, uplift, F1, F2, load_source):
+    """Simpson Strong-Tie CBSTQ / CBSQ cast-in column base (simpson.column_base): catalog C-C-2026 pp. 84-85, ASD, DF/SP."""
+    from . import simpson
+    if not (load_source or "").strip():
+        raise WorksheetError(f"{mark}: where the loads come from is blank")
+    try:
+        h = simpson.column_base(post, model, cracked, sdc, download, uplift, F1, F2)
+    except simpson.SimpsonError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    r = h["row"]
+    src = f"{simpson.SOURCE}, p. {simpson.COLUMN_BASE_PAGE}"
+    L = footing_line
+    cc = f"{'cracked' if cracked else 'uncracked'} concrete, {'wind and SDC A&B' if sdc == 'A&B' else 'SDC C-F'}"
+    steps = ([L("base chosen", r[0], "", src, f"the column base for a {r[1]} post")] if h["picked"] else [])
+    steps += [L(f"{r[0]}, base {r[2]} ga, strap {r[3]}", f"W1 {r[4]}, W2 {r[5]}, D {r[6]}, H {r[7]}", "in", src, f"{r[8]} screws"),
+              L("allowable uplift", f"{h['uplift_allow']:,}", "lb", src, cc),
+              L("allowable download", f"{r[11]:,}", "lb", src, "(100); reduced where the post governs, note 7")]
+    if h["cbstq"]:
+        steps.append(L("allowable lateral F1, F2", f"{simpson.CBSTQ_LATERAL[0]:,}, {simpson.CBSTQ_LATERAL[1]:,}", "lb", src, "note 5, with 3 in. minimum side cover"))
+    rows = [Row("loads together, sum of load / allowable", "ASD", d, c, "", f"{simpson.SOURCE}, p. 289 (unity equation; p. 23 note e)", "")
+            if n.startswith("loads together") else Row(f"column base {n}", "ASD", d, c, "lb", src + (", note 5" if "lateral" in n else ""), "")
+            for n, d, c in h["rows"]]
+    ld = ", ".join(x for x in (f"download {download:,.0f} lb" if download else "", f"uplift {uplift:,.0f} lb" if uplift else "",
+                               f"F1 {F1:,.0f} lb" if F1 else "", f"F2 {F2:,.0f} lb" if F2 else "") if x)
+    info = [("Column base", f"Simpson Strong-Tie {r[0]}, cast in place, 1 in. standoff; {r[1]} DF/SP post"), ("Concrete", cc + "; f'c at least 2,500 psi (note 3)"),
+            ("Fasteners", f"{r[8]} Strong-Drive SDS Heavy-Duty Connector screws"), ("Loads", f"{ld}, ASD ({load_source.strip()})")]
+    assume = ["Allowable stress design; the loads are not increased for load duration (note 1).",
+              "Side cover at least 3 in." + (" (2 in. for CBSQ86 and CBSQ88, p. 85 figure)" if not h["cbstq"] else " (note 5, for the lateral values)") + "; the base is embedded D.",
+              "The top of the post is held against horizontal movement by other framing (p. 73 note f); the base gives no moment resistance."]
+    sheet = SimpleSheet(mark, "Column Base, Cast In (Simpson Strong-Tie)", "Connection", "ASD", info, [], [], "Allowable Loads", steps, rows, assume,
+                        ["the post itself (its allowable download, note 7)", "the concrete design beyond the tabulated values (note 8)"], picture=None)
+    sheet.blocks.append(dict(title="Column Base", head="Column Base", picture=("column_base", dict(
+        model=r[0], post=r[1], W1=simpson._in(r[4]), W2=simpson._in(r[5]), D=simpson._in(r[6]), H=simpson._in(r[7]), screws=r[8],
+        cover=2.0 if not h["cbstq"] else 3.0, download=download, uplift=uplift, F1=F1, F2=F2))))
+    sheet.cbase = h
+    return sheet
