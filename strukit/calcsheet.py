@@ -4877,11 +4877,102 @@ def _column_cap_picture(c, top, d):
     return yb - T - hp * sc - 36
 
 
+def _tee_strap_picture(c, top, d):
+    """HL / HT / HTQ strap ties and PS / PSQ pile straps, to scale. Left: elevation of a beam on a post (the beam continuous, or ending at the
+    post for an HL), each with its grain and broken off; the strap face on: the T (flange along the beam, stem down the post), the L at the
+    beam end, or the straight pile strap across the joint; bolt heads or screw heads. Right: section through the beam at the post: the beam in
+    end grain on the post, the strap cut on one face (or both faces for a pair) with the through bolts (heads and nuts) or screws dashed;
+    L, H and W dimensioned; the loads listed."""
+    fam = d["family"]
+    W, Ls = d["W"], d["L"]
+    t = {7: 0.179, 3: 0.239}.get(d["ga"], 0.179)
+    pw, bw, bd = 5.5, 5.5, 11.25
+    sc = min(5.0, 150.0 / (bd + Ls + 4))
+    T = max(t * sc, 1.0)
+    vx, ytop = LM + 120, top - 20
+    yb = ytop - bd * sc                                      # beam bottom = post top
+    hp = (Ls if fam in ("HL", "HT", "HTQ") else Ls / 2) + 4.0
+    end = fam == "HL"
+    bx0 = vx - pw * sc / 2 - (0 if end else 14 * sc)
+    bx1 = vx + pw * sc / 2 + 14 * sc
+    memberart.wood_elevation(c, bx0, yb, bx1 - bx0, bd * sc, seed=4)
+    if not end:
+        _break_v(c, bx0, yb - 2, yb + bd * sc + 2)
+    _break_v(c, bx1, yb - 2, yb + bd * sc + 2)
+    c.saveState(); c.translate(vx - pw * sc / 2, yb - hp * sc); c.rotate(90)
+    memberart.wood_elevation(c, 0, -pw * sc, hp * sc, pw * sc, seed=6); c.restoreState()
+    memberart._break_h(c, vx - pw * sc / 2, vx + pw * sc / 2, yb - hp * sc - 1)
+    db = (0.625 if (d.get("bolt") or (0, "5/8"))[1] == "5/8" else (0.75 if (d.get("bolt") or (0, ""))[1] == "3/4" else 0.5)) * sc
+    heads = []
+    if fam in ("HT", "HTQ", "HL"):
+        fy = yb + 1.25 * sc                                   # flange 1-1/4 in. above the beam bottom (depiction)
+        if fam == "HL":
+            fx0 = vx - pw * sc / 2
+            _steel_strip(c, fx0, fy, Ls * sc, W * sc)
+            _steel_strip(c, fx0, yb - (Ls - bd + 0.0) * sc if False else yb - (Ls - (fy - yb) / sc - W) * sc, W * sc, (fy - yb) + (Ls - (fy - yb) / sc - W) * sc + W * sc)
+            sx0 = fx0
+        else:
+            fx0 = vx - Ls * sc / 2
+            _steel_strip(c, fx0, fy, Ls * sc, W * sc)
+            stem_len = Ls - (fy - yb) / sc - W
+            _steel_strip(c, vx - W * sc / 2, yb - stem_len * sc, W * sc, (fy - yb) + stem_len * sc)
+            sx0 = vx - W * sc / 2
+        n = d["n"] if not d.get("bolts") else d["bolt"][0]
+        nf = (n + 1) // 2 if fam != "HL" else (n + 1) // 2
+        for k in range(nf):
+            heads.append((fx0 + Ls * sc * (k + 0.5) / nf, fy + W * sc / 2))
+        stem_n = n - nf
+        stem_top = yb - 1.5 * sc
+        stem_bot = yb - (Ls - (fy - yb) / sc - W) * sc + 1.0 * sc
+        for k in range(stem_n):
+            heads.append((sx0 + W * sc / 2, stem_top - (stem_top - stem_bot) * (k + 0.5) / max(stem_n, 1)))
+        memberart._dim_h(c, fx0, fx0 + Ls * sc, ytop + 10, f"L {_mixed(Ls)}", FR, ext_from=ytop)
+        memberart._dim_v(c, yb - (Ls - (fy - yb) / sc - W) * sc, fy + W * sc, vx + pw * sc / 2 + 18 * sc, f"H {_mixed(Ls)}", FR,
+                         ext_from=sx0 + W * sc)
+    else:                                                    # PS / PSQ: straight, half on the beam, half on the post
+        _steel_strip(c, vx - W * sc / 2, yb - Ls * sc / 2, W * sc, Ls * sc)
+        n = d["n"] if not d.get("bolts") else d["bolt"][0]
+        cols = 2 if W >= 3.5 else 1
+        per = n // 2
+        for half, y0 in ((0, yb + 1.0 * sc), (1, yb - Ls * sc / 2 + 1.0 * sc)):
+            for k in range(per):
+                heads.append((vx + (W * sc / 4 * (1 if k % 2 else -1) if cols == 2 else 0), y0 + (Ls / 2 - 2.0) * sc * (k // cols + 0.5) / max(per // cols, 1)))
+        memberart._dim_v(c, yb - Ls * sc / 2, yb + Ls * sc / 2, vx + pw * sc / 2 + 18 * sc, f"L {_mixed(Ls)}", FR, ext_from=vx + W * sc / 2)
+        memberart._dim_h(c, vx - W * sc / 2, vx + W * sc / 2, ytop + 10, f"W {_mixed(W)}", FR, ext_from=yb + Ls * sc / 2)
+    _bolt_heads(c, heads, db if d.get("bolts") else 0.3 * sc)
+    _small(c, vx, yb - hp * sc - 16, "elevation, the strap face on, to scale (in.)")
+    # section through the beam at the post
+    sx = LM + 360
+    memberart.wood_section(c, sx, yb + bd * sc / 2, bw * sc, bd * sc, bw, bd)
+    c.saveState(); c.translate(sx - pw * sc / 2, yb - hp * sc); c.rotate(90)
+    memberart.wood_elevation(c, 0, -pw * sc, hp * sc, pw * sc, seed=8); c.restoreState()
+    memberart._break_h(c, sx - pw * sc / 2, sx + pw * sc / 2, yb - hp * sc - 1)
+    sides = (-1, 1) if fam in ("HL", "HT") else (1,)
+    y_lo = yb - ((Ls - 1.25 - W) if fam in ("HL", "HT", "HTQ") else Ls / 2) * sc
+    y_hi = (yb + (1.25 + W) * sc) if fam in ("HL", "HT", "HTQ") else (yb + Ls * sc / 2)
+    for sg in sides:
+        _steel_strip(c, sx + sg * pw * sc / 2 + (0 if sg > 0 else -T), y_lo, T, y_hi - y_lo, cut=True)
+    for yy in (yb + (y_hi - yb) * 0.5, yb - (yb - y_lo) * 0.5):
+        if d.get("bolts"):
+            memberart.bolt_side(c, sx - pw * sc / 2 - (T if len(sides) == 2 else 0), yy, sx + pw * sc / 2 + T, yy, db)
+        else:
+            c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.7); c.setDash(1.4, 1.0)
+            c.line(sx + pw * sc / 2 + T, yy, sx + pw * sc / 2 - 4.0 * sc, yy); c.setDash()
+    _small(c, sx, yb - hp * sc - 16, "section through the beam at the post, to scale (in.)")
+    c.setFillColorRGB(*LOADC); c.setFont(FR, 6.5)
+    c.drawString(sx + pw * sc / 2 + 30, yb + bd * sc * 0.6, f"tension {d['tension']:,.0f} lb" + (f", F1 {d['F1']:,.0f} lb" if d.get("F1") else ""))
+    c.setFillColorRGB(*INK)
+    c.drawCentredString(LM + 240, ytop + 24, f"{d['model']}, {d['ga']} ga; {d['fast']}" + (", a pair on opposite faces" if fam in ("HL", "HT") else ""))
+    return yb - hp * sc - 24
+
+
 def _strap_picture(c, top, d):
     """Strap tie in tension, to scale. Left: elevation looking at the strap face on two wood members end to end (with the clear span
     between them for a coiled strap), each broken off at its far end, the strap over both with its nails (or bolts) in each member, the
     tension arrows; the strap length, or the end lengths and clear span, dimensioned. Right: section across the strap on the member: the
     member in end grain, the strap at its thickness, a nail driven into the member (dashed in the wood)."""
+    if d.get("family") in ("HL", "HT", "HTQ", "PS", "PSQ"):
+        return _tee_strap_picture(c, top, d)
     W, ga = d["W"], d["ga"]
     t = {10: 0.134, 12: 0.105, 14: 0.075, 16: 0.06, 18: 0.048, 20: 0.036, 22: 0.030}.get(ga, 0.06)
     if d["coil"]:
@@ -4910,7 +5001,14 @@ def _strap_picture(c, top, d):
     _steel_strip(c, xa, ym - sw / 2, Ls * sc, sw)
     nh = d["n"] // 2
     if d.get("bolts"):
-        _bolt_heads(c, [(xa + e * sc * (k + 0.5) / nh, ym) for k in range(nh)] + [(xm2 + e * sc * (k + 0.5) / nh, ym) for k in range(nh)], 0.5 * sc)
+        rws = 2 if W >= 4 else 1                             # two rows of bolts on the wide straps (HST5, HST6, p. 294)
+        per = nh // rws
+        dbh = 0.5 * sc if not d.get("bolt") else ({"1/2": 0.5, "5/8": 0.625, "3/4": 0.75}[d["bolt"][1]] * sc)
+        pts = []
+        for xs_ in (xa, xm2):
+            for k in range(nh):
+                pts.append((xs_ + e * sc * (k // rws + 0.5) / per, ym + (0 if rws == 1 else (sw * 0.25 if k % 2 == 0 else -sw * 0.25))))
+        _bolt_heads(c, pts, dbh)
     else:
         c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.35)
         rr = max(0.075 * sc, 0.7)

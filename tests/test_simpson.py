@@ -573,3 +573,30 @@ def test_floor_to_floor_straps():
     assert simpson.strap("floor-to-floor", "MST37", "SPF/HF", 1000, clear_span=20)["allow"] == 1500
     with pytest.raises(simpson.SimpsonError):
         simpson.strap("floor-to-floor", "MST37", "DF/SP", 1000, clear_span=31)
+
+
+def test_heavy_straps():
+    """HL / HT / HTQ (p. 293) and PS / PSQ / HST (p. 294): each row found in the page text. 1212HT DF/SP: 1,500 / 2,585 + 300 / 815 = 0.948;
+    PSQ418 SPF/HF tension 2,620, F1 670 (note 3); 5,000 lb SPF/HF: HST2 4,835 fails, HST5 9,870 passes (the first in the table that works
+    with an SPF/HF value); HL / HT have no species group and are refused for SPF/HF; the T and L straps are not load rated."""
+    import re
+    t = _page_text(293) + _page_text(294)
+    j = lambda ps: r"\s+".join(re.escape(str(p)).replace(r"\ ", r"\s+") for p in ps)
+    for r in simpson.HEAVY_STRAPS:
+        vals = [f"{v:,}" for v in (r[7][0], r[7][1] if r[7][1] else r[8][0])]
+        if r[1] == "HST":
+            fast = [str(r[6][0]), r[6][1]]
+        else:
+            fast = [r[5]]
+        assert re.search(j([r[0]]) + r".*?" + j([r[3]]) + r".*?" + j(fast + vals), t), r[0]
+    h = simpson.strap("heavy strap", "1212HT", "DF/SP", 1500, F1=300)
+    assert h["rows"][-1][1] == pytest.approx(1500 / 2585 + 300 / 815)
+    p = simpson.strap("heavy strap", "PSQ418", "SPF/HF", 1500, F1=200)
+    assert p["rows"][0][2] == 2620 and p["rows"][1][2] == 670
+    assert simpson.strap("heavy strap", "first that works", "SPF/HF", 5000)["model"] == "HST5"
+    with pytest.raises(simpson.SimpsonError):
+        simpson.strap("heavy strap", "1212HT", "SPF/HF", 1000)
+    with pytest.raises(simpson.SimpsonError):
+        simpson.strap("heavy strap", "66T", "DF/SP", 100)
+    with pytest.raises(simpson.SimpsonError):
+        simpson.strap("strap tie", "LSTA18", "DF/SP", 100, F1=50)

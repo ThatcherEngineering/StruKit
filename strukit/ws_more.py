@@ -6860,20 +6860,24 @@ def _cap_default_width(w):
     return w if abs(w * 2 - round(w * 2)) < 1e-6 else round((w - 0.125) * 8) / 8
 
 
-def strap_sheet(mark, kind, model, species, tension, fastening, nail, nails_per_end, clear_span, load_source):
+def strap_sheet(mark, kind, model, species, tension, fastening, nail, nails_per_end, clear_span, load_source, F1=0.0):
     """Simpson Strong-Tie strap in tension (simpson.strap): catalog C-C-2026 pp. 291 (strap ties), 292 (MST), 296 (coiled), ASD."""
     from . import simpson
     if not (load_source or "").strip():
         raise WorksheetError(f"{mark}: where the strap tension comes from is blank")
     try:
-        h = simpson.strap(kind, model, species, tension, fastening, nail, nails_per_end, clear_span)
+        h = simpson.strap(kind, model, species, tension, fastening, nail, nails_per_end, clear_span, F1)
     except simpson.SimpsonError as e:
         raise WorksheetError(f"{mark}: {e}")
     src = f"{simpson.SOURCE}, p. {h['page']}"
     notes = f"{simpson.SOURCE}, p. {simpson.STRAP_NOTES_PAGE}"
     L = footing_line
     coil = kind == "coiled strap"
+    heavy = kind == "heavy strap"
+    pair = heavy and h["family"] in ("HL", "HT")
     half = (f"{h['n'] // 2} {'bolts' if h['bolts'] else 'nails'} in each member" if h["n"] % 2 == 0 else f"{h['n']} fasteners, half in each member")
+    if heavy:
+        half = "as the catalog shows" + (", a pair, bolts in double shear" if pair else "")
     steps = ([L("strap chosen", h["model"], "", src, "the first strap in the catalog table that carries the tension")] if h["picked"] else [])
     steps += [L(f"{h['model']}, {h['ga']} ga", f"W {h['W']}" + (f", L {h['L']}" if h["L"] else ""), "in", src, ""),
               L("fasteners", h["fast"] + (" (ASTM A307 Grade A or better)" if h["bolts"] else ""), "", src,
@@ -6890,20 +6894,38 @@ def strap_sheet(mark, kind, model, species, tension, fastening, nail, nails_per_
         steps.append(L("clear span", f"{clear_span:g} in., table row {h['table_span']} in.", "", src,
                        "floor-to-floor table; the next tabulated clear span at or above the actual"))
         steps.append(L(f"allowable tension, {species}", f"{h['allow']:,}", "lb", src, "(160), wind or earthquake; half the nails each side of the clear span"))
+    elif heavy:
+        steps.append(L(f"allowable {'uplift / tension' if pair or h['family'] == 'HTQ' else 'tension'}, {species}", f"{h['allow']:,}", "lb", src,
+                       ("(100/160)" if h["page"] == 293 else "(160)") + (", per pair" if pair else ", per part" if h["family"] in ("HTQ", "PS", "PSQ") else "")))
+        if F1:
+            steps.append(L(f"allowable lateral F1, {species}", f"{h['rows'][1][2]:,}", "lb", src, "per pair" if pair else "per part"))
     else:
         steps.append(L(f"allowable tension, {species}", f"{h['allow']:,}", "lb", src, "(160), wind or earthquake; reduce where other loads govern"))
-    rows = [Row("strap tension", "ASD", tension, h["allow"], "lb", src + (", note 2" if coil and h["n"] != h["n_tab"] else ""), "")]
+    rows = [Row(("loads together, sum of load / allowable" if n.startswith("loads together") else f"strap {n}"), "ASD", d, c,
+                "" if n.startswith("loads together") else "lb",
+                (f"{simpson.SOURCE}, p. 289 (unity equation; p. 23 note e)" if n.startswith("loads together") else
+                 src + (", note 2" if coil and h["n"] != h["n_tab"] else "")), "") for n, d, c in h["rows"]]
     nails_txt = (f"{h['n']} of the {h['n_tab']} nails in the table, " if coil and h["n"] != h["n_tab"] else "") + h["fast"]
     info = [("Strap", f"Simpson Strong-Tie {h['model']}, {h['ga']} ga, {kind}; {species}"),
             ("Fasteners", nails_txt + ", half in each member"),
-            ("Load", f"tension {tension:,.0f} lb, ASD ({load_source.strip()})")]
+            ("Load", f"tension {tension:,.0f} lb" + (f", lateral F1 {F1:,.0f} lb" if F1 else "") + f", ASD ({load_source.strip()})")]
     if kind == "floor-to-floor":
         info.append(("Clear span", f"{clear_span:g} in. between the nailed ends (rim and floor framing); no nails in the clear span"))
     if coil and h.get("cut") is not None:
         info.append(("Cut length", f"{h['cut']:g} in. ({h['end']} in. end length each member, {clear_span:g} in. clear span)"))
-    assume = [f"Allowable stress design for wind or earthquake (160) with no further increase (catalog p. {simpson.STRAP_NOTES_PAGE} note a).",
-              "A straight strap in tension, half of the fasteners in each member being connected (note d); not field-bent.",
-              "Over wood structural panel sheathing 5/8 in. or thinner, nails at least 2-1/2 in. long (note b)."]
+    assume = [f"Allowable stress design for wind or earthquake (160) with no further increase (catalog p. {simpson.STRAP_NOTES_PAGE} note a)."]
+    if heavy:
+        assume.append({"HL": "Installed in pairs on opposite faces with through bolts in double shear; members at least 3-1/2 in. thick (p. 293 note 1).",
+                       "HT": "Installed in pairs on opposite faces with through bolts in double shear on a continuous beam; members at least 3-1/2 in. thick (p. 293 notes 1, 3).",
+                       "HTQ": "One part (p. 293 note 2), on a continuous beam (note 3).",
+                       "PS": "One part; the beam loaded perpendicular and the post parallel to grain; members at least 3-1/2 in.; NDS end and edge distances met (p. 294 note 4).",
+                       "PSQ": "One part (p. 294 note 3); members at least 3-1/2 in. thick.",
+                       "HST": "Loads parallel to grain; members at least " + ("3-1/2" if h["model"] in ("HST2", "HST5") else "4-1/2") + " in. thick (p. 294 note 2)."}[h["family"]])
+        if h["bolts"]:
+            assume.append("Through bolts ASTM A307 Grade A or better (not lag screws or carriage bolts).")
+    else:
+        assume += ["A straight strap in tension, half of the fasteners in each member being connected (note d); not field-bent.",
+                   "Over wood structural panel sheathing 5/8 in. or thinner, nails at least 2-1/2 in. long (note b)."]
     if kind == "MST":
         assume.append("Bolts or nails, not both; loads parallel to grain; members at least 2-1/2 in. thick (p. 292 notes 2 and 3).")
     if coil and h["model"].startswith("CMST"):
@@ -6914,7 +6936,8 @@ def strap_sheet(mark, kind, model, species, tension, fastening, nail, nails_per_
     sheet.blocks.append(dict(title="Strap", head="Strap", picture=("strap", dict(
         model=h["model"], ga=h["ga"], W=simpson._in(h["W"]), L=simpson._in(h["L"]) if h["L"] else None, n=h["n"], bolts=h["bolts"],
         end=h.get("end") if coil else ((simpson._in(h["L"]) - clear_span) / 2 if kind == "floor-to-floor" else None),
-        clear=clear_span, tension=tension, coil=coil or kind == "floor-to-floor", ff=kind == "floor-to-floor", fast=h["fast"]))))
+        clear=clear_span, tension=tension, coil=coil or kind == "floor-to-floor", ff=kind == "floor-to-floor", fast=h["fast"],
+        family=h.get("family"), bolt=h.get("bolt"), F1=F1))))
     sheet.strap = h
     return sheet
 

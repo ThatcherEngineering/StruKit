@@ -1406,7 +1406,7 @@ FORMS = {
         tables=[]),
     "strap": dict(
         title="Strap (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="ST",
-        fields=[F("kind", "Strap kind", "select", options=simpson.STRAP_KINDS, help="strap ties p. 291; MST p. 292; coiled CS / CMST p. 296; floor-to-floor across a clear span p. 292"),
+        fields=[F("kind", "Strap kind", "select", options=simpson.STRAP_KINDS, help="strap ties p. 291; MST p. 292; coiled CS / CMST p. 296; floor-to-floor p. 292; heavy straps HL, HT, HTQ, PS, PSQ, HST pp. 293-294"),
                 F("model", "Strap", "text", help="model as the catalog names it, for example LSTA24, MST48, CS16; or: first that works"),
                 F("species", "Species group", "select", options=["DF/SP", "SPF/HF"]),
                 F("tension", "Tension, ASD", unit="lb"),
@@ -1414,6 +1414,7 @@ FORMS = {
                 F("nail", "Nail diameter (coiled strap)", "select", options=["0.148", "0.162", "0.131"], required=False),
                 F("nails_per_end", "Nails in each member (coiled strap, fewer than the table)", required=False),
                 F("clear_span", "Clear span between the members (coiled, floor-to-floor)", unit="in", required=False, help="coiled: for the cut length; floor-to-floor: the unnailed length over the rim"),
+                F("F1", "Lateral F1, ASD (HL, HT, HTQ, PSQ)", unit="lb", required=False),
                 F("load_source", "Where the tension comes from", "text", help="for example: chord splice, hold-down H1")],
         tables=[]),
     "corner_cap": dict(
@@ -3149,7 +3150,7 @@ def _build(kind, values, project):
         fa, nl = r.text("fastening", False) or "nails", r.text("nail", False) or "0.148"
         npe, cs = r.num("nails_per_end", False), r.num("clear_span", False)
         r.done()
-        return ws_more.strap_sheet(mark, k_, mdl, sp, T_, fa, nl, npe, cs, src), "simple", {}
+        return ws_more.strap_sheet(mark, k_, mdl, sp, T_, fa, nl, npe, cs, src, r.num("F1", False) or 0.0), "simple", {}
     if kind == "corner_cap":
         mdl, sp, src = r.text("model"), r.text("species"), r.text("load_source")
         um, us = r.num("uplift_main", False) or 0.0, r.num("uplift_side", False) or 0.0

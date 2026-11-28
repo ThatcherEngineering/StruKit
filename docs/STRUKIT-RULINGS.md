@@ -575,3 +575,7 @@ Texts as they stood under "Open" when ruled:
 ## 2026-11-27, floor-to-floor straps (0.293.0), applied (not ruled)
 - A clear span between the tabulated ones (16, 18, 24, 30 in.; catalog p. 292) takes the row of the next larger tabulated clear span (its
   load is the lower), not an interpolation; a clear span over the largest tabulated for the model is refused.
+
+## 2026-11-27, heavy straps (0.294.0), applied (not ruled)
+- HL / HT / HTQ (catalog p. 293): the table names no species group; its values are used for DF/SP only and the straps are refused for
+  SPF/HF. HL / HT values are for a pair in double shear; the 1616HTQ is checked as one part (the doubling for a pair, note 2, is not taken).

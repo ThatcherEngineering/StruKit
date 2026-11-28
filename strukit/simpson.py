@@ -662,7 +662,28 @@ COILS = [
 ]
 COIL_PAGE = 296
 STRAP_NOTES_PAGE = 288
-STRAP_KINDS = ["strap tie", "MST", "coiled strap", "floor-to-floor"]
+STRAP_KINDS = ["strap tie", "MST", "coiled strap", "floor-to-floor", "heavy strap"]
+# Heavy straps, catalog pp. 293-294: model, family, gauge, W, L (in.), fasteners, (qty, dia.) of bolts or None, tension DF/SP, SPF/HF (160),
+# lateral F1 DF/SP, SPF/HF or None, page. HL / HT (p. 293): installed in pairs, bolts in double shear, members 3-1/2 in. or more (note 1); the
+# table names no species group, so its values are used for DF/SP only; 1616HTQ per part (note 2). PS / PSQ (p. 294): per part, members
+# 3-1/2 in. or more (notes 3, 4). HST (p. 294): parallel to grain, members 3-1/2 in. (HST2, HST5) or 4-1/2 in. (HST3, HST6) (note 2).
+HEAVY_STRAPS = [
+    ("1212HL", "HL", 7, "2 1/2", "12", '(5) 5/8" bolts', (5, "5/8"), (1535, None), (565, None), 293),
+    ("1616HL", "HL", 7, "2 1/2", "16", '(5) 5/8" bolts', (5, "5/8"), (1535, None), (565, None), 293),
+    ("1212HT", "HT", 7, "2 1/2", "12", '(6) 5/8" bolts', (6, "5/8"), (2585, None), (815, None), 293),
+    ("1616HT", "HT", 7, "2 1/2", "16", '(6) 5/8" bolts', (6, "5/8"), (2585, None), (815, None), 293),
+    ("1616HTQ", "HTQ", 7, "2 1/2", "16", "(10) SDWH27400G", None, (2670, None), (870, None), 293),
+    ("PS218", "PS", 7, "2", "18", '(4) 3/4" bolts', (4, "3/4"), (1740, 1385), None, 294),
+    ("PS418", "PS", 7, "4", "18", '(4) 3/4" bolts', (4, "3/4"), (1740, 1385), None, 294),
+    ("PS720", "PS", 7, "6 3/4", "20", '(8) 1/2" bolts', (8, "1/2"), (3075, 2645), None, 294),
+    ("PSQ218", "PSQ", 7, "2", "18", "(8) SDWH27400G", None, (2815, 2420), (750, 645), 294),
+    ("PSQ418", "PSQ", 7, "4", "18", "(8) SDWH27400G", None, (3045, 2620), (780, 670), 294),
+    ("HST2", "HST", 7, "2 1/2", "21 1/4", '(6) 5/8" bolts', (6, "5/8"), (5220, 4835), None, 294),
+    ("HST5", "HST", 7, "5", "21 1/4", '(12) 5/8" bolts', (12, "5/8"), (10650, 9870), None, 294),
+    ("HST3", "HST", 3, "3", "25 1/2", '(6) 3/4" bolts', (6, "3/4"), (7650, 6580), None, 294),
+    ("HST6", "HST", 3, "6", "25 1/2", '(12) 3/4" bolts', (12, "3/4"), (15425, 13265), None, 294),
+]
+NOT_RATED_STRAPS = ("55L", "66L", "88L", "1212L", "66T", "128T", "1212T")          # p. 293 note 1: not load rated
 # Floor-to-floor straps across a clear span (rim and floor framing between), catalog p. 292 upper table: model, clear span (in.), nails
 # (total, half above and half below the clear span), DF/SP, SPF/HF allowable tension (160), lb.
 FLOOR_TO_FLOOR = [
@@ -692,7 +713,42 @@ def strap_models(kind):
     return [r[0] for r in {"strap tie": STRAPS, "MST": MST, "coiled strap": COILS}[kind]]
 
 
-def strap(kind, model, species, tension, fastening="nails", nail="0.148", nails_per_end=None, clear_span=None):
+def heavy_strap(model, species, tension, F1=0.0):
+    """HL / HT / HTQ (p. 293), PS / PSQ (p. 294), HST (p. 294), ASD (160). Tension (uplift for HT / HL) and lateral F1 where tabulated, the two
+    together by the unity equation (p. 23 note e, p. 289)."""
+    if model.strip().upper() in NOT_RATED_STRAPS:
+        raise SimpsonError(f"strap: {model} is not load rated (catalog p. 293 note 1)")
+    sp = 0 if species == "DF/SP" else 1
+    if model.strip().lower() in ("first that works", "lightest that works"):
+        cands = HEAVY_STRAPS
+    else:
+        cands = [r for r in HEAVY_STRAPS if r[0].lower() == model.strip().lower()]
+        if not cands:
+            raise SimpsonError(f"strap: {model} is not on catalog pp. 293-294")
+    for r in cands:
+        Ta = r[7][sp]
+        if Ta is None:
+            if len(cands) == 1:
+                raise SimpsonError(f"strap: the {r[0]} table (catalog p. {r[9]}) names no species group; StruKit uses it for DF/SP only")
+            continue
+        Fa = r[8][sp] if (r[8] and F1) else None
+        if F1 and Fa is None:
+            if len(cands) == 1:
+                raise SimpsonError(f"strap: {r[0]} has no lateral F1 value for {species} (catalog p. {r[9]})")
+            continue
+        rows = [("tension", tension, Ta)] + ([("lateral F1", F1, Fa)] if F1 else [])
+        if F1:
+            rows.append(("loads together, sum of load / allowable", tension / Ta + F1 / Fa, 1.0))
+        if len(cands) == 1 or all(d <= c + 1e-9 for _, d, c in rows):
+            break
+    else:
+        raise SimpsonError(f"strap: no heavy strap on catalog pp. 293-294 carries these loads ({species})")
+    bolts = r[6]
+    return dict(model=r[0], family=r[1], ga=r[2], W=r[3], L=r[4], fast=r[5], allow=r[7][sp], page=r[9], n=(bolts[0] if bolts else int(r[5].split(")")[0][1:])),
+                kind="heavy strap", species=species, tension=tension, bolts=bool(bolts), bolt=bolts, picked=len(cands) > 1, rows=rows, F1=F1)
+
+
+def strap(kind, model, species, tension, fastening="nails", nail="0.148", nails_per_end=None, clear_span=None, F1=0.0):
     """Strap in tension, ASD (160, wind or earthquake; reduce where other loads govern, p. 288 note a), half the fasteners in each member
     (note d). kind "strap tie": p. 291; "MST": p. 292, nails or bolts (note 2); "coiled strap": p. 296, nail option by diameter
     (0.162 / 0.148 / 0.131), allowable x nails used / nails in the table for fewer nails (note 2), cut length = 2 x end length + clear
@@ -705,6 +761,10 @@ def strap(kind, model, species, tension, fastening="nails", nail="0.148", nails_
     bolts = fastening.strip().lower().startswith("bolt")
     if kind not in STRAP_KINDS:
         raise SimpsonError("strap: the kind is strap tie, MST or coiled strap")
+    if kind == "heavy strap":
+        return heavy_strap(model, species, tension, F1)
+    if F1:
+        raise SimpsonError("strap: a lateral F1 value is tabulated only for the heavy straps (HL, HT, HTQ, PSQ)")
     if kind == "floor-to-floor":
         if clear_span is None or clear_span <= 0:
             raise SimpsonError("strap: give the clear span between the nailed ends (floor-to-floor table, catalog p. 292)")
