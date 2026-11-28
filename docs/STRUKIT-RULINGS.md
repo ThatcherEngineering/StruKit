@@ -571,3 +571,7 @@ Texts as they stood under "Open" when ruled:
   floor (100) column (0.284.0); (2) MPBZ cracked concrete unless the engineer selects uncracked with its basis (0.286.0); (3) MPBZ wood
   moment (160) for every combination (0.286.0); (4) MPBZ spring in the 3D frame x 0.75 (note 10) and reduced by the 0.8 direct analysis
   factor in the sway run (0.290.0). The CBSTQ lateral with the unity equation (0.288.0) follows the 2026-11-27 morning ruling.
+
+## 2026-11-27, floor-to-floor straps (0.293.0), applied (not ruled)
+- A clear span between the tabulated ones (16, 18, 24, 30 in.; catalog p. 292) takes the row of the next larger tabulated clear span (its
+  load is the lower), not an interpolation; a clear span over the largest tabulated for the model is refused.

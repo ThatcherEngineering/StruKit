@@ -1406,14 +1406,14 @@ FORMS = {
         tables=[]),
     "strap": dict(
         title="Strap (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="ST",
-        fields=[F("kind", "Strap kind", "select", options=simpson.STRAP_KINDS, help="strap ties p. 291; MST p. 292; coiled CS / CMST p. 296"),
+        fields=[F("kind", "Strap kind", "select", options=simpson.STRAP_KINDS, help="strap ties p. 291; MST p. 292; coiled CS / CMST p. 296; floor-to-floor across a clear span p. 292"),
                 F("model", "Strap", "text", help="model as the catalog names it, for example LSTA24, MST48, CS16; or: first that works"),
                 F("species", "Species group", "select", options=["DF/SP", "SPF/HF"]),
                 F("tension", "Tension, ASD", unit="lb"),
                 F("fastening", "Fasteners (MST)", "select", options=["nails", "bolts"], required=False),
                 F("nail", "Nail diameter (coiled strap)", "select", options=["0.148", "0.162", "0.131"], required=False),
                 F("nails_per_end", "Nails in each member (coiled strap, fewer than the table)", required=False),
-                F("clear_span", "Clear span between the members (coiled strap)", unit="in", required=False, help="for the cut length"),
+                F("clear_span", "Clear span between the members (coiled, floor-to-floor)", unit="in", required=False, help="coiled: for the cut length; floor-to-floor: the unnailed length over the rim"),
                 F("load_source", "Where the tension comes from", "text", help="for example: chord splice, hold-down H1")],
         tables=[]),
     "corner_cap": dict(

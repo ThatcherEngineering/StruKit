@@ -6886,6 +6886,10 @@ def strap_sheet(mark, kind, model, species, tension, fastening, nail, nails_per_
         steps.append(L("end length", f"{h['end']}", "in", src, "each member"))
         if h.get("cut") is not None:
             steps.append(L("cut length", f"2 x {h['end']} + {clear_span:g} = {h['cut']:g}", "in", notes, "note h: twice the end length plus the clear span"))
+    elif kind == "floor-to-floor":
+        steps.append(L("clear span", f"{clear_span:g} in., table row {h['table_span']} in.", "", src,
+                       "floor-to-floor table; the next tabulated clear span at or above the actual"))
+        steps.append(L(f"allowable tension, {species}", f"{h['allow']:,}", "lb", src, "(160), wind or earthquake; half the nails each side of the clear span"))
     else:
         steps.append(L(f"allowable tension, {species}", f"{h['allow']:,}", "lb", src, "(160), wind or earthquake; reduce where other loads govern"))
     rows = [Row("strap tension", "ASD", tension, h["allow"], "lb", src + (", note 2" if coil and h["n"] != h["n_tab"] else ""), "")]
@@ -6893,6 +6897,8 @@ def strap_sheet(mark, kind, model, species, tension, fastening, nail, nails_per_
     info = [("Strap", f"Simpson Strong-Tie {h['model']}, {h['ga']} ga, {kind}; {species}"),
             ("Fasteners", nails_txt + ", half in each member"),
             ("Load", f"tension {tension:,.0f} lb, ASD ({load_source.strip()})")]
+    if kind == "floor-to-floor":
+        info.append(("Clear span", f"{clear_span:g} in. between the nailed ends (rim and floor framing); no nails in the clear span"))
     if coil and h.get("cut") is not None:
         info.append(("Cut length", f"{h['cut']:g} in. ({h['end']} in. end length each member, {clear_span:g} in. clear span)"))
     assume = [f"Allowable stress design for wind or earthquake (160) with no further increase (catalog p. {simpson.STRAP_NOTES_PAGE} note a).",
@@ -6907,7 +6913,8 @@ def strap_sheet(mark, kind, model, species, tension, fastening, nail, nails_per_
                          "nails or screws other than those listed (the replacement fastener factors of p. 288 are not used)"], picture=None)
     sheet.blocks.append(dict(title="Strap", head="Strap", picture=("strap", dict(
         model=h["model"], ga=h["ga"], W=simpson._in(h["W"]), L=simpson._in(h["L"]) if h["L"] else None, n=h["n"], bolts=h["bolts"],
-        end=h.get("end"), clear=clear_span, tension=tension, coil=coil, fast=h["fast"]))))
+        end=h.get("end") if coil else ((simpson._in(h["L"]) - clear_span) / 2 if kind == "floor-to-floor" else None),
+        clear=clear_span, tension=tension, coil=coil or kind == "floor-to-floor", ff=kind == "floor-to-floor", fast=h["fast"]))))
     sheet.strap = h
     return sheet
 

@@ -4924,11 +4924,11 @@ def _strap_picture(c, top, d):
     _arrow(c, x0 + total * sc - 2 * sc, ym + mem_d * sc / 2 + 8, x0 + total * sc + 8, ym + mem_d * sc / 2 + 8, head=3)
     c.drawCentredString(x0 + total * sc / 2, ym + mem_d * sc / 2 + 6, f"T = {d['tension']:,.0f} lb")
     if d["coil"]:
-        memberart._dim_h(c, xa, xm1, yb - 12, f"end {e:g}", FR, ext_from=yb)
+        memberart._dim_h(c, xa, xm1, yb - 12, f"end {_mixed(e)}", FR, ext_from=yb)
         if cl > 0:
-            memberart._dim_h(c, xm1, xm2, yb - 12, f"clear {cl:g}", FR, ext_from=yb)
-        memberart._dim_h(c, xm2, xm2 + e * sc, yb - 12, f"end {e:g}", FR, ext_from=yb)
-        memberart._dim_h(c, xa, xa + Ls * sc, yb - 28, f"cut length {Ls:g}", FR, ext_from=yb - 12)
+            memberart._dim_h(c, xm1, xm2, yb - 12, f"clear {_mixed(cl)}", FR, ext_from=yb)
+        memberart._dim_h(c, xm2, xm2 + e * sc, yb - 12, f"end {_mixed(e)}", FR, ext_from=yb)
+        memberart._dim_h(c, xa, xa + Ls * sc, yb - 28, (f"L {_mixed(Ls)}" if d.get("ff") else f"cut length {_mixed(Ls)}"), FR, ext_from=yb - 12)
     else:
         memberart._dim_h(c, xa, xa + Ls * sc, yb - 12, f"L {_mixed(Ls)}", FR, ext_from=ym - sw / 2)
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)

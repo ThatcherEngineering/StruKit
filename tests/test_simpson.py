@@ -558,3 +558,18 @@ def test_corner_cap_and_a_hl_screens(tmp_path):
         s = calc.build("framing_angle", v, proj)[0]
         assert all(r.status == "OK" for r in s.rows), v["mark"]
         calcsheet.simple_pdf(s, str(tmp_path / f"{v['mark']}.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+
+
+def test_floor_to_floor_straps():
+    """Floor-to-floor table (p. 292 upper): every row found in the page text. 3,000 lb DF/SP over a 17 in. clear span: the 18 in. rows
+    (the next tabulated span at or above) are used; MSTA49 2,020, MSTC28 1,150, MSTC40 2,690 fail, MSTC52 4,225 passes. MST37 over 20 in.
+    takes the 24 in. row, 1,720 (SPF/HF 1,500); over 31 in. it is refused."""
+    import re
+    t = _page_text(292)
+    for r in simpson.FLOOR_TO_FLOOR:
+        assert re.search(r"\s" + str(r[1]) + r"\s+" + re.escape(r[2]).replace(r"\ ", r"\s+") + r"\s+" + f"{r[3]:,}" + r"\s+" + f"{r[4]:,}", t), r
+    h = simpson.strap("floor-to-floor", "first that works", "DF/SP", 3000, clear_span=17)
+    assert h["model"] == "MSTC52" and h["table_span"] == 18 and h["allow"] == 4225
+    assert simpson.strap("floor-to-floor", "MST37", "SPF/HF", 1000, clear_span=20)["allow"] == 1500
+    with pytest.raises(simpson.SimpsonError):
+        simpson.strap("floor-to-floor", "MST37", "DF/SP", 1000, clear_span=31)
