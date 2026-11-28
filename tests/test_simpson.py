@@ -285,3 +285,45 @@ def test_strap_screen(tmp_path):
         calcsheet.simple_pdf(s, str(tmp_path / f"{v['mark']}.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
     with pytest.raises(calc.Missing):
         calc.build("strap", dict(v, tension=""), proj)
+
+
+def test_framing_angle_rows_against_the_catalog_page():
+    """Every A34 / A35 / LTP4 / LTP5 row (p. 310): the direction and its six loads in order on one line of the page text, and the
+    fasteners on the page. (The text prints the F2 footnote mark as a trailing digit, F26.)"""
+    import re
+    t = _page_text(310)
+    for r in simpson.ANGLES:
+        d_ = re.escape(r[3]) + (r"\d?" if r[3] == "F2" else "")
+        assert re.search(r"\s" + d_ + r"\s+" + r"\s+".join(re.escape(f"{v:,}") for v in r[4] + r[5]), t), r
+        assert r[2] in t, r[2]
+
+
+def test_framing_angle_checks():
+    """A35 type 4, DF/SP, (160): F1 300 / 650 + F2 200 / 670 = 0.760 (unity equation, p. 289). LTP4 type 7 with SD screws, SPF/HF floor
+    (100): G 670; over 1/2 in. sheathing x 0.64 = 428.8 (note 3). Snow takes the floor column. Refusals: a direction not tabulated for the
+    type, an unknown type for the model, the sheathing factor on an A35."""
+    h = simpson.framing_angle("A35", 4, "", "DF/SP", "wind or earthquake (160)", {"F1": 300, "F2": 200})
+    assert h["rows"][-1][1] == pytest.approx(300 / 650 + 200 / 670)
+    l = simpson.framing_angle("LTP4", 7, "SD", "SPF/HF", "floor (100)", {"G": 400}, sheathing="1/2")
+    assert l["rows"][0][2] == pytest.approx(670 * 0.64)
+    assert simpson.framing_angle("A35", 2, "", "DF/SP", "snow (115), floor value", {"E": 200})["rows"][0][2] == 295
+    with pytest.raises(simpson.SimpsonError):
+        simpson.framing_angle("A35", 2, "", "DF/SP", "floor (100)", {"F1": 100})
+    with pytest.raises(simpson.SimpsonError):
+        simpson.framing_angle("A34", 4, "", "DF/SP", "floor (100)", {"F1": 100})
+    with pytest.raises(simpson.SimpsonError):
+        simpson.framing_angle("A35", 4, "", "DF/SP", "floor (100)", {"F1": 100}, sheathing="1/2")
+
+
+def test_framing_angle_screen(tmp_path):
+    from strukit import calcsheet
+    proj = dict(job="t", name="t", method="ASD")
+    for v in (dict(mark="FA1", model="A35", config="4: A35", fasteners="nails", species="DF/SP", duration="wind or earthquake (160)",
+                   dir1="F1", load1="300", dir2="F2", load2="200", load_source="diaphragm boundary"),
+              dict(mark="FA2", model="A35", config="3: A35", fasteners="nails", species="SPF/HF", duration="roof (125)", dir1="A2", load1="150",
+                   load_source="stud"),
+              dict(mark="FA3", model="LTP5", config="8: LTP5", fasteners="nails", species="DF/SP", duration="wind or earthquake (160)",
+                   dir1="G", load1="300", sheathing="1/2", load_source="shear transfer")):
+        s = calc.build("framing_angle", v, proj)[0]
+        assert all(r.status == "OK" for r in s.rows)
+        calcsheet.simple_pdf(s, str(tmp_path / f"{v['mark']}.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")

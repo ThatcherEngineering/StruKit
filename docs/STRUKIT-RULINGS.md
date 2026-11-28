@@ -545,3 +545,8 @@ Texts as they stood under "Open" when ruled:
   checks the pair as one plate g + ts wide carrying R, keeps both on the flat, and checks the seat plate as a simple span g under R at
   mid-span (AISC 360-22 F11) without the beam flange's help. The last check is the conservative side (a stiff beam flange bridging the
   stiffeners would relieve the plate) and often sets a thick seat plate. (Ruled 2026-11-27.)
+
+## 2026-11-27, framing angles and plates (0.284.0), applied (not ruled)
+- The A34 / A35 / LTP4 / LTP5 table (catalog p. 310) has floor (100), roof (125) and (160) columns, no snow (115): a snow load takes the
+  floor (100) value (the lower of the two neighbouring columns; no interpolation).
+- Two directions loaded together: the unity equation (p. 23 note e sends every connector to p. 289; Option 1 as ruled 2026-11-27).

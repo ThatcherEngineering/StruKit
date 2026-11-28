@@ -5,13 +5,13 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-27 MST (day session). Build **0.283.0**, 741 tests passing; `main` and `release` pushed.
+Updated 2026-11-27 MST (day session). Build **0.284.0**, 744 tests passing; `main` and `release` pushed.
 
 **StruKit is designed to a high visual detail standard (Zach, 2026-11-26 02:26; every chat must follow it).** Every picture looks like the real member or connection, drawn as a detailer would: HSS with its wall and rounded corners, W shapes with flanges, plates at thickness, bolts with heads and nuts (`memberart.bolt_side`), welds where they are, every connected member drawn and broken off. Render and look at every new or changed picture before release. Full wording in `CLAUDE.md`, "Printed sheets". **After builds, send Zach the PDFs of what was built (sample inputs).**
 
 **2026-11-26 run:** 0.248.0 to 0.256.0 in the morning (see the closing check-in entries below). After Zach's reply (all conservative readings ruled; diaphragm openings by option (a); keep a missing references log; continue the list): 0.257.0 diaphragm openings (force transfer turned flat, by hand), anchor rod strength the lower of 0.75 Fu Ab and Fu Ase everywhere, beta_w by the Commentary formula, missing references log in `docs/REFERENCES.md`; 0.257.1 opening picture for narrow regions; 0.258.0 single-angle beam deflection about the principal axes (Commentary F10.2); 0.259.0 single angles with axial plus transverse load (H2); 0.260.0 stiffened girders panel by panel (G.8A / G.8B) and bearing at the supports with bearing stiffeners; 0.261.0 different top and bottom flange plates on the beam to HSS moment joint. Then (Zach: "finish all 3"): 0.262.0 girders (end-panel tension field action G2.3, continuous built-up girders, bearing under point loads); 0.263.0 stiffened seats on HSS faces and the bolted angle leg check; 0.264.0 single angles over several spans and overhangs, on the Steel Beam screen and in the 3D frame. Then (Zach 15:05: readings ruled, keep going): 0.265.0 flange-to-web welds (Example F.14); 0.266.0 pictures (HSS column, wood connections, angle elevation); 0.267.0 / 0.267.1 angles checked from the 3D frame forces. Then (Zach: readings ruled, keep going): 0.268.0 quick-start column Fy source and the angle's horizontal leg direction; 0.269.0 several openings in one wood diaphragm. Then (Zach: go): 0.270.0 two stiffeners on a stiffened seat to an HSS face; 0.271.0 footing pictures (isolated, continuous, with moment) to the visual standard. Then (Zach: do it): 0.272.0 guard and stair stringer pictures; 0.273.0 moment frame pictures. Then (Zach: keep going): 0.274.0 FTAO walls with openings of different clear heights flagged (T555 does not balance; method waits on Malone et al.); 0.275.0 shear wall with openings elevation drawn as built. Then (Zach: yes to both): 0.276.0 hold-down on the perforated wall; anchor bolts and plate washers on all three wall screens. Then (Zach: do the unchecked items, then Simpson): 0.277.0 anchor bolts in the concrete (ACI 318 Ch. 17) and the perforated wall plate uplift; 0.278.0 Simpson face-mount joist hangers. Then (Zach: do your next; apply the IBC exemption): 0.279.0 IBC 1905.1.8 sill plate anchor bolt exception; 0.280.0 Simpson top-flange hangers; 0.281.0 Simpson hurricane ties.
 
-**2026-11-27 run:** morning check-in; Zach ruled the five waiting readings and said keep going on the list. 0.282.0 Simpson post bases and column caps; 0.283.0 Simpson straps (strap ties, MST, coiled).
+**2026-11-27 run:** morning check-in; Zach ruled the five waiting readings and said keep going on the list. 0.282.0 Simpson post bases and column caps; 0.283.0 Simpson straps (strap ties, MST, coiled); 0.284.0 Simpson framing angles and plates (A34, A35, LTP4, LTP5).
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -21,12 +21,12 @@ Updated 2026-11-27 MST (day session). Build **0.283.0**, 741 tests passing; `mai
 - Releasing: `tools/release.sh` runs the suite twice (about 5 min each); from a session with a 10-minute command limit run it in the background (`nohup ... &`) and wait for "release branch now at build"; do not edit files until it ends (the release copies the working tree).
 - A scheduled session starts each weekday at 5:10 AM Denver time, reads these files and sends Zach one check-in with the Next list; it builds nothing until he says go. Before the session ends it updates this section and the Project copies.
 
-**Waiting for Zach's ruling:** none new. All five readings listed at the 2026-11-27 morning check-in were ruled as applied ("I agree with all 5"). Older items remain in the rulings file under "Open (not ruled)".
+**Waiting for Zach's ruling:** one new: framing angles under snow load take the floor (100) column (0.284.0; the table has no snow column). All five readings listed at the 2026-11-27 morning check-in were ruled as applied ("I agree with all 5"). Older items remain in the rulings file under "Open (not ruled)".
 
 **Needed from Zach (do not build without it):** the missing references log in `docs/REFERENCES.md` (DG7, MHI/CMAA, DG9, a published diaphragm-opening example, 16th Ed. Manual, ASCE 7-16, AISI S100, the HSS rafter-on-cap method, a readable TMS 402, ASABE EP484/486, his wind drift limit).
 
 **Next, in order**
-1. Simpson products, continued (catalog C-C-2026 on file; face-mount and top-flange hangers, hurricane ties, post bases and column caps, straps done 0.278.0 to 0.283.0): angles (A35, L); other bases and caps (CBSQ, MPBZ, CCQ, AC, LCE); floor-to-floor strap table and T / L / HT / PS / HST straps; later the top-flange nailer table, SCL and I-joist hangers. Same pattern: tables read by a tool and checked both ways against the page text, hand-copied rows as tests.
+1. Simpson products, continued (catalog C-C-2026 on file; face-mount and top-flange hangers, hurricane ties, post bases and column caps, straps, A34 / A35 / LTP4 / LTP5 done 0.278.0 to 0.284.0): L / LS / GA / A / HL angles; other bases and caps (CBSQ, MPBZ, CCQ, AC, LCE); floor-to-floor strap table and T / L / HT / PS / HST straps; later the top-flange nailer table, SCL and I-joist hangers. Same pattern: tables read by a tool and checked both ways against the page text, hand-copied rows as tests.
 2. IBC 2021: confirm the 1905.1.8 wording against the code text when a copy is on file.
 3. Stiffened seats on HSS: confirm the yield-line checks when a published procedure is supplied (single and double stiffeners built).
 4. Picture pass: footings, guards, stair stringers and frames done (0.271.0 to 0.273.0). Any sheet not yet looked at against the visual standard in this pass can be listed on request.
@@ -1281,3 +1281,16 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   the page text; choices and refusals by hand (`tests/test_simpson.py`). Browser check: the screen loads and solves, no page errors.
 - Not built: the floor-to-floor clear-span table (p. 292 upper), the replacement fastener factors (p. 288), lap splices of coiled straps
   (p. 297), T / L / HT straps (p. 293), PS / HST (p. 294).
+
+## 2026-11-27 MST — 0.284.0 Simpson framing angles and plates (Simpson products, part 6)
+- **New screen: Framing Angle / Plate (Simpson Strong-Tie).** A34, A35, LTP4, LTP5 (catalog C-C-2026 p. 310, 23 rows in
+  `simpson.ANGLES`), by the type of connection numbered on p. 309 (1 to 8), nails, SD screws or PH612I screws as tabulated, DF/SP or
+  SPF/HF, floor (100) / snow (floor value) / roof (125) / (160); up to two directions of load (F1, F2, Uplift, A1, E, C1, A2, C2, D, G, H as
+  the figure names them) with the unity equation when both are loaded; LTP4 / LTP5 over 3/8 or 1/2 in. sheathing x 0.72 / 0.64 (note 3).
+  A direction not tabulated for the type is refused. Picture: A34 / A35, the plate cut in end grain with the joist (or stud, type 3) on it
+  and the angle face on, and the section with the angle cut around the corner and its nails into both members; LTP4 / LTP5, the wall face
+  with the double top plate, subfloor (LTP5) and rim board, the plate across the joint, and the section with the plate edge on. Loads and
+  the figure number listed beside the picture.
+- **Validation:** every row's six loads found in order in the p. 310 text; the unity sum, the sheathing factor and the refusals by hand
+  (`tests/test_simpson.py`). No published worked example for these connectors. Reading applied (snow takes the floor column): rulings file.
+- Not built: A34 / A35 onto LSL (note 6), L / LS / GA / A / HL angles (pp. 313-315), the RBC and HSLQ.

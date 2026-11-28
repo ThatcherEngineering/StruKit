@@ -625,3 +625,88 @@ def strap(kind, model, species, tension, fastening="nails", nail="0.148", nails_
     s_.update(kind=kind, species=species, tension=tension, bolts=bolts, picked=picked,
               rows=[("tension", tension, s_["allow"])])
     return s_
+
+
+# ---------------------------------------------------------------- framing angles and plates (catalog pp. 309-310)
+# A34, A35, LTP4, LTP5, catalog p. 310, row by row (tests find each row in the page text). Columns: model, configuration (the type of
+# connection numbered on p. 309), fasteners, direction of load, DF/SP floor (100), roof (125), (160); SPF/HF floor, roof, (160), lb.
+ANGLES = [
+    ("A34", 1, "(8) 0.131 x 1 1/2", "F1", (395, 480, 545), (340, 415, 480)),
+    ("A34", 1, "(8) 0.131 x 1 1/2", "F2", (395, 430, 430), (340, 370, 370)),
+    ("A34", 1, '(8) #9 x 1 1/2" SD', "F1", (640, 640, 640), (550, 550, 550)),
+    ("A34", 1, '(8) #9 x 1 1/2" SD', "F2", (495, 495, 495), (425, 425, 425)),
+    ("A34", 1, '(8) #9 x 1 1/2" SD', "Uplift", (240, 240, 240), (170, 170, 170)),
+    ("A35", 2, "(9) 0.131 x 1 1/2", "A1", (295, 350, 350), (255, 300, 300)),
+    ("A35", 2, "(9) 0.131 x 1 1/2", "E", (295, 360, 385), (255, 310, 330)),
+    ("A35", 2, "(9) 0.131 x 1 1/2", "C1", (185, 185, 185), (160, 160, 160)),
+    ("A35", 3, "(12) 0.131 x 1 1/2", "A2", (295, 325, 325), (255, 280, 280)),
+    ("A35", 3, "(12) 0.131 x 1 1/2", "C2", (295, 330, 330), (255, 285, 285)),
+    ("A35", 3, "(12) 0.131 x 1 1/2", "D", (225, 225, 225), (195, 195, 195)),
+    ("A35", 4, "(12) 0.131 x 1 1/2", "F1", (590, 650, 650), (510, 560, 560)),
+    ("A35", 4, "(12) 0.131 x 1 1/2", "F2", (590, 670, 670), (510, 575, 575)),
+    ("A35", 5, "(12) 0.131 x 1 1/2", "F1", (555, 555, 555), (475, 475, 475)),
+    ("A35", 6, "(12) PH612I", "F1", (420, 420, 420), (360, 360, 360)),
+    ("LTP4", 7, "(12) 0.131 x 1 1/2", "G", (580, 715, 715), (500, 615, 615)),
+    ("LTP4", 7, "(12) 0.131 x 1 1/2", "H", (525, 525, 525), (450, 450, 450)),
+    ("LTP4", 7, '(12) #9 x 1 1/2" SD', "G", (910, 910, 910), (670, 780, 780)),
+    ("LTP4", 7, '(12) #9 x 1 1/2" SD', "H", (800, 800, 800), (670, 690, 690)),
+    ("LTP5", 8, "(12) 0.131 x 1 1/2", "G", (565, 565, 565), (485, 485, 485)),
+    ("LTP5", 8, "(12) 0.131 x 1 1/2", "H", (465, 465, 465), (400, 400, 400)),
+    ("LTP5", 8, '(12) #9 x 1 1/2" SD', "G", (800, 800, 800), (670, 685, 685)),
+    ("LTP5", 8, '(12) #9 x 1 1/2" SD', "H", (730, 730, 730), (625, 625, 625)),
+]
+ANGLE_PAGE, ANGLE_FIG_PAGE = 310, 309
+ANGLE_CONFIGS = {1: "A34, joists to plate or beam (fig. 1)", 2: "A35, joist to plate, A leg (fig. 2)", 3: "A35, stud to plate, B leg (fig. 3)",
+                 4: "A35, joist to beam or plate, flat (fig. 4)", 5: "A35, blocking to plate (fig. 5)", 6: "A35, to subfloor over sheathing (fig. 6)",
+                 7: "LTP4, top plates to rim or blocking (fig. 7)", 8: "LTP5, over the subfloor to rim or blocking (fig. 8)"}
+ANGLE_DURATIONS = {"floor (100)": 0, "snow (115), floor value": 0, "roof (125)": 1, "wind or earthquake (160)": 2}
+
+
+def angle_models():
+    out = []
+    for r in ANGLES:
+        if r[0] not in out:
+            out.append(r[0])
+    return out
+
+
+def framing_angle(model, config, fasteners, species, duration, loads, sheathing=None):
+    """Framing angle or plate (A34, A35, LTP4, LTP5), catalog p. 310, one connector (note 1). loads: {direction: lb}, ASD. Each load
+    against the table value for its direction, fasteners, species and load duration; with more than one direction loaded, the unity
+    equation (p. 23 note e, p. 289 Option 1). Snow (115) takes the floor (100) value (no snow column in the table). LTP4 / LTP5 over
+    wood structural panel sheathing with the tabulated fasteners: 3/8 in. x 0.72, 1/2 in. x 0.64 (note 3)."""
+    if species not in ("DF/SP", "SPF/HF"):
+        raise SimpsonError("framing angle: the species group is DF/SP or SPF/HF")
+    if duration not in ANGLE_DURATIONS:
+        raise SimpsonError("framing angle: the load duration is floor (100), snow (115), roof (125) or wind or earthquake (160)")
+    loads = {k: v for k, v in loads.items() if v}
+    if not loads or min(loads.values()) < 0:
+        raise SimpsonError("framing angle: give at least one load (zero or more)")
+    rows_m = [r for r in ANGLES if r[0] == model and r[1] == config]
+    if not rows_m:
+        raise SimpsonError(f"framing angle: configuration {config} is not tabulated for {model} on catalog p. {ANGLE_PAGE}")
+    fopts = []
+    for r in rows_m:
+        if r[2] not in fopts:
+            fopts.append(r[2])
+    fast = next((f for f in fopts if fasteners.strip().lower() in f.lower()), None) if fasteners else fopts[0]
+    if fast is None:
+        raise SimpsonError(f"framing angle: {model} in configuration {config} is tabulated with {' or '.join(fopts)}")
+    col = ANGLE_DURATIONS[duration]
+    factor = 1.0
+    if sheathing:
+        if model not in ("LTP4", "LTP5"):
+            raise SimpsonError("framing angle: the over-sheathing factors of note 3 are for LTP4 and LTP5")
+        factor = {"3/8": 0.72, "1/2": 0.64}[sheathing]
+    rows, unity = [], 0.0
+    for dname, dem in loads.items():
+        r = next((x for x in rows_m if x[2] == fast and x[3].lower() == dname.lower()), None)
+        if r is None:
+            dirs = sorted({x[3] for x in rows_m if x[2] == fast})
+            raise SimpsonError(f"framing angle: {model} in configuration {config} with {fast} has no {dname} value (directions: {', '.join(dirs)})")
+        cap = (r[4] if species == "DF/SP" else r[5])[col] * factor
+        rows.append((r[3], dem, cap)); unity += dem / cap
+    if len(rows) > 1:
+        rows.append(("loads together, sum of load / allowable", unity, 1.0))
+    return dict(model=model, config=config, fast=fast, species=species, duration=duration, factor=factor, rows=rows,
+                directions=sorted({x[3] for x in rows_m if x[2] == fast}))

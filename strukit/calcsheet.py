@@ -1810,6 +1810,8 @@ def _block_picture(c, top, pic):
         return _column_cap_picture(c, top, d)
     if name == "strap":
         return _strap_picture(c, top, d)
+    if name == "framing_angle":
+        return _framing_angle_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -4923,6 +4925,128 @@ def _strap_picture(c, top, d):
     memberart._dim_v(c, ym - W * s2 / 2, ym + W * s2 / 2, sx - bsec * s2 / 2 - T - 10, f"W {_mixed(W)}", FR, ext_from=sx - bsec * s2 / 2 - T)
     _small(c, sx, yb - 44, "section across the strap")
     return yb - 52
+
+
+def _framing_angle_picture(c, top, d):
+    """Framing angle or lateral tie plate, to scale, two views, with the members of the connection type drawn and broken off.
+    A34 / A35: left, elevation looking along the supporting plate: the plate cut in end grain, the joist (or the stud, type 3) on it in
+    elevation with its grain, the angle's leg on the member face with its nails and the other leg on the plate edge on; right, section
+    looking along the joist: the joist cut in end grain on the plate in elevation, the angle cut (darker) wrapping the corner, nails dashed
+    into both members. LTP4 / LTP5: left, elevation of the wall face: the double top plate (with the subfloor edge for LTP5) and the rim
+    board above, the plate across the joint with its fasteners in each member; right, section: the members in end grain, the plate
+    edge on. The loads are listed with the directions of the catalog figure."""
+    mdl, cfg = d["model"], d["config"]
+    sc = 7.0
+    ytop = top - 16
+    ltp = mdl.startswith("LTP")
+    t = 0.036 if ltp else 0.048                            # 20 ga, 18 ga (catalog p. 309)
+    T = max(t * sc, 1.0)
+    vx, sx = LM + 110, LM + 300
+    if not ltp:
+        pw, ph = 3.5, 1.5                                   # 2x plate laid flat
+        jb, jd = 1.5, 7.25                                  # 2x joist or stud
+        stud = cfg == 3
+        yp = ytop - (jd + ph + 1.0) * sc                    # plate bottom
+        # ---- view 1: plate in end grain, member on it in elevation
+        memberart.wood_section(c, vx, yp + ph * sc / 2, pw * sc, ph * sc, pw, ph)
+        if stud:                                            # the stud's side face, 3-1/2 in. across the wall, grain vertical
+            c.saveState(); c.translate(vx - pw * sc / 2, yp + ph * sc); c.rotate(90)
+            memberart.wood_elevation(c, 0, -pw * sc, jd * sc, pw * sc, seed=4); c.restoreState()
+            memberart._break_h(c, vx - pw * sc / 2, vx + pw * sc / 2, yp + (ph + jd) * sc - 1)
+            mw = pw
+        else:
+            memberart.wood_elevation(c, vx - 9.0 * sc, yp + ph * sc, 18.0 * sc, jd * sc, seed=4)
+            _break_v(c, vx - 9.0 * sc, yp + ph * sc - 2, yp + (ph + jd) * sc + 2)
+            _break_v(c, vx + 9.0 * sc, yp + ph * sc - 2, yp + (ph + jd) * sc + 2)
+            mw = 18.0
+        lw, lh = (2.875, 2.5) if mdl == "A34" else (2.875, 3.0)   # leg widths 1 7/16 + 1 7/16; heights p. 309
+        lw = min(lw, mw)
+        _steel_strip(c, vx - lw * sc / 2, yp + ph * sc, lw * sc, lh * sc)                   # leg on the member face, face on
+        _steel_strip(c, vx - lw * sc / 2, yp + ph * sc, lw * sc, T, cut=True)                 # leg on the plate, edge on
+        n_ = int(d["fast"].split(")")[0].strip("("))
+        _nail_heads(c, vx - lw * sc / 2, yp + ph * sc + T, lw * sc, lh * sc - T, max(n_ // 2, 2))
+        _small(c, vx, yp - 16, "elevation along the plate, to scale (in.)" if not stud else "elevation along the wall, plate cut, to scale (in.)")
+        # ---- view 2: member in end grain on the plate in elevation
+        memberart.wood_elevation(c, sx - 9.0 * sc, yp, 18.0 * sc, ph * sc, seed=9)
+        _break_v(c, sx - 9.0 * sc, yp - 2, yp + ph * sc + 2); _break_v(c, sx + 9.0 * sc, yp - 2, yp + ph * sc + 2)
+        if stud:                                            # the stud in elevation on the wall face, 1-1/2 in. wide, broken off
+            c.saveState(); c.translate(sx - jb * sc / 2, yp + ph * sc); c.rotate(90)
+            memberart.wood_elevation(c, 0, -jb * sc, jd * sc, jb * sc, seed=6); c.restoreState()
+            memberart._break_h(c, sx - jb * sc / 2, sx + jb * sc / 2, yp + (ph + jd) * sc - 1)
+            mb_, mh_ = jb, jd
+        else:
+            memberart.wood_section(c, sx, yp + (ph + jd / 2) * sc, jb * sc, jd * sc, jb, jd)
+            mb_, mh_ = jb, jd
+        xf = sx + mb_ * sc / 2                              # the member face the angle is on
+        c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(*memberart.STEEL_CUT); c.setLineWidth(0.4)
+        c.rect(xf, yp + ph * sc, T, lh * sc, fill=1, stroke=1)                              # vertical leg, cut
+        c.rect(xf, yp + ph * sc, 1.44 * sc, T, fill=1, stroke=1)                            # leg on the plate, cut
+        c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
+        for k in range(2):
+            yn_ = yp + ph * sc + lh * sc * (0.35 + 0.35 * k)
+            c.line(xf + T, yn_, xf - 1.3 * sc, yn_)                                         # nails into the member
+        c.line(xf + 0.8 * sc, yp + ph * sc + T, xf + 0.8 * sc, yp + 0.2 * sc)              # nail into the plate
+        c.setDash()
+        _small(c, sx, yp - 16, "section along the joist, to scale (in.)" if not stud else "elevation of the wall face, angle cut, to scale (in.)")
+        ybot = yp - 22
+        lab = [(yp + ph * sc / 2, sx - 6.0 * sc, "plate, 2x flat, broken off"),
+               (yp + (ph + mh_ * 0.75) * sc, sx - mb_ * sc * 0.2, ("stud" if stud else "joist or blocking") + ", 2x"),
+               (yp + (ph + lh * 0.6) * sc, xf + T, f"{mdl}, 18 ga")]
+    else:
+        tp, rim = 1.5, 9.25
+        sub = 0.75 if mdl == "LTP5" else 0.0
+        pwid, phgt = (3.0, 4.25) if mdl == "LTP4" else (4.5, 5.125)
+        yp = ytop - (2 * tp + sub + 4.0 + 1.0) * sc         # bottom of the lower top plate (rim shown 4 in. then broken)
+        yj = yp + 2 * tp * sc                               # top of the top plates
+        for k in range(2):
+            memberart.wood_elevation(c, vx - 10 * sc, yp + k * tp * sc, 20 * sc, tp * sc, seed=3 + k)
+        if sub:
+            c.setFillColorRGB(0.93, 0.86, 0.70); c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setLineWidth(0.5)
+            c.rect(vx - 10 * sc, yj, 20 * sc, sub * sc, fill=1, stroke=1)
+        memberart.wood_elevation(c, vx - 10 * sc, yj + sub * sc, 20 * sc, 4.0 * sc, seed=8)
+        memberart._break_h(c, vx - 10 * sc, vx + 10 * sc, yj + (sub + 4.0) * sc - 1)
+        for x_ in (vx - 10 * sc, vx + 10 * sc):
+            _break_v(c, x_, yp - 2, yj + (sub + 4.0) * sc - 2)
+        y0 = yj - phgt * sc / 2 - (0 if not sub else -sub * sc / 2)
+        _steel_strip(c, vx - pwid * sc / 2, y0, pwid * sc, phgt * sc)
+        n_ = int(d["fast"].split(")")[0].strip("(")) // 2
+        _nail_heads(c, vx - pwid * sc / 2, yj + sub * sc, pwid * sc, y0 + phgt * sc - yj - sub * sc, n_)
+        _nail_heads(c, vx - pwid * sc / 2, y0, pwid * sc, yj - y0, n_)
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4); c.setDash(3, 2)
+        c.line(vx - pwid * sc / 2 - 6, yj, vx + pwid * sc / 2 + 6, yj); c.setDash()
+        memberart._dim_h(c, vx - pwid * sc / 2, vx + pwid * sc / 2, yp - 10, f"{_mixed(pwid)}", FR, ext_from=y0)
+        memberart._dim_v(c, y0, y0 + phgt * sc, vx + pwid * sc / 2 + 10, f"{_mixed(phgt)}", FR, ext_from=vx + pwid * sc / 2)
+        _small(c, vx, yp - 26, "elevation of the wall face, to scale (in.)")
+        # section
+        for k in range(2):
+            memberart.wood_section(c, sx, yp + (k + 0.5) * tp * sc, 3.5 * sc, tp * sc, 3.5, tp)
+        if sub:
+            c.setFillColorRGB(0.93, 0.86, 0.70); c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setLineWidth(0.5)
+            c.rect(sx - 1.75 * sc, yj, 8.0 * sc, sub * sc, fill=1, stroke=1)
+        memberart.wood_section(c, sx - 1.75 * sc + 0.75 * sc, yj + (sub + 2.0) * sc, 1.5 * sc, 4.0 * sc, 1.5, 4.0)
+        memberart._break_h(c, sx - 1.75 * sc, sx - 0.25 * sc, yj + (sub + 4.0) * sc - 1)
+        _steel_strip(c, sx - 1.75 * sc - T, y0, T, phgt * sc, cut=True)
+        c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
+        for yn_ in (y0 + phgt * sc * 0.15, y0 + phgt * sc * 0.85):
+            c.line(sx - 1.75 * sc - T, yn_, sx - 0.25 * sc, yn_)
+        c.setDash()
+        _small(c, sx, yp - 26, "section across the wall, to scale (in.)")
+        ybot = yp - 32
+        lab = [(yp + tp * sc * 0.5, sx + 1.0 * sc, "double top plate"),
+               (yj + (sub + 3.0) * sc, sx - 0.5 * sc, "rim board or blocking, broken off"),
+               (y0 + phgt * sc * 0.5, sx - 1.75 * sc - T, f"{mdl}, 20 ga")]
+        if sub:
+            lab.append((yj + sub * sc / 2, sx + 5.5 * sc, "subfloor sheathing"))
+    tx = sx + 70
+    last = _leader_notes(c, lab, tx)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    lds = ", ".join(f"{k} {v:,.0f} lb" for k, v in d["loads"].items())
+    yl = min(last - 14, ybot + 30)
+    c.drawString(tx, yl, f"loads: {lds}")
+    c.drawString(tx, yl - 9, f"directions as catalog p. 309, figure {cfg}")
+    ybot = min(ybot, yl - 16)
+    c.drawCentredString(LM + 200, ytop + 6, f"{mdl}, connection type {cfg}; {d['fast']}")
+    return ybot - 8
 
 
 def _lumber_dims(label):

@@ -1390,6 +1390,20 @@ FORMS = {
                 F("F2", "Lateral F2, across the plate, ASD", unit="lb", required=False),
                 F("load_source", "Where the loads come from", "text", help="for example: rafter R1 uplift, wind C&C")],
         tables=[]),
+    "framing_angle": dict(
+        title="Framing Angle / Plate (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="FA",
+        fields=[F("model", "Connector", "select", options=simpson.angle_models(), help="A34, A35 framing angles; LTP4, LTP5 lateral tie plates (catalog p. 310)"),
+                F("config", "Type of connection", "select", options=[f"{k}: {v}" for k, v in simpson.ANGLE_CONFIGS.items()], help="the numbered figures on catalog p. 309"),
+                F("fasteners", "Fasteners", "select", options=["nails", "SD screws", "PH612I screws"]),
+                F("species", "Species group", "select", options=["DF/SP", "SPF/HF"]),
+                F("duration", "Load duration", "select", options=list(simpson.ANGLE_DURATIONS)),
+                F("dir1", "Direction of load 1", "select", options=["F1", "F2", "Uplift", "A1", "E", "C1", "A2", "C2", "D", "G", "H"], help="as the figure for the connection type"),
+                F("load1", "Load 1, ASD", unit="lb"),
+                F("dir2", "Direction of load 2", "select", options=[""] + ["F1", "F2", "Uplift", "A1", "E", "C1", "A2", "C2", "D", "G", "H"], required=False),
+                F("load2", "Load 2, ASD", unit="lb", required=False),
+                F("sheathing", "LTP over sheathing", "select", options=["none", "3/8", "1/2"], required=False, help="with the tabulated fasteners (note 3)"),
+                F("load_source", "Where the loads come from", "text", help="for example: diaphragm boundary, line 2")],
+        tables=[]),
     "strap": dict(
         title="Strap (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="ST",
         fields=[F("kind", "Strap kind", "select", options=simpson.STRAP_KINDS, help="strap ties p. 291; MST p. 292; coiled CS / CMST p. 296"),
@@ -3080,6 +3094,18 @@ def _build(kind, values, project):
                                             end_grain=bool(yes(r.text("end_grain", False))), edge=r.num("edge", False), end=r.num("end", False),
                                             spacing=r.num("spacing", False), steel=st_, steel_source=r.text("steel_source", False) or "",
                                             steel_side=r.text("side_kind", False) == "steel", bearing=brg), "simple", {}
+    if kind == "framing_angle":
+        mdl, cf, fa, sp, du, src = r.text("model"), r.text("config"), r.text("fasteners"), r.text("species"), r.text("duration"), r.text("load_source")
+        d1, l1 = r.text("dir1"), r.num("load1")
+        d2, l2 = r.text("dir2", False), r.num("load2", False)
+        sh = r.text("sheathing", False)
+        r.done()
+        loads = {d1: l1}
+        if d2 and l2:
+            loads[d2] = loads.get(d2, 0) + l2
+        fmap = {"nails": "0.131", "SD screws": "SD", "PH612I screws": "PH612I"}
+        return ws_more.framing_angle_sheet(mark, mdl, int(str(cf).split(":")[0]), fmap.get(fa, fa), sp, du, loads,
+                                           None if sh in (None, "", "none") else sh, src), "simple", {}
     if kind == "strap":
         k_, mdl, sp, src = r.text("kind"), r.text("model"), r.text("species"), r.text("load_source")
         T_ = r.num("tension")
