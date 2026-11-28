@@ -1462,3 +1462,7 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 - **HRC1.81 / HHRC hip-ridge connectors (p. 180):** loads per hip; HRC download by duration, HHRC one value; slope down to 45 degrees.
   Picture: plan at the ridge end with the two hips at 45 degrees and the connector, elevation along a hip at its slope.
 - **Validation:** every row found on its page's text; the unity sums and choices by hand. Browser check: both products load and solve.
+
+## 2026-11-28 MST — 0.299.1 I-joist header nails shown as the catalog requires
+- A top-flange hanger on a DF/SCL I-joist header now lists its header nails as 0.148 x 1-1/2 in. (the table count; p. 206 note 4: all
+  nails into an I-joist header are 0.148 x 1-1/2 in.) instead of the table's nail size for other headers.

@@ -707,6 +707,7 @@ def test_ewp_ijoist_header_factors():
     s = ws_more.ewp_hanger_sheet("JH", "top flange", "I-joist", "2 x 16", "DF/SCL I-joist", "ITS2.06/16", 500, None, 0, None, "J3",
                                  "1 5/16 to 1 3/8 in.", "SPF")
     assert s.hanger["allow_down"] == A(1085 * 0.85 * 0.86) and any("p. 206 note 4" in str(x) for x in s.steps)
+    assert dict(s.info)["Fasteners"].startswith("header (6) 0.148 x 1 1/2 (I-joist header")       # table (6) 0.148 x 3 -> 0.148 x 1-1/2
 
 
 def test_skewed_and_sloped_ewp_rows_against_the_page_text():
