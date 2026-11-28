@@ -559,3 +559,9 @@ Texts as they stood under "Open" when ruled:
 ## 2026-11-27, cast-in column bases (0.288.0), applied (not ruled)
 - CBSTQ lateral F1 / F2 (catalog p. 85 note 5) combined with uplift or download by the unity equation (p. 23 note e, p. 289 Option 1, as
   ruled 2026-11-27); download and uplift are separate combinations and are refused together.
+
+## 2026-11-27, MPBZ spring in the 3D frame (0.290.0), applied (not ruled)
+- A wood post placed on an MPBZ takes the tabulated rotational stiffness (catalog p. 89) x 0.75 (note 10, shrinkage up to 3 %), about both
+  horizontal axes (the softer value; more sway, larger P-delta). The full table value applies only with shrinkage shown to be negligible.
+- In the sway run with the direct analysis method's 0.8 stiffness reduction, the base spring is reduced by the same factor (AISC 360-22
+  C2.3 applies the reduction to all stiffnesses that contribute to stability).

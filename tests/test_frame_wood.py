@@ -78,3 +78,39 @@ def test_wood_checks_from_the_frame_match_their_sheets_and_hand():
     CP = (1 + aa) / 1.6 - ((((1 + aa) / 1.6) ** 2) - aa / 0.8) ** 0.5
     hand = (fc / (700 * CP)) ** 2 + fb / (750 * (1 - fc / FcE))
     assert val == pytest.approx(hand, rel=1e-6) and eq == "NDS Eq. 3.9-3"
+
+
+def test_wood_post_on_an_mpbz_is_a_rotational_spring_in_the_sway_frame():
+    """Two 6x6 posts 9 ft tall on MPB66Z bases (catalog C-C-2026 p. 89: 2,405,000 in.-lb/rad, x 0.75 for shrinkage, note 10, = 1,803.75
+    kip-in./rad) carrying a 4x10 beam (post tops pinned under the beam). A lateral load H at the beam: each post is a cantilever on its
+    spring taking H / 2, so the sway is (H/2) (h^3 / 3 E I + h^2 / k) (hand). Without the MPBZ named the frame has no lateral stiffness."""
+    mem = [dict(kind="wood_post", values=dict(POST, mark="P1", at_x1="0", at_y1="0", at_base_mpbz="MB1")),
+           dict(kind="wood_post", values=dict(POST, mark="P2", at_x1="12", at_y1="0", at_base_mpbz="MB1")),
+           dict(kind="wood_beam", values=dict(BEAM, mark="B1", at_level="Main", at_x1="0", at_y1="0", at_x2="12", at_y2="0",
+                                              loads=[dict(case="D", kind="uniform", mag="50", mag2="", x1="", x2="", label="")])),
+           dict(kind="mpbz", values=dict(mark="MB1", post="6x6", model="first that works", concrete="reinforced", cracked="yes", sdc="A&B",
+                                         moment="100", load_source="t"))]
+    B = calc._model_frame_build(PROJ, mem, sway=True)
+    assert not [p for p in B["problems"] if "MPBZ" in p or "MB1" in p], B["problems"]
+    k = 2405000 * 0.75 / 1000
+    fr = B["fr"]
+    bases = [n for n, (x, y, z) in fr.nodes.items() if abs(z) < 1e-6]
+    assert len(bases) == 2 and all(fr.springs[n][3] == pytest.approx(k) and fr.springs[n][4] == pytest.approx(k) for n in bases)
+    assert any("MPB66Z" in n and "note 10" in n for n in B["notes"])
+    top = next(n for n, (x, y, z) in fr.nodes.items() if abs(x) < 1e-6 and abs(z - 108.0) < 1e-6)
+    H = 1.0
+    res = fr.solve({top: (H, 0, 0, 0, 0, 0)}, [])
+    ps = calc._frame_section("wood_post", mem[0]["values"])
+    h = 108.0
+    I_ = min(ps["Ix"], ps["Iy"])
+    assert res.disp[top][0] == pytest.approx((H / 2) * (h ** 3 / (3 * ps["E"] * I_) + h ** 2 / k), rel=0.01)
+    mb = [res.reactions[n] for n in bases]
+    assert sum(abs(r[4]) for r in mb) == pytest.approx(H * h, rel=0.01)           # the base moments carry the overturning
+
+
+def test_mpbz_named_but_missing_is_reported():
+    mem = [dict(kind="wood_post", values=dict(POST, mark="P1", at_x1="0", at_y1="0", at_base_mpbz="MB9")),
+           dict(kind="wood_post", values=dict(POST, mark="P2", at_x1="12", at_y1="0")),
+           dict(kind="wood_beam", values=dict(BEAM, mark="B1", at_level="Main", at_x1="0", at_y1="0", at_x2="12", at_y2="0", loads=[]))]
+    B = calc._model_frame_build(PROJ, mem, sway=True)
+    assert any("MB9" in p for p in B["problems"])
