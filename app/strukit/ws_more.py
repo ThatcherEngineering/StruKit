@@ -7180,6 +7180,8 @@ def ewp_hanger_sheet(mark, kind, member, joist, header, model, download, duratio
         raise WorksheetError(f"{mark}: {e}")
     r, top = h["row"], h["top"]
     kk = h["kind"]
+    if top and header == "DF/SCL I-joist":                     # all nails 0.148 x 1-1/2 into an I-joist header (p. 206 note 4)
+        r = dict(r, header=re.sub(r"(\(\d+\)) [\d.]+ x [\d /]+", r"\1 0.148 x 1 1/2", r["header"]) + " (I-joist header, p. 206 note 4)")
     style = {"ewp_facemount": "face mount", "ewp_topflange": "top flange", "ewp_skew": "skewed 45 degrees", "ewp_slope": "sloped / skewed"}[kk]
     src = f"{simpson.SOURCE}, p. {r['page']}"
     L = footing_line
