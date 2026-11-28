@@ -1382,6 +1382,19 @@ FORMS = {
                 F("nailer", "Top flange on a nailer (BA, HB)", "select", options=["none"] + simpson.NAILERS, required=False, help="catalog p. 136 Nailer Table; blank = on the carrying member"),
                 F("load_source", "Where the loads come from", "text", help="for example: reaction of joist J1")],
         tables=[]),
+    "ewp_hanger": dict(
+        title="Joist Hanger, I-Joist / SCL (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="JH",
+        fields=[F("type", "Hanger type", "select", options=list(simpson.EWP_KINDS), help="face mount (pp. 158-164) or top flange (pp. 198-206)"),
+                F("member", "Carried member", "select", options=["I-joist", "LVL / SCL", "glulam"]),
+                F("joist", "Member size (actual)", "select", options=simpson.ewp_joists(), help="as the catalog table lists it"),
+                F("header", "Header", "select", options=simpson.EWP_HEADERS, help="face mount: DF/SP or SPF/HF species header; top flange: the header type"),
+                F("model", "Hanger", "select", options=["lightest that works"] + simpson.ewp_models()),
+                F("nailing", "Nailing (where the table gives min. and max.)", "select", options=["Min.", "Max."], required=False, help="blank = maximum"),
+                F("download", "Download, ASD", unit="lb"),
+                F("duration", "Load duration of the download (face mount)", "select", options=["floor (100)", "snow (115)", "roof (125)"], required=False),
+                F("uplift", "Uplift, ASD (wind or earthquake)", unit="lb", required=False),
+                F("load_source", "Where the loads come from", "text", help="for example: reaction of I-joist J3")],
+        tables=[]),
     "hurricane_tie": dict(
         title="Hurricane Tie (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="HT",
         fields=[F("model", "Tie", "select", options=["first that works"] + simpson.tie_models(), help="seismic and hurricane ties, wood to wood (catalog p. 300)"),
@@ -3197,6 +3210,12 @@ def _build(kind, values, project):
         r.done()
         return ws_more.column_cap_sheet(mark, ser, mdl, dl, up, lat, r.num("beam_width", False), r.num("post_width", False),
                                         r.num("beam_depth", False), spl, dl2, src, bool(yes(r.text("one_side", False)))), "simple", {}
+    if kind == "ewp_hanger":
+        ty, mem, j, hd, mdl, src = r.text("type"), r.text("member"), r.text("joist"), r.text("header"), r.text("model"), r.text("load_source")
+        dl, up = r.num("download"), r.num("uplift", False) or 0.0
+        du = r.text("duration", False) or ("floor (100)" if ty == "face mount" else None)
+        r.done()
+        return ws_more.ewp_hanger_sheet(mark, ty, mem, j, hd, mdl, dl, du, up, r.text("nailing", False), src), "simple", {}
     if kind == "hurricane_tie":
         mdl, sp, src = r.text("model"), r.text("species"), r.text("load_source")
         up, f1, f2 = r.num("uplift", False) or 0.0, r.num("F1", False) or 0.0, r.num("F2", False) or 0.0

@@ -572,10 +572,23 @@ Texts as they stood under "Open" when ruled:
   moment (160) for every combination (0.286.0); (4) MPBZ spring in the 3D frame x 0.75 (note 10) and reduced by the 0.8 direct analysis
   factor in the sway run (0.290.0). The CBSTQ lateral with the unity equation (0.288.0) follows the 2026-11-27 morning ruling.
 
-## 2026-11-27, floor-to-floor straps (0.293.0), applied (not ruled)
+## 2026-11-27, floor-to-floor straps (0.293.0), applied, then replaced by Zach's ruling below
 - A clear span between the tabulated ones (16, 18, 24, 30 in.; catalog p. 292) takes the row of the next larger tabulated clear span (its
   load is the lower), not an interpolation; a clear span over the largest tabulated for the model is refused.
 
-## 2026-11-27, heavy straps (0.294.0), applied (not ruled)
+## 2026-11-27, heavy straps (0.294.0), applied; ruled by Zach below
 - HL / HT / HTQ (catalog p. 293): the table names no species group; its values are used for DF/SP only and the straps are refused for
   SPF/HF. HL / HT values are for a pair in double shear; the 1616HTQ is checked as one part (the doubling for a pair, note 2, is not taken).
+
+## 2026-11-27 evening — Zach's rulings (do not ask again)
+- **Floor-to-floor straps: "You can interpolate between rows."** Between the tabulated clear spans (catalog p. 292) the allowable load and
+  the nail count are interpolated linearly; the nails are rounded up to an even count (half each side of the clear span). A clear span
+  shorter than the shortest tabulated takes that row; longer than the longest is refused. Built 0.296.0.
+- **HL / HT straps: "I'm okay with number 2."** The p. 293 values are used for DF/SP only (SPF/HF refused); the 1616HTQ checked as one part.
+- "Great do them all. I'm going to bed so do them all": the rest of the Next list (nailer table, SCL and I-joist hangers, picture pass)
+  unattended; readings applied conservatively and recorded here.
+
+## 2026-11-27, hangers for I-joists, glulam and SCL (0.296.0), applied (not ruled)
+- Face mount (pp. 158-164): the SPF/HF uplift factor 0.72 (screws) is used when the face fasteners are SD or SDS screws, 0.86 otherwise
+  (p. 164 note 2); the top-flange tables use 0.86 for SPF/HF (p. 206 note 3).
+- "Lightest that works" takes the first row in the catalog's order of recommended selection (note 4), as the sawn-lumber screens do.

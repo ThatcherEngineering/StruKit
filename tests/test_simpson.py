@@ -561,16 +561,19 @@ def test_corner_cap_and_a_hl_screens(tmp_path):
 
 
 def test_floor_to_floor_straps():
-    """Floor-to-floor table (p. 292 upper): every row found in the page text. 3,000 lb DF/SP over a 17 in. clear span: the 18 in. rows
-    (the next tabulated span at or above) are used; MSTA49 2,020, MSTC28 1,150, MSTC40 2,690 fail, MSTC52 4,225 passes. MST37 over 20 in.
-    takes the 24 in. row, 1,720 (SPF/HF 1,500); over 31 in. it is refused."""
+    """Floor-to-floor table (p. 292 upper): every row found in the page text. Between tabulated clear spans the load and the nails are
+    interpolated (Zach 2026-11-27): 3,000 lb DF/SP over 17 in.: MSTC40 (16 in. 3,070, 18 in. 2,690) gives 2,880 and fails; MSTA49 2,020,
+    MSTC28 1,342.5 fail; MSTC52 (4,610 / 4,225): 4,417.5 with (48 + 0.5 x (44 - 48)) = 46 nails. MST37 over 20 in.: 2,460 + 1/3 x (1,720 -
+    2,460) = 2,213.3 (DF/SP), nails 20 - 2 = 18; over 31 in. refused; under 16 in. the shortest row."""
     import re
     t = _page_text(292)
     for r in simpson.FLOOR_TO_FLOOR:
         assert re.search(r"\s" + str(r[1]) + r"\s+" + re.escape(r[2]).replace(r"\ ", r"\s+") + r"\s+" + f"{r[3]:,}" + r"\s+" + f"{r[4]:,}", t), r
     h = simpson.strap("floor-to-floor", "first that works", "DF/SP", 3000, clear_span=17)
-    assert h["model"] == "MSTC52" and h["table_span"] == 18 and h["allow"] == 4225
-    assert simpson.strap("floor-to-floor", "MST37", "SPF/HF", 1000, clear_span=20)["allow"] == 1500
+    assert h["model"] == "MSTC52" and h["allow"] == pytest.approx(4417.5) and h["n"] == 46 and h["table_span"] == (16, 18)
+    m = simpson.strap("floor-to-floor", "MST37", "DF/SP", 1000, clear_span=20)
+    assert m["allow"] == pytest.approx(2460 + (1720 - 2460) / 3) and m["n"] == 18
+    assert simpson.strap("floor-to-floor", "MST37", "SPF/HF", 1000, clear_span=12)["allow"] == 2355
     with pytest.raises(simpson.SimpsonError):
         simpson.strap("floor-to-floor", "MST37", "DF/SP", 1000, clear_span=31)
 
@@ -618,3 +621,60 @@ def test_top_flange_on_a_nailer():
         simpson.facemount("2x10", "DF/SP", "BA210", 1000, "floor (100)", 100, kind="topflange", nailer="steel (PDPAT)")
     with pytest.raises(simpson.SimpsonError):
         simpson.facemount("4x12", "SPF/HF", "HB412", 1000, "floor (100)", 0, kind="topflange", nailer="4x")
+
+
+EWP_HAND = [  # kind, joist, model, nailing, uplift, (DF/SP floor, snow, roof, SPF/HF floor, snow, roof) or {header: load}, page — copied from the pages
+    ("ewp_facemount", "1 1/2 x 9 1/2", "U210", "", 990, (1220, 1380, 1480, 1050, 1185, 1275), 158),
+    ("ewp_facemount", "1 3/4 x 9 1/2", "HUS1.81/10", "", 2635, (5515, 5830, 5830, 4360, 4675, 4885), 158),
+    ("ewp_facemount", "1 3/4 x 11 7/8", "HU11", "Max.", 1795, (4465, 4705, 4810, 3845, 4340, 4600), 158),
+    ("ewp_facemount", "2 x 14", "IUS2.06/14", "Max.", 70, (1660, 1805, 1805, 1425, 1555, 1555), 158),
+    ("ewp_topflange", "3 1/2 x 22", "HIT422", "", 305, {"LVL": 2550, "PSL": 2220, "LSL": 2500, "DF/SP": 2875, "SPF/HF": 1950, "DF/SCL I-joist": None}, 202),
+    ("ewp_topflange", "3 1/2 x 22", "HB3.56/22", "", 2075, {"LVL": 5815, "PSL": 5640, "LSL": 6395, "DF/SP": 5395, "SPF/HF": 3820, "DF/SCL I-joist": None}, 202),
+]
+
+
+@pytest.mark.parametrize("kind,joist,model,nail,up,loads,page", EWP_HAND)
+def test_ewp_rows_match_the_catalog(kind, joist, model, nail, up, loads, page):
+    rows = [r for r in simpson.rows_of(kind) if r["joist"] == joist and r["model"] == model and r["nailing"] == nail]
+    assert rows, (joist, model)
+    r = rows[0]
+    assert r["uplift"] == up and r["page"] == page
+    if isinstance(loads, dict):
+        assert all(r[k] == v for k, v in loads.items())
+    else:
+        assert (r["df_floor"], r["df_snow"], r["df_roof"], r["spf_floor"], r["spf_snow"], r["spf_roof"]) == loads
+
+
+def test_ewp_rows_against_the_page_text():
+    """Every row read by tools/simpson_extract_ewp.py: its loads found in order on one line of its page's text, and its width fits the
+    member size of its group (W - b between 0 and 0.4 in.)."""
+    import re
+    texts = {}
+    for kind in ("ewp_facemount", "ewp_topflange"):
+        for r in simpson.rows_of(kind):
+            if r["page"] not in texts:                     # thousands written 1,515 / 1515 / 2.985 on the pages: compared without the separator
+                texts[r["page"]] = re.sub(r"(\d)[,.](\d{3})\b", r"\1\2", _page_text(r["page"]))
+            t = texts[r["page"]]
+            keys = ["uplift", "df_floor", "df_snow", "df_roof", "spf_floor", "spf_snow", "spf_roof"] if kind == "ewp_facemount" else \
+                ["uplift"] + simpson.EWP_HEADERS
+            vals = ["—" if r[k] is None else f"{r[k]:.0f}" for k in keys]
+            assert re.search(r"\s" + r"\s+".join(re.escape(v) for v in vals), t), (r["page"], r["model"], r["joist"])
+    assert len(simpson.rows_of("ewp_facemount")) == 268 and len(simpson.rows_of("ewp_topflange")) == 446
+
+
+def test_ewp_hanger_choice():
+    """2 1/16 x 11 7/8 I-joist, SPF/HF header, 1,200 lb floor, 300 lb up: IUS2.06/11.88 (uplift 70 x 0.86) and MIU2.06/11 (230 x 0.86) fail
+    the uplift; HU2.1/11 915 x 0.86 = 786.9 passes (p. 164 note 2). Top flange 3 1/2 x 22 on PSL, 5,000 down: HB3.56/22 at 5,640."""
+    h = simpson.ewp_hanger("face mount", "2 1/16 x 11 7/8", "SPF/HF", "lightest that works", 1200, "floor (100)", 300)
+    assert h["row"]["model"] == "HU2.1/11" and h["allow_up"] == pytest.approx(915 * 0.86)
+    t = simpson.ewp_hanger("top flange", "3 1/2 x 22", "PSL", "lightest that works", 5000, None, 1000)
+    assert t["row"]["model"] == "HB3.56/22" and t["allow_down"] == 5640
+    with pytest.raises(simpson.SimpsonError):
+        simpson.ewp_hanger("top flange", "3 1/2 x 22", "DF/SCL I-joist", "HB3.56/22", 1000, None)
+    from strukit import calcsheet
+    import tempfile, os
+    s = calc.build("ewp_hanger", dict(mark="JH7", type="face mount", member="I-joist", joist="2 1/16 x 11 7/8", header="SPF/HF",
+                                      model="lightest that works", download="1200", duration="floor (100)", uplift="300", load_source="J3"),
+                   dict(job="t", name="t", method="ASD"))[0]
+    assert all(r.status == "OK" for r in s.rows)
+    calcsheet.simple_pdf(s, os.path.join(tempfile.mkdtemp(), "ew.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")

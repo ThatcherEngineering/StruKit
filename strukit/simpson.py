@@ -808,28 +808,44 @@ def strap(kind, model, species, tension, fastening="nails", nail="0.148", nails_
         if clear_span is None or clear_span <= 0:
             raise SimpsonError("strap: give the clear span between the nailed ends (floor-to-floor table, catalog p. 292)")
         def ff(m):
-            rows_ = [r for r in FLOOR_TO_FLOOR if r[0] == m and r[1] >= clear_span - 1e-9]
-            return min(rows_, key=lambda r: r[1]) if rows_ else None
+            """(load, nails, table spans used) at the clear span, interpolated between the tabulated spans (Zach 2026-11-27); a clear
+            span shorter than the shortest tabulated takes that row; longer than the longest: None."""
+            rs = sorted([r for r in FLOOR_TO_FLOOR if r[0] == m], key=lambda r: r[1])
+            if clear_span > rs[-1][1] + 1e-9:
+                return None
+            if clear_span <= rs[0][1] + 1e-9:
+                r = rs[0]
+                return r[3 + sp], _count(r[2]), r[2], (r[1],)
+            lo = max((r for r in rs if r[1] <= clear_span + 1e-9), key=lambda r: r[1])
+            hi = min((r for r in rs if r[1] >= clear_span - 1e-9), key=lambda r: r[1])
+            if lo[1] == hi[1]:
+                return lo[3 + sp], _count(lo[2]), lo[2], (lo[1],)
+            f = (clear_span - lo[1]) / (hi[1] - lo[1])
+            load = lo[3 + sp] + f * (hi[3 + sp] - lo[3 + sp])
+            n = _count(lo[2]) + f * (_count(hi[2]) - _count(lo[2]))
+            n = int(-(-n // 2) * 2)                         # rounded up to an even count, half each side of the clear span
+            nail = lo[2].split(") ", 1)[1]
+            return load, n, f"({n}) {nail}", (lo[1], hi[1])
         models_ = []
         for r in FLOOR_TO_FLOOR:
             if r[0] not in models_:
                 models_.append(r[0])
         if model.strip().lower() in ("first that works", "lightest that works"):
-            r = next((ff(m) for m in models_ if ff(m) and tension <= ff(m)[3 + sp] + 1e-9), None)
-            if r is None:
+            m = next((m for m in models_ if ff(m) and tension <= ff(m)[0] + 1e-9), None)
+            if m is None:
                 raise SimpsonError(f"strap: no floor-to-floor strap on catalog p. {MST_PAGE} carries {tension:,.0f} lb over a {clear_span:g} in. clear span")
             picked = True
         else:
             m = model.strip().upper()
             if m not in models_:
                 raise SimpsonError(f"strap: {model} is not in the floor-to-floor table (catalog p. {MST_PAGE})")
-            r = ff(m)
-            if r is None:
+            if ff(m) is None:
                 raise SimpsonError(f"strap: {m} is tabulated for clear spans up to {max(x[1] for x in FLOOR_TO_FLOOR if x[0] == m)} in. (catalog p. {MST_PAGE})")
             picked = False
-        return dict(model=r[0], ga=_STRAP_GA[r[0]], W=_STRAP_W.get(r[0], "3"), L=_STRAP_LEN[r[0]], fast=r[2], allow=r[3 + sp], page=MST_PAGE,
-                    n=_count(r[2]), kind=kind, species=species, tension=tension, bolts=False, picked=picked, table_span=r[1], clear=clear_span,
-                    rows=[("tension", tension, r[3 + sp])])
+        load, n, fast, spans = ff(m)
+        return dict(model=m, ga=_STRAP_GA[m], W=_STRAP_W.get(m, "3"), L=_STRAP_LEN[m], fast=fast, allow=load, page=MST_PAGE,
+                    n=n, kind=kind, species=species, tension=tension, bolts=False, picked=picked, table_span=spans, clear=clear_span,
+                    rows=[("tension", tension, load)])
     if bolts and kind != "MST":
         raise SimpsonError(f"strap: only the MST straps have bolted values (catalog p. {MST_PAGE})")
 
@@ -1341,3 +1357,89 @@ def _topflange_on_nailer(joist, species, model, download, uplift, nailer, nailin
     x = c_["nrow"]
     return dict(row=row, allow_down=c_["down"], allow_up=c_["up"] or 0.0, factor=1.0, notes=[], rows=rows, picked=pick, col="floor",
                 kind="topflange", nailer=nailer, nailer_row=x)
+
+
+# ---------------------------------------------------------------- hangers for I-joists, glulam and SCL (catalog pp. 158-164, 198-206)
+EWP_KINDS = {"face mount": "ewp_facemount", "top flange": "ewp_topflange"}
+EWP_PAGES = {"ewp_facemount": "pp. 158-164", "ewp_topflange": "pp. 198-206"}
+EWP_HEADERS = ["LVL", "PSL", "LSL", "DF/SP", "SPF/HF", "DF/SCL I-joist"]
+
+
+def ewp_joists(kind=None):
+    out = []
+    for k in ([EWP_KINDS[kind]] if kind else list(EWP_KINDS.values())):
+        for r in rows_of(k):
+            if r["joist"] not in out:
+                out.append(r["joist"])
+    return out
+
+
+def ewp_models():
+    out = []
+    for k in EWP_KINDS.values():
+        for r in rows_of(k):
+            if r["model"] not in out:
+                out.append(r["model"])
+    return out
+
+
+def ewp_hanger(kind, joist, header, model, download, duration, uplift=0.0, nailing=None):
+    """Hanger for an I-joist, glulam or SCL member. Face mount (catalog pp. 158-164): download by the species of the header (DF/SP or
+    SPF/HF) and the load duration (floor, snow, roof); uplift (160) based on DF/SP, x 0.86 for an SPF/HF header with nails, x 0.72 with
+    screws (p. 164 note 2). Top flange (pp. 198-206): download by the header type (LVL, PSL, LSL, DF/SP, SPF/HF, DF/SCL I-joist), not
+    increased for load duration (p. 206 note 1); uplift DF/SP, x 0.86 for SPF/HF (note 3); a "—" is no capacity. model "lightest that works":
+    the first row in the catalog's order of recommended selection (note 4) that carries the loads."""
+    k = EWP_KINDS.get(kind)
+    if k is None:
+        raise SimpsonError("EWP hanger: face mount or top flange")
+    top = k == "ewp_topflange"
+    if top and header not in EWP_HEADERS:
+        raise SimpsonError("EWP hanger: the header type is " + ", ".join(EWP_HEADERS))
+    if not top and header not in ("DF/SP", "SPF/HF"):
+        raise SimpsonError("EWP hanger: the species of the header is DF/SP or SPF/HF")
+    if download is None or download < 0 or (uplift or 0) < 0:
+        raise SimpsonError("EWP hanger: the download and uplift must be zero or more")
+    cands = [r for r in rows_of(k) if r["joist"] == joist]
+    if not cands:
+        raise SimpsonError(f"EWP hanger: no {kind} hanger for a {joist} member (catalog {EWP_PAGES[k]})")
+    dkey = {"floor (100)": "floor", "snow (115)": "snow", "roof (125)": "roof"}.get(duration)
+    if not top and dkey is None:
+        raise SimpsonError("EWP hanger: choose the load duration of the download")
+
+    def cap(r):
+        if top:
+            d_ = r.get(header)
+        else:
+            d_ = r.get(("df_" if header == "DF/SP" else "spf_") + dkey)
+        u_ = r.get("uplift")
+        if u_ is not None and header in ("SPF/HF",):
+            screws = "SDS" in r["header"] or "SD" in r["header"]
+            u_ = u_ * (0.72 if (screws and not top) else 0.86)
+        return d_, u_
+
+    def ok(r):
+        d_, u_ = cap(r)
+        return d_ is not None and d_ >= download - 1e-9 and (not uplift or (u_ is not None and u_ >= uplift - 1e-9))
+
+    pick = model.strip().lower() == "lightest that works"
+    if pick:
+        row = next((r for r in cands if ok(r)), None)
+        if row is None:
+            raise SimpsonError(f"EWP hanger: no {kind} hanger for a {joist} member carries {download:,.0f} lb down" + (f" and {uplift:,.0f} lb up" if uplift else "")
+                               + f" ({header} header)")
+    else:
+        mine = [r for r in cands if r["model"].upper().replace(" ", "") == model.strip().upper().replace(" ", "")
+                or r["model"].upper().split(" (")[0].replace(" ", "") == model.strip().upper().replace(" ", "")]
+        if not mine:
+            raise SimpsonError(f"EWP hanger: {model} is not listed for a {joist} member in the {kind} table (catalog {EWP_PAGES[k]})")
+        if nailing:
+            mine = [r for r in mine if (r["nailing"] or r["model"]).lower().find(nailing.lower()[:3]) >= 0] or mine
+        row = mine[-1] if not nailing else mine[0]
+    d_, u_ = cap(row)
+    if d_ is None:
+        raise SimpsonError(f"EWP hanger: {row['model']} has no download value for a {header} header (catalog p. {row['page']})")
+    if uplift and u_ is None:
+        raise SimpsonError(f"EWP hanger: {row['model']} has no uplift value (catalog p. {row['page']})")
+    rows = [("download", download, d_)] + ([("uplift", uplift, u_)] if uplift else [])
+    return dict(row=row, allow_down=d_, allow_up=u_, rows=rows, picked=pick, kind=k, header=header, top=top,
+                spf_uplift=(header == "SPF/HF" and row.get("uplift") is not None))
