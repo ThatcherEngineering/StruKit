@@ -1434,3 +1434,21 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   HSS or pipe as a tube, angle leg with the heel, threaded rod with threads and nuts) and the section is drawn to scale beside it.
 - **Validation:** pictures only; every number on them comes from the sheet's inputs. Rendered and looked at; the overlap audit is clean on
   every sheet the suite builds.
+
+## 2026-11-28 MST — 0.298.0 I-joist header factors; skewed and sloped I-joist / SCL hangers (Simpson products, part 18; overnight, unattended)
+- **I-joist header factors (top flange, p. 206 note 4):** the DF/SCL I-joist header loads are multiplied by the flange-thickness factor
+  (0.75 for 1-1/8 to 1-1/4 in., 0.85 for 1-5/16 to 1-3/8 in.) and, for an SPF flange, the series factor (ITS 0.86, MIT 0.72, LBV 0.90,
+  WP 1.00, BA 1.00); both when both apply; uplift too (rulings file, applied, not ruled). Two new fields on the I-joist / SCL hanger screen.
+- **Skewed 45 SUR/SUL/HSUR/HSUL (pp. 174-175):** 44 rows read by `tools/simpson_extract_skew.py` (pdfplumber words; the web stiffener
+  check mark read from its Wingdings glyph). 40 to 50 degrees of skew, no slope; SPF/HF uplift from its own column; the 190 lb uplift
+  cap for thin I-joist flanges without web stiffeners (note 3).
+- **Sloped / skewed LSSR/LSU (pp. 176-179):** 44 rows (22 sloped only, 22 skewed or sloped and skewed) read by
+  `tools/simpson_extract_lssr.py`; skew and slope 0 to 45 degrees; three LSSR fastener schedules (2-1/2 in. nails, the code-listed one;
+  1-1/2 in. nails; SD #9 screws) with the code reference stated; LSU minimum joist heights (note 5); web stiffeners in I-joists, rafter
+  spacing, obround holes on the acute side and factory-ordered LSU skews as stated assumptions.
+- **Pictures:** a skewed hanger adds a plan at the header face (the joist at its skew, side plates along it, flanges on the face, the
+  angle marked); a sloped one adds an elevation with the joist on the hinged seat at its slope.
+- **Validation:** every row's fasteners and eight loads found in order on its page's text, models and gauges checked nearby; seven rows
+  copied by hand; the choices and caps by hand. Browser check: the screen loads and solves both new types.
+- **Basic shear wall picture (SW1):** each segment now drawn as built, like the perforated wall: sheathing face with panel joints, framing
+  behind dashed, end posts and a hold-down at each end (`calcsheet._sheathed_segment`).

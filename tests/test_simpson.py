@@ -678,3 +678,129 @@ def test_ewp_hanger_choice():
                    dict(job="t", name="t", method="ASD"))[0]
     assert all(r.status == "OK" for r in s.rows)
     calcsheet.simple_pdf(s, os.path.join(tempfile.mkdtemp(), "ew.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+
+
+def test_ewp_ijoist_header_factors():
+    """Top-flange hanger on an I-joist header (catalog p. 206 note 4 and its table): ITS2.06/16 on a 2 x 16 joist, DF/SCL I-joist 1,085 lb
+    (p. 198). By hand: 1-1/8 to 1-1/4 in. flange x 0.75 = 813.75 lb; 1-5/16 to 1-3/8 in. x 0.85 = 922.25 lb; SPF flange, ITS series x 0.86 =
+    933.1 lb; both x 0.75 x 0.86 = 699.8 lb; uplift 120 lb takes the same factor. WP and BA series on an SPF flange: 1.00."""
+    from strukit import simpson
+    A = pytest.approx
+    f = lambda t, m: simpson.ewp_hanger("top flange", "2 x 16", "DF/SCL I-joist", "ITS2.06/16", 500, None, 100, None, t, m)
+    assert f("1 1/2 in. or more", "DF / LVL / LSL")["allow_down"] == A(1085)
+    assert f("1 1/8 to 1 1/4 in.", "DF / LVL / LSL")["allow_down"] == A(813.75)
+    assert f("1 5/16 to 1 3/8 in.", "DF / LVL / LSL")["allow_down"] == A(922.25)
+    h = f("1 1/2 in. or more", "SPF")
+    assert h["allow_down"] == A(933.1) and h["allow_up"] == A(103.2)
+    assert f("1 1/8 to 1 1/4 in.", "SPF")["allow_down"] == A(1085 * 0.75 * 0.86)
+    assert simpson.ij_header_factor("MIT9.5", "1 1/2 in. or more", "SPF")[0] == 0.72
+    assert simpson.ij_header_factor("LBV1.56/9.5", "1 1/2 in. or more", "SPF")[0] == 0.90
+    assert simpson.ij_header_factor("BA1.81/14", "1 1/2 in. or more", "SPF")[0] == 1.0
+    assert simpson.ij_header_factor("WP1.81/14", "1 1/2 in. or more", "SPF")[0] == 1.0
+    with pytest.raises(simpson.SimpsonError, match="no SPF"):
+        simpson.ij_header_factor("HIT422", "1 1/2 in. or more", "SPF")
+    # the factor carries to the choice: lightest that works on a thin flange needs a stronger hanger than on a full one
+    full = simpson.ewp_hanger("top flange", "2 x 16", "DF/SCL I-joist", "lightest that works", 1000, None, 0, None)
+    thin = simpson.ewp_hanger("top flange", "2 x 16", "DF/SCL I-joist", "lightest that works", 1000, None, 0, None, "1 1/8 to 1 1/4 in.", "DF / LVL / LSL")
+    assert full["row"]["model"] == "ITS2.06/16" and thin["allow_down"] >= 1000 and thin["row"]["model"] != "ITS2.06/16"
+    from strukit import ws_more
+    s = ws_more.ewp_hanger_sheet("JH", "top flange", "I-joist", "2 x 16", "DF/SCL I-joist", "ITS2.06/16", 500, None, 0, None, "J3",
+                                 "1 5/16 to 1 3/8 in.", "SPF")
+    assert s.hanger["allow_down"] == A(1085 * 0.85 * 0.86) and any("p. 206 note 4" in str(x) for x in s.steps)
+
+
+def test_skewed_and_sloped_ewp_rows_against_the_page_text():
+    """Every SUR/SUL/HSUR/HSUL row (p. 175, tools/simpson_extract_skew.py) and every LSSR/LSU row (pp. 178-179,
+    tools/simpson_extract_lssr.py): its model, gauge, fasteners and eight loads found in order on one line of the page text (the LSSR model
+    is printed on the middle line of its three schedules, so for those the fasteners and loads are matched and the model checked nearby)."""
+    import re
+    norm = lambda t: re.sub(r"(\d),(\d{3})\b", r"\1\2", t.replace("⁄", "/"))
+    t175 = norm(_page_text(175))
+    keys = ["uplift", "df_floor", "df_snow", "df_roof", "uplift_spf", "spf_floor", "spf_snow", "spf_roof"]
+    for r in simpson.rows_of("ewp_skew"):
+        loads = r"\s+".join(f"{r[k]:.0f}" for k in keys)
+        fast = re.escape(r["header"]) + r"\s+" + re.escape(r["joist_fast"])
+        assert re.search(fast + r"\s+" + loads, t175) or (re.search(fast, t175) and re.search(re.escape(r["model"]) + r"\s+" + loads, t175)), r["model"]
+        ls = t175.splitlines()                                       # gauge and W on the model's line, or one line away where the row wraps
+        near = [ls[j] for i, l in enumerate(ls) if re.search(re.escape(r["model"]) + r"\b", l) for j in range(max(0, i - 6), i + 7)]
+        assert any(re.search(r"(^|\s)" + r["ga"] + r"\s+" + re.escape(r["W_text"]) + r"\s", l) for l in near), r["model"]
+    assert len(simpson.rows_of("ewp_skew")) == 44
+    sl = simpson.rows_of("ewp_slope")
+    for p in (178, 179):
+        t = norm(_page_text(p))
+        lines = t.splitlines()
+        for r in [x for x in sl if x["page"] == p]:
+            pat = re.escape(r["header"]).replace("SD\\ \\#9", r"SD ?# ?9") + r"\s+" + re.escape(r["joist_fast"]).replace("SD\\ \\#9", r"SD ?# ?9") \
+                + r"\s+" + r"\s+".join(f"{r[k]:.0f}" for k in keys)
+            hits = [i for i, l in enumerate(lines) if re.search(pat, l)]
+            assert hits, (p, r["model"], r["header"])
+            assert any(r["model"] in lines[j] for i in hits for j in range(max(0, i - 7), i + 8)), (p, r["model"])
+        assert sum(1 for x in sl if x["page"] == p) == 22
+
+
+@pytest.mark.parametrize("kind, joist, model, face, row", [
+    # hand-copied from p. 175: uplift, floor, snow, roof (DF/SP), then the same for SPF/HF
+    ("ewp_skew", "1 1/2 x 9 1/4-12", "SUR/L210", "(10) 0.162 x 3 1/2", (1445, 1440, 1630, 1760, 1075, 1240, 1400, 1515)),
+    ("ewp_skew", "2 1/2-2 9/16 x 11 1/4-11 7/8", "SUR/L2.56/11", "(16) 0.162 x 3 1/2", (210, 2305, 2610, 2665, 180, 1980, 2245, 2290)),
+    ("ewp_skew", "3 x 14-20", "HSUR/L214-2", "(26) 0.162 x 3 1/2", (1490, 3875, 4370, 4680, 1280, 3335, 3760, 4025)),
+    ("ewp_skew", "5 x 16", "HSUR/L5.12/16", "(24) 0.162 x 3 1/2", (145, 3330, 3330, 3330, 140, 2865, 2865, 2865)),
+    # hand-copied from pp. 178 (sloped only) and 179 (skewed, or sloped and skewed)
+    ("ewp_slope", "2 to 2 1/16", "LSSR2.1Z", "(14) 0.148 x 2 1/2", (510, 1565, 1565, 1565, 440, 1345, 1345, 1345)),
+    ("ewp_slope", "3", "LSSR210-2Z", "(22) 0.148 x 1 1/2", (535, 1085, 1085, 1085, 460, 935, 935, 935)),
+    ("ewp_slope", "Dbl 2 1/2", "LSU5.12", "(24) 0.162 x 3 1/2", (885, 1790, 1790, 1790, 760, 1550, 1550, 1550)),
+])
+def test_skewed_and_sloped_rows_by_hand(kind, joist, model, face, row):
+    keys = ["uplift", "df_floor", "df_snow", "df_roof", "uplift_spf", "spf_floor", "spf_snow", "spf_roof"]
+    hits = [r for r in simpson.rows_of(kind) if r["joist"] == joist and r["model"] == model and r["header"] == face
+            and tuple(r[k] for k in keys) == row]
+    assert len(hits) == 1, (model, [tuple(r[k] for k in keys) for r in simpson.rows_of(kind) if r["model"] == model])
+
+
+def test_skewed_and_sloped_hanger_choice():
+    """By hand from pp. 174-179: SUR/SUL take 40 to 50 degrees of skew and no slope; LSSR/LSU 0 to 45 of each; the sloped-only table at no
+    skew, the skewed table otherwise; SPF/HF uplift from its own column; 190 lb uplift cap for thin I-joist flanges without web stiffeners;
+    LSU minimum joist heights; LSSR fasteners in the catalog's order unless chosen."""
+    A = pytest.approx
+    E = simpson.SimpsonError
+    h = simpson.ewp_hanger("skewed 45 (SUR/SUL)", "2 x 11 7/8", "SPF/HF", "lightest that works", 2000, "snow (115)", 150, skew=45)
+    assert h["row"]["model"] == "SUR/L2.06/11" and h["allow_down"] == 2170 and h["allow_up"] == 150
+    with pytest.raises(E, match="40 to 50"):
+        simpson.ewp_hanger("skewed 45 (SUR/SUL)", "2 x 11 7/8", "DF/SP", "lightest that works", 2000, "floor (100)", 0, skew=30)
+    with pytest.raises(E, match="skewed only"):
+        simpson.ewp_hanger("skewed 45 (SUR/SUL)", "2 x 11 7/8", "DF/SP", "lightest that works", 2000, "floor (100)", 0, skew=45, slope=10)
+    h = simpson.ewp_hanger("skewed 45 (SUR/SUL)", "1 1/2 x 10-16", "DF/SP", "SUR/L214", 1000, "floor (100)", 500, skew=45, thin_flange=True)
+    assert h["allow_up"] == 1890                                         # stiffeners required by the table: assumed installed
+    with pytest.raises(E, match="requires web stiffeners"):
+        simpson.ewp_hanger("skewed 45 (SUR/SUL)", "1 1/2 x 10-16", "DF/SP", "SUR/L214", 1000, "floor (100)", 100, skew=45, thin_flange=True,
+                           no_stiffeners=True)
+    h = simpson.ewp_hanger("skewed 45 (SUR/SUL)", "4 x 14", "DF/SP", "HSUR/L4.12/14", 1000, "floor (100)", 100, skew=45, thin_flange=True,
+                           no_stiffeners=True)
+    assert h["allow_up"] == 145                                          # already under 190
+    up = lambda **kw: simpson.ewp_hanger("skewed 45 (SUR/SUL)", "2 x 11 7/8", "DF/SP", "SUR/L2.06/11", 1000, "floor (100)", 100, skew=45, **kw)["allow_up"]
+    assert up() == 175 and up(thin_flange=True) == 175                   # 175 lb table value is under the 190 lb cap
+    up2 = lambda **kw: simpson.ewp_hanger("skewed 45 (SUR/SUL)", "1 1/2 x 9 1/4-12", "DF/SP", "SUR/L210", 1000, "floor (100)", 100, skew=45, **kw)
+    assert up2(thin_flange=True)["allow_up"] == 1445                     # this row requires web stiffeners: assumed installed, no cap
+    up3 = lambda **kw: simpson.ewp_hanger("skewed 45 (SUR/SUL)", "2 1/2 x 9 1/2 (3 x 10,12)", "DF/SP", "SUR/L2.56/9", 1000, "floor (100)", 100,
+                                          skew=45, **kw)
+    assert up3()["allow_up"] == 210 and up3(thin_flange=True)["allow_up"] == 190 and up3(thin_flange=True)["uplift_190"]
+    assert up3(thin_flange=True, stiff_installed=True)["allow_up"] == 210
+    # LSSR: no skew -> p. 178; skew -> p. 179; first schedule that works
+    h = simpson.ewp_hanger("sloped / skewed (LSSR/LSU)", "3", "DF/SP", "lightest that works", 2000, "floor (100)", 0, skew=0, slope=30, depth=11.25)
+    assert h["row"]["page"] == 178 and h["row"]["header"] == "(22) 0.162 x 2 1/2" and h["allow_down"] == 2365
+    h = simpson.ewp_hanger("sloped / skewed (LSSR/LSU)", "3", "DF/SP", "lightest that works", 2000, "floor (100)", 0, skew=20, slope=30, depth=11.25)
+    assert h["row"]["page"] == 179 and h["row"]["header"] == "(22) SD #9 x 1 1/2" and h["allow_down"] == 2100
+    h = simpson.ewp_hanger("sloped / skewed (LSSR/LSU)", "3", "SPF/HF", "LSSR210-2Z", 500, "floor (100)", 400, skew=20, slope=0, depth=11.25,
+                           fasteners="nails, 1 1/2 in. in the face")
+    assert h["allow_down"] == 935 and h["allow_up"] == 460
+    with pytest.raises(E, match="11 in. deep"):
+        simpson.ewp_hanger("sloped / skewed (LSSR/LSU)", "Dbl 2", "DF/SP", "LSU4.12", 1000, "floor (100)", 0, skew=0, slope=10, depth=9.5)
+    assert simpson.ewp_hanger("sloped / skewed (LSSR/LSU)", "Dbl 2 1/16", "DF/SP", "LSU4.28", 1000, "floor (100)", 0, skew=0, slope=10,
+                              depth=9.5)["allow_down"] == 3215
+    with pytest.raises(E, match="0 to 45"):
+        simpson.ewp_hanger("sloped / skewed (LSSR/LSU)", "3", "DF/SP", "LSSR210-2Z", 500, "floor (100)", 0, skew=50, depth=11.25)
+    with pytest.raises(E, match="skewed or sloped joist"):
+        simpson.ewp_hanger("face mount", "2 x 14", "DF/SP", "lightest that works", 500, "floor (100)", 0, skew=30)
+    from strukit import ws_more
+    s = ws_more.ewp_hanger_sheet("JH", "sloped / skewed (LSSR/LSU)", "I-joist", "2 to 2 1/16", "DF/SP", "lightest that works", 1300, "roof (125)",
+                                 300, None, "R3", skew=30, slope=20, depth=11.875)
+    assert s.hanger["allow_down"] == 1580 and any("web stiffeners" in a.lower() for a in s.assumptions)

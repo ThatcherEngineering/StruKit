@@ -1360,9 +1360,36 @@ def _topflange_on_nailer(joist, species, model, download, uplift, nailer, nailin
 
 
 # ---------------------------------------------------------------- hangers for I-joists, glulam and SCL (catalog pp. 158-164, 198-206)
-EWP_KINDS = {"face mount": "ewp_facemount", "top flange": "ewp_topflange"}
-EWP_PAGES = {"ewp_facemount": "pp. 158-164", "ewp_topflange": "pp. 198-206"}
+EWP_KINDS = {"face mount": "ewp_facemount", "top flange": "ewp_topflange", "skewed 45 (SUR/SUL)": "ewp_skew", "sloped / skewed (LSSR/LSU)": "ewp_slope"}
+EWP_PAGES = {"ewp_facemount": "pp. 158-164", "ewp_topflange": "pp. 198-206", "ewp_skew": "pp. 174-175", "ewp_slope": "pp. 176-179"}
+LSSR_FASTENERS = {"nails, 2 1/2 in. in the face": "x 2 1/2", "nails, 1 1/2 in. in the face": "0.148 x 1 1/2", "SD #9 screws": "SD #9"}
+LSU_MIN_H = {"LSU3510-2": 11.0, "LSU4.12": 11.0, "LSU5.12": 11.0}        # p. 178 note 5; 9 1/2 in. for all others
 EWP_HEADERS = ["LVL", "PSL", "LSL", "DF/SP", "SPF/HF", "DF/SCL I-joist"]
+# I-joist header load adjustment factors (p. 206 note 4 table): by flange thickness, and for an SPF flange by hanger series
+IJ_FLANGE_T = {"1 1/2 in. or more": 1.0, "1 5/16 to 1 3/8 in.": 0.85, "1 1/8 to 1 1/4 in.": 0.75}
+IJ_FLANGE_MAT = ["DF / LVL / LSL", "SPF"]
+IJ_SPF = {"ITS": 0.86, "MIT": 0.72, "LBV": 0.90, "WP": 1.00, "BA": 1.00}
+
+
+def ij_header_factor(model, thickness, material):
+    """Factor on the DF/SCL I-joist header loads of a top-flange hanger (p. 206 note 4 and its table): 1.0 for a flange 1-1/2 in. or thicker
+    of DF, LVL or LSL; 0.75 or 0.85 by thickness; for an SPF flange the series value. A flange both thinner and of SPF takes the product
+    (the table gives each alone). Returns (factor, explanation)."""
+    import re as _re
+    if thickness not in IJ_FLANGE_T:
+        raise SimpsonError("EWP hanger: the I-joist header flange thickness is " + ", ".join(IJ_FLANGE_T))
+    if material not in IJ_FLANGE_MAT:
+        raise SimpsonError("EWP hanger: the I-joist header flange is DF / LVL / LSL or SPF (the catalog lists no other)")
+    ft = IJ_FLANGE_T[thickness]
+    parts = [] if ft == 1.0 else [f"{ft:g} for a {thickness} flange"]
+    fm = 1.0
+    if material == "SPF":
+        ser = _re.match(r"[A-Z]+", model.upper()).group()
+        if ser not in IJ_SPF:
+            raise SimpsonError(f"EWP hanger: the catalog gives no SPF I-joist flange factor for the {ser} series (p. 206 note 4 table)")
+        fm = IJ_SPF[ser]
+        parts.append(f"{fm:g} for an SPF flange ({ser} series)")
+    return ft * fm, " x ".join(parts) if parts else "flange 1-1/2 in. or more of DF, LVL or LSL: no adjustment"
 
 
 def ewp_joists(kind=None):
@@ -1383,7 +1410,8 @@ def ewp_models():
     return out
 
 
-def ewp_hanger(kind, joist, header, model, download, duration, uplift=0.0, nailing=None):
+def ewp_hanger(kind, joist, header, model, download, duration, uplift=0.0, nailing=None, ij_t="1 1/2 in. or more", ij_mat="DF / LVL / LSL",
+               skew=0.0, slope=0.0, depth=None, thin_flange=False, no_stiffeners=False, fasteners=None, stiff_installed=False):
     """Hanger for an I-joist, glulam or SCL member. Face mount (catalog pp. 158-164): download by the species of the header (DF/SP or
     SPF/HF) and the load duration (floor, snow, roof); uplift (160) based on DF/SP, x 0.86 for an SPF/HF header with nails, x 0.72 with
     screws (p. 164 note 2). Top flange (pp. 198-206): download by the header type (LVL, PSL, LSL, DF/SP, SPF/HF, DF/SCL I-joist), not
@@ -1391,8 +1419,24 @@ def ewp_hanger(kind, joist, header, model, download, duration, uplift=0.0, naili
     the first row in the catalog's order of recommended selection (note 4) that carries the loads."""
     k = EWP_KINDS.get(kind)
     if k is None:
-        raise SimpsonError("EWP hanger: face mount or top flange")
+        raise SimpsonError("EWP hanger: the hanger type is " + ", ".join(EWP_KINDS))
     top = k == "ewp_topflange"
+    skew, slope = float(skew or 0.0), float(slope or 0.0)
+    notes = []
+    if k in ("ewp_facemount", "ewp_topflange") and (skew or slope):
+        raise SimpsonError("EWP hanger: a skewed or sloped joist takes the SUR/SUL or LSSR/LSU hangers (the face-mount and top-flange tables are for square joists)")
+    if k == "ewp_skew":
+        if not 40.0 <= skew <= 50.0:
+            raise SimpsonError("EWP hanger: SUR/SUL hangers accommodate a 40 to 50 degree skew (catalog p. 174)")
+        if slope:
+            raise SimpsonError("EWP hanger: SUR/SUL hangers are skewed only; a sloped joist takes the LSSR (pp. 176-179)")
+    if k == "ewp_slope":
+        if not (0.0 <= skew <= 45.0 and 0.0 <= slope <= 45.0):
+            raise SimpsonError("EWP hanger: LSSR/LSU hangers adjust to a skew of 0 to 45 degrees and a slope of 0 to 45 degrees up or down (catalog p. 176)")
+        if depth is None or depth <= 0:
+            raise SimpsonError("EWP hanger: give the depth of the carried member (LSSR/LSU minimum joist heights, p. 178 note 5)")
+        if fasteners and fasteners not in LSSR_FASTENERS:
+            raise SimpsonError("EWP hanger: the LSSR fasteners are " + ", ".join(LSSR_FASTENERS))
     if top and header not in EWP_HEADERS:
         raise SimpsonError("EWP hanger: the header type is " + ", ".join(EWP_HEADERS))
     if not top and header not in ("DF/SP", "SPF/HF"):
@@ -1400,11 +1444,33 @@ def ewp_hanger(kind, joist, header, model, download, duration, uplift=0.0, naili
     if download is None or download < 0 or (uplift or 0) < 0:
         raise SimpsonError("EWP hanger: the download and uplift must be zero or more")
     cands = [r for r in rows_of(k) if r["joist"] == joist]
+    if k == "ewp_slope":
+        tbl = "skewed" if skew else "sloped"
+        cands = [r for r in cands if r["table"] == tbl]
+        if fasteners:
+            cands = [r for r in cands if r["model"].startswith("LSU") or LSSR_FASTENERS[fasteners] in r["header"]]
+        cands = [r for r in cands if depth >= LSU_MIN_H.get(r["model"], 9.5) - 1e-9] or cands
+    if k == "ewp_skew" and no_stiffeners:
+        cands = [r for r in cands if not r["stiff"]] or cands
     if not cands:
         raise SimpsonError(f"EWP hanger: no {kind} hanger for a {joist} member (catalog {EWP_PAGES[k]})")
     dkey = {"floor (100)": "floor", "snow (115)": "snow", "roof (125)": "roof"}.get(duration)
     if not top and dkey is None:
         raise SimpsonError("EWP hanger: choose the load duration of the download")
+
+    ij = top and header == "DF/SCL I-joist"
+    if ij:
+        ij_header_factor("BA", ij_t, "DF / LVL / LSL")             # validates the thickness and material choices
+        if ij_mat not in IJ_FLANGE_MAT:
+            raise SimpsonError("EWP hanger: the I-joist header flange is DF / LVL / LSL or SPF (the catalog lists no other)")
+
+    def ijf(r):
+        if not ij:
+            return 1.0
+        try:
+            return ij_header_factor(r["model"], ij_t, ij_mat)[0]
+        except SimpsonError:
+            return None
 
     def cap(r):
         if top:
@@ -1412,9 +1478,19 @@ def ewp_hanger(kind, joist, header, model, download, duration, uplift=0.0, naili
         else:
             d_ = r.get(("df_" if header == "DF/SP" else "spf_") + dkey)
         u_ = r.get("uplift")
-        if u_ is not None and header in ("SPF/HF",):
+        if "uplift_spf" in r:                                   # SUR/SUL and LSSR/LSU tables give the SPF/HF uplift
+            u_ = r["uplift_spf"] if header == "SPF/HF" else r["uplift"]
+        elif u_ is not None and header in ("SPF/HF",):
             screws = "SDS" in r["header"] or "SD" in r["header"]
             u_ = u_ * (0.72 if (screws and not top) else 0.86)
+        if k == "ewp_skew" and thin_flange and not stiff_installed and not r["stiff"] and u_ is not None:
+            u_ = min(u_, 190.0)                                 # p. 175 note 3: no web stiffeners unless the table requires them or they are given
+        f_ = ijf(r)
+        if f_ is None:
+            return None, None
+        if ij and f_ != 1.0:                                    # the factor on the I-joist header loads, uplift included
+            d_ = None if d_ is None else d_ * f_
+            u_ = None if u_ is None else u_ * f_
         return d_, u_
 
     def ok(r):
@@ -1434,12 +1510,24 @@ def ewp_hanger(kind, joist, header, model, download, duration, uplift=0.0, naili
             raise SimpsonError(f"EWP hanger: {model} is not listed for a {joist} member in the {kind} table (catalog {EWP_PAGES[k]})")
         if nailing:
             mine = [r for r in mine if (r["nailing"] or r["model"]).lower().find(nailing.lower()[:3]) >= 0] or mine
-        row = mine[-1] if not nailing else mine[0]
+        if k == "ewp_slope":                                    # the fastener schedule: as chosen, else the first in the catalog's order that carries the loads
+            row = next((r for r in mine if ok(r)), mine[0])
+        else:
+            row = mine[-1] if not nailing else mine[0]
+    if ij:
+        ij_header_factor(row["model"], ij_t, ij_mat)               # raises for a series with no SPF factor
+    if k == "ewp_slope" and depth < LSU_MIN_H.get(row["model"], 9.5) - 1e-9:
+        raise SimpsonError(f"EWP hanger: {row['model']} needs a joist at least {LSU_MIN_H.get(row['model'], 9.5):g} in. deep (catalog p. 178 note 5)")
+    if k == "ewp_skew" and no_stiffeners and row["stiff"]:
+        raise SimpsonError(f"EWP hanger: {row['model']} on a {joist} member requires web stiffeners (catalog p. 175)")
     d_, u_ = cap(row)
     if d_ is None:
         raise SimpsonError(f"EWP hanger: {row['model']} has no download value for a {header} header (catalog p. {row['page']})")
     if uplift and u_ is None:
         raise SimpsonError(f"EWP hanger: {row['model']} has no uplift value (catalog p. {row['page']})")
     rows = [("download", download, d_)] + ([("uplift", uplift, u_)] if uplift else [])
+    ijtxt = ij_header_factor(row["model"], ij_t, ij_mat) if ij else (1.0, "")
     return dict(row=row, allow_down=d_, allow_up=u_, rows=rows, picked=pick, kind=k, header=header, top=top,
-                spf_uplift=(header == "SPF/HF" and row.get("uplift") is not None))
+                spf_uplift=(header == "SPF/HF" and row.get("uplift") is not None), ij_factor=ijtxt[0], ij_text=ijtxt[1],
+                table_down=(row.get(header) if top else None), skew=skew, slope=slope, depth=depth,
+                uplift_190=(k == "ewp_skew" and thin_flange and not stiff_installed and not row["stiff"] and u_ is not None and u_ <= 190.0 and (row.get("uplift_spf") if header == "SPF/HF" else row.get("uplift")) > 190.0))

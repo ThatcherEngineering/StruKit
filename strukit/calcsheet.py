@@ -5822,7 +5822,84 @@ def _joist_hanger_picture(c, top, d):
     _small(c, sx, yb - 22, "section looking along the joist, to scale (in.)")
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawCentredString((x0 + RM - 120) / 2 + 30, ytop + 6, f"{d['model']}, {d['ga']} ga, on a {d['joist']}" + ("" if d.get("jkind") else " joist"))
+    if d.get("skew") or d.get("slope"):
+        return _hanger_skew_slope(c, yb - 40, d, hb, jb, jd, jk, T / sc, plies)
     return yb - 30
+
+
+def _hanger_skew_slope(c, top, d, hb, jb, jd, jk, t, plies):
+    """A skewed or sloped hanger: a plan at the header face with the joist at its skew (the side plates along the joist, the flanges nailed to
+    the header face, the skew angle from the square marked) and, when sloped, an elevation with the joist at its slope on the hinged seat."""
+    import math as _m
+    W, B = d["W"], d["B"]
+    th, sl = float(d.get("skew") or 0.0), float(d.get("slope") or 0.0)
+    wkind = jk if jk in ("lvl", "glulam") else "sawn"
+    ybot = top - 10
+    if th:
+        s2 = min(6.0, 150.0 / (jb / _m.cos(_m.radians(th)) + 22.0), 120.0 / (hb + 14.0))
+        xc = LM + 150
+        yf = top - 14 - hb * s2                              # the header face the joist frames into (header above it)
+        Lh = 36.0
+        c.saveState(); memberart.wood_elevation(c, xc - Lh / 2 * s2, yf, Lh * s2, hb * s2, kind=d.get("hkind", "sawn")); c.restoreState()
+        _break_v(c, xc - Lh / 2 * s2, yf, yf + hb * s2); _break_v(c, xc + Lh / 2 * s2, yf, yf + hb * s2)
+        Lj = 13.0
+        c.saveState()
+        pth = c.beginPath(); pth.rect(xc - 200, yf - 300, 400, 300); c.clipPath(pth, stroke=0, fill=0)            # below the header face
+        c.translate(xc, yf); c.rotate(-90 + th)
+        memberart.wood_elevation(c, -jb * s2, -jb / 2 * s2, (Lj + jb) * s2, jb * s2, kind=wkind)                  # the joist (top seen), end cut to the face
+        _break_v(c, Lj * s2, -jb / 2 * s2, jb / 2 * s2)
+        c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+        T = max(t * s2, 1.0)
+        for sg in (-1, 1):                                                                                           # side plates along the joist
+            c.rect(-jb * s2, sg * (jb / 2 * s2) + (0 if sg > 0 else -T), (B + jb) * s2, T, fill=1, stroke=1)
+        c.restoreState()
+        c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+        half = jb / 2 / _m.cos(_m.radians(th))
+        T = max(t * s2, 1.0)
+        for sg in (-1, 1):                                                                                           # flanges on the header face
+            xa = xc + sg * half * s2
+            c.rect(min(xa, xa + sg * 1.6 * s2), yf - T, 1.6 * s2, T, fill=1, stroke=1)
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.4); c.setDash(2, 1.5)
+        c.line(xc, yf, xc, yf - (Lj - 2) * s2)                                                                       # the square line
+        c.setDash()
+        R = (Lj - 5) * s2
+        pth = c.beginPath(); pth.arc(xc - R, yf - R, xc + R, yf + R, startAng=-90, extent=th); c.drawPath(pth, stroke=1, fill=0)
+        a_mid = _m.radians(-90 + th / 2)
+        c.setFont(FR, 6.5); c.setFillColorRGB(*INK)
+        c.drawRightString(xc - 5, yf - R - 2, f"skew {th:g} degrees")
+        yl = yf - (Lj * _m.cos(_m.radians(th)) + jb / 2 * _m.sin(_m.radians(th)) + 1) * s2 - 12
+        _small(c, xc, yl, "plan at the header, to scale")
+        ybot = min(ybot, yl - 8)
+    if sl:
+        s3 = min(5.0, 110.0 / (jd + 14.0))
+        xh = RM - 230 if th else LM + 120
+        yt = top - 14
+        hd = jd + 5.0
+        memberart.wood_section(c, xh + hb * s3 / 2, yt - hd * s3 / 2, hb * s3, hd * s3, hb, hd, kind=d.get("hkind", "sawn"))
+        xf, ys = xh + hb * s3, yt - hd * s3 + 1.5 * s3                       # the header face, the seat pivot
+        Lj = 18.0
+        a = _m.radians(sl)
+        c.saveState()
+        pth = c.beginPath(); pth.rect(xf, ys - 200, 400, 400); c.clipPath(pth, stroke=0, fill=0)                    # the joist end cut plumb at the face
+        c.translate(xf + 0.3 * s3, ys); c.rotate(sl)
+        _hanger_joist_side(c, -jd * s3, 0, (Lj + jd) * s3, jd * s3, jk, s3)   # the joist at its slope, seated on the swivel seat
+        _break_v(c, Lj * s3, 0, jd * s3)
+        c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+        T = max(t * s3, 1.0)
+        c.rect(0, -T, B * s3, T, fill=1, stroke=1)
+        c.setFillColorRGB(0.80, 0.84, 0.88); c.rect(0, -T, B * s3, d["H"] * s3 * 0.6, fill=1, stroke=1)
+        c.restoreState()
+        c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE)
+        c.rect(xf, ys - T, max(t * s3, 1.0), d["H"] * s3, fill=1, stroke=1)                                       # flange on the header face
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.4); c.setDash(2, 1.5)
+        c.line(xf, ys, xf + 14 * s3, ys); c.setDash()
+        R = 10 * s3
+        pth = c.beginPath(); pth.arc(xf - R, ys - R, xf + R, ys + R, startAng=0, extent=sl); c.drawPath(pth, stroke=1, fill=0)
+        c.setFont(FR, 6.5); c.setFillColorRGB(*INK)
+        c.drawString(xf + R + 4, ys + 2, f"slope {sl:g} degrees")
+        _small(c, xh + 60, yt - hd * s3 - 16, "elevation at the header, sloped joist, to scale")
+        ybot = min(ybot, yt - hd * s3 - 24)
+    return ybot
 
 
 def _sill_anchor_picture(c, top, d):
@@ -6020,41 +6097,81 @@ def _perforated_wall_picture(c, top, d):
     return y0 - 55
 
 
+def _sheathed_segment(c, x0, y0, b, h, sc, seed=1):
+    """One full-height shear wall segment drawn as built, b x h ft at sc points per ft (x0, y0 bottom left): the sheathing face with its
+    strand texture and 4 x 8 ft panel joints, the framing behind dashed (bottom plate, double top plate, studs at 16 in., the end posts
+    heavier) and a hold-down bracket on each end post with its anchor rod."""
+    import random as _r
+    W, H = b * sc, h * sc
+    c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setFillColorRGB(0.94, 0.88, 0.76)
+    c.rect(x0, y0, W, H, fill=1, stroke=1)
+    c.saveState()
+    pth = c.beginPath(); pth.rect(x0, y0, W, H); c.clipPath(pth, stroke=0, fill=0)
+    rnd = _r.Random(int(b * 13 + h * 7 + seed))
+    c.setStrokeColorRGB(0.80, 0.70, 0.52); c.setLineWidth(0.35)
+    for _ in range(int(W * H / 22)):
+        px, py, ln = x0 + rnd.uniform(0, W), y0 + rnd.uniform(0, H), rnd.uniform(1.5, 3.5)
+        a = rnd.uniform(-0.6, 0.6)
+        c.line(px, py, px + ln, py + ln * a)
+    c.restoreState()
+    c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setLineWidth(0.5)
+    xx = 4.0
+    while xx < b - 1e-6:
+        c.line(x0 + xx * sc, y0, x0 + xx * sc, y0 + H)
+        xx += 4.0
+    if h > 8.0 + 1e-6:
+        c.line(x0, y0 + 8.0 * sc, x0 + W, y0 + 8.0 * sc)
+    c.setStrokeColorRGB(0.45, 0.32, 0.18); c.setLineWidth(0.35); c.setDash(2.2, 1.6)
+    c.line(x0, y0 + 0.125 * sc, x0 + W, y0 + 0.125 * sc)
+    c.line(x0, y0 + H - 0.25 * sc, x0 + W, y0 + H - 0.25 * sc)
+    c.line(x0, y0 + H - 0.125 * sc, x0 + W, y0 + H - 0.125 * sc)
+    k = 1
+    while k * 16.0 / 12.0 < b - 0.2:
+        c.line(x0 + k * 16.0 / 12.0 * sc, y0, x0 + k * 16.0 / 12.0 * sc, y0 + H)
+        k += 1
+    c.setLineWidth(0.8); c.setDash(3, 1.6)
+    for xe in (x0 + 2.0, x0 + W - 2.0):
+        c.line(xe, y0, xe, y0 + H)
+    c.setDash()
+    c.setFillColorRGB(*memberart.STEEL_FILL); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+    for xe, sg in ((x0, 1), (x0 + W, -1)):
+        bx = xe + sg * 2.5 - (4.0 if sg < 0 else 0.0)
+        c.rect(bx, y0 + 1.0, 4.0, 11.0, fill=1, stroke=1)
+        c.setLineWidth(0.9); c.line(bx + 2.0, y0 - 5.0, bx + 2.0, y0 + 4.0); c.setLineWidth(0.5)
+
+
 def _shear_wall_picture(c, top, d):
-    """Elevation of the wall line: each full-height segment as a sheathed panel with its
-    length, shear and chord forces. Segments are drawn side by side with a gap; lengths and
-    height are to one scale."""
+    """Elevation of the wall line, to scale: each full-height segment drawn as built (sheathing face with its panel joints, the framing
+    behind dashed, end posts and a hold-down at each end), side by side with a gap; each segment's length, shear and chord forces; the
+    height dimensioned."""
     segs = d["segs"]
     total = sum(s["b"] for s in segs)
-    gap = 26.0
-    sc = min((RM - LM - 120 - gap * (len(segs) - 1)) / total, 78.0 / d["h"])
+    gap = 30.0
+    sc = min((RM - LM - 120 - gap * (len(segs) - 1)) / total, 110.0 / d["h"])
     _sketch_title(c, LM + 6, top - 4, "ELEVATION")
-    y0 = top - 34 - d["h"] * sc
-    x = LM + 46
+    y0 = top - 36 - d["h"] * sc
+    x = LM + 50
     for i, s in enumerate(segs, 1):
         w, hh = s["b"] * sc, d["h"] * sc
-        c.setLineWidth(0.7); c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setFillColorRGB(*memberart.WOOD_FILL)
-        c.rect(x, y0, w, hh, fill=1, stroke=1)
-        c.setLineWidth(0.3)
-        n = max(int(s["b"] / 1.3333 + 0.5), 1)                # studs at 16 in. for the look of framing
-        for k in range(1, n):
-            c.line(x + w * k / n, y0, x + w * k / n, y0 + hh)
+        _sheathed_segment(c, x, y0, s["b"], d["h"], sc, seed=i)
         c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
-        c.drawCentredString(x + w / 2, y0 + hh + 9, f"{s['V']:,.0f} lb  ({s['v']:.0f} plf)")
+        c.drawCentredString(x + w / 2, y0 + hh + 10, f"{s['V']:,.0f} lb  ({s['v']:.0f} plf)")
         c.setStrokeColorRGB(*INK); c.setLineWidth(0.8)
-        c.line(x + 2, y0 + hh + 5, x + w - 2, y0 + hh + 5); c.line(x + w - 2, y0 + hh + 5, x + w - 6, y0 + hh + 7)
-        c.line(x + w - 2, y0 + hh + 5, x + w - 6, y0 + hh + 3)
+        c.line(x + 2, y0 + hh + 6, x + w - 2, y0 + hh + 6); c.line(x + w - 2, y0 + hh + 6, x + w - 6, y0 + hh + 8)
+        c.line(x + w - 2, y0 + hh + 6, x + w - 6, y0 + hh + 4)
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.6); c.line(x - 6, y0, x + w + 6, y0)
         c.setFont(FR, 6); c.setFillColorRGB(*GREY)
-        c.drawCentredString(x, y0 - 22, f"T {s['T']:,.0f}"); c.drawCentredString(x + w, y0 - 22, f"C {s.get('C', s['T']):,.0f}")
-        memberart._dim_h(c, x, x + w, y0 - 9, f"{s['b']:g} ft", FR, ext_from=y0)
+        c.drawCentredString(x, y0 - 24, f"T {s['T']:,.0f}"); c.drawCentredString(x + w, y0 - 24, f"C {s.get('C', s['T']):,.0f}")
+        memberart._dim_h(c, x, x + w, y0 - 11, f"{s['b']:g} ft", FR, ext_from=y0 - 6)
         if d.get("ab"):
             _anchor_bolt_marks(c, x, x + w, y0, sc, d["ab"])
         x += w + gap
-    memberart._dim_v(c, y0, y0 + d["h"] * sc, x - gap + 8, f"{d['h']:g} ft", FR, ext_from=x - gap)
-    _small(c, (LM + RM) / 2, y0 - 32, "segments drawn to scale, side by side; chord forces in lb; framing lines are schematic"
+    memberart._dim_v(c, y0, y0 + d["h"] * sc, x - gap + 10, f"{d['h']:g} ft", FR, ext_from=x - gap)
+    _small(c, (LM + RM) / 2, y0 - 36, "segments to scale, side by side; sheathing face with 4 x 8 ft panel joints, framing behind dashed, hold-down at each end"
+           + "; chord forces in lb"
            + (f"; anchor bolts {d['ab']['D']:g} in. at {d['ab']['s']:g} in." + ("" if d["ab"]["given"] else " (the spacing found)") + ", 12 in. from the plate ends"
               if d.get("ab") else ""))
-    return y0 - 38
+    return y0 - 44
 
 
 def _snow_picture(c, top, d):

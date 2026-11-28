@@ -592,3 +592,23 @@ Texts as they stood under "Open" when ruled:
 - Face mount (pp. 158-164): the SPF/HF uplift factor 0.72 (screws) is used when the face fasteners are SD or SDS screws, 0.86 otherwise
   (p. 164 note 2); the top-flange tables use 0.86 for SPF/HF (p. 206 note 3).
 - "Lightest that works" takes the first row in the catalog's order of recommended selection (note 4), as the sawn-lumber screens do.
+
+## 2026-11-28 overnight — Zach: "spend the night finishing every open task that doesn't require my immediate assistance. Ask questions about conservative determinations in the morning"
+
+## 2026-11-28, I-joist header factors on top-flange hangers (0.298.0), applied (not ruled)
+- The p. 206 note 4 table gives a factor for a thin flange (0.75, 0.85) and one for an SPF flange (by series); it does not say what to
+  do with a flange that is both. Applied: the product of the two (the lower result).
+- The table calls them load adjustment factors on the allowable loads; applied to the uplift as well as the download.
+- A series not in the table (only ITS, MIT, LBV, WP, BA are listed) on an SPF flange is refused, not given 1.0. (Every row in the
+  top-flange tables with an I-joist header value is ITS, MIT, WP or BA, so this does not arise today.)
+
+## 2026-11-28, skewed and sloped I-joist / SCL hangers (0.298.0), applied (not ruled)
+- SUR/SUL/HSUR/HSUL (pp. 174-175): taken for a skew of 40 to 50 degrees only (the p. 174 option note) and refused for a sloped joist (the
+  catalog describes them as skewed hangers; sloped joists go to the LSSR).
+- SUR/SUL, p. 175 note 3: with an I-joist flange under 1-5/16 in., the uplift is capped at 190 lb unless web stiffeners are entered as
+  installed or the table requires them (then assumed installed). The extra uplift from the triangle holes (note 2) is not used.
+- LSSR/LSU (pp. 176-179): no skew uses the sloped-only table (p. 178), including a slope of zero; any skew uses the skewed or sloped and
+  skewed table (p. 179). The extra roof download from the triangle holes (p. 178 note 2) is not used. With no fastener schedule chosen, the
+  first schedule listed that carries the loads is used and printed.
+- "Lightest that works" for SUR/SUL and LSSR/LSU takes the first listed for the member size (these pages give no order of recommended
+  selection).

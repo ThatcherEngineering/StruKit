@@ -1384,7 +1384,8 @@ FORMS = {
         tables=[]),
     "ewp_hanger": dict(
         title="Joist Hanger, I-Joist / SCL (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="JH",
-        fields=[F("type", "Hanger type", "select", options=list(simpson.EWP_KINDS), help="face mount (pp. 158-164) or top flange (pp. 198-206)"),
+        fields=[F("type", "Hanger type", "select", options=list(simpson.EWP_KINDS),
+                  help="face mount (pp. 158-164), top flange (pp. 198-206), skewed 45 SUR/SUL (pp. 174-175), sloped / skewed LSSR/LSU (pp. 176-179)"),
                 F("member", "Carried member", "select", options=["I-joist", "LVL / SCL", "glulam"]),
                 F("joist", "Member size (actual)", "select", options=simpson.ewp_joists(), help="as the catalog table lists it"),
                 F("header", "Header", "select", options=simpson.EWP_HEADERS, help="face mount: DF/SP or SPF/HF species header; top flange: the header type"),
@@ -1393,6 +1394,16 @@ FORMS = {
                 F("download", "Download, ASD", unit="lb"),
                 F("duration", "Load duration of the download (face mount)", "select", options=["floor (100)", "snow (115)", "roof (125)"], required=False),
                 F("uplift", "Uplift, ASD (wind or earthquake)", unit="lb", required=False),
+                F("skew", "Skew (SUR/SUL, LSSR/LSU)", unit="deg", required=False, help="SUR/SUL 40 to 50; LSSR/LSU 0 to 45"),
+                F("slope", "Slope up or down (LSSR/LSU)", unit="deg", required=False, help="0 to 45"),
+                F("depth", "Depth of the carried member (LSSR/LSU)", unit="in.", required=False, help="minimum joist heights, p. 178 note 5"),
+                F("fasteners", "LSSR fasteners", "select", options=list(simpson.LSSR_FASTENERS), required=False, help="blank = the first that carries the loads"),
+                F("jflange", "I-joist flange of the carried joist (SUR/SUL)", "select", options=["1 5/16 in. or more", "less than 1 5/16 in."], required=False),
+                F("web_stiff", "Web stiffeners in the carried I-joist (SUR/SUL)", "select", options=["as the catalog requires", "installed", "none"], required=False,
+                  help="blank = where the table requires them"),
+                F("ij_t", "I-joist header: flange thickness", "select", options=list(simpson.IJ_FLANGE_T), required=False,
+                  help="top flange on a DF/SCL I-joist header only (p. 206 note 4); blank = 1-1/2 in. or more"),
+                F("ij_mat", "I-joist header: flange material", "select", options=simpson.IJ_FLANGE_MAT, required=False, help="blank = DF / LVL / LSL"),
                 F("load_source", "Where the loads come from", "text", help="for example: reaction of I-joist J3")],
         tables=[]),
     "hurricane_tie": dict(
@@ -3213,9 +3224,13 @@ def _build(kind, values, project):
     if kind == "ewp_hanger":
         ty, mem, j, hd, mdl, src = r.text("type"), r.text("member"), r.text("joist"), r.text("header"), r.text("model"), r.text("load_source")
         dl, up = r.num("download"), r.num("uplift", False) or 0.0
-        du = r.text("duration", False) or ("floor (100)" if ty == "face mount" else None)
+        du = r.text("duration", False) or ("floor (100)" if ty != "top flange" else None)
+        sk, sl, dp = r.num("skew", False) or 0.0, r.num("slope", False) or 0.0, r.num("depth", False)
         r.done()
-        return ws_more.ewp_hanger_sheet(mark, ty, mem, j, hd, mdl, dl, du, up, r.text("nailing", False), src), "simple", {}
+        return ws_more.ewp_hanger_sheet(mark, ty, mem, j, hd, mdl, dl, du, up, r.text("nailing", False), src,
+                                        r.text("ij_t", False) or "1 1/2 in. or more", r.text("ij_mat", False) or "DF / LVL / LSL",
+                                        sk, sl, dp, (r.text("jflange", False) or "").startswith("less"), r.text("web_stiff", False) == "none",
+                                        r.text("fasteners", False) or None, r.text("web_stiff", False) == "installed"), "simple", {}
     if kind == "hurricane_tie":
         mdl, sp, src = r.text("model"), r.text("species"), r.text("load_source")
         up, f1, f2 = r.num("uplift", False) or 0.0, r.num("F1", False) or 0.0, r.num("F2", False) or 0.0
