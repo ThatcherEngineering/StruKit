@@ -808,28 +808,44 @@ def strap(kind, model, species, tension, fastening="nails", nail="0.148", nails_
         if clear_span is None or clear_span <= 0:
             raise SimpsonError("strap: give the clear span between the nailed ends (floor-to-floor table, catalog p. 292)")
         def ff(m):
-            rows_ = [r for r in FLOOR_TO_FLOOR if r[0] == m and r[1] >= clear_span - 1e-9]
-            return min(rows_, key=lambda r: r[1]) if rows_ else None
+            """(load, nails, table spans used) at the clear span, interpolated between the tabulated spans (Zach 2026-11-27); a clear
+            span shorter than the shortest tabulated takes that row; longer than the longest: None."""
+            rs = sorted([r for r in FLOOR_TO_FLOOR if r[0] == m], key=lambda r: r[1])
+            if clear_span > rs[-1][1] + 1e-9:
+                return None
+            if clear_span <= rs[0][1] + 1e-9:
+                r = rs[0]
+                return r[3 + sp], _count(r[2]), r[2], (r[1],)
+            lo = max((r for r in rs if r[1] <= clear_span + 1e-9), key=lambda r: r[1])
+            hi = min((r for r in rs if r[1] >= clear_span - 1e-9), key=lambda r: r[1])
+            if lo[1] == hi[1]:
+                return lo[3 + sp], _count(lo[2]), lo[2], (lo[1],)
+            f = (clear_span - lo[1]) / (hi[1] - lo[1])
+            load = lo[3 + sp] + f * (hi[3 + sp] - lo[3 + sp])
+            n = _count(lo[2]) + f * (_count(hi[2]) - _count(lo[2]))
+            n = int(-(-n // 2) * 2)                         # rounded up to an even count, half each side of the clear span
+            nail = lo[2].split(") ", 1)[1]
+            return load, n, f"({n}) {nail}", (lo[1], hi[1])
         models_ = []
         for r in FLOOR_TO_FLOOR:
             if r[0] not in models_:
                 models_.append(r[0])
         if model.strip().lower() in ("first that works", "lightest that works"):
-            r = next((ff(m) for m in models_ if ff(m) and tension <= ff(m)[3 + sp] + 1e-9), None)
-            if r is None:
+            m = next((m for m in models_ if ff(m) and tension <= ff(m)[0] + 1e-9), None)
+            if m is None:
                 raise SimpsonError(f"strap: no floor-to-floor strap on catalog p. {MST_PAGE} carries {tension:,.0f} lb over a {clear_span:g} in. clear span")
             picked = True
         else:
             m = model.strip().upper()
             if m not in models_:
                 raise SimpsonError(f"strap: {model} is not in the floor-to-floor table (catalog p. {MST_PAGE})")
-            r = ff(m)
-            if r is None:
+            if ff(m) is None:
                 raise SimpsonError(f"strap: {m} is tabulated for clear spans up to {max(x[1] for x in FLOOR_TO_FLOOR if x[0] == m)} in. (catalog p. {MST_PAGE})")
             picked = False
-        return dict(model=r[0], ga=_STRAP_GA[r[0]], W=_STRAP_W.get(r[0], "3"), L=_STRAP_LEN[r[0]], fast=r[2], allow=r[3 + sp], page=MST_PAGE,
-                    n=_count(r[2]), kind=kind, species=species, tension=tension, bolts=False, picked=picked, table_span=r[1], clear=clear_span,
-                    rows=[("tension", tension, r[3 + sp])])
+        load, n, fast, spans = ff(m)
+        return dict(model=m, ga=_STRAP_GA[m], W=_STRAP_W.get(m, "3"), L=_STRAP_LEN[m], fast=fast, allow=load, page=MST_PAGE,
+                    n=n, kind=kind, species=species, tension=tension, bolts=False, picked=picked, table_span=spans, clear=clear_span,
+                    rows=[("tension", tension, load)])
     if bolts and kind != "MST":
         raise SimpsonError(f"strap: only the MST straps have bolted values (catalog p. {MST_PAGE})")
 

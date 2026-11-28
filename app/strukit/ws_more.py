@@ -6906,8 +6906,10 @@ def strap_sheet(mark, kind, model, species, tension, fastening, nail, nails_per_
         if h.get("cut") is not None:
             steps.append(L("cut length", f"2 x {h['end']} + {clear_span:g} = {h['cut']:g}", "in", notes, "note h: twice the end length plus the clear span"))
     elif kind == "floor-to-floor":
-        steps.append(L("clear span", f"{clear_span:g} in., table row {h['table_span']} in.", "", src,
-                       "floor-to-floor table; the next tabulated clear span at or above the actual"))
+        sp_ = h["table_span"]
+        steps.append(L("clear span", f"{clear_span:g} in." + (f", between the {sp_[0]} and {sp_[1]} in. rows" if len(sp_) == 2 else f", the {sp_[0]} in. row"), "", src,
+                       "floor-to-floor table; load and nails interpolated between the tabulated clear spans, nails rounded up to an even count"
+                       if len(sp_) == 2 else "floor-to-floor table"))
         steps.append(L(f"allowable tension, {species}", f"{h['allow']:,}", "lb", src, "(160), wind or earthquake; half the nails each side of the clear span"))
     elif heavy:
         steps.append(L(f"allowable {'uplift / tension' if pair or h['family'] == 'HTQ' else 'tension'}, {species}", f"{h['allow']:,}", "lb", src,
