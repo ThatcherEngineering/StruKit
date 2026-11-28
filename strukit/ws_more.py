@@ -6780,7 +6780,7 @@ def column_cap_sheet(mark, series, model, download, uplift, lateral, beam_width,
     if bc:
         fast = f"beam flanges {r[7]}; post flanges {r[8]}"
         steps += [L(f"{h['label']}, {capga} ga", (f"W1 {r[1]}, W2 {r[2]}, H1 {r[5]}, H2 {r[6]}" if series == "BC" else f"W {r[1]}, L {r[3]}"), "in",
-                    src if series == "BC" else f"{simpson.SOURCE}, pp. 94-95", "installed in pairs" if series == "AC" else ""),
+                    src if series == "BC" else f"{simpson.SOURCE}, pp. 94-95", ("one side only" if one_side else "installed in pairs") if series == "AC" else ""),
                   L("fasteners", fast + (" (for the pair)" if series == "AC" else ""), "", src, ""),
                   L("allowable uplift, lateral", f"{r[9]:,}, {r[10]:,}", "lb", src, "(160), wind or earthquake, note 1" + ("; lateral parallel to the beam, note 3" if series == "AC" else ""))]
         if one_side:
