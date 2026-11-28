@@ -4792,7 +4792,8 @@ def _column_cap_picture(c, top, d):
     memberart._break_h(c, pxc - pl * sc / 2, pxc + pl * sc / 2, yb - T - hp * sc - 1)
     # cap plate seen edge on, the straps face on
     xc0 = (x1 - Lc * sc) if end else (vx - Lc * sc / 2)
-    _steel_strip(c, xc0, yb - T, Lc * sc, T)
+    if not d.get("noplate"):                                # AC / ACHZ / LPCZ / LCE: side plates only, the beam bears on the post
+        _steel_strip(c, xc0, yb - T, Lc * sc, T)
     sw_b = Lc if bc else Lc
     _steel_strip(c, xc0, yb, sw_b * sc, H1 * sc)
     sds = (not bc) and dm.get("bolt") is None               # CCQ / ECCQ: 1/4 x 2-1/2 in. SDS screws (p. 99)
@@ -4830,13 +4831,15 @@ def _column_cap_picture(c, top, d):
     memberart.wood_elevation(c, 0, -pw * sc, hp * sc, pw * sc, seed=8); c.restoreState()
     memberart._break_h(c, sx - pw * sc / 2, sx + pw * sc / 2, yb - T - hp * sc - 1)
     W1, W2 = dm["W1"], dm["W2"]
-    _steel_strip(c, sx - max(W1, W2) * sc / 2 - T, yb - T, (max(W1, W2) + 0) * sc + 2 * T, T, cut=True)
-    for sg in (-1, 1):
+    if not d.get("noplate"):
+        _steel_strip(c, sx - max(W1, W2) * sc / 2 - T, yb - T, (max(W1, W2) + 0) * sc + 2 * T, T, cut=True)
+    sides = (1,) if d.get("one_side") else (-1, 1)          # AC / ACHZ / LCE on one side only (p. 95 note 2)
+    for sg in sides:
         _steel_strip(c, sx + sg * W1 * sc / 2 + (0 if sg > 0 else -T), yb, T, H1 * sc, cut=True)
         _steel_strip(c, sx + sg * W2 * sc / 2 + (0 if sg > 0 else -T), yb - T - H2 * sc, T, H2 * sc, cut=True)
     if bc:
         c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
-        for sg in (-1, 1):
+        for sg in sides:
             for k in range(2):
                 yn_ = yb + H1 * sc * (0.35 + 0.3 * k); c.line(sx + sg * W1 * sc / 2, yn_, sx + sg * (W1 / 2 - 2.0) * sc, yn_)
                 yn_ = yb - T - H2 * sc * (0.35 + 0.3 * k); c.line(sx + sg * W2 * sc / 2, yn_, sx + sg * (W2 / 2 - 2.0) * sc, yn_)
@@ -4863,8 +4866,8 @@ def _column_cap_picture(c, top, d):
     tx = sx + max(W1, W2) * sc / 2 + 55
     _leader_notes(c, [(yb + bd * sc * 0.85, sx + bw * sc * 0.25, f"beam {_mixed(bw)} x {_mixed(bd)}"),
                       (yb + H1 * sc * 0.8, sx + W1 * sc / 2 + T, f"{d['model']}, {d['ga']} ga"),
-                      (yb - T / 2, sx + max(W1, W2) * sc / 2 - 2, "cap plate"),
-                      (yb - T - H2 * sc * 0.5, sx + W2 * sc / 2 + T + 3, d["bolt_txt"] or "nails, as the catalog lists"),
+                      (yb - T / 2, sx + max(W1, W2) * sc / 2 - 2, "cap plate" if not d.get("noplate") else "beam bears on the post"),
+                      (yb - T - H2 * sc * 0.5, sx + W2 * sc / 2 + T + 3, d["bolt_txt"] or d.get("fast_txt") or "nails, as the catalog lists"),
                       (yb - T - hp * sc * 0.75, sx - pw * sc * 0.2, f"post {_mixed(pw)} across the beam, broken off")], tx)
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawCentredString(LM + 225, ytop + 22, d["model"] + (", beams spliced over the post" if d.get("spliced") else ""))

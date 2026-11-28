@@ -398,7 +398,32 @@ BC_CAPS = [
     ("BCS2-3/6", "4 5/8", "5 9/16", "4 3/8", "2 7/8", "3 5/16", "2 15/16", "(12) 0.162 x 3 1/2", "(6) 0.162 x 3 1/2", 895, 1330),
 ]
 BC_PAGE = 93
-CAP_SERIES = ["CC", "ECC", "ECCU", "BC", "CCQ", "ECCQ"]
+# AC / ACHZ / LPCZ / LCE post caps, DF/SP, catalog p. 95 (heights and gauges p. 94), in the BC_CAPS layout: model (with the fastening
+# option), W, W, L, L, H on the beam, H on the post (in.), beam fasteners, post fasteners (total, for the pair), uplift (160), lateral
+# (160, parallel to the beam, note 3), lb; then the gauge. Installed in pairs; one side only x 0.4 (note 2).
+AC_CAPS = [
+    ("AC4 (min. nailing)", "3 9/16", "3 9/16", "6 1/2", "6 1/2", "3", "2 1/2", "(8) 0.162 x 3 1/2", "(8) 0.162 x 3 1/2", 1745, 1610, 18),
+    ("AC4 (max. nailing)", "3 9/16", "3 9/16", "6 1/2", "6 1/2", "3", "2 1/2", "(14) 0.162 x 3 1/2", "(14) 0.162 x 3 1/2", 2490, 1610, 18),
+    ("AC4RZ (min. nailing)", "4", "4", "7", "7", "3", "2 1/2", "(8) 0.162 x 3 1/2", "(8) 0.162 x 3 1/2", 1745, 1610, 18),
+    ("AC4RZ (max. nailing)", "4", "4", "7", "7", "3", "2 1/2", "(14) 0.162 x 3 1/2", "(14) 0.162 x 3 1/2", 2490, 2075, 18),
+    ("ACH4Z (nails)", "3 9/16", "3 9/16", "6 1/2", "6 1/2", "4 3/4", "4 3/4", "(20) 0.162 x 2 1/2", "(20) 0.162 x 2 1/2", 4045, 1765, 16),
+    ("ACH4Z (SD screws)", "3 9/16", "3 9/16", "6 1/2", "6 1/2", "4 3/4", "4 3/4", "(20) SD10212", "(20) SD10212", 5895, 2595, 16),
+    ("ACH4Z end (nails)", "3 9/16", "3 9/16", "6 1/2", "6 1/2", "4 3/4", "4 3/4", "(20) 0.162 x 2 1/2", "(20) 0.162 x 2 1/2", 2580, 1360, 16),
+    ("ACH4Z end (SD screws)", "3 9/16", "3 9/16", "6 1/2", "6 1/2", "4 3/4", "4 3/4", "(20) SD10212", "(20) SD10212", 2680, 1815, 16),
+    ("LCE4", "3 1/2", "3 1/2", "5 3/8", "5 3/8", "5 3/8", "5 3/8", "(14) 0.162 x 3 1/2", "(10) 0.162 x 3 1/2", 1950, 1350, 20),
+    ("AC6 (min. nailing)", "5 1/2", "5 1/2", "8 1/2", "8 1/2", "3", "2 1/2", "(8) 0.162 x 3 1/2", "(8) 0.162 x 3 1/2", 1665, 1565, 18),
+    ("AC6 (max. nailing)", "5 1/2", "5 1/2", "8 1/2", "8 1/2", "3", "2 1/2", "(14) 0.162 x 3 1/2", "(14) 0.162 x 3 1/2", 2815, 2075, 18),
+    ("AC6RZ (min. nailing)", "6", "6", "9", "9", "3", "2 1/2", "(8) 0.162 x 3 1/2", "(8) 0.162 x 3 1/2", 1665, 1565, 18),
+    ("AC6RZ (max. nailing)", "6", "6", "9", "9", "3", "2 1/2", "(14) 0.162 x 3 1/2", "(14) 0.162 x 3 1/2", 3055, 2450, 18),
+    ("ACH6Z (nails)", "5 1/2", "5 1/2", "8 1/2", "8 1/2", "4 3/4", "4 3/4", "(20) 0.162 x 2 1/2", "(20) 0.162 x 2 1/2", 4045, 2640, 16),
+    ("ACH6Z (SD screws)", "5 1/2", "5 1/2", "8 1/2", "8 1/2", "4 3/4", "4 3/4", "(20) SD10212", "(20) SD10212", 5895, 4130, 16),
+    ("ACH6Z end (nails)", "5 1/2", "5 1/2", "8 1/2", "8 1/2", "4 3/4", "4 3/4", "(20) 0.162 x 2 1/2", "(20) 0.162 x 2 1/2", 2580, 1965, 16),
+    ("ACH6Z end (SD screws)", "5 1/2", "5 1/2", "8 1/2", "8 1/2", "4 3/4", "4 3/4", "(20) SD10212", "(20) SD10212", 2680, 2200, 16),
+    ("LPC4Z", "3 9/16", "3 9/16", "3 1/2", "3 1/2", "2 1/2", "2 1/4", "(8) 0.148 x 3", "(8) 0.148 x 3", 755, 760, 18),
+    ("LPC6Z", "5 9/16", "5 9/16", "5 1/2", "5 1/2", "2 1/2", "2 1/4", "(8) 0.148 x 3", "(8) 0.148 x 3", 920, 885, 16),
+]
+AC_PAGE = 95
+CAP_SERIES = ["CC", "ECC", "ECCU", "BC", "CCQ", "ECCQ", "AC"]
 _SLOT = {"CC": 0, "ECC": 1, "ECCU": 2, "CCQ": 0, "ECCQ": 2}
 
 
@@ -409,6 +434,8 @@ def _cap_table(series):
 def cap_models(series):
     if series == "BC":
         return [r[0] for r in BC_CAPS]
+    if series == "AC":
+        return [r[0] for r in AC_CAPS]
     if series in ("CCQ", "ECCQ"):
         return [("E" if series == "ECCQ" else "") + r[0] for r in CCQ_CAPS]
     pre = {"CC": "", "ECC": "E", "ECCU": "E"}[series]
@@ -421,8 +448,8 @@ def cap_models(series):
 
 
 def _cap_row(series, model):
-    if series == "BC":
-        return next((r for r in BC_CAPS if r[0].lower() == model.strip().lower()), None)
+    if series in ("BC", "AC"):
+        return next((r for r in (BC_CAPS if series == "BC" else AC_CAPS) if r[0].lower() == model.strip().lower()), None)
     for r, m in zip(_cap_table(series), cap_models(series)):
         if m.lower().replace(" ", "") == model.strip().lower().replace(" ", ""):
             return r
@@ -430,7 +457,7 @@ def _cap_row(series, model):
 
 
 def column_cap(series, model, download=0.0, uplift=0.0, lateral=0.0, beam_width=None, post_width=None, beam_depth=None,
-               spliced=False, download2=0.0):
+               spliced=False, download2=0.0, one_side=False):
     """Column or post cap, DF/SP. CC / ECC / ECCU (catalog p. 101): download (100) and uplift (160) from the table; ECC has no uplift
     value (p. 101: ECCU is the end cap rated for uplift); the beam at least as deep as H1 (note 7). A CC at a beam splice over the post
     (p. 73 note l): each spliced beam not over half the table download and not over 2 x the other beam's download; uplift and lateral
@@ -439,41 +466,50 @@ def column_cap(series, model, download=0.0, uplift=0.0, lateral=0.0, beam_width=
     cap in the table order whose beam and post widths match the typed widths and that passes."""
     download, uplift, lateral, download2 = download or 0.0, uplift or 0.0, lateral or 0.0, download2 or 0.0
     if series not in CAP_SERIES:
-        raise SimpsonError("column cap: the series is CC, ECC, ECCU, CCQ, ECCQ or BC")
+        raise SimpsonError("column cap: the series is CC, ECC, ECCU, CCQ, ECCQ, BC or AC")
     if min(download, uplift, lateral, download2) < 0:
         raise SimpsonError("column cap: loads are zero or more")
     if not (download or uplift or lateral or download2):
         raise SimpsonError("column cap: give a load")
-    bc = series == "BC"
-    if bc and spliced:
+    bc = series in ("BC", "AC")
+    if series == "BC" and spliced:
         raise SimpsonError(f"column cap: spliced beams on a BC post cap are not permitted (catalog p. {BC_PAGE} note 4)")
+    if series == "AC" and spliced and (uplift or lateral):
+        raise SimpsonError(f"column cap: uplift loads do not apply to spliced conditions (catalog p. {AC_PAGE} note 5)")
+    if one_side and series != "AC":
+        raise SimpsonError("column cap: the one-side factor (x 0.4) is for the AC, ACHZ, LCE post caps (p. 95 note 2)")
+    if one_side and model.upper().startswith("LPC"):
+        raise SimpsonError("column cap: the LPCZ is not tabulated for one side")
     if spliced and series not in ("CC", "CCQ"):
         raise SimpsonError("column cap: a beam splice over the post is for a CC cap (an end cap carries one beam end)")
-    if spliced and (uplift or lateral):
+    if spliced and (uplift or lateral) and not bc:
         raise SimpsonError(f"column cap: table uplift and lateral loads do not apply to spliced beams (catalog p. {BASES_NOTES_PAGE} note l)")
     if lateral and not bc:
         raise SimpsonError(f"column cap: the {series} table gives no lateral load (catalog p. {page_of(series)})")
+    page = page_of(series)
     if bc and (download or download2):
-        raise SimpsonError(f"column cap: the BC table gives no download (catalog p. {BC_PAGE}); the beam bears on the post, checked on its own sheet")
-    page = BC_PAGE if bc else (CCQ_PAGE if series in ("CCQ", "ECCQ") else COLUMN_CAP_PAGE)
+        raise SimpsonError(f"column cap: the {series} table gives no download (catalog p. {page}); the beam bears on the post, checked on its own sheet")
+    f_side = 0.4 if one_side else 1.0
 
     def fits(r):
         if beam_width is None or post_width is None:
             return False
         if bc:
-            return _in(r[1]) - 0.13 <= beam_width <= _in(r[1]) + 0.01 and _in(r[2]) - 0.13 <= post_width <= _in(r[2]) + 0.01
+            return _in(r[1]) - 0.13 <= beam_width <= _in(r[1]) + 0.01 and _in(r[2]) - 0.13 <= post_width <= _in(r[2]) + 0.01 and \
+                not (series == "AC" and r[0].startswith("LCE"))
         bws = [_in(x) for x in r[1].split(",")]
         return any(abs(beam_width - b) <= 0.07 for b in bws) and _in(r[3]) - 0.26 <= post_width <= _in(r[3]) + 0.01
 
     def check(r):
         rows = []
         if bc:
+            ua, la = r[9] * f_side, r[10] * f_side
             if uplift:
-                rows.append(("uplift", uplift, r[9]))
+                rows.append(("uplift", uplift, ua))
             if lateral:
-                rows.append(("lateral", lateral, r[10]))
+                rows.append(("lateral", lateral, la))
             if uplift and lateral:
-                rows.append(("loads together, U/Ua + L/La", uplift / r[9] + lateral / r[10], 1.0))
+                rows.append(("loads together, U/Ua + L/La", uplift / ua + lateral / la, 1.0))
             return rows
         down_a, up_a = {0: (r[10], r[9]), 1: (r[11], None), 2: (r[13], r[12])}[_SLOT[series]]
         if uplift and up_a is None:
@@ -496,8 +532,8 @@ def column_cap(series, model, download=0.0, uplift=0.0, lateral=0.0, beam_width=
             raise SimpsonError("column cap: give the beam and post widths to choose a cap")
         if not bc and beam_depth is None:
             raise SimpsonError(f"column cap: give the beam depth (the beam must be at least as deep as H1, p. {page} note 7)")
-        tab = BC_CAPS if bc else _cap_table(series)
-        fit = [r for r in tab if fits(r)]
+        tab = (BC_CAPS if series == "BC" else AC_CAPS) if bc else _cap_table(series)
+        fit = [r for r in tab if fits(r) and " end" not in r[0]]            # the end-of-beam options only when named
         if not fit:
             raise SimpsonError(f"column cap: no {series} cap on p. {page} fits a {beam_width:g} in. beam on a {post_width:g} in. post")
         for r in fit:
@@ -515,13 +551,13 @@ def column_cap(series, model, download=0.0, uplift=0.0, lateral=0.0, beam_width=
         if rows is None:
             raise SimpsonError(f"column cap: the ECC table gives no uplift (catalog p. {COLUMN_CAP_PAGE}); use an ECCU or ECCQ end cap")
         picked = False
-    mdl = r[0] if bc else cap_models(series)[_cap_table(series).index(r)]
+    mdl = r[0].split(" (")[0].replace(" end", "") if bc else cap_models(series)[_cap_table(series).index(r)]
     if bc:
         dims = dict(W1=_in(r[1]), W2=_in(r[2]), L=_in(r[3]), H1=_in(r[5]), H2=_in(r[6]))
     else:
         dims = dict(W1=_in(r[2]), W2=_in(r[3]), L=_in(r[4][_SLOT[series]]), H1=_in(r[5]), bolt=_in(r[6]) if r[6] else None,
                     beam_bolts=r[7][_SLOT[series]], post_bolts=r[8])
-    return dict(row=r, model=mdl, series=series, rows=rows, picked=picked, dims=dims, page=page)
+    return dict(row=r, model=mdl, series=series, rows=rows, picked=picked, dims=dims, page=page, one_side=one_side, label=r[0])
 
 
 # ---------------------------------------------------------------- straps (catalog pp. 288-297)
@@ -856,7 +892,7 @@ def mpbz(model, post, concrete, cracked, sdc, download=0.0, uplift=0.0, lateral=
 
 
 def page_of(series):
-    return BC_PAGE if series == "BC" else (CCQ_PAGE if series in ("CCQ", "ECCQ") else COLUMN_CAP_PAGE)
+    return {"BC": BC_PAGE, "AC": AC_PAGE, "CCQ": CCQ_PAGE, "ECCQ": CCQ_PAGE}.get(series, COLUMN_CAP_PAGE)
 
 
 # ---------------------------------------------------------------- CBSTQ / CBSQ cast-in column bases (catalog pp. 84-85)
