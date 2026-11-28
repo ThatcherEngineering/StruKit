@@ -862,6 +862,7 @@ function placementCard(m, changed) {
     { key: "at_stud_sp", label: "Stud spacing in the wall", unit: "in", type: "text", required: false });
   if (m.kind === "steel_beam") fs.push({ key: "at_fix_i", label: "Left end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false, help: "blank = pinned (shear connection)" },
     { key: "at_fix_j", label: "Right end connection (3D frame)", type: "select", options: ["pinned", "moment"], required: false });
+  if (["wood_post", "builtup_post", "lvl_post", "wey_post", "glulam_post"].includes(m.kind)) fs.push({ key: "at_base_mpbz", label: "Base on an MPBZ (3D frame)", type: "text", required: false, help: "mark of the Moment Post Base sheet; blank = pinned" });
   if (m.kind === "steel_column" || m.kind === "hss_column") fs.push({ key: "at_base_fix", label: "Base (3D frame)", type: "select", options: ["pinned", "fixed", "fixed for sway in X only", "fixed for sway in Y only"], required: false, help: "blank = pinned" },
     { key: "at_web", label: "Web runs along (3D frame)", type: "select", options: ["X", "Y"], required: false, help: "the direction in which the column bends about its strong axis; blank = X" });
   return el("div", {}, el("h2", {}, "Place in the Building Model (optional)"), el("div", { class: "grid" }, fs.map(f => field(f, m.values, changed))),

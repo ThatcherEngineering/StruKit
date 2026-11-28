@@ -52,6 +52,7 @@ SUPPORTS = {"fixed": (1, 1, 1, 1, 1, 1), "pin": (1, 1, 1, 0, 0, 0), "roller_z": 
 class Frame3D:
     def __init__(self):
         self.nodes, self.members, self.supports = {}, [], {}
+        self.springs = {}                                    # node -> six stiffnesses (ux, uy, uz, rx, ry, rz); force or moment per unit, 0 = none
 
     def node(self, name, x, y, z):
         self.nodes[name] = (float(x), float(y), float(z))
@@ -74,6 +75,17 @@ class Frame3D:
         if flags is None or len(flags) != 6:
             raise Frame3DError("frame: a support is fixed, pin, roller_z, or six 0/1 flags")
         self.supports[node] = flags
+
+    def spring(self, node, k):
+        """Elastic support at a joint: six stiffnesses (ux, uy, uz in force per length; rx, ry, rz in moment per radian), 0 = none. A spring
+        acts only on a direction the support leaves free; its reaction is -k u. In a run with a stiffness factor (the direct analysis
+        method) the springs are reduced by the same factor."""
+        if node not in self.nodes:
+            raise Frame3DError(f"frame: spring at joint {node}, which is not defined")
+        k = tuple(float(x) for x in k)
+        if len(k) != 6 or min(k) < 0:
+            raise Frame3DError("frame: a spring is six stiffnesses, zero or more")
+        self.springs[node] = k
 
     # ---- member geometry and stiffness
     def _axes(self, m):
@@ -214,6 +226,10 @@ class Frame3D:
                 store.append((ke, fe))
                 K[np.ix_(dofs, dofs)] += T.T @ ke @ T
                 F[dofs] -= T.T @ fe
+            for nd_, k6 in self.springs.items():
+                for q in range(6):
+                    if k6[q] and not self.supports.get(nd_, (0,) * 6)[q]:
+                        K[idx[nd_] + q, idx[nd_] + q] += k6[q] * stiffness_factor
             U = np.zeros(n)
             if free:
                 Kff = K[np.ix_(free, free)]
@@ -245,7 +261,12 @@ class Frame3D:
             raise Frame3DError("frame: the second-order analysis did not settle; the frame is close to buckling")
         Rf = Kfull @ U - Ffull
         disp = {nd: tuple(U[idx[nd]:idx[nd] + 6]) for nd in names}
-        reactions = {nd: tuple(Rf[idx[nd] + q] if self.supports[nd][q] else 0.0 for q in range(6)) for nd in self.supports}
+        def _r(nd, q):
+            if self.supports.get(nd, (0,) * 6)[q]:
+                return Rf[idx[nd] + q]
+            k_ = self.springs.get(nd, (0.0,) * 6)[q] * stiffness_factor
+            return -k_ * U[idx[nd] + q] if k_ else 0.0
+        reactions = {nd: tuple(_r(nd, q) for q in range(6)) for nd in set(self.supports) | set(self.springs)}
         ends, axes, stations = {}, {}, {}
         for (name, k, dofs, Le, T, rel), (ke, fe) in zip(elems, store):
             q = ke @ (T @ U[dofs]) + fe

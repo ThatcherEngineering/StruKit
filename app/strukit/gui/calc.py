@@ -5145,6 +5145,7 @@ def _model_frame_build(project, members, sway=False):
     bearing, held = set(), set()
     # columns
     col_nodes, col_fixed, level_tops, beam_elems, level_of_node = {}, {}, {}, {}, {}
+    col_spring = {}                                          # wood post on an MPBZ: rotational spring at the base, kip-in./rad
     for m, pl in placed:
         if m["kind"] not in FRAME_COLS:
             continue
@@ -5161,6 +5162,13 @@ def _model_frame_build(project, members, sway=False):
         fr.member("col:" + v["mark"], nb, nt, sec["E"], sec["G"], sec["A"], sec["Ix"], sec["Iy"], sec["J"], up=(0.0, 1.0, 0.0) if web_y else None)
         col_nodes[v["mark"]] = (nb, nt, sec, ztop - elev[pl["base"]])
         col_fixed[v["mark"]] = _base_flags(v.get("at_base_fix"))
+        if m["kind"] in WOOD_FRAME_COLS and str(v.get("at_base_mpbz") or "").strip():
+            k_, msg = _mpbz_spring(members, str(v["at_base_mpbz"]).strip(), v)
+            if k_:
+                col_spring[v["mark"]] = k_
+                notes.append(msg)
+            else:
+                problems.append(f"{v.get('mark')}: {msg}")
         held.add(nt)
         level_tops.setdefault(pl["level"], []).append((nt, pl["p1"]))
     # beams, cut at every point where something meets them
@@ -5398,6 +5406,8 @@ def _model_frame_build(project, members, sway=False):
     for mark, (nb, nt, _, _) in col_nodes.items():
         if nb in base_nodes:
             fr.support(nb, col_fixed[mark])
+            if mark in col_spring:
+                fr.spring(nb, (0, 0, 0, col_spring[mark], col_spring[mark], 0))
     for nd, mark, x in extra:
         fr.support(nd, (0, 0, 1, 1, 1, 1) if nd in wall_top_nodes else "fixed")   # on a wall: the wall carries it down (beam ends there are pinned); the top plate holds it sideways
     cont = set()                                             # joints where some member is continuous (not pinned) at its end
@@ -6516,6 +6526,24 @@ def sheet_pdf(kind, values, project, path, members=None):
           "simple": calcsheet.simple_pdf}[pk]
     fn(sheet, path, job_of(project), getattr(sheet, "code", None) or FORMS[kind]["code"], project.get("date") or "", **kw)
     return path
+
+
+def _mpbz_spring(members, mpbz_mark, post_values):
+    """Rotational stiffness at a wood post base from the MPBZ sheet named on the post's placement: catalog C-C-2026 p. 89, the tabulated
+    stiffness (in.-lb/rad) x 0.75 for post shrinkage up to 3 % (note 10), in kip-in./rad, about both horizontal axes. Returns (k, note) or
+    (None, problem)."""
+    mb = next((m for m in members or [] if m.get("kind") == "mpbz" and (m.get("values") or {}).get("mark") == mpbz_mark), None)
+    if mb is None:
+        return None, f"its base names MPBZ sheet {mpbz_mark}, which is not in the project"
+    v = mb["values"]
+    mdl = str(v.get("model") or "first that works").strip()
+    if mdl.lower() in ("first that works", "lightest that works", ""):
+        mdl = next((m_ for m_, g in simpson._MPB_GEO.items() if g[0] == v.get("post")), None)
+    if mdl not in simpson._MPB_WOOD:
+        return None, f"MPBZ sheet {mpbz_mark} names no MPBZ model for its post"
+    k = simpson._MPB_WOOD[mdl][3] * 0.75 / 1000.0
+    return k, (f"{post_values.get('mark')}: base on {mdl} ({mpbz_mark}), rotational spring {k:,.0f} kip-in./rad about both horizontal axes "
+               f"(catalog C-C-2026 p. {simpson.MPBZ_PAGE}: {simpson._MPB_WOOD[mdl][3]:,} in.-lb/rad x 0.75, note 10); the post's own bending is in the frame.")
 
 
 def _base_flags(text):
