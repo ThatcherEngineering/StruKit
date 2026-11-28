@@ -1438,6 +1438,37 @@ FORMS = {
                                                    F("mag2", "Load at the To end (tapered)", unit="plf", required=False),
                                                    F("x1", "From / at", unit="ft", required=False), F("x2", "To", unit="ft", required=False),
                                                    F("label", "Note", "text", required=False)])]),
+    "pilaster": dict(
+        title="Pilaster on Footing", code="ACI 318-19", mark="PC",
+        fields=[F("kind", "Pilaster is", "select", options=["free-standing on its footing", "in a stem wall"]),
+                F("column", "Column (for the sheet)", "text", required=False, help="for example: metal building frame column, grid A-1"),
+                F("bx", "Pier dimension along the thrust", unit="in"), F("by", "Pier dimension across the thrust", unit="in"),
+                F("hp", "Pier height, top of footing to base plate", unit="in"), F("below", "Pier height below grade", unit="in"),
+                F("fc", "f'c", unit="psi"), F("fy", "fy", unit="psi"), F("conc_pcf", "Concrete weight", unit="pcf"),
+                F("cover", "Clear cover to the ties", unit="in"),
+                F("bar", "Pier bars, size #"), F("n_face", "Bars on each face across the thrust"), F("n_side", "Bars on each side face, between the corners"),
+                F("tie_bar", "Ties, size #"), F("tie_s", "Tie spacing", unit="in"),
+                F("top_ties", "Ties within 5 in. of the top, number"), F("top_tie_bar", "Those ties, size #"),
+                F("B", "Footing, along the thrust", unit="ft"), F("L", "Footing, across the thrust", unit="ft"), F("hf", "Footing thickness", unit="in"),
+                F("f_bar", "Footing bars, size #"), F("n_x", "Footing bars along the thrust, number"), F("n_y", "Footing bars across, number"),
+                F("f_cover", "Footing bar cover", unit="in"),
+                F("q_allow", "Allowable soil bearing", unit="psf"), F("soil_source", "Soil bearing source", "text"),
+                F("soil_depth", "Soil over the footing", unit="ft", required=False), F("soil_pcf", "Soil weight", unit="pcf", required=False),
+                F("ot_required", "Required safety factor, overturning", required=False),
+                F("thrust", "Thrust taken by", "select", options=["soil (friction and passive)", "hairpins into the slab", "tie beam to the opposite pilaster"]),
+                F("passive", "Passive pressure", unit="pcf", required=False), F("mu", "Friction coefficient", required=False),
+                F("sf", "Required safety factor, sliding", required=False), F("neglect", "Passive neglected from grade down to", unit="ft", required=False),
+                F("depth", "Grade to the footing bottom", unit="ft", required=False), F("passive_source", "Passive and friction source", "text", required=False),
+                F("wall_len", "Stem wall length counted in passive (in a stem wall)", unit="ft", required=False),
+                F("wall_depth", "Stem wall depth below grade", unit="in", required=False),
+                F("hp_n", "Hairpins, number", required=False), F("hp_bar", "Hairpins, size #", required=False), F("hp_leg", "Hairpin leg length into the slab", unit="in", required=False),
+                F("tb_n", "Tie beam bars, number", required=False), F("tb_bar", "Tie beam bars, size #", required=False),
+                F("tb_embed", "Tie beam bars into the pilaster", unit="in", required=False),
+                F("e_tie", "Base plate to the hairpin or tie level", unit="in", required=False, help="blank = 0")],
+        tables=[T("reactions", "Base reactions (from the metal building manufacturer)", [CASE, F("P", "P, down (uplift negative)", unit="kip"),
+                                                                                       F("V", "V, thrust along the frame", unit="kip"),
+                                                                                       F("M", "M at the base plate (fixed base)", unit="kip-ft", required=False),
+                                                                                       F("label", "Note", "text", required=False)])]),
     "rafter_connector": dict(
         title="Rafter / Hip Connector (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="RC",
         fields=[F("product", "Connector", "select", options=["VPA rafter to top plate", "HRC / HHRC hip to ridge"], help="VPA p. 181; HRC / HHRC p. 180"),
@@ -3326,6 +3357,43 @@ def _build(kind, values, project):
                                        surcharge=r.num("surcharge", False) or 0.0, efp_source=r.text("efp_source", False) or "",
                                        braced=not (r.text("braced", False) or "").startswith("not"), cast_against_soil=(expo == "earth"),
                                        cover_bot=r.num("cover_bot", False), dagg=r.num("dagg", False) or 0.75), "simple", {}
+    if kind == "pilaster":
+        st_cb, se_cb = combos(project, r.miss, "LRFD"), combos(project, r.miss, "ASD")
+        nums = {k_: r.num(k_) for k_ in ("bx", "by", "hp", "below", "fc", "fy", "conc_pcf", "cover", "bar", "n_face", "n_side", "tie_bar", "tie_s",
+                                          "top_ties", "top_tie_bar", "B", "L", "hf", "f_bar", "n_x", "n_y", "f_cover", "q_allow")}
+        th = r.text("thrust")
+        thrust_ = "soil" if th.startswith("soil") else "hairpin" if th.startswith("hairpin") else "tie beam"
+        if thrust_ == "soil":
+            for k_, lab in (("passive", "Passive pressure"), ("mu", "Friction coefficient"), ("sf", "Required safety factor, sliding"), ("depth", "Grade to the footing bottom")):
+                if r.num(k_, False) is None:
+                    r.miss.append(lab)
+        if thrust_ == "hairpin":
+            for k_, lab in (("hp_n", "Hairpins, number"), ("hp_bar", "Hairpins, size"), ("hp_leg", "Hairpin leg length")):
+                if r.num(k_, False) is None:
+                    r.miss.append(lab)
+        if thrust_ == "tie beam":
+            for k_, lab in (("tb_n", "Tie beam bars, number"), ("tb_bar", "Tie beam bars, size"), ("tb_embed", "Tie beam bars into the pilaster")):
+                if r.num(k_, False) is None:
+                    r.miss.append(lab)
+        rx = [dict(case=x["case"], P=x["P"], V=x["V"], M=x.get("M"), label=x.get("label")) for x in r.rows("reactions")]
+        if not rx:
+            r.miss.append("No base reactions are entered")
+        cases_used([x["case"] for x in rx], st_cb, r.miss)
+        r.done()
+        i_ = lambda k_: int(nums[k_])
+        ftg = dict(B_ft=nums["B"], L_ft=nums["L"], h_in=nums["hf"], bar=i_("f_bar"), n_x=i_("n_x"), n_y=i_("n_y"), cover=nums["f_cover"],
+                   q_allow=nums["q_allow"], soil_depth_ft=r.num("soil_depth", False) or 0.0, soil_pcf=r.num("soil_pcf", False) or 0.0,
+                   ot_required=r.num("ot_required", False))
+        e_ = r.num("e_tie", False) or 0.0
+        soil_ = dict(passive_pcf=r.num("passive", False), mu=r.num("mu", False), sf=r.num("sf", False), neglect_ft=r.num("neglect", False) or 0.0,
+                     depth_ft=r.num("depth", False)) if thrust_ == "soil" else None
+        hp_ = dict(n=int(r.num("hp_n")), bar=int(r.num("hp_bar")), leg_in=r.num("hp_leg"), e_in=e_) if thrust_ == "hairpin" else None
+        tb_ = dict(n=int(r.num("tb_n")), bar=int(r.num("tb_bar")), embed_in=r.num("tb_embed"), e_in=e_) if thrust_ == "tie beam" else None
+        return ws_more.pilaster_sheet(mark, r.text("kind"), nums["bx"], nums["by"], nums["hp"], nums["below"], nums["fc"], nums["fy"], nums["conc_pcf"],
+                                      nums["cover"], i_("bar"), i_("n_face"), i_("n_side"), i_("tie_bar"), nums["tie_s"], i_("top_ties"), i_("top_tie_bar"),
+                                      ftg, rx, st_cb, se_cb, thrust_, soil=soil_, hairpin=hp_, tie=tb_, soil_source=r.text("soil_source"),
+                                      passive_source=r.text("passive_source", False) or "", wall_len=r.num("wall_len", False) or 0.0,
+                                      wall_depth=r.num("wall_depth", False) or 0.0, column=r.text("column", False) or ""), "simple", {}
     if kind == "rafter_connector":
         pr, mdl, sp, src = r.text("product"), r.text("model"), r.text("species"), r.text("load_source")
         wd, pi, sl = r.text("width", False), r.num("pitch", False), r.num("slope", False) or 0.0

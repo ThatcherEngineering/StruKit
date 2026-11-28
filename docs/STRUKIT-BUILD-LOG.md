@@ -5,7 +5,7 @@ GitHub: ThatcherEngineering/StruKit (private). Branch `main` is the source, push
 **Installed on Zach's laptop 2026-11-21 09:33** (`OneDrive\Documents\strukit`, by `Install-StruKit.bat`). The bridge runs it (`run_tool('strukit', ['--version'])`). It updates itself from `release` every 2 hours; `C:\ZET-G\StruKit\StruKit-Get-Latest.bat` updates at once.
 
 ## Current state (read this first; every session updates it before it ends)
-Updated 2026-11-28 MST (overnight, unattended). Build **0.299.1**, 782 tests passing; `main` and `release` pushed.
+Updated 2026-11-28 (day). Build **0.301.0**, 793 tests passing; `main` and `release` pushed.
 
 **StruKit is designed to a high visual detail standard (Zach, 2026-11-26 02:26; every chat must follow it).** Every picture looks like the real member or connection, drawn as a detailer would: HSS with its wall and rounded corners, W shapes with flanges, plates at thickness, bolts with heads and nuts (`memberart.bolt_side`), welds where they are, every connected member drawn and broken off. Render and look at every new or changed picture before release. Full wording in `CLAUDE.md`, "Printed sheets". **After builds, send Zach the PDFs of what was built (sample inputs).**
 
@@ -14,6 +14,8 @@ Updated 2026-11-28 MST (overnight, unattended). Build **0.299.1**, 782 tests pas
 **2026-11-27 run:** morning check-in; Zach ruled the five waiting readings and said keep going on the list. 0.282.0 Simpson post bases and column caps; 0.283.0 Simpson straps (strap ties, MST, coiled); 0.284.0 Simpson framing angles and plates (A34, A35, LTP4, LTP5); 0.285.0 L, LS, GA angles; 0.286.0 MPBZ moment post base. Then (Zach: keep going): 0.287.0 CCQ / ECCQ caps; 0.288.0 CBSTQ / CBSQ cast-in column bases; 0.289.0 AC / ACHZ / LPCZ / LCE post caps; 0.290.0 MPBZ base as a rotational spring in the 3D frame; 0.290.1 AC one-side text. Then (Zach: rulings agreed, finish them all): 0.291.0 CB, PB, PBST, EPB; 0.292.0 A and HL angles, RTC44 / LCE4 corner caps; 0.293.0 floor-to-floor straps; 0.294.0 heavy straps. Then (Zach: do them all, going to bed; unattended): 0.295.0 top-flange hangers on a nailer; 0.296.0 I-joist / glulam / SCL hangers, floor-to-floor interpolation; 0.297.0 picture pass (end plates without a column, TP / CO / WTF elevations, BPX section, tension members and angles drawn as their shapes).
 
 **2026-11-28 overnight run** (Zach 2026-11-27 night: "spend the night finishing every open task that doesn't require my immediate assistance. Ask questions about conservative determinations in the morning"): 0.298.0 I-joist header factors, SUR/SUL skewed and LSSR/LSU sloped / skewed hangers, the basic shear wall picture; 0.299.0 VPA rafter connector and HRC / HHRC hip-ridge connectors (new screen); 0.299.1 I-joist header nails shown as 0.148 x 1-1/2. Sample PDFs sent. New references found in his folder (EP486.1, EP484.1, the Bohnhoff EP486.3 design aid, SDI DDM 3rd Ed., DFI helical piles, AISI D111-09): logged in `docs/REFERENCES.md`, not used yet.
+
+**2026-11-28 day run** (Zach: pilasters free-standing and in a stem wall, soil against the footing and stem wall takes the thrust, hairpins or tie beams as needed; a stem wall that also works with no footing or over voids; "two hours uninterrupted, questions at the end"): 0.300.0 Stem Wall screen; 0.301.0 Pilaster on Footing screen. Readings applied are in the rulings file (2026-11-28 sections).
 
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
@@ -34,12 +36,14 @@ Updated 2026-11-28 MST (overnight, unattended). Build **0.299.1**, 782 tests pas
    schedule chosen, the first listed that carries the loads. SUR/SUL and LSSR/LSU "lightest" = first listed for the member size.
 5. VPA (0.299.0): lateral loads combined with the uplift and, separately, with the download by the unity equation.
 6. HHRC (0.299.0): held to the HRC series' 45 degree slope limit.
+8. Stem wall and pilaster readings (0.300.0, 0.301.0), rulings file 2026-11-28; the key one: passive pressure is not counted against overturning of a pilaster footing, so wind uplift with thrust often flags the footing.
 7. A decision, not a reading: embedded post foundations. On file: ASAE EP486.1 (2000) and the Bohnhoff EP486.3 design-aid paper; current
    editions are EP486.3 / EP484.3, and IBC 1807.3 (not on file) is the code path. Which method should StruKit follow? Nothing built yet.
 
 **Needed from Zach (do not build without it):** the missing references log in `docs/REFERENCES.md` (DG7, MHI/CMAA, DG9, a published diaphragm-opening example, 16th Ed. Manual, ASCE 7-16, AISI S100, the HSS rafter-on-cap method, a readable TMS 402, ASABE EP484/486, his wind drift limit).
 
 **Next, in order**
+0. Foundations (Zach 2026-11-28): anchor rods with anchor reinforcement on the pilaster sheet (ACI 17.5.2.1); tie beam bending under its own weight; cantilever retaining stem wall (sliding, overturning, heel and toe); point loads on a wall bearing on soil.
 1. Simpson products (catalog C-C-2026 on file): face-mount and top-flange hangers, hurricane ties, post bases and column caps, straps, framing angles, MPBZ, cast-in bases, corner caps, nailer table, I-joist / glulam / SCL hangers, I-joist header factors, SUR/SUL and LSSR/LSU, VPA, HRC / HHRC all done 0.278.0 to 0.299.1. Not built: mass timber and other product families (on Zach's request). Same pattern: tables read by a tool and checked both ways against the page text, hand-copied rows as tests.
 2. IBC 2021: confirm the 1905.1.8 wording against the code text when a copy is on file.
 3. Stiffened seats on HSS: confirm the yield-line checks when a published procedure is supplied (single and double stiffeners built).
@@ -1496,3 +1500,19 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   and stirrup); for the spanning wall an elevation over the piers with the void forms between and the loads; shear and moment diagrams.
 - **Validation:** no published stem wall or grade beam example is on file (logged); every check worked by hand in
   `tests/test_stemwall.py`. Browser check: the screen loads and solves.
+
+## 2026-11-28 — 0.301.0 Pilaster on footing screen (foundations, part 2)
+- **New screen "Pilaster on Footing"** (`pilaster`, mark PC; `strukit/pilaster.py`, `ws_more.pilaster_sheet`): free-standing or in a stem
+  wall; base reactions per load case from the metal building manufacturer (P, thrust V, base moment M), combined with the project's
+  LRFD and ASD combinations.
+  - Pier: P-M by strain compatibility (22.2, Table 22.4.2.1, phi by Table 21.2.2) at the axial load at the top and at the base; shear with
+    its axial force and the ties (Table 22.5.5.1, 22.5.8.5.3); bars 0.01 to 0.08 Ag (10.6.1.1); tie spacing and size (25.7.2.1, 25.7.2.2);
+    ties around the anchor rods within 5 in. of the top (10.7.6.1.5); slenderness (6.2.5.1).
+  - Thrust: soil (friction and passive pressure, service, required safety factor), hairpins into the slab, or a tie beam (steel and
+    development by Table 25.4.2.3).
+  - Uplift against the dead weights; the footing by footing_moment.check_eccentric (bearing, overturning, shear, flexure, punching).
+- **Picture:** section along the thrust (footing, pier with bars and ties, base plate, rods, the column broken off, grade, and the
+  passive pressure, hairpin or tie beam) and a plan of the pier with its bars and tie.
+- **Validation:** no published pilaster example is on file (logged); the interaction is checked against an independent strain-
+  compatibility solution in the test, the rest by hand (`tests/test_pilaster.py`). Browser check: the screen loads and solves.
+- **Not yet:** the anchor rods with anchor reinforcement (ACI 17.5.2.1) on the pilaster sheet, the tie beam's own bending.

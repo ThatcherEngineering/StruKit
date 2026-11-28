@@ -1823,6 +1823,8 @@ def _block_picture(c, top, pic):
         return _rafter_connector_picture(c, top, d)
     if name == "stem_wall":
         return _stem_wall_picture(c, top, d)
+    if name == "pilaster":
+        return _pilaster_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -6325,6 +6327,109 @@ def _stem_wall_picture(c, top, d):
         M._dim_h(c, xa, xb, ye - ph - 12, f"{vb - va:g} ft", FR, ext_from=ye - ph)
     _small(c, (x0 + x1) / 2, ye - ph - 30, "elevation: the wall over the footings or piers, void forms between; loads in plf and lb")
     return min(yl, ye - ph - 36) - 8
+
+
+def _pilaster_picture(c, top, d):
+    """Section along the thrust, to scale: the footing and the pier stippled with their bars and ties, the base plate with the anchor
+    rods and the column broken off above, grade and soil, and what takes the thrust (passive pressure on the footing face, hairpins
+    into the slab, or a tie beam); a plan of the pier with its bars and tie."""
+    import math as _m
+    M = memberart
+    from .stemwall import BAR_DIA
+    B, hf, bx, by, hp = d["B"] * 12.0, d["hf"], d["bx"], d["by"], d["hp"]
+    depth = (d.get("depth_ft") or (hf + hp - 8.0) / 12.0) * 12.0          # grade to the footing bottom
+    tot_h = hf + hp + 16.0
+    sc = min(200.0 / tot_h, 240.0 / (B + 30.0), 4.0)
+    xc = LM + 170
+    yfb = top - 30 - tot_h * sc                                          # footing bottom
+    ygr = yfb + depth * sc                                               # grade
+    side = 12.0
+    M._soil(c, xc - (B / 2 + side) * sc, yfb - 6 * sc, (B + 2 * side) * sc, 6 * sc, native=True)
+    M._soil(c, xc - (B / 2 + side) * sc, yfb, (B + 2 * side) * sc, ygr - yfb)
+    M._concrete(c, xc - B / 2 * sc, yfb, B * sc, hf * sc, seed=21)                                           # footing
+    M._concrete(c, xc - bx / 2 * sc, yfb + hf * sc, bx * sc, hp * sc, seed=22)                              # pier
+    M._grade(c, xc - (B / 2 + side) * sc, xc - bx / 2 * sc, ygr); M._grade(c, xc + bx / 2 * sc, xc + (B / 2 + side) * sc, ygr)
+    cov = d["cover"]; db = BAR_DIA[d["bar"]]; dt = BAR_DIA[d["tie_bar"]]
+    c.setStrokeColorRGB(0.20, 0.22, 0.25)
+    for sg in (-1, 1):                                                   # vertical bars with hooks into the footing
+        xb = xc + sg * (bx / 2 - cov - dt - db / 2) * sc
+        c.setLineWidth(max(db * sc, 1.0))
+        c.line(xb, yfb + 3.5 * sc, xb, yfb + (hf + hp - 2.0) * sc)
+        c.line(xb, yfb + 3.5 * sc, xb - sg * 8.0 * sc, yfb + 3.5 * sc)
+    c.setLineWidth(max(dt * sc, 0.6))
+    yy = yfb + (hf + 3.0) * sc
+    while yy < yfb + (hf + hp - 2.0) * sc:                               # ties
+        c.line(xc - (bx / 2 - cov) * sc, yy, xc + (bx / 2 - cov) * sc, yy)
+        yy += d["tie_s"] * sc
+    for k in range(3):                                                   # ties within 5 in. of the top
+        y3 = yfb + (hf + hp - 1.5 - 1.5 * k) * sc
+        c.line(xc - (bx / 2 - cov) * sc, y3, xc + (bx / 2 - cov) * sc, y3)
+    yt = yfb + (hf + hp) * sc
+    c.setFillColorRGB(*M.STEEL_CUT); c.setStrokeColorRGB(*M.STEEL_LINE); c.setLineWidth(0.5)
+    pw = min(bx - 4.0, 14.0)
+    c.rect(xc - pw / 2 * sc, yt, pw * sc, 1.0 * sc, fill=1, stroke=1)                                     # base plate
+    M.w_side(c, xc - (pw / 2 - 2) * sc, yt + 1.0 * sc, (pw - 4) * sc, 12.0 * sc, 0.5 * sc)                 # column, broken off
+    _break_h(c, xc - (pw / 2 - 2) * sc - 2, xc + (pw / 2 - 2) * sc + 2, yt + 13.0 * sc)
+    for sg in (-1, 1):                                                   # anchor rods
+        xr = xc + sg * (pw / 2 - 1.5) * sc
+        M.bolt_side(c, xr, yt - 12.0 * sc, xr, yt + 1.0 * sc, 0.75 * sc, head_end=1)
+    # the thrust
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(1.0)
+    _arrow(c, xc - (pw / 2 + 26) * sc, yt + 0.5 * sc, xc - pw / 2 * sc - 2, yt + 0.5 * sc, head=4)
+    c.setFont(FR, 6.5); c.drawRightString(xc - (pw / 2 + 27) * sc, yt + 3, f"thrust V {d['Vmax']:.1f} kips (factored)")
+    th = d["thrust"]
+    if th == "soil":                                                     # passive pressure on the far face of the footing and the pier
+        x_f = xc + B / 2 * sc
+        k_ = 0.9
+        pth = c.beginPath(); pth.moveTo(x_f, ygr); pth.lineTo(x_f + 30 * k_, yfb); pth.lineTo(x_f, yfb); pth.close()
+        c.setFillColorRGB(0.95, 0.85, 0.80); c.setStrokeColorRGB(*LOADC); c.setLineWidth(0.5); c.drawPath(pth, fill=1, stroke=1)
+        for q in range(1, 5):
+            yq = ygr - (ygr - yfb) * q / 5
+            _arrow(c, x_f + 30 * k_ * q / 5, yq, x_f + 1, yq, head=2.5)
+        c.setFillColorRGB(*LOADC); c.drawString(x_f + 30 * k_ + 4, yfb + 4, "passive pressure"); c.drawString(xc - 20, yfb - 6 * sc - 10, "friction under the footing")
+    elif th == "hairpin":
+        c.setFillColorRGB(0.86, 0.86, 0.84); c.setStrokeColorRGB(*M.CONC_LINE); c.setLineWidth(0.5)
+        c.rect(xc + bx / 2 * sc, ygr, 60, 5.0 * sc, fill=1, stroke=1)                                       # floor slab
+        c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(max(BAR_DIA[d["hairpin"]["bar"]] * sc, 1.0))
+        yh = ygr + 2.5 * sc
+        c.line(xc - (bx / 2 - cov) * sc, yh, xc + bx / 2 * sc + 58, yh)
+        c.setFillColorRGB(*INK); c.drawString(xc + bx / 2 * sc + 4, ygr + 5.0 * sc + 4, "hairpin into the floor slab")
+    else:
+        c.setFillColorRGB(0.86, 0.86, 0.84); c.setStrokeColorRGB(*M.CONC_LINE); c.setLineWidth(0.5)
+        M._concrete(c, xc + bx / 2 * sc, ygr - 12 * sc, 70, 12 * sc, seed=31)                               # tie beam, toward the far pilaster
+        _break_v(c, xc + bx / 2 * sc + 70, ygr - 12 * sc, ygr)
+        c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setLineWidth(max(BAR_DIA[d["tie"]["bar"]] * sc, 1.0))
+        c.line(xc - (bx / 2 - cov - 2) * sc, ygr - 6 * sc, xc + bx / 2 * sc + 68, ygr - 6 * sc)
+        c.setFillColorRGB(*INK); c.drawString(xc + bx / 2 * sc + 4, ygr + 4, "tie beam to the opposite pilaster")
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.5)
+    M._dim_h(c, xc - B / 2 * sc, xc + B / 2 * sc, yfb - 6 * sc - 22, f"{d['B']:g} ft", FR, ext_from=yfb)
+    M._dim_v(c, yfb, yfb + hf * sc, xc - (B / 2 + side) * sc - 10, f"{hf:g} in", FR, ext_from=xc - B / 2 * sc)
+    M._dim_v(c, yfb + hf * sc, yt, xc - (B / 2 + side) * sc - 10, f"{hp:g} in", FR, ext_from=xc - bx / 2 * sc)
+    M._dim_h(c, xc - bx / 2 * sc, xc + bx / 2 * sc, yt + 18 * sc, f"{bx:g} in", FR, ext_from=yt + 13 * sc)
+    yl = yfb - 6 * sc - 40
+    _small(c, xc, yl, "section along the thrust, to scale")
+    # plan of the pier
+    s2 = min(110.0 / max(bx, by), 7.0)
+    xp, yp = RM - 90, top - 90
+    M._concrete(c, xp - bx / 2 * s2, yp - by / 2 * s2, bx * s2, by * s2, seed=24)
+    c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(max(dt * s2, 0.8))
+    c.rect(xp - (bx / 2 - cov - dt / 2) * s2, yp - (by / 2 - cov - dt / 2) * s2, (bx - 2 * cov - dt) * s2, (by - 2 * cov - dt) * s2, fill=0, stroke=1)
+    c.setFillColorRGB(0.15, 0.16, 0.18)
+    off = cov + dt + db / 2
+    nf, ns = d["n_face"], d["n_side"]
+    for sg in (-1, 1):
+        x_ = xp + sg * (bx / 2 - off) * s2
+        for k in range(nf):
+            y_ = yp - (by / 2 - off) * s2 + k * (by - 2 * off) * s2 / (nf - 1)
+            c.circle(x_, y_, max(db * s2 / 2, 1.2), fill=1, stroke=0)
+        for k in range(1, ns + 1):
+            x2 = xp - (bx / 2 - off) * s2 + k * (bx - 2 * off) * s2 / (ns + 1)
+            c.circle(x2, yp + sg * (by / 2 - off) * s2, max(db * s2 / 2, 1.2), fill=1, stroke=0)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.5)
+    M._dim_h(c, xp - bx / 2 * s2, xp + bx / 2 * s2, yp - by / 2 * s2 - 10, f"{bx:g} in", FR, ext_from=yp - by / 2 * s2)
+    M._dim_v(c, yp - by / 2 * s2, yp + by / 2 * s2, xp + bx / 2 * s2 + 10, f"{by:g} in", FR, ext_from=xp + bx / 2 * s2)
+    _small(c, xp, yp - by / 2 * s2 - 28, "plan of the pier, to scale; thrust left to right")
+    return yl - 8
 
 
 def _sheathed_segment(c, x0, y0, b, h, sc, seed=1):

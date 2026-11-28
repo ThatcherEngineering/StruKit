@@ -631,3 +631,17 @@ Texts as they stood under "Open" when ruled:
   checks are built.
 - A point load on a wall bearing directly on soil (no footing) is refused: the spread of a point load into the soil is not built.
 - Nominal maximum aggregate 3/4 in. unless entered (clear spacing of bars, 25.2.1).
+
+## 2026-11-28, pilaster on footing (0.301.0), applied (not ruled)
+- The pier is designed as a tied column (P-M by strain compatibility, ties as shear reinforcement) with the column minimum of 0.01 Ag
+  (10.6.1.1); a pedestal is not given the reduced minimum.
+- Slenderness is neglected only where k lu / r <= 22 with k = 2.0 (the pier cantilevers from the footing).
+- The base-plate moment and the thrust are taken to add, in each combination.
+- Thrust by soil: friction under the footing (the dead weights at the combination's D factor) plus passive pressure on the footing face
+  and the pier below grade (and on the counted length of stem wall), at service loads against the required safety factor. Friction and
+  passive pressure are combined (IBC 1806.3.1 is not on file). The moment of the thrust at the footing bottom is taken by the footing in
+  bearing and overturning; passive pressure is not counted against overturning.
+- A pilaster in a stem wall counts only the stem wall length entered, in passive pressure only (no friction under the wall's footing).
+- Hairpins and tie beam bars: development by Table 25.4.2.3 "other cases" (the larger length), psi_t = 1.0; the hairpin or tie takes the
+  whole thrust at its level, and the pier below it carries none.
+- Footing flexure: the footing and soil weights are added to the column load at the combination's D factor (conservative for flexure).

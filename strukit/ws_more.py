@@ -7420,3 +7420,87 @@ def stem_wall_sheet(mark, support, t, H, fc, fy, conc_pcf, cover, exposure, load
                for x in loads]))))
     sheet.stem = r
     return sheet
+
+
+def pilaster_sheet(mark, kind, bx, by, hp, below, fc, fy, conc_pcf, cover, bar, n_face, n_side, tie_bar, tie_s, top_ties, top_tie_bar,
+                   footing, reactions, strength, service, thrust, soil=None, hairpin=None, tie=None, soil_source="", passive_source="",
+                   wall_len=0.0, wall_depth=0.0, column=""):
+    """Concrete pilaster on a spread footing (pilaster.check), free-standing or in a stem wall. reactions: dict(case, P kips down, V kips
+    thrust, M kip-ft at the base plate) from the metal building manufacturer. ACI 318-19."""
+    from . import pilaster as pl
+    if not reactions:
+        raise WorksheetError(f"{mark}: no base reactions entered")
+    if not (soil_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the allowable soil bearing is blank")
+    if thrust == "soil" and not (passive_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the passive pressure and friction is blank")
+    def combine(cbs):
+        out = []
+        for c in cbs:
+            f = c.factors
+            P = sum(f.get(r["case"], 0.0) * r["P"] for r in reactions) * 1000.0
+            V = sum(f.get(r["case"], 0.0) * r["V"] for r in reactions) * 1000.0
+            M = sum(f.get(r["case"], 0.0) * (r.get("M") or 0.0) for r in reactions) * 12000.0
+            out.append((c.name, P, V, M, f.get("D", 0.0)))
+        return out
+    st, se = combine(strength), combine(service)
+    try:
+        r = pl.check(bx, by, hp, below, fc, fy, conc_pcf, cover, bar, n_face, n_side, tie_bar, tie_s, top_ties, top_tie_bar, footing, st, se,
+                     thrust=thrust, soil=soil, hairpin=hairpin, tie=tie, wall_len=wall_len if kind.startswith("in") else 0.0,
+                     wall_depth=wall_depth)
+    except (pl.PilasterError, ValueError) as e:
+        raise WorksheetError(f"{mark}: {e}")
+    L = footing_line
+    nb = 2 * n_face + 2 * n_side
+    info = [("Pilaster", f"{bx:g} x {by:g} in. ({bx:g} in. along the thrust), {hp:g} in. from the top of the footing to the base plate, "
+                         f"{below:g} in. of it below grade; " + ("free-standing" if kind.startswith("free") else "in a stem wall")),
+            ("Concrete", f"f'c = {fc:,.0f} psi, {conc_pcf:g} pcf, normalweight; fy = {fy:,.0f} psi; {cover:g} in. clear cover to the ties"),
+            ("Pier bars", f"({nb}) #{bar}: {n_face} on each face across the thrust, {n_side} on each side face; #{tie_bar} ties at {tie_s:g} in.; "
+                          f"({top_ties}) #{top_tie_bar} ties within 5 in. of the top"),
+            ("Footing", f"{footing['B_ft']:g} x {footing['L_ft']:g} ft ({footing['B_ft']:g} ft along the thrust), {footing['h_in']:g} in. thick; "
+                        f"#{footing['bar']} bars, {footing['n_x']} and {footing['n_y']}; {footing['cover']:g} in. cover; "
+                        f"{footing.get('soil_depth_ft') or 0:g} ft of soil over it"),
+            ("Soil", f"allowable bearing {footing['q_allow']:,.0f} psf ({soil_source.strip()})"),
+            ("Thrust taken by", {"soil": f"friction {soil['mu']:g} and passive pressure {soil['passive_pcf']:g} pcf, safety factor {soil['sf']:g} "
+                                         f"({passive_source.strip()}); footing bottom {soil['depth_ft']:g} ft below grade"
+                                         + (f", top {soil['neglect_ft']:g} ft neglected" if soil and soil.get('neglect_ft') else "")
+                                         + (f"; {wall_len:g} ft of stem wall {wall_depth:g} in. below grade counted" if kind.startswith("in") and wall_len else "")
+                                 if thrust == "soil" else "",
+                                 "hairpin": f"({hairpin['n']}) #{hairpin['bar']} hairpins into the floor slab, legs {hairpin['leg_in']:g} in." if hairpin else "",
+                                 "tie beam": f"tie beam to the opposite pilaster, ({tie['n']}) #{tie['bar']}, {tie['embed_in']:g} in. into this pilaster" if tie else ""}[thrust])]
+    load_lines = [f"{x['case']:<3} P {x['P']:7.2f} kip, V {x['V']:7.2f} kip" + (f", M {x['M']:7.2f} kip-ft" if x.get("M") else "")
+                  + (f"   ({x['label']})" if x.get("label") else "") for x in reactions]
+    load_lines.insert(0, "base reactions at the base plate: P down (uplift negative), V the horizontal thrust along the frame" + (f", {column}" if column else ""))
+    combo_lines = [(c.name, c.source) for c in strength] + [(c.name + " (service)", c.source) for c in service]
+    steps = [L(a, b_, u, s_, n) for a, b_, u, s_, n in r["lines"]]
+    rows = [Row(c.name, c.combo, c.demand, c.capacity, c.unit, c.source, c.note) for c in r["checks"]]
+    fr = r["footing"]
+    if fr is not None:
+        rows += [Row("footing: " + c.name, c.combo, c.demand, c.capacity, c.unit, "ACI 318-19 " + c.source if not c.source.startswith(("ACI", "statics")) else c.source, c.note)
+                 for c in fr.checks]
+    assume = ["Strength design by ACI 318-19 for the pier and footing; soil bearing, sliding and overturning at the service combinations.",
+              "The pier is a tied column: P-M strength by strain compatibility about the axis across the thrust, compression bars included; "
+              "minimum longitudinal bars 0.01 Ag as for a column.",
+              "The pier, footing and soil weights take each combination's D factor.",
+              "The moment at the base plate and the thrust act in the direction that adds."]
+    if thrust == "soil":
+        assume.append("The thrust is resisted by friction under the footing and passive pressure on the footing face and the pier below grade; "
+                      "the moment of the thrust at the footing bottom is taken by the footing bearing (passive pressure is not counted against overturning).")
+    else:
+        assume.append(f"The thrust goes into the {'floor slab' if thrust == 'hairpin' else 'tie beam'} at the base plate; the pier and footing take no thrust "
+                      "below it.")
+    notc = ["the anchor rods and their concrete breakout (next build), the base plate and the column (their own sheets)",
+            "development of the pier bars into the footing (dowels)"]
+    if thrust == "hairpin":
+        notc.append("the floor slab carrying the hairpin force, and its joints")
+    if thrust == "tie beam":
+        notc.append("the tie beam's bending under its own weight and the opposite pilaster")
+    notc += list(fr.not_checked) if fr is not None else []
+    sheet = SimpleSheet(mark, "Pilaster on Footing" + (", in a Stem Wall" if kind.startswith("in") else ""), "Pilaster", "LRFD", info, load_lines,
+                        combo_lines, "Calculation", steps, rows, assume, notc, picture=None)
+    sheet.blocks.append(dict(title="Pilaster", head="Pilaster", picture=("pilaster", dict(
+        bx=bx, by=by, hp=hp, below=below, cover=cover, bar=bar, n_face=n_face, n_side=n_side, tie_bar=tie_bar, tie_s=tie_s,
+        B=footing["B_ft"], L=footing["L_ft"], hf=footing["h_in"], thrust=thrust, wall=kind.startswith("in"), depth_ft=(soil or {}).get("depth_ft"),
+        Vmax=max(abs(x[2]) for x in st) / 1000.0, hairpin=hairpin, tie=tie))))
+    sheet.pilaster = r
+    return sheet
