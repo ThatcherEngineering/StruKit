@@ -456,3 +456,52 @@ def test_ac_post_caps():
         simpson.column_cap("AC", "AC6 (max. nailing)", download=600)
     with pytest.raises(simpson.SimpsonError):
         simpson.column_cap("AC", "LPC4Z", uplift=100, one_side=True)
+
+
+def test_cast_bases_against_the_catalog_pages():
+    """CB (p. 87), PB (p. 82), PBST (p. 83), EPB (p. 80): each row's dimensions and loads found in the page text; the choice, the
+    lateral values by fastening (PBST note 9: F1 1,165 nails, 230 bolts) and the refusals by hand."""
+    import re
+    j = lambda ps: r"\s+".join(re.escape(str(p)).replace(r"\ ", r"\s+") for p in ps)
+    texts = {p: _page_text(p) for p in (80, 82, 83, 87)}
+    for r in simpson.CAST_BASES:
+        if r["series"] == "CB":
+            bolt = r["fast"].split(") ")[1].split('"')[0]
+            pat = j([r["model"], r["post"], r["W1"], r["W2"], "2", bolt] + [f"{v:,}".replace(",", ",?") for v in ()])
+            pat += r"\s+" + r"\s+".join(f"{v:,}".replace(",", ",?") for v in (r["AB"] + r["CF"] + (r["down"],)))
+        elif r["series"] == "PB":
+            pat = j([r["model"], r["W1"], r["W2"], "(12) 0.162 x 3 1/2"]) + r".*?" + j([f"{r['AB'][0]:,}", f"{r['AB'][1]:,}", f"{r['down']:,}"])
+        elif r["series"] == "PBST":
+            pat = j([r["model"], r["post"], "12"]) + r"\s+\d+\s+" + j([r["W1"], r["W2"], r["H"]]) + r".*?" + j([f"{v:,}" for v in r["AB"]] + [f"{r['down']:,}"])
+        elif r["series"] == "EPB":
+            pat = j([r["model"], r["W1"], r["W2"], r["H"], r["fast"].replace(" nails", "")] + [f"{v:,}" for v in r["AB"]] + [f"{r['down']:,}"] + [f"{v:,}" for v in r["lat"]["nails"]])
+        else:
+            continue
+        assert re.search(pat, texts[r["page"]]), r["model"]
+    for r in simpson.CAST_BASES:                                 # the SDC C-F blocks
+        if r["series"] in ("PBST", "EPB"):
+            assert re.search(j([r["model"]]) + r".*?" + j([f"{v:,}" for v in r["CF"]]), texts[r["page"]]), r["model"]
+    h = simpson.cast_base("PBST", "4x4", "first that works", True, "A&B", uplift=500, F1=80, fastening="bolts")
+    assert h["rows"][-1][1] == pytest.approx(500 / 865 + 80 / 230)
+    assert simpson.cast_base("PBST", "4x4", "PBST44Z", True, "A&B", uplift=500, F1=300)["rows"][1][2] == 1165
+    assert simpson.cast_base("CB", "6x6", "first that works", True, "C-F", uplift=3000, fastening="bolts")["base"]["model"] == "CB66"
+    assert simpson.cast_base("EPB", "4x4", "first that works", True, "A&B", download=4000)["base"]["model"] == "EPB44"   # EPB44A 2,670
+    assert simpson.cast_base("CB", "Glulam", "CB7-9", True, "A&B", download=60000, fastening="bolts")["rows"][0][2] == 91620
+    with pytest.raises(simpson.SimpsonError):
+        simpson.cast_base("CB", "6x6", "CB66", True, "A&B", uplift=100, F1=100, fastening="bolts")     # no lateral for CB
+    with pytest.raises(simpson.SimpsonError):
+        simpson.cast_base("PB", "4x4", "PB44", True, "A&B", uplift=100, fastening="bolts")             # PB44 not with bolts
+    with pytest.raises(simpson.SimpsonError):
+        simpson.cast_base("CB", "Glulam", "first that works", True, "A&B", uplift=100, fastening="bolts")
+
+
+def test_cast_base_screen(tmp_path):
+    from strukit import calcsheet
+    proj = dict(job="t", name="t", method="ASD")
+    for v in (dict(mark="CB3", series="CB", post="6x6", model="first that works", fastening="bolts", cracked="yes", sdc="C-F", uplift="3000", load_source="column"),
+              dict(mark="CB5", series="PB", post="6x6", model="PB66", fastening="bolts", cracked="yes", sdc="A&B", uplift="500", F2="500", load_source="porch post"),
+              dict(mark="CB7", series="EPB", post="4x4", model="first that works", cracked="yes", sdc="A&B", download="4000", load_source="deck post"),
+              dict(mark="CB1", post="4x4", model="first that works", cracked="yes", sdc="A&B", uplift="2000", F1="100", F2="300", load_source="deck")):
+        s = calc.build("column_base", v, proj)[0]
+        assert all(r.status == "OK" for r in s.rows), v["mark"]
+        calcsheet.simple_pdf(s, str(tmp_path / f"{v['mark']}.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")

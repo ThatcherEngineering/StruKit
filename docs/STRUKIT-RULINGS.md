@@ -565,3 +565,9 @@ Texts as they stood under "Open" when ruled:
   horizontal axes (the softer value; more sway, larger P-delta). The full table value applies only with shrinkage shown to be negligible.
 - In the sway run with the direct analysis method's 0.8 stiffness reduction, the base spring is reduced by the same factor (AISC 360-22
   C2.3 applies the reduction to all stiffnesses that contribute to stability).
+
+## 2026-11-27 afternoon — Zach's ruling (do not ask again)
+- **"I agree with your 4 rulings. Keep going, finish them all."** Ruled as applied: (1) A34 / A35 / LTP4 / LTP5 under snow load take the
+  floor (100) column (0.284.0); (2) MPBZ cracked concrete unless the engineer selects uncracked with its basis (0.286.0); (3) MPBZ wood
+  moment (160) for every combination (0.286.0); (4) MPBZ spring in the 3D frame x 0.75 (note 10) and reduced by the 0.8 direct analysis
+  factor in the sway run (0.290.0). The CBSTQ lateral with the unity equation (0.288.0) follows the 2026-11-27 morning ruling.

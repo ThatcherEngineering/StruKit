@@ -944,3 +944,138 @@ def column_base(post, model, cracked, sdc, download=0.0, uplift=0.0, F1=0.0, F2=
     if len(rows) > 1:
         rows.append(("loads together, sum of load / allowable", sum(d / c for _, d, c in rows), 1.0))
     return dict(row=r, rows=rows, picked=picked, cracked=cracked, sdc=sdc, cbstq=cbstq, uplift_allow=up_a)
+
+
+# ---------------------------------------------------------------- cast-in post and column bases: CB, PB, PBST, EPB (catalog pp. 80-87)
+# One row per model in a common form: model, nominal post, series, page, W1, W2, embedment D and height H drawn (in.), standoff (in.),
+# fasteners, uplift wind and SDC A&B (uncracked, cracked), uplift SDC C-F (uncracked, cracked), download (100), lateral {fastening: (F1, F2)}
+# or None, minimum side cover (in.), gauge text, bolts available. Loads, lb. D and H of CB, PB and EPB are the figures' dimensions (pp. 80, 82,
+# 86), drawn only.
+def _cb(model, post, w1, w2, bolt, ab_u, ab_c, cf_u, cf_c, down):
+    strap = 7 if model[2] in "456" else 3
+    base = 3 if model.startswith("CB1") and len(model) > 4 and model[2:4] in ("10", "12") else 7
+    return dict(model=model, post=post, series="CB", page=87, W1=w1, W2=w2, D="8", H="6" if bolt == "5/8" else "7 1/2", standoff=0,
+                fast=f'(2) {bolt}" dia. bolts', AB=(ab_u, ab_c), CF=(cf_u, cf_c), down=down, lat=None, cover=3,
+                ga=f"strap {strap} ga, base {base} ga", bolts=True, nails=False, kind="strap")
+
+
+CAST_BASES = [
+    _cb("CB44", "4x4", "3 9/16", "3 9/16", "5/8", 6110, 4510, 5640, 3945, 19020),
+    _cb("CB46", "4x6", "3 9/16", "5 1/2", "5/8", 6110, 4510, 5640, 3945, 28585),
+    _cb("CB48", "4x8", "3 9/16", "7 1/2", "5/8", 6110, 4510, 5640, 3945, 35970),
+    _cb("CB5-4.5", "Glulam", "4 1/2", "5 1/8", "5/8", 6110, 4510, 5640, 3945, 38055),
+    _cb("CB5-6", "Glulam", "6", "5 1/8", "5/8", 6110, 4510, 5640, 3945, 50740),
+    _cb("CB64", "6x4", "5 1/2", "3 9/16", "5/8", 6110, 4510, 5640, 3945, 28585),
+    _cb("CB66", "6x6", "5 1/2", "5 1/2", "5/8", 6110, 4510, 5640, 3945, 30250),
+    _cb("CB6-7", "6x", "5 1/2", "7", "5/8", 6110, 4510, 5640, 3945, 38500),
+    _cb("CB68", "6x8", "5 1/2", "7 1/2", "5/8", 6110, 4510, 5640, 3945, 41250),
+    _cb("CB610", "6x10", "5 1/2", "9 1/2", "5/8", 6445, 4510, 5640, 3945, 52250),
+    _cb("CB612", "6x12", "5 1/2", "11 1/2", "5/8", 6445, 4510, 5640, 3945, 63250),
+    _cb("CB7 1/8-4", "PSL", "7 1/8", "3 1/2", "3/4", 6445, 4510, 5640, 3945, 41145),
+    _cb("CB7 1/8-6", "PSL", "7 1/8", "5 1/2", "3/4", 6445, 4510, 5640, 3945, 64660),
+    _cb("CB7 1/8-7", "PSL", "7 1/8", "7", "3/4", 6445, 4510, 5640, 3945, 78410),
+    _cb("CB7-6", "Glulam", "6", "6 3/4", "3/4", 6445, 4510, 5640, 3945, 66825),
+    _cb("CB7-7.5", "Glulam", "7 1/2", "6 3/4", "3/4", 6445, 4510, 5640, 3945, 79345),
+    _cb("CB7-9", "Glulam", "9", "6 3/4", "3/4", 6445, 4510, 5640, 3945, 91620),
+    _cb("CB7-10.5", "Glulam", "10 1/2", "6 3/4", "3/4", 6445, 4510, 5640, 3945, 103790),
+    _cb("CB86", "8x6", "7 1/2", "5 1/2", "3/4", 6110, 4510, 5640, 3945, 41250),
+    _cb("CB88", "8x8", "7 1/2", "7 1/2", "3/4", 6445, 4510, 5640, 3945, 56250),
+    _cb("CB810", "8x10", "7 1/2", "9 1/2", "3/4", 6445, 4510, 5640, 3945, 71250),
+    _cb("CB812", "8x12", "7 1/2", "11 1/2", "3/4", 6445, 4510, 5640, 3945, 86250),
+    _cb("CB9-6", "Glulam", "6", "8 3/4", "3/4", 6445, 4510, 5640, 3945, 81940),
+    _cb("CB9-7.5", "Glulam", "7 1/2", "8 3/4", "3/4", 6445, 4510, 5640, 3945, 97165),
+    _cb("CB9-9", "Glulam", "9", "8 3/4", "3/4", 6445, 4510, 5640, 3945, 112200),
+    _cb("CB9-10.5", "Glulam", "10 1/2", "8 3/4", "3/4", 6445, 4510, 5640, 3945, 127105),
+    _cb("CB1010", "10x10", "9 1/2", "9 1/2", "3/4", 6445, 4510, 5640, 3945, 90250),
+    _cb("CB1012", "10x12", "9 1/2", "11 1/2", "3/4", 6445, 4510, 5640, 3945, 109250),
+    _cb("CB1212", "12x12", "11 1/2", "11 1/2", "3/4", 6445, 4510, 5640, 3945, 132250),
+]
+for _m, _p, _w, _l, _b, _d in (("PB44", "4x4", "3 9/16", "3 1/4", False, 12685), ("PB44R", "Rough 4x4", "4", "3 1/4", False, 12685),
+                               ("PB46", "4x6", "5 1/2", "3 1/4", False, 22445), ("PB66", "6x6", "5 1/2", "5 1/4", True, 25270),
+                               ("PB66R", "Rough 6x6", "6", "5 1/4", True, 25270)):
+    CAST_BASES.append(dict(model=_m, post=_p, series="PB", page=82, W1=_w, W2=_l, D="3 1/4", H="5", standoff=0,
+                           fast="(12) 0.162 x 3 1/2 nails" + ('; or (2) 1/2" dia. bolts' if _b else ""), AB=(850, 850), CF=(850, 850), down=_d,
+                           lat={"nails": (765, 1325), "bolts": (765, 1325)}, cover=2, ga="12 ga", bolts=_b, nails=True, kind="strap"))
+for _m, _p, _s, _w, _l, _h, ab, cf, _d in (("PBST44Z", "4x4", 14, "3 9/16", "3 1/2", "6 1/4", (1235, 865), (1080, 755), 9570),
+                                           ("PBST46Z", "4x6", 14, "3 9/16", "5 7/16", "6 9/16", (1235, 865), (1080, 755), 10170),
+                                           ("PBST66Z", "6x6", 12, "5 1/2", "5 3/8", "6 1/2", (2165, 2165), (2165, 2165), 11815)):
+    CAST_BASES.append(dict(model=_m, post=_p, series="PBST", page=83, W1=_w, W2=_l, D="5" if "66" in _m else "3 1/2", H=_h, standoff=1,
+                           fast='(14) 0.162 x 3 1/2 nails; or (2) 1/2" dia. bolts', AB=ab, CF=cf, down=_d,
+                           lat={"nails": (1165, 835), "bolts": (230, 835)}, cover=2, ga=f"base 12 ga, strap {_s} ga", bolts=True, nails=True,
+                           kind="strap"))
+for _m, _p, _w, _l, _h, _n, ab, cf, _d, lat in (("EPB44A", "4x4", "3 9/16", "3", "2 3/8", 8, (1075, 755), (940, 660), 2670, (695, 795)),
+                                                ("EPB44", "4x4", "3 9/16", "3 1/4", "2 5/16", 8, (995, 695), (870, 605), 5165, (850, 965)),
+                                                ("EPB46", "4x6", "5 1/2", "3 5/16", "3", 12, (995, 695), (870, 605), 5165, (850, 965)),
+                                                ("EPB66", "6x6", "5 1/2", "5 1/2", "3", 12, (995, 695), (870, 605), 5165, (850, 965))):
+    CAST_BASES.append(dict(model=_m, post=_p, series="EPB", page=80, W1=_w, W2=_l, D="6", H=_h, standoff=2,
+                           fast=f"({_n}) 0.162 x 3 1/2 nails", AB=ab, CF=cf, down=_d, lat={"nails": lat}, cover=4,
+                           ga="14 ga" if _m == "EPB44A" else "12 ga base, 1-5/16 in. OD pipe", bolts=False, nails=True, kind="pipe"))
+for _r in COLUMN_BASES:
+    CAST_BASES.append(dict(model=_r[0], post=_r[1], series="CBSTQ / CBSQ", page=85, W1=_r[4], W2=_r[5], D=_r[6], H=_r[7], standoff=1,
+                           fast=_r[8] + " screws", AB=_r[9], CF=_r[10], down=_r[11],
+                           lat={"nails": CBSTQ_LATERAL} if _r[0].startswith("CBSTQ") else None, cover=3 if _r[0].startswith("CBSTQ") else 2,
+                           ga=f"base {_r[2]} ga, strap {_r[3]}", bolts=False, nails=True, kind="strap"))
+CAST_SERIES = ["CBSTQ / CBSQ", "CB", "PB", "PBST", "EPB"]
+
+
+def cast_base(series, post, model, cracked, sdc, download=0.0, uplift=0.0, F1=0.0, F2=0.0, fastening="nails"):
+    """Cast-in post or column base (CBSTQ / CBSQ p. 85, CB p. 87, PB p. 82, PBST p. 83, EPB p. 80), ASD, no duration increase. Uplift by
+    concrete cracked or uncracked and the seismic design category; download (100); lateral F1, F2 where the catalog gives them (CBSTQ note 5,
+    PB note 6, PBST note 9 by nails or bolts, EPB table); more than one direction by the unity equation (p. 23 note e, p. 289 Option 1).
+    "first that works": the first base of the series for the post that passes."""
+    download, uplift, F1, F2 = (abs(x or 0.0) for x in (download, uplift, F1, F2))
+    if download and uplift:
+        raise SimpsonError("post base: download and uplift are separate load combinations; check them on separate sheets")
+    if not (download or uplift or F1 or F2):
+        raise SimpsonError("post base: give a load")
+    if sdc not in ("A&B", "C-F"):
+        raise SimpsonError("post base: seismic design category A&B (and wind) or C-F")
+    if series not in CAST_SERIES:
+        raise SimpsonError("post base: the series is " + ", ".join(CAST_SERIES))
+    bolts = str(fastening or "").lower().startswith("bolt")
+    cands = [r for r in CAST_BASES if r["series"] == series]
+
+    def check(r):
+        if bolts and not r["bolts"]:
+            return None
+        if not bolts and not r["nails"]:
+            return None                                       # CB: bolts only
+        if (F1 or F2) and not r["lat"]:
+            return None
+        rows = []
+        up_a = (r["AB"] if sdc == "A&B" else r["CF"])[1 if cracked else 0]
+        lat = r["lat"][("bolts" if bolts else "nails") if r["lat"] and len(r["lat"]) > 1 else "nails"] if r["lat"] else (None, None)
+        for nm, dem, cap in (("download", download, r["down"]), ("uplift", uplift, up_a), ("lateral F1", F1, lat[0]), ("lateral F2", F2, lat[1])):
+            if dem:
+                rows.append((nm, dem, cap))
+        if len(rows) > 1:
+            rows.append(("loads together, sum of load / allowable", sum(d / c for _, d, c in rows), 1.0))
+        return rows, up_a, lat
+
+    if model.strip().lower() in ("first that works", "lightest that works"):
+        if post in ("Glulam", "PSL", "6x"):
+            raise SimpsonError(f"post base: name the {series} model for a {post} column (its width and depth set the base)")
+        fit = [r for r in cands if r["post"] == post]
+        if not fit:
+            raise SimpsonError(f"post base: no {series} base for a {post} post (catalog p. {cands[0]['page']})")
+        for r in fit:
+            c_ = check(r)
+            if c_ and all(d <= c + 1e-9 for _, d, c in c_[0]):
+                break
+        else:
+            raise SimpsonError(f"post base: no {series} base for a {post} post carries these loads" + (" with bolts" if bolts else ""))
+        picked = True
+    else:
+        r = next((x for x in cands if x["model"].lower() == model.strip().lower()), None)
+        if r is None:
+            raise SimpsonError(f"post base: {model} is not a {series} base")
+        if post and r["post"] not in (post, "Glulam", "PSL", "6x") and r["post"] != post:
+            raise SimpsonError(f"post base: {r['model']} is for a {r['post']} post")
+        c_ = check(r)
+        if c_ is None:
+            why = ("it is not tabulated with bolts" if bolts and not r["bolts"] else "it is fastened with bolts" if not r["nails"] and not bolts
+                   else "the catalog gives it no lateral value")
+            raise SimpsonError(f"post base: {r['model']}: {why} (catalog p. {r['page']})")
+        picked = False
+    rows, up_a, lat = c_
+    return dict(base=r, rows=rows, picked=picked, cracked=cracked, sdc=sdc, uplift_allow=up_a, lat=lat, bolts=bolts)
