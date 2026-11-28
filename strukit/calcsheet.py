@@ -1804,6 +1804,10 @@ def _block_picture(c, top, pic):
         return _joist_hanger_picture(c, top, d)
     if name == "hurricane_tie":
         return _hurricane_tie_picture(c, top, d)
+    if name == "post_base":
+        return _post_base_picture(c, top, d)
+    if name == "column_cap":
+        return _column_cap_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -4577,6 +4581,271 @@ def _hurricane_tie_picture(c, top, d):
         c.drawString(xo + 6, yo - 2, f"F1 {d['F1']:,.0f} lb, along the plate")
     _small(c, cx + 40, yp - 2 * pt * sc - 6.0 * sc - 14, "section across the wall at a rafter, to scale (rafter slope shown 5:12); loads at the ASD level")
     return yp - 2 * pt * sc - 6.0 * sc - 22
+
+
+def _mixed(x):
+    """5.5 -> '5 1/2', 0.625 -> '5/8', 7.0 -> '7' (to 1/16 in.)."""
+    from fractions import Fraction
+    fr = Fraction(round(x * 16), 16)
+    w, r = divmod(fr, 1)
+    return (f"{w}" if w else "") + (" " if w and r else "") + (f"{r.numerator}/{r.denominator}" if r else "") or "0"
+
+
+def _post_dims(label):
+    """Actual size (b, d) in inches of a post label of the post base table ('4x6', 'Rough 6x6', '5 1/8 x 6', 'Double 2x4')."""
+    import re as _re
+    from . import simpson as _s
+    lab = label.strip()
+    if lab.lower().startswith("rough"):
+        a, b = _re.findall(r"\d+", lab)[:2]
+        return float(a), float(b)
+    if lab.lower().startswith("double 2x"):
+        return 3.0, _lumber_dims("2x" + lab.split("2x")[1])[1]
+    if " x " in lab:
+        a, b = lab.split(" x ")
+        return _s._in(a), _s._in(b)
+    a, b = lab.lower().split("x")
+    act = {2: 1.5, 3: 2.5, 4: 3.5, 5: 4.5, 6: 5.5, 8: 7.25, 10: 9.25, 12: 11.25}
+    if int(a) >= 6 and int(b) >= 6:                         # timbers 5 in. and over: nominal less 1/2 in. (NDS Supplement Table 1B)
+        return int(a) - 0.5, int(b) - 0.5
+    return act[int(a)], act.get(int(b), int(b) - 0.5)
+
+
+def _steel_strip(c, x, y, w, h, cut=False):
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+    c.setFillColorRGB(*(memberart.STEEL_CUT if cut else memberart.STEEL_FILL))
+    c.rect(x, y, w, h, fill=1, stroke=1)
+
+
+def _nail_heads(c, x, y, w, h, n, r=0.9):
+    """n nail heads in two staggered columns on a strip seen face on."""
+    if n <= 0:
+        return
+    rows = (n + 1) // 2
+    c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+    for k in range(n):
+        col, rw = k % 2, k // 2
+        c.circle(x + w * (0.3 + 0.4 * col), y + h * (0.12 + 0.76 * (rw + 0.5 * col) / max(rows, 1)), r, fill=1, stroke=1)
+
+
+def _bolt_heads(c, pts, d):
+    """Bolt heads seen end on: a hexagon around the bolt end."""
+    import math as _m
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+    for (x, y) in pts:
+        c.setFillColorRGB(0.42, 0.47, 0.54)
+        p = c.beginPath()
+        for k in range(6):
+            a = _m.radians(30 + 60 * k)
+            (p.moveTo if k == 0 else p.lineTo)(x + 0.85 * d * _m.cos(a), y + 0.85 * d * _m.sin(a))
+        p.close(); c.drawPath(p, fill=1, stroke=1)
+        c.setFillColorRGB(0.70, 0.74, 0.79); c.circle(x, y, 0.45 * d, fill=1, stroke=1)
+
+
+def _leader_notes(c, notes, tx):
+    last = None
+    c.setFont(FR, 6.2)
+    for (y_, xt_, t_) in sorted(notes, key=lambda q: -q[0]):
+        yy = y_ if last is None or last - y_ >= 9 else last - 9
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.35); c.line(xt_, y_, tx - 3, yy + 1.5)
+        c.setFillColorRGB(*GREY); c.circle(xt_, y_, 0.7, fill=1, stroke=0)
+        c.setFillColorRGB(*INK); c.drawString(tx, yy - 0.5, t_); last = yy
+    return last
+
+
+def _post_base_picture(c, top, d):
+    """Adjustable standoff post base (ABA / ABU / ABW), to scale, two views. Left: elevation looking at a strap face: the concrete cut
+    short below, the U base on the concrete, the 1 in. standoff, the post on it with its grain (broken off above), the strap up the post
+    face with its nails or bolt heads; W and H dimensioned. Right: section through the post centre square to the straps: the straps cut
+    (darker) on both faces, the base plate, the nut and washer on the anchor, the standoff plate over them, the anchor dashed in the
+    concrete, the through bolts with heads and nuts where used; L and the 1 in. standoff dimensioned."""
+    W, Ls, H = d["W"], d["L"], d["H"]
+    pb, pd = _post_dims(d["post"])                          # post across the straps (b) and along them (d)
+    t = {10: 0.134, 12: 0.105, 14: 0.075, 16: 0.06}.get(d["strap_ga"], 0.075)
+    tb = {10: 0.134, 12: 0.105, 14: 0.075, 16: 0.06}.get(d["ga"], 0.075)
+    hp = H + 6.0                                            # post shown above the base
+    hc = 5.0                                                # concrete shown
+    sc = min(7.0, 140.0 / (hp + 1.0 + hc + 2), 120.0 / (max(pb, pd) + 4))
+    so = 1.0                                                # standoff, catalog p. 76
+    ytop = top - 14
+    yc = ytop - (hp + so + 0.4) * sc                        # top of the concrete
+    T, TB = max(t * sc, 1.1), max(tb * sc, 1.1)
+    from . import simpson as _sp
+    for vx, wpost, view in ((LM + 95, pd, 1), (LM + 300, pb, 2)):
+        cwid = wpost + 7.0
+        memberart._concrete(c, vx - cwid * sc / 2, yc - hc * sc, cwid * sc, hc * sc, seed=11 + view)
+        memberart._break_h(c, vx - cwid * sc / 2, vx + cwid * sc / 2, yc - hc * sc - 1)
+        ya = yc + TB                                         # top of the U base
+        yp = yc + so * sc                                    # post bottom on the standoff
+        # anchor rod: nut and washer on the base, the rod dashed in the concrete
+        Da = 0.625
+        if view == 2:
+            c.setDash(2, 1.4); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6)
+            c.line(vx - Da * sc / 2, ya, vx - Da * sc / 2, yc - (hc - 0.8) * sc); c.line(vx + Da * sc / 2, ya, vx + Da * sc / 2, yc - (hc - 0.8) * sc)
+            c.setDash()
+            c.setFillColorRGB(0.62, 0.66, 0.72); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+            c.rect(vx - 1.0 * sc, ya, 2.0 * sc, 0.12 * sc + 0.6, fill=1, stroke=1)
+            c.setFillColorRGB(0.42, 0.47, 0.54); c.rect(vx - 0.5 * sc, ya + 0.12 * sc + 0.6, 1.0 * sc, 0.55 * sc, fill=1, stroke=1)
+            c.setFillColorRGB(0.70, 0.74, 0.79); c.rect(vx - Da * sc / 2, ya + 0.67 * sc + 0.6, Da * sc, 0.2 * sc, fill=1, stroke=1)
+        # the U base on the concrete and the standoff plate over the nut
+        bw = (W if view == 2 else Ls) + 2 * t
+        _steel_strip(c, vx - bw * sc / 2, yc, bw * sc, TB, cut=(view == 2))
+        _steel_strip(c, vx - wpost * sc / 2, yp - TB, wpost * sc, TB, cut=(view == 2))
+        if view == 2:
+            for sg in (-1, 1):                               # standoff legs
+                _steel_strip(c, vx + sg * (wpost / 2 - 0.4) * sc - (0.4 * sc if sg < 0 else 0) + (0 if sg < 0 else 0), ya, 0.4 * sc, yp - TB - ya, cut=True)
+        # the post
+        c.saveState(); c.translate(vx - wpost * sc / 2, yp); c.rotate(90)
+        memberart.wood_elevation(c, 0, -wpost * sc, hp * sc, wpost * sc, seed=3 + view); c.restoreState()
+        memberart._break_h(c, vx - wpost * sc / 2, vx + wpost * sc / 2, yp + hp * sc - 1)
+        if view == 1:                                        # strap face on
+            sw = min(Ls, wpost)
+            _steel_strip(c, vx - sw * sc / 2, yc, sw * sc, H * sc)
+            n_ = int(d["nails"].split(")")[0].strip("(")) // 2
+            if d.get("bolts") and d.get("bolt"):
+                nb = d["bolt"][0]
+                _bolt_heads(c, [(vx, yp + H * sc * (0.35 + 0.4 * k / max(nb - 1, 1))) for k in range(nb)], 0.5 * sc)
+            else:
+                _nail_heads(c, vx - sw * sc / 2, yp, sw * sc, H * sc - so * sc, n_)
+            memberart._dim_h(c, vx - sw * sc / 2, vx + sw * sc / 2, yc - hc * sc - 12, f"L {d['L_txt']}", FR, ext_from=yc - hc * sc)
+            memberart._dim_v(c, yc, yc + H * sc, vx - max(wpost, sw) * sc / 2 - 14, f"H {d['H_txt']}", FR, ext_from=vx - sw * sc / 2)
+            _small(c, vx, yc - hc * sc - 30, "elevation, strap face on, to scale (in.)")
+        else:                                                # straps cut on both faces
+            for sg in (-1, 1):
+                xs_ = vx + sg * wpost * sc / 2 + (0 if sg > 0 else -T)
+                _steel_strip(c, xs_, yc, T, H * sc, cut=True)
+            if d.get("bolts") and d.get("bolt"):
+                nb = d["bolt"][0]
+                for k in range(nb):
+                    yb_ = yp + H * sc * (0.35 + 0.4 * k / max(nb - 1, 1))
+                    memberart.bolt_side(c, vx - wpost * sc / 2 - T, yb_, vx + wpost * sc / 2 + T, yb_, 0.5 * sc)
+            else:                                            # nails driven through the straps into the post
+                c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
+                for sg in (-1, 1):
+                    for k in range(3):
+                        yn_ = yp + (H - so) * sc * (0.25 + 0.25 * k)
+                        c.line(vx + sg * (wpost / 2) * sc, yn_, vx + sg * (wpost / 2 - 2.5) * sc, yn_)
+                c.setDash()
+            memberart._dim_h(c, vx - W * sc / 2, vx + W * sc / 2, yc - hc * sc - 12, f"W {d['W_txt']}", FR, ext_from=yc - hc * sc)
+            memberart._dim_v(c, yc, yp, vx - cwid * sc / 2 - 6, "1 standoff", FR, ext_from=vx - wpost * sc / 2 - T)
+            _small(c, vx, yc - hc * sc - 30, "section through the post centre, to scale (in.); anchor dashed")
+            tx = vx + cwid * sc / 2 + 50
+            _leader_notes(c, [(yp + hp * sc * 0.7, vx + wpost * sc * 0.3, f"{d['post']} post, broken off"),
+                              (yc + H * sc * 0.8, vx + wpost * sc / 2 + T, f"{d['model']} strap, {d['strap_ga']} ga"),
+                              (yp - TB / 2, vx - wpost * sc * 0.35, "standoff plate"),
+                              (ya + 0.5 * sc, vx + 0.5 * sc, "nut and washer on the anchor"),
+                              (yc - hc * sc * 0.5, vx + Da * sc / 2, f"anchor, {d['anchor']} in. dia., by the designer"),
+                              (yc - hc * sc + 6, vx + cwid * sc / 2 - 3, "concrete")], tx)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawCentredString(LM + 200, ytop + 6, f"{d['model']} on a {d['post']} post" + (", bolted" if d.get("bolts") else ", nailed"))
+    return yc - hc * sc - 38
+
+
+def _column_cap_picture(c, top, d):
+    """Column or post cap, to scale, two views. Left: elevation along the beam: the post below with its grain (broken off), the beam over
+    it (broken off at each end, or ending on an end cap, or two beams meeting at a splice), the cap plate between, the beam straps and the
+    post straps face on with their bolt heads (CC series) or nails (BC). Right: section across the beam: the beam cut in end grain inside
+    the U, the straps and the cap plate cut (darker), the post below with its straps cut, the through bolts with heads and nuts. W1, W2,
+    H1 and L dimensioned."""
+    dm, ser = d["dims"], d["series"]
+    bc = ser == "BC"
+    bw, pw, bd = d["beam_width"], d["post_width"], d["beam_depth"]
+    t = {3: 0.239, 7: 0.179, 18: 0.048}.get(d["ga"], 0.1)
+    Lc = dm["L"]
+    H1 = dm["H1"]
+    H2 = dm.get("H2") or (H1 if bc else 8.5)                # CC post straps 1-1/2 + 3 + 4 in. long (p. 100 figure)
+    hp = H2 + 6.0
+    sc = min(6.5, 150.0 / (bd + hp + 2), 110.0 / (Lc + 12))
+    T = max(t * sc, 1.0)
+    ytop = top - 16
+    yb = ytop - bd * sc                                     # beam bottom = cap plate top
+    # ---------------- elevation along the beam
+    vx = LM + 120
+    beam_len = Lc + 10.0
+    end = ser in ("ECC", "ECCU")
+    if end:
+        beam_len = Lc + 6.0
+    x0 = vx - beam_len * sc / 2
+    x1 = vx + beam_len * sc / 2
+    pxc = (x1 - pw * sc / 2) if end else vx                 # post centre: under the beam end for an end cap
+    if d.get("spliced"):
+        memberart.wood_elevation(c, x0, yb, (x1 - x0) / 2, bd * sc, seed=4)
+        memberart.wood_elevation(c, vx, yb, (x1 - x0) / 2, bd * sc, seed=9)
+        c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setLineWidth(0.8); c.line(vx, yb, vx, yb + bd * sc)
+    else:
+        memberart.wood_elevation(c, x0, yb, x1 - x0, bd * sc, seed=4)
+    _break_v(c, x0, yb - 2, yb + bd * sc + 2)
+    if not end:
+        _break_v(c, x1, yb - 2, yb + bd * sc + 2)
+    # post below (its width along the beam drawn as the post width; the cap is square to it)
+    pl = pw
+    c.saveState(); c.translate(pxc - pl * sc / 2, yb - T - hp * sc); c.rotate(90)
+    memberart.wood_elevation(c, 0, -pl * sc, hp * sc, pl * sc, seed=6); c.restoreState()
+    memberart._break_h(c, pxc - pl * sc / 2, pxc + pl * sc / 2, yb - T - hp * sc - 1)
+    # cap plate seen edge on, the straps face on
+    xc0 = (x1 - Lc * sc) if end else (vx - Lc * sc / 2)
+    _steel_strip(c, xc0, yb - T, Lc * sc, T)
+    sw_b = Lc if bc else Lc
+    _steel_strip(c, xc0, yb, sw_b * sc, H1 * sc)
+    psw = min(pl, (2.75 if dm.get("bolt", 0) < 0.7 else 3.0) if not bc else pl * 0.7)   # post strap 2-3/4 in. (5/8 in. bolts), 3 in. (3/4), p. 100
+    _steel_strip(c, pxc - psw * sc / 2, yb - T - H2 * sc, psw * sc, H2 * sc)
+    if bc:
+        _nail_heads(c, xc0, yb, sw_b * sc, H1 * sc, 6)
+        _nail_heads(c, pxc - psw * sc / 2, yb - T - H2 * sc, psw * sc, H2 * sc, 4)
+    else:
+        nb = dm["beam_bolts"]
+        cols = 1 if nb <= 2 else 2
+        rows_ = 1 if nb == 1 else 2 if nb in (2, 4) else nb // cols
+        db = dm["bolt"] * sc
+        pts = []                                            # bolts 1-1/4 in. from the plate ends (p. 100), two rows in H1
+        xs_ = [xc0 + 1.25 * sc, xc0 + (Lc - 1.25) * sc] if cols == 2 else [xc0 + (Lc - 1.25) * sc if end else xc0 + Lc * sc / 2]
+        for xq in xs_:
+            for j in range(rows_):
+                if len(pts) < nb:
+                    pts.append((xq, yb + H1 * sc * (0.3 + 0.4 * j) if rows_ > 1 else yb + H1 * sc * 0.5))
+        _bolt_heads(c, pts, db)
+        _bolt_heads(c, [(pxc, yb - T - k_ * sc) for k_ in (4.0, 7.0)][:dm["post_bolts"]], db)   # 4 and 7 in. below the cap, p. 100
+    memberart._dim_h(c, xc0, xc0 + Lc * sc, ytop + 10, f"L {_mixed(Lc)}", FR, ext_from=ytop)
+    memberart._dim_v(c, yb, yb + H1 * sc, x0 - 12, f"H1 {_mixed(H1)}", FR, ext_from=xc0)
+    _small(c, vx, yb - T - hp * sc - 18, "elevation along the beam, to scale (in.)")
+    # ---------------- section across the beam
+    sx = LM + 330
+    memberart.wood_section(c, sx, yb + bd * sc / 2, bw * sc, bd * sc, bw, bd)
+    c.saveState(); c.translate(sx - pw * sc / 2, yb - T - hp * sc); c.rotate(90)
+    memberart.wood_elevation(c, 0, -pw * sc, hp * sc, pw * sc, seed=8); c.restoreState()
+    memberart._break_h(c, sx - pw * sc / 2, sx + pw * sc / 2, yb - T - hp * sc - 1)
+    W1, W2 = dm["W1"], dm["W2"]
+    _steel_strip(c, sx - max(W1, W2) * sc / 2 - T, yb - T, (max(W1, W2) + 0) * sc + 2 * T, T, cut=True)
+    for sg in (-1, 1):
+        _steel_strip(c, sx + sg * W1 * sc / 2 + (0 if sg > 0 else -T), yb, T, H1 * sc, cut=True)
+        _steel_strip(c, sx + sg * W2 * sc / 2 + (0 if sg > 0 else -T), yb - T - H2 * sc, T, H2 * sc, cut=True)
+    if bc:
+        c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
+        for sg in (-1, 1):
+            for k in range(2):
+                yn_ = yb + H1 * sc * (0.35 + 0.3 * k); c.line(sx + sg * W1 * sc / 2, yn_, sx + sg * (W1 / 2 - 2.0) * sc, yn_)
+                yn_ = yb - T - H2 * sc * (0.35 + 0.3 * k); c.line(sx + sg * W2 * sc / 2, yn_, sx + sg * (W2 / 2 - 2.0) * sc, yn_)
+        c.setDash()
+    else:
+        db = dm["bolt"] * sc
+        memberart.bolt_side(c, sx - W1 * sc / 2 - T, yb + H1 * sc * 0.5, sx + W1 * sc / 2 + T, yb + H1 * sc * 0.5, db)
+        memberart.bolt_side(c, sx - W2 * sc / 2 - T, yb - T - H2 * sc * 0.5, sx + W2 * sc / 2 + T, yb - T - H2 * sc * 0.5, db)
+    if c.stringWidth(f"W1 {_mixed(W1)}", FR, 6) > W1 * sc - 4:       # narrow: the figure beside the dimension
+        memberart._dim_h(c, sx - W1 * sc / 2, sx + W1 * sc / 2, ytop + 10, "", FR, ext_from=ytop)
+        c.setFont(FR, 6); c.setFillColorRGB(0.23, 0.28, 0.34); c.drawString(sx + W1 * sc / 2 + 4, ytop + 8, f"W1 {_mixed(W1)}")
+    else:
+        memberart._dim_h(c, sx - W1 * sc / 2, sx + W1 * sc / 2, ytop + 10, f"W1 {_mixed(W1)}", FR, ext_from=ytop)
+    memberart._dim_h(c, sx - W2 * sc / 2, sx + W2 * sc / 2, yb - T - hp * sc - 10, f"W2 {_mixed(W2)}", FR, ext_from=yb - T - hp * sc)
+    _small(c, sx, yb - T - hp * sc - 28, "section across the beam, to scale (in.)")
+    tx = sx + max(W1, W2) * sc / 2 + 55
+    _leader_notes(c, [(yb + bd * sc * 0.85, sx + bw * sc * 0.25, f"beam {_mixed(bw)} x {_mixed(bd)}"),
+                      (yb + H1 * sc * 0.8, sx + W1 * sc / 2 + T, f"{d['model']}, {d['ga']} ga"),
+                      (yb - T / 2, sx + max(W1, W2) * sc / 2 - 2, "cap plate"),
+                      (yb - T - H2 * sc * 0.5, sx + W2 * sc / 2 + T + 3, d["bolt_txt"] or "nails, as the catalog lists"),
+                      (yb - T - hp * sc * 0.75, sx - pw * sc * 0.2, f"post {_mixed(pw)} across the beam, broken off")], tx)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawCentredString(LM + 225, ytop + 22, d["model"] + (", beams spliced over the post" if d.get("spliced") else ""))
+    return yb - T - hp * sc - 36
 
 
 def _lumber_dims(label):

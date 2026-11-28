@@ -143,3 +143,97 @@ def test_hurricane_tie_screen(tmp_path):
     with pytest.raises(calc.Missing):
         calc.build("hurricane_tie", dict(v, uplift="", F1="", F2=""), proj)
     calcsheet.simple_pdf(s, str(tmp_path / "ht.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+
+
+def _page_text(page):
+    import subprocess
+    from pathlib import Path
+    pdf = Path("/mnt/user-data/uploads/StrucutralDesign/Simpson/C-C-2026.pdf")
+    if not pdf.exists():
+        pytest.skip("catalog not staged in this session")
+    return subprocess.run(["pdftotext", "-layout", "-f", str(page), "-l", str(page), str(pdf), "-"], capture_output=True, text=True).stdout
+
+
+def test_post_base_rows_against_the_catalog_page():
+    """Every post base row (p. 77, copied by hand into simpson.POST_BASES) is found on one line of the page text: model, post, gauges,
+    W, L, H, anchor, nails, then uplift (nails), uplift (bolts) and download."""
+    import re
+    t = _page_text(77)
+    f = lambda v: "—" if v is None else f"{v:,}"
+    for r in simpson.POST_BASES:
+        j = lambda ps: r"\s+".join(re.escape(p).replace(r"\ ", r"\s+") for p in ps)
+        tail = [r[7], r[8]] + ([str(r[11][0]), r[11][1]] if r[11] else ["—", "—"]) + [f(v) for v in (r[9], r[10], r[12])]
+        hb = r"\s+(?:—|\d+\s+\d+/\d+)\s+"                           # the HB column (not used), a dash or a mixed number
+        pat = j([r[0], r[1], str(r[2]), str(r[3]), r[4], r[5], r[6]]) + hb + j(tail)
+        assert re.search(pat, t), r[0]
+
+
+def test_column_cap_rows_against_the_catalog_pages():
+    """CC rows (p. 101): the five loads in order on the model's line; BC rows (p. 93): dimensions, nails, uplift and lateral."""
+    import re
+    t = _page_text(101)
+    for r in simpson.COLUMN_CAPS:
+        pat = re.escape(r[0]).replace(r"\ ", r"\s+") + r"\s.*?" + r"\s+".join(re.escape(f"{v:,}") for v in r[9:14])
+        assert re.search(pat, t), r[0]
+    t = _page_text(93)
+    for r in simpson.BC_CAPS:
+        parts = list(r[:9])
+        pat = r"\s+".join(re.escape(p).replace(r"\ ", r"\s+") for p in parts) + r"\s+—\s+" + r"\s+".join(re.escape(f"{v:,}") for v in r[9:11])
+        assert re.search(pat, t), r[0]
+
+
+def test_post_base_choice():
+    """4x6, download 9,000, uplift 2,100, bolts: ABA46Z and ABW46Z have no bolted values; ABU46Z bolted 2,265 / 12,520 passes.
+    With nails, uplift 2,100: ABA46Z 870 and ABW46Z 845 fail, ABU46Z 2,405 passes. ABU88Z has no bolted value."""
+    h = simpson.post_base("4x6", "first that works", 9000, 2100, "bolts")
+    assert h["base"][0] == "ABU46Z" and h["rows"] == [("download", 9000, 12520), ("uplift", 2100, 2265)]
+    assert simpson.post_base("4x6", "first that works", 9000, 2100, "nails")["rows"][1][2] == 2405
+    assert simpson.post_base("4x4", "first that works", 5000)["base"][0] == "ABA44Z"           # 5,000 <= 5,925
+    with pytest.raises(simpson.SimpsonError):
+        simpson.post_base("8x8", "ABU88Z", 1000, 500, "bolts")
+    with pytest.raises(simpson.SimpsonError):
+        simpson.post_base("4x4", "ABU46Z", 1000)                                              # wrong post
+    with pytest.raises(simpson.SimpsonError):
+        simpson.post_base("4x4", "first that works", 0, 3000)                                 # nothing carries 3,000 uplift
+
+
+def test_column_cap_checks():
+    """CC66 for a 5-1/2 in. beam on a 5-1/2 in. post (p. 101): CC64 is for a 3-5/8 in. post, so CC66 is the first that fits; download
+    30,250, uplift 5,545; H1 6-1/2 against the beam depth. ECC: no uplift value. Splice (p. 73 note l): 12,032.5 each and 2 x the other.
+    BC6 (p. 93): 600 / 1,185 + 700 / 1,825 = 0.890."""
+    h = simpson.column_cap("CC", "first that works", 22000, 3000, beam_width=5.5, post_width=5.5, beam_depth=11.25)
+    assert h["model"] == "CC66" and h["rows"][:2] == [("download", 22000, 30250), ("uplift", 3000, 5545)]
+    assert h["rows"][2][1:] == (6.5, 11.25)
+    assert simpson.column_cap("ECCU", "ECCU44", 5000, 1200, beam_depth=7.25)["rows"][1] == ("uplift", 1200, 1850)
+    with pytest.raises(simpson.SimpsonError):
+        simpson.column_cap("ECC", "ECC44", 5000, 1200)
+    s = simpson.column_cap("CC", "CC46", 9000, spliced=True, download2=7000)
+    assert [r[2] for r in s["rows"]] == [24065 / 2, 14000, 24065 / 2, 18000]
+    with pytest.raises(simpson.SimpsonError):
+        simpson.column_cap("CC", "CC46", 9000, 500, spliced=True, download2=7000)            # uplift does not apply at a splice
+    b = simpson.column_cap("BC", "first that works", uplift=600, lateral=700, beam_width=5.5, post_width=5.5)
+    assert b["model"] == "BC6" and b["rows"][-1][1] == pytest.approx(600 / 1185 + 700 / 1825)
+    with pytest.raises(simpson.SimpsonError):
+        simpson.column_cap("BC", "BC6", 5000)                                                 # no download in the BC table
+    with pytest.raises(simpson.SimpsonError):
+        simpson.column_cap("BC", "BC6", uplift=100, spliced=True)                             # note 4
+    assert simpson.cap_models("ECCU")[2] == "ECCU44" and simpson.cap_models("ECC")[0] == "ECC3 1/4-4"
+
+
+def test_post_base_and_cap_screens(tmp_path):
+    from strukit import calcsheet
+    proj = dict(job="t", name="t", method="ASD")
+    v = dict(mark="PB1", post="4x6", model="first that works", fastening="bolts", download="9000", uplift="2100", load_source="post P1")
+    s = calc.build("post_base", v, proj)[0]
+    assert all(r.status == "OK" for r in s.rows)
+    calcsheet.simple_pdf(s, str(tmp_path / "pb.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+    with pytest.raises(calc.Missing):
+        calc.build("post_base", dict(v, download="", uplift=""), proj)
+    for v in (dict(mark="CP1", series="CC", model="first that works", beam_width="5.5", post_width="5.5", beam_depth="11.25",
+                   download="22000", uplift="3000", load_source="beam B1"),
+              dict(mark="CP2", series="ECCU", model="ECCU44", beam_depth="7.25", download="5000", uplift="1200", load_source="beam B2"),
+              dict(mark="CP3", series="BC", model="BC6", uplift="600", lateral="700", load_source="beam B3"),
+              dict(mark="CP4", series="CC", model="CC46", beam_depth="9.25", download="9000", download2="7000", spliced="yes", load_source="B4")):
+        s = calc.build("column_cap", v, proj)[0]
+        assert all(r.status == "OK" for r in s.rows), v["mark"]
+        calcsheet.simple_pdf(s, str(tmp_path / f"{v['mark']}.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")

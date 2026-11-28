@@ -11,6 +11,8 @@ Updated 2026-11-27 03:00 MST. Build **0.281.0**, 733 tests passing; `main` and `
 
 **2026-11-26 run:** 0.248.0 to 0.256.0 in the morning (see the closing check-in entries below). After Zach's reply (all conservative readings ruled; diaphragm openings by option (a); keep a missing references log; continue the list): 0.257.0 diaphragm openings (force transfer turned flat, by hand), anchor rod strength the lower of 0.75 Fu Ab and Fu Ase everywhere, beta_w by the Commentary formula, missing references log in `docs/REFERENCES.md`; 0.257.1 opening picture for narrow regions; 0.258.0 single-angle beam deflection about the principal axes (Commentary F10.2); 0.259.0 single angles with axial plus transverse load (H2); 0.260.0 stiffened girders panel by panel (G.8A / G.8B) and bearing at the supports with bearing stiffeners; 0.261.0 different top and bottom flange plates on the beam to HSS moment joint. Then (Zach: "finish all 3"): 0.262.0 girders (end-panel tension field action G2.3, continuous built-up girders, bearing under point loads); 0.263.0 stiffened seats on HSS faces and the bolted angle leg check; 0.264.0 single angles over several spans and overhangs, on the Steel Beam screen and in the 3D frame. Then (Zach 15:05: readings ruled, keep going): 0.265.0 flange-to-web welds (Example F.14); 0.266.0 pictures (HSS column, wood connections, angle elevation); 0.267.0 / 0.267.1 angles checked from the 3D frame forces. Then (Zach: readings ruled, keep going): 0.268.0 quick-start column Fy source and the angle's horizontal leg direction; 0.269.0 several openings in one wood diaphragm. Then (Zach: go): 0.270.0 two stiffeners on a stiffened seat to an HSS face; 0.271.0 footing pictures (isolated, continuous, with moment) to the visual standard. Then (Zach: do it): 0.272.0 guard and stair stringer pictures; 0.273.0 moment frame pictures. Then (Zach: keep going): 0.274.0 FTAO walls with openings of different clear heights flagged (T555 does not balance; method waits on Malone et al.); 0.275.0 shear wall with openings elevation drawn as built. Then (Zach: yes to both): 0.276.0 hold-down on the perforated wall; anchor bolts and plate washers on all three wall screens. Then (Zach: do the unchecked items, then Simpson): 0.277.0 anchor bolts in the concrete (ACI 318 Ch. 17) and the perforated wall plate uplift; 0.278.0 Simpson face-mount joist hangers. Then (Zach: do your next; apply the IBC exemption): 0.279.0 IBC 1905.1.8 sill plate anchor bolt exception; 0.280.0 Simpson top-flange hangers; 0.281.0 Simpson hurricane ties.
 
+**2026-11-27 run:** morning check-in; Zach ruled the five waiting readings and said keep going on the list. 0.282.0 Simpson post bases and column caps.
+
 **Where everything lives**
 - Code, tests, stored job projects (`tests/data`) and their builders (`jobs/`): GitHub `ThatcherEngineering/StruKit`.
 - Rules for every session: `CLAUDE.md` in the repo. Rulings: `docs/STRUKIT-RULINGS.md`. This log: `docs/STRUKIT-BUILD-LOG.md`. Which reference file is which, and the pages used: `docs/REFERENCES.md`. The rulings and this log are also in the Project as `claude/STRUKIT-RULINGS.md` and `claude/STRUKIT-BUILD-LOG.md`; keep both in step.
@@ -19,19 +21,12 @@ Updated 2026-11-27 03:00 MST. Build **0.281.0**, 733 tests passing; `main` and `
 - Releasing: `tools/release.sh` runs the suite twice (about 5 min each); from a session with a 10-minute command limit run it in the background (`nohup ... &`) and wait for "release branch now at build"; do not edit files until it ends (the release copies the working tree).
 - A scheduled session starts each weekday at 5:10 AM Denver time, reads these files and sends Zach one check-in with the Next list; it builds nothing until he says go. Before the session ends it updates this section and the Project copies.
 
-**Waiting for Zach's ruling** (applied conservatively meanwhile; details in the rulings file)
-- Hurricane ties in more than one direction (0.281.0): the catalog's unity equation (Option 1).
-- Anchor bolts in the concrete (0.277.0): ASD shear / 0.6 or / 0.7 to strength level; plate bending between bolts as a simple span. (The IBC sill-plate exception is ruled and applied, 0.279.0.)
-- Anchor bolt readings (0.276.0): each bolt alone, dry service, NDS 12.5.1 geometry taken as met, plate shear = largest segment or pier shear, the 400 plf washer rule without the 10d factor.
-- FTAO walls with openings of different clear heights flagged, not designed (0.274.0).
-- Two stiffeners on an HSS stiffened seat (0.270.0): R / 2 each, the pair also as one plate g + ts wide, the seat plate as a simple span under R at mid-span without the beam flange's help.
-- Everything through 0.269.0 is ruled (Zach 2026-11-26: a conservative reading of those available is acceptable).
-- Older items still in the rulings file under "Open (not ruled)".
+**Waiting for Zach's ruling:** none new. All five readings listed at the 2026-11-27 morning check-in were ruled as applied ("I agree with all 5"). Older items remain in the rulings file under "Open (not ruled)".
 
 **Needed from Zach (do not build without it):** the missing references log in `docs/REFERENCES.md` (DG7, MHI/CMAA, DG9, a published diaphragm-opening example, 16th Ed. Manual, ASCE 7-16, AISI S100, the HSS rafter-on-cap method, a readable TMS 402, ASABE EP484/486, his wind drift limit).
 
 **Next, in order**
-1. Simpson products, continued (catalog C-C-2026 on file; face-mount and top-flange hangers, hurricane ties done 0.278.0 to 0.281.0): post bases and column caps, straps (MST, LSTA, CS), angles (A35, L); later the top-flange nailer table, SCL and I-joist hangers. Same pattern: tables read by a tool and checked both ways against the page text, hand-copied rows as tests.
+1. Simpson products, continued (catalog C-C-2026 on file; face-mount and top-flange hangers, hurricane ties, post bases and column caps done 0.278.0 to 0.282.0): straps (MST, LSTA, CS), angles (A35, L); other bases and caps (CBSQ, MPBZ, CCQ, AC, LCE); later the top-flange nailer table, SCL and I-joist hangers. Same pattern: tables read by a tool and checked both ways against the page text, hand-copied rows as tests.
 2. IBC 2021: confirm the 1905.1.8 wording against the code text when a copy is on file.
 3. Stiffened seats on HSS: confirm the yield-line checks when a published procedure is supplied (single and double stiffeners built).
 4. Picture pass: footings, guards, stair stringers and frames done (0.271.0 to 0.273.0). Any sheet not yet looked at against the visual standard in this pass can be listed on request.
@@ -1249,3 +1244,27 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   stud, the rafter seated on the plate, the tie on its face with its nails) with the loads.
 - **Validation:** every row's six loads found in order on p. 300 by a test that reads the page; the choice and the unity equation by hand
   (`tests/test_simpson.py`). Reading applied (Option 1): in the rulings file.
+
+## 2026-11-27 MST — 0.282.0 Simpson post bases and column caps (Simpson products, part 4)
+- Zach 2026-11-27 (morning reply): "I agree with all 5 of your conservative rulings. Keep going on the list." The five readings are moved
+  to rulings in `STRUKIT-RULINGS.md`.
+- **New screen: Post Base (Simpson Strong-Tie).** ABA / ABU / ABW adjustable standoff post bases, post installation, DF/SP, catalog
+  C-C-2026 p. 77 (29 rows copied into `simpson.POST_BASES`): post size, base by model or "first that works", nails or (ABU, where the table
+  gives them) through bolts; download against the (100) value (not increased, note 2), uplift against the (160) value with nails or
+  bolts. General notes p. 73 (full bearing, standoff on top of the concrete, top of post held laterally) stated as assumptions; the post,
+  the anchor and the concrete listed as not checked. Picture: elevation at the strap face and section through the post centre (concrete
+  stippled and broken off, U base, nut and washer on the anchor, standoff plate, straps cut, post with grain broken off, bolts with heads
+  and nuts or nails), L, H, W and the 1 in. standoff dimensioned.
+- **New screen: Column / Post Cap (Simpson Strong-Tie).** CC, ECC, ECCU column caps (p. 101, 33 rows in `simpson.COLUMN_CAPS`) and BC post
+  caps (p. 93, 8 rows in `simpson.BC_CAPS`), DF/SP. CC series: download (100), uplift (160; ECC has none: refused, use ECCU), beam depth at
+  least H1 (note 7); a CC at a beam splice (p. 73 note l): each beam not over half the table download and not over 2 x the other beam,
+  uplift and lateral refused. BC: uplift and lateral (160), no download value (refused; the beam bears on the post), splices refused
+  (note 4), uplift with lateral by the unity equation (p. 23 note e sends every connector to p. 289; Option 1, ruled 2026-11-27). "First
+  that works" matches the typed beam and post widths to the table. Picture: elevation along the beam (beam broken off, ending on an end
+  cap, or two beams at a splice; side plates L x H1 with the bolts 1-1/4 in. from the ends; post strap 2-3/4 or 3 in. wide with bolts at
+  4 and 7 in., p. 100) and section across the beam (beam in end grain, straps and cap plate cut, bolts with heads and nuts or nails),
+  L, H1, W1, W2 dimensioned.
+- **Validation:** every row of the three tables found in order in the page text by tests that read pp. 77, 93 and 101; the choices,
+  splice limits, refusals and unity sum by hand (`tests/test_simpson.py`). Browser check: both screens load and solve, no page errors.
+- Not built: the ABU beam installation table (p. 76), the other bases (CBSQ, CB, MPBZ moment base, PB, EPB) and caps (CCQ, ECCQ, AC, LCE,
+  PCZ, CCC/CCT multi-beam caps), SPF/HF values (these tables are DF/SP only), the post's own allowable load (note 9).

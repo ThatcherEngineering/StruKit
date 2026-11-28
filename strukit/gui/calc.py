@@ -1390,6 +1390,29 @@ FORMS = {
                 F("F2", "Lateral F2, across the plate, ASD", unit="lb", required=False),
                 F("load_source", "Where the loads come from", "text", help="for example: rafter R1 uplift, wind C&C")],
         tables=[]),
+    "post_base": dict(
+        title="Post Base (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="PB",
+        fields=[F("post", "Post", "select", options=simpson.post_base_posts(), help="nominal size (catalog p. 77)"),
+                F("model", "Post base", "select", options=["first that works"] + simpson.post_base_models(), help="ABA, ABU or ABW standoff bases (catalog p. 77)"),
+                F("fastening", "Fasteners to the post", "select", options=["nails", "bolts"], help="bolts only where the table gives them (ABU)"),
+                F("download", "Download, ASD", unit="lb", required=False),
+                F("uplift", "Uplift, ASD", unit="lb", required=False),
+                F("load_source", "Where the loads come from", "text", help="for example: post P1 reaction")],
+        tables=[]),
+    "column_cap": dict(
+        title="Column / Post Cap (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="CP",
+        fields=[F("series", "Cap series", "select", options=simpson.CAP_SERIES, help="CC, ECC, ECCU column caps (p. 101); BC post caps (p. 93)"),
+                F("model", "Cap", "text", help="model as the catalog names it, for example CC66, ECCU44, BC6; or: first that works"),
+                F("beam_width", "Beam width (actual)", unit="in", required=False, help="needed to choose a cap"),
+                F("post_width", "Post width across the beam (actual)", unit="in", required=False, help="needed to choose a cap"),
+                F("beam_depth", "Beam depth (actual)", unit="in", required=False, help="CC, ECC, ECCU: at least H1 (p. 101 note 7)"),
+                F("download", "Download, ASD", unit="lb", required=False),
+                F("uplift", "Uplift, ASD", unit="lb", required=False),
+                F("lateral", "Lateral, ASD (BC only)", unit="lb", required=False),
+                F("spliced", "Beams spliced over the post (CC)", "select", options=["no", "yes"], required=False),
+                F("download2", "Download of the second spliced beam, ASD", unit="lb", required=False),
+                F("load_source", "Where the loads come from", "text", help="for example: beam B2 reaction")],
+        tables=[]),
     "bolted_connection": dict(
         title="Bolted Connection", code="NDS 2018", mark="BC",
         fields=[F("D", "Bolt diameter", "select", options=["1/2", "5/8", "3/4", "7/8", "1"], unit="in"),
@@ -3045,6 +3068,23 @@ def _build(kind, values, project):
                                             end_grain=bool(yes(r.text("end_grain", False))), edge=r.num("edge", False), end=r.num("end", False),
                                             spacing=r.num("spacing", False), steel=st_, steel_source=r.text("steel_source", False) or "",
                                             steel_side=r.text("side_kind", False) == "steel", bearing=brg), "simple", {}
+    if kind == "post_base":
+        post, mdl, fa, src = r.text("post"), r.text("model"), r.text("fastening"), r.text("load_source")
+        dl, up = r.num("download", False) or 0.0, r.num("uplift", False) or 0.0
+        if not (dl or up):
+            r.miss.append("Give the download or the uplift")
+        r.done()
+        return ws_more.post_base_sheet(mark, post, mdl, dl, up, fa, src), "simple", {}
+    if kind == "column_cap":
+        ser, mdl, src = r.text("series"), r.text("model"), r.text("load_source")
+        dl, up, lat = r.num("download", False) or 0.0, r.num("uplift", False) or 0.0, r.num("lateral", False) or 0.0
+        dl2 = r.num("download2", False) or 0.0
+        spl = bool(yes(r.text("spliced", False)))
+        if not (dl or up or lat or dl2):
+            r.miss.append("Give the download, uplift or lateral load")
+        r.done()
+        return ws_more.column_cap_sheet(mark, ser, mdl, dl, up, lat, r.num("beam_width", False), r.num("post_width", False),
+                                        r.num("beam_depth", False), spl, dl2, src), "simple", {}
     if kind == "hurricane_tie":
         mdl, sp, src = r.text("model"), r.text("species"), r.text("load_source")
         up, f1, f2 = r.num("uplift", False) or 0.0, r.num("F1", False) or 0.0, r.num("F2", False) or 0.0

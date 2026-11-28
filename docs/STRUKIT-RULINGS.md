@@ -72,38 +72,6 @@ Dated entries. Each is Zach's own decision; open questions live in the proposal 
 Every number cites its source; nothing assumed silently; each module validated against an independent reference before use; flags hard or accepted with reason and date; jurisdiction data in a table; same run contract as HydroKit; calc-package-quality reports; private GitHub repo from day one; StruKit chat writes no LISP and never writes to drawings; ambiguous provisions shown both ways for Zach to rule (shown to Zach in chat, not on the sheet; see 2026-11-23). Every picture is drawn to a high visual detail standard: members and connections look like the real thing (see 2026-11-26 02:26).
 
 ## Open (not ruled)
-- **Hurricane ties loaded in more than one direction (0.281.0, tell Zach):** the catalog (p. 289) allows Option 1, the unity
-  equation U/Ua + F1/F1a + F2/F2a <= 1.0, "for all connectors", or Option 2, each load not over 0.75 of its allowable, for some ties.
-  StruKit uses Option 1 (it applies to every tie); neither is the more conservative in every case. The "uplift with 0.131 x 1-1/2
-  nails" column and the stud-to-bottom-plate values (note 3) are not used; one tie per connection. Zach has not ruled.
-- **Anchor bolts in the concrete and perforated wall plate uplift (0.277.0, tell Zach):**
-  - ASD wall shear is brought to strength level by / 0.6 (wind, 0.6 W) or / 0.7 (seismic, 0.7 E); seismic SDC C to F also x Omega-0
-    (ACI 318-19 17.10.6.3(c)), typed in with its source.
-  - Concrete breakout in shear is always computed (2 Vcb parallel to the edge, 17.7.2.1(c)), with each bolt's projected area limited to
-    half the spacing each way. The sill-plate exception: RULED by Zach 2026-11-27 ("Yes apply exemption"): IBC 2021 Sect. 1905.1.8, exception 1
-    to ACI 318-19 17.10.6.2, applied for wind and earthquake when every condition is met (bolt not over 5/8 in., embedment at least
-    7 in., at least 1-3/4 in. from the edge parallel to the plate, at least 15 diameters from the concrete end, 2x or 3x plate):
-    breakout and pryout in shear are not computed and 17.10.6.3 is deemed satisfied; the bolt steel is still checked. The wording
-    was read from the S. K. Ghosh Associates reproduction of 1905.1.8 (the ICC text could not be fetched); the IBC stays on the
-    missing list. Without the exception (any condition not met) a 5/8 in. bolt 1-3/4 in. from the face of a 2,500 psi stem wall
-    at 48 in. flags above about 200 plf ASD wind.
-  - Bottom plate bending between bolts under the perforated wall uplift t = v max is a simple span, M = t s^2 / 8 (the higher of the
-    simple and continuous readings).
-  Zach has not ruled.
-- **Anchor bolts in the wall bottom plate (0.276.0, tell Zach):** each bolt alone (no group action, Cg = 1.0), dry service, end
-  distance and spacing taken as meeting NDS 12.5.1 (stated on the sheet); the bolt by the NDS 12.3 yield equations on the Table 12E
-  basis (concrete Fe 7,500 psi, 6 in. embedment); the plate shear is the largest segment or pier shear (perforated: v max). The
-  SDPWS 400 plf washer-edge rule uses the Table 4.3A nominal shear times the G factor per side, without the 10d 0.92 factor (the
-  higher value, so the rule applies sooner). Zach has not ruled.
-- **Force-transfer walls with openings of different clear heights (0.274.0, tell Zach):** APA T555 balances only when the openings
-  have one clear height (sills may differ). With different heights the shear lines beside the openings do not net zero, so StruKit
-  now flags the wall ("openings of one clear height") instead of reporting it OK. The transfer diaphragm method (Malone, Breneman and
-  Rice, 2nd Ed. 2022, Sect. 10.3) covers it; it waits on that book or legible worked examples. Zach has not ruled.
-- **Two stiffeners on a stiffened seat to an HSS face (0.270.0, tell Zach at the check-in):** DG24 Sect. 5.2.6 names double stiffeners
-  without a procedure. StruKit gives each stiffener R / 2 at 0.8 W (DG24 Eq. 2-6 and punching under each; each T-weld for R / 2), also
-  checks the pair as one plate g + ts wide carrying R, keeps both on the flat, and checks the seat plate as a simple span g under R at
-  mid-span (AISC 360-22 F11) without the beam flange's help. The last check is the conservative side (a stiff beam flange bridging the
-  stiffeners would relieve the plate) and often sets a thick seat plate. Zach has not ruled.
 - Proposal section 8, items 2-3 (ASD as default; which schedules first). On the StruKit screens the design method is a required choice per project; nothing defaults.
 - Findings section 3, items 1-7 (`STRUKIT-JURIS-FINDINGS-2026-11-20.md`).
 - Which checks print at the member on the sheets (size and mark only, or D/C too).
@@ -528,3 +496,52 @@ yielding and crippling under the wheels and continuous runway beams; the rest wa
   reading (H2-1 terms added, the weaker moment sign, negative beta_w, Cb = 1.0). Both are the conservative side of their alternatives
   (the shear at the load, kds = 1.5; tracking the signs at the toes). Standing: a reading is acceptable to Zach when it is the conservative
   one of the readings available; still record each and tell him.
+
+## 2026-11-27 morning check-in — Zach's ruling (do not ask again)
+- **"I agree with all 5 of your conservative rulings. Keep going on the list."** Ruled as applied (the texts below were under "Open"
+  until now):
+  1. Hurricane ties loaded in more than one direction: the catalog's unity equation U/Ua + F1/F1a + F2/F2a <= 1.0 (p. 289, Option 1),
+     one tie per connection; the "uplift with 0.131 x 1-1/2 nails" column and the stud-to-bottom-plate values not used (0.281.0).
+  2. Anchor bolts in the concrete (0.277.0): ASD wall shear to strength level by / 0.6 (wind) or / 0.7 (seismic), x Omega-0 for SDC C
+     to F as typed; breakout in shear computed unless the IBC 1905.1.8 exception applies (ruled earlier); bottom plate bending between
+     bolts under the perforated wall uplift as a simple span, M = t s^2 / 8.
+  3. Anchor bolts in the wall bottom plate (0.276.0): each bolt alone (Cg = 1.0), dry service, NDS 12.5.1 geometry taken as met (stated
+     on the sheet), NDS 12.3 yield equations on the Table 12E basis, plate shear = the largest segment or pier shear, the SDPWS 400 plf
+     washer rule without the 10d 0.92 factor.
+  4. FTAO walls with openings of different clear heights: flagged, not designed, until the transfer diaphragm reference is on file (0.274.0).
+  5. Two stiffeners on an HSS stiffened seat (0.270.0): R / 2 each, the pair also as one plate g + ts wide, the seat plate as a simple
+     span under R at mid-span without the beam flange.
+
+Texts as they stood under "Open" when ruled:
+- **Hurricane ties loaded in more than one direction (0.281.0):** the catalog (p. 289) allows Option 1, the unity
+  equation U/Ua + F1/F1a + F2/F2a <= 1.0, "for all connectors", or Option 2, each load not over 0.75 of its allowable, for some ties.
+  StruKit uses Option 1 (it applies to every tie); neither is the more conservative in every case. The "uplift with 0.131 x 1-1/2
+  nails" column and the stud-to-bottom-plate values (note 3) are not used; one tie per connection. (Ruled 2026-11-27.)
+- **Anchor bolts in the concrete and perforated wall plate uplift (0.277.0):**
+  - ASD wall shear is brought to strength level by / 0.6 (wind, 0.6 W) or / 0.7 (seismic, 0.7 E); seismic SDC C to F also x Omega-0
+    (ACI 318-19 17.10.6.3(c)), typed in with its source.
+  - Concrete breakout in shear is always computed (2 Vcb parallel to the edge, 17.7.2.1(c)), with each bolt's projected area limited to
+    half the spacing each way. The sill-plate exception: RULED by Zach 2026-11-27 ("Yes apply exemption"): IBC 2021 Sect. 1905.1.8, exception 1
+    to ACI 318-19 17.10.6.2, applied for wind and earthquake when every condition is met (bolt not over 5/8 in., embedment at least
+    7 in., at least 1-3/4 in. from the edge parallel to the plate, at least 15 diameters from the concrete end, 2x or 3x plate):
+    breakout and pryout in shear are not computed and 17.10.6.3 is deemed satisfied; the bolt steel is still checked. The wording
+    was read from the S. K. Ghosh Associates reproduction of 1905.1.8 (the ICC text could not be fetched); the IBC stays on the
+    missing list. Without the exception (any condition not met) a 5/8 in. bolt 1-3/4 in. from the face of a 2,500 psi stem wall
+    at 48 in. flags above about 200 plf ASD wind.
+  - Bottom plate bending between bolts under the perforated wall uplift t = v max is a simple span, M = t s^2 / 8 (the higher of the
+    simple and continuous readings).
+  (Ruled 2026-11-27.)
+- **Anchor bolts in the wall bottom plate (0.276.0):** each bolt alone (no group action, Cg = 1.0), dry service, end
+  distance and spacing taken as meeting NDS 12.5.1 (stated on the sheet); the bolt by the NDS 12.3 yield equations on the Table 12E
+  basis (concrete Fe 7,500 psi, 6 in. embedment); the plate shear is the largest segment or pier shear (perforated: v max). The
+  SDPWS 400 plf washer-edge rule uses the Table 4.3A nominal shear times the G factor per side, without the 10d 0.92 factor (the
+  higher value, so the rule applies sooner). (Ruled 2026-11-27.)
+- **Force-transfer walls with openings of different clear heights (0.274.0):** APA T555 balances only when the openings
+  have one clear height (sills may differ). With different heights the shear lines beside the openings do not net zero, so StruKit
+  now flags the wall ("openings of one clear height") instead of reporting it OK. The transfer diaphragm method (Malone, Breneman and
+  Rice, 2nd Ed. 2022, Sect. 10.3) covers it; it waits on that book or legible worked examples. (Ruled 2026-11-27.)
+- **Two stiffeners on a stiffened seat to an HSS face (0.270.0):** DG24 Sect. 5.2.6 names double stiffeners
+  without a procedure. StruKit gives each stiffener R / 2 at 0.8 W (DG24 Eq. 2-6 and punching under each; each T-weld for R / 2), also
+  checks the pair as one plate g + ts wide carrying R, keeps both on the flat, and checks the seat plate as a simple span g under R at
+  mid-span (AISC 360-22 F11) without the beam flange's help. The last check is the conservative side (a stiff beam flange bridging the
+  stiffeners would relieve the plate) and often sets a thick seat plate. (Ruled 2026-11-27.)
