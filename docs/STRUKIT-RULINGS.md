@@ -617,3 +617,17 @@ Texts as they stood under "Open" when ruled:
 - VPA (p. 181): the lateral loads F1 and F2 are taken with the uplift and, separately, with the download; each case combined by the unity
   equation (p. 23 note e, p. 289 Option 1, as ruled for ties and angles).
 - HHRC (p. 180): the catalog gives the 45 degree downward slope for the HRC series; the HHRC is held to the same 45 degrees.
+
+## 2026-11-28 — Zach: pilasters (free-standing and tied into a stem wall), soil against the footing and stem wall resists the thrust, hairpins or tie beams as needed; a stem wall design that also works with no footing or over voids between footings. "You have two hours to work uninterrupted ... ask at the end."
+
+## 2026-11-28, stem wall (0.300.0), applied (not ruled)
+- ACI 318-19 Ch. 11 minimum wall reinforcement (Table 11.6.1) and bar spacing (11.7.2.1) are applied to stem walls (IBC 1807.1.6
+  prescriptive foundation walls are not on file).
+- A wall spanning between footings or piers over voids: a continuous beam on knife-edge supports at the support centerlines, no soil
+  support between them; shear taken at the centerline (not at d from the face).
+- Its bottom cover is taken as cast against and permanently in contact with ground (3 in.), the void form being gone in service.
+- Unbalanced backfill on a wall braced at its top: pinned at the base and at the brace (the largest span moment); the base moment of a
+  partly fixed base is not taken. A wall not braced at its top (a cantilever retaining wall) is refused until the retaining wall
+  checks are built.
+- A point load on a wall bearing directly on soil (no footing) is refused: the spread of a point load into the soil is not built.
+- Nominal maximum aggregate 3/4 in. unless entered (clear spacing of bars, 25.2.1).

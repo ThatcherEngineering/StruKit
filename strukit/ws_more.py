@@ -7319,3 +7319,104 @@ def rafter_connector_sheet(mark, product, model, species, width, pitch, slope, d
     sheet.blocks.append(dict(title="Connector", head="Connector", picture=pic))
     sheet.rafter_conn = h
     return sheet
+
+
+STEM_MODES = {"on a continuous footing": "footing", "bearing on soil, no footing": "soil",
+              "spanning between footings or piers (voids below)": "spans"}
+
+
+def stem_wall_sheet(mark, support, t, H, fc, fy, conc_pcf, cover, exposure, loads, strength, service, *, span_ft=None, spans=None,
+                    left=0.0, right=0.0, n_bot=0, bar_bot=None, n_top=0, bar_top=None, st_bar=None, st_legs=2, st_s=None,
+                    q_allow=None, soil_source="", plain=False, bar_v=None, s_v=None, v_at="center", bar_h=None, s_h=None,
+                    hb=0.0, efp=0.0, surcharge=0.0, efp_source="", braced=True, cast_against_soil=False, cover_bot=None, dagg=0.75):
+    """Concrete stem wall (stemwall.check): on a continuous footing, bearing on soil with no footing, or spanning between footings
+    or piers over voids; out-of-plane unbalanced backfill on a wall braced at its top. ACI 318-19, strength design."""
+    from . import stemwall as sw
+    mode = STEM_MODES.get(support, support)
+    if mode == "soil" and not (soil_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the allowable soil bearing is blank")
+    if hb and not (efp_source or "").strip():
+        raise WorksheetError(f"{mark}: the source of the backfill pressure is blank")
+    st = [(c.name, c.factors, c.source) for c in strength]
+    se = [(c.name, c.factors, c.source) for c in service]
+    try:
+        r = sw.check(mode, t, H, fc, fy, conc_pcf, cover, exposure, loads=loads, strength=st, service=se, span_ft=span_ft, spans=spans,
+                     left=left, right=right, n_bot=n_bot, bar_bot=bar_bot, n_top=n_top, bar_top=bar_top, st_bar=st_bar, st_legs=st_legs,
+                     st_s=st_s, q_allow=q_allow, plain=plain, bar_v=bar_v, s_v=s_v, v_at=v_at, bar_h=bar_h, s_h=s_h, hb=hb, efp=efp,
+                     surcharge=surcharge, braced=braced, cast_against_soil=cast_against_soil, cover_bot=cover_bot, dagg=dagg)
+    except sw.StemWallError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    L = footing_line
+    sup_txt = {"footing": "on a continuous footing", "soil": "bearing directly on soil, no footing",
+               "spans": "spanning between footings or piers, voids below"}[mode]
+    info = [("Wall", f"{t:g} in. thick, {H:g} in. high ({H / 12:.2f} ft), {sup_txt}"),
+            ("Concrete", f"f'c = {fc:,.0f} psi, {conc_pcf:g} pcf, normalweight; fy = {fy:,.0f} psi"),
+            ("Wall bars", "plain concrete, no reinforcement" if plain else
+             f"vertical #{bar_v} at {s_v:g} in. " + ("at the center" if v_at == "center" else "near the tension face") + f"; horizontal #{bar_h} at {s_h:g} in."),
+            ("Cover", (f"bottom {cover_bot if cover_bot is not None else cover:g} in. clear; " if mode != "footing" else "") + f"sides and top {cover:g} in. clear; " + {"earth": "cast against and permanently in contact with ground",
+                                                 "weather": "exposed to weather or in contact with ground",
+                                                 "interior": "not exposed to weather or ground"}[exposure])]
+    if mode == "spans":
+        lay = r.values["layout"]
+        info.insert(1, ("Spans", lay.describe() + "; no soil support between the supports"))
+        info.insert(3, ("Grade beam bars", f"bottom ({n_bot}) #{bar_bot}, top ({n_top}) #{bar_top}"
+                        + (f"; #{st_bar} stirrups, {st_legs} legs, at {st_s:g} in." if st_bar and st_s else "; no stirrups")))
+    if mode == "soil":
+        info.append(("Soil", f"allowable bearing {q_allow:,.0f} psf ({soil_source.strip()})"))
+    if hb:
+        info.append(("Backfill", f"{hb:g} ft unbalanced, equivalent fluid pressure {efp:g} pcf" + (f" + {surcharge:g} psf surcharge" if surcharge else "")
+                     + f" ({efp_source.strip()}); wall braced at its top"))
+    load_lines = []
+    for ld in loads:
+        if ld["kind"] == "uniform":
+            rng = f" from {ld['x1_ft']:g} to {ld.get('x2_ft', '')} ft" if "x1_ft" in ld else ""
+            load_lines.append(f"{ld['case']:<3} uniform {ld['w']:,.0f} plf" + (f" to {ld['w2']:,.0f} plf" if ld.get("w2") is not None else "") + rng
+                              + (f"   ({ld['label']})" if ld.get("label") else ""))
+        else:
+            load_lines.append(f"{ld['case']:<3} point {ld['P']:,.0f} lb at {ld['x_ft']:g} ft" + (f"   ({ld['label']})" if ld.get("label") else ""))
+    combo_lines = [(c.name, c.source) for c in strength] + ([(c.name + " (service, soil)", c.source) for c in service] if mode == "soil" else [])
+    steps = [L(a, b_, u, s_, n) for a, b_, u, s_, n in r.lines]
+    rows = [Row(c.name, c.combo, c.demand, c.capacity, c.unit, c.source, c.note) for c in r.checks]
+    assume = ["Strength design by ACI 318-19 with the factored combinations listed; normalweight concrete (lambda = 1.0).",
+              "Compression bars are neglected in flexure." + (f" Nominal maximum aggregate {dagg:g} in." if mode == "spans" else "")]
+    notc = []
+    if mode == "spans":
+        assume += ["The wall spans between the footings or piers as a continuous beam on knife-edge supports at their centerlines; the voids "
+                   "(or soft soil) below give it no support. Shear is taken at the support centerline.",
+                   "Live load (cases L and Lr) on every arrangement of whole spans (ASCE/SEI 7-22 Sect. 4.3.3); snow by Sect. 7.5.1."]
+        notc += ["the footings or piers under the supports (the reactions are listed for their sheets)", "deflection (the depth check stands for it)",
+                 "development and splices of the bars", "torsion from loads off the wall centerline", "uplift or swell pressure on the wall"]
+    if mode == "soil":
+        assume.append("The wall bears on soil along its whole length; its bottom is its bearing width.")
+        notc += ["settlement", "frost depth and the minimum depth of the wall below grade"]
+    if mode == "footing":
+        notc.append("the continuous footing (its own sheet)")
+    if hb:
+        assume.append("The backfill pressure is resisted by the wall spanning vertically from its base to the floor or slab at its top, "
+                      "pinned at both; the lateral case is H in the combinations.")
+        notc.append("the floor or slab as the brace at the top of the wall, and its connection to the wall")
+    else:
+        notc.append("lateral soil pressure (no unbalanced backfill entered)")
+    notc += ["in-plane shear of the wall as a shear wall", "anchor bolts and the sill (their own sheets)"]
+    for n in r.notes:
+        assume.append(n)
+    title = "Stem Wall" + {"footing": "", "soil": ", Bearing on Soil", "spans": ", Spanning Between Supports"}[mode]
+    sheet = SimpleSheet(mark, title, "Wall", "LRFD", info, load_lines, combo_lines, "Calculation", steps, rows, assume, notc, picture=None)
+    if mode == "spans":
+        sheet.diagram = r.values["diagram"]
+        sheet.governing = r.values["diagram"]["combo"]
+        lay = r.values["layout"]
+        rl = []
+        for (kind_, nm), vals in r.values["reactions"].items():
+            rl.append(L(f"reactions, {kind_}, {nm}", " / ".join(f"{v:,.0f}" for v in vals[:-1]), "lb", "statics",
+                        "at the supports, left to right, every span loaded"))
+        sheet.blocks.append(dict(title="Support Reactions", head="Support Reactions", steps=rl))
+    sheet.blocks.append(dict(title="Wall", head="Wall", picture=("stem_wall", dict(
+        mode=mode, t=t, H=H, cover=cover, plain=plain, bar_v=bar_v, s_v=s_v, v_at=v_at, bar_h=bar_h, s_h=s_h, hb=hb, efp=efp,
+        n_bot=n_bot, bar_bot=bar_bot, n_top=n_top, bar_top=bar_top, st=bool(st_bar and st_s),
+        supports=(r.values["layout"].supports if mode == "spans" else None), total=(r.values["layout"].total if mode == "spans" else None),
+        loads=[dict(case=x["case"], kind=x["kind"], w=x.get("w"), w2=x.get("w2"), P=x.get("P"), x_ft=x.get("x_ft"),
+                    **({"x1_ft": x["x1_ft"], "x2_ft": x.get("x2_ft", r.values["layout"].total)} if "x1_ft" in x and mode == "spans" else {}))
+               for x in loads]))))
+    sheet.stem = r
+    return sheet

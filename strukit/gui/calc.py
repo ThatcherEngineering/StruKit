@@ -1406,6 +1406,38 @@ FORMS = {
                 F("ij_mat", "I-joist header: flange material", "select", options=simpson.IJ_FLANGE_MAT, required=False, help="blank = DF / LVL / LSL"),
                 F("load_source", "Where the loads come from", "text", help="for example: reaction of I-joist J3")],
         tables=[]),
+    "stem_wall": dict(
+        title="Stem Wall", code="ACI 318-19", mark="FW",
+        fields=[F("support", "Wall is", "select", options=["on a continuous footing", "bearing on soil, no footing", "spanning between footings or piers (voids below)"]),
+                F("t", "Wall thickness", unit="in"), F("H", "Wall height, bottom to top", unit="in"),
+                F("fc", "f'c", unit="psi"), F("fy", "fy", unit="psi"), F("conc_pcf", "Concrete weight", unit="pcf"),
+                F("cover", "Clear cover, sides and top", unit="in"),
+                F("cover_bot", "Clear cover, bottom (on soil or a void form)", unit="in", required=False, help="blank = the side cover"),
+                F("dagg", "Nominal maximum aggregate size", unit="in", required=False, help="blank = 3/4 in.; for the clear spacing of bars (ACI 318-19 25.2.1)"),
+                F("exposure", "Concrete exposure of the sides", "select", options=["cast against and permanently in contact with ground", "exposed to weather or in contact with ground",
+                                                                     "not exposed to weather or ground"], help="ACI 318-19 Table 20.5.1.3.1"),
+                F("plain", "Wall concrete", "select", options=["reinforced", "plain (no reinforcement)"]),
+                F("bar_v", "Vertical bars, size #", required=False), F("s_v", "Vertical bars, spacing", unit="in", required=False),
+                F("v_at", "Vertical bars at", "select", options=["center of the wall", "near the tension face"], required=False),
+                F("bar_h", "Horizontal bars, size #", required=False), F("s_h", "Horizontal bars, spacing", unit="in", required=False),
+                F("span", "Span between supports (spanning walls)", unit="ft", required=False),
+                F("more_spans", "More spans", "text", "ft", required=False, help="second and later spans, separated by commas"),
+                F("oh_left", "Wall past the first support", unit="ft", required=False), F("oh_right", "Wall past the last support", unit="ft", required=False),
+                F("n_bot", "Bottom bars, number", required=False), F("bar_bot", "Bottom bars, size #", required=False),
+                F("n_top", "Top bars, number", required=False), F("bar_top", "Top bars, size #", required=False),
+                F("st_bar", "Stirrups, size #", required=False, help="blank = no stirrups"), F("st_legs", "Stirrup legs", required=False),
+                F("st_s", "Stirrup spacing", unit="in", required=False),
+                F("q_allow", "Allowable soil bearing (bearing on soil)", unit="psf", required=False), F("soil_source", "Soil bearing source", "text", required=False),
+                F("hb", "Unbalanced backfill height", unit="ft", required=False, help="blank = none"),
+                F("efp", "Backfill equivalent fluid pressure", unit="pcf", required=False),
+                F("surcharge", "Lateral surcharge pressure", unit="psf", required=False),
+                F("efp_source", "Backfill pressure source", "text", required=False, help="for example: soils report, project no., page"),
+                F("braced", "Top of the wall", "select", options=["braced by a floor or slab", "not braced"], required=False)],
+        tables=[T("loads", "Loads along the wall", [CASE, F("kind", "Type", "select", options=["uniform", "point"]),
+                                                   F("mag", "Load", unit="plf or lb"),
+                                                   F("mag2", "Load at the To end (tapered)", unit="plf", required=False),
+                                                   F("x1", "From / at", unit="ft", required=False), F("x2", "To", unit="ft", required=False),
+                                                   F("label", "Note", "text", required=False)])]),
     "rafter_connector": dict(
         title="Rafter / Hip Connector (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="RC",
         fields=[F("product", "Connector", "select", options=["VPA rafter to top plate", "HRC / HHRC hip to ridge"], help="VPA p. 181; HRC / HHRC p. 180"),
@@ -3246,6 +3278,54 @@ def _build(kind, values, project):
                                         r.text("ij_t", False) or "1 1/2 in. or more", r.text("ij_mat", False) or "DF / LVL / LSL",
                                         sk, sl, dp, (r.text("jflange", False) or "").startswith("less"), r.text("web_stiff", False) == "none",
                                         r.text("fasteners", False) or None, r.text("web_stiff", False) == "installed"), "simple", {}
+    if kind == "stem_wall":
+        st_cb, se_cb = combos(project, r.miss, "LRFD"), combos(project, r.miss, "ASD")
+        sup, t_, H_, fc_, fy_, pcf, cov = r.text("support"), r.num("t"), r.num("H"), r.num("fc"), r.num("fy"), r.num("conc_pcf"), r.num("cover")
+        expo = {"cast": "earth", "expo": "weather", "not ": "interior"}[r.text("exposure")[:4]]
+        plain_ = r.text("plain").startswith("plain")
+        loads = []
+        for ld in r.rows("loads"):
+            if ld["kind"] == "uniform":
+                d = dict(case=ld["case"], kind="uniform", w=ld["mag"])
+                if ld.get("mag2") is not None:
+                    d["w2"] = ld["mag2"]
+                if ld["x1"] is not None or ld["x2"] is not None:
+                    d.update(x1_ft=ld["x1"] or 0.0, **({"x2_ft": ld["x2"]} if ld["x2"] is not None else {}))
+            else:
+                if ld["x1"] is None:
+                    r.miss.append("Loads: a point load needs its location (From / at)")
+                d = dict(case=ld["case"], kind="point", P=ld["mag"], x_ft=ld["x1"])
+            if ld["label"]:
+                d["label"] = ld["label"]
+            loads.append(d)
+        spn = sup.startswith("spanning")
+        if spn and r.num("span", False) is None:
+            r.miss.append("Span between supports")
+        if sup.startswith("bearing") and r.num("q_allow", False) is None:
+            r.miss.append("Allowable soil bearing")
+        hb_ = r.num("hb", False) or 0.0
+        if hb_ and r.num("efp", False) is None:
+            r.miss.append("Backfill equivalent fluid pressure")
+        if not plain_:
+            for k_, lab in (("bar_v", "Vertical bars, size"), ("s_v", "Vertical bars, spacing"), ("bar_h", "Horizontal bars, size"), ("s_h", "Horizontal bars, spacing")):
+                if r.num(k_, False) is None:
+                    r.miss.append(lab)
+        cases_used([ld["case"] for ld in loads] + (["H"] if hb_ else []), st_cb, r.miss)
+        r.done()
+        ni = lambda k_: int(r.num(k_, False)) if r.num(k_, False) is not None else None
+        more = r.nums("more_spans") if r.text("more_spans", False) else None
+        span_ = r.num("span", False)
+        return ws_more.stem_wall_sheet(mark, sup, t_, H_, fc_, fy_, pcf, cov, expo, loads, st_cb, se_cb,
+                                       span_ft=span_, spans=([span_] + more) if (more and span_) else None,
+                                       left=r.num("oh_left", False) or 0.0, right=r.num("oh_right", False) or 0.0,
+                                       n_bot=ni("n_bot") or 0, bar_bot=ni("bar_bot"), n_top=ni("n_top") or 0, bar_top=ni("bar_top"),
+                                       st_bar=ni("st_bar"), st_legs=ni("st_legs") or 2, st_s=r.num("st_s", False),
+                                       q_allow=r.num("q_allow", False), soil_source=r.text("soil_source", False) or "", plain=plain_,
+                                       bar_v=ni("bar_v"), s_v=r.num("s_v", False), v_at="center" if (r.text("v_at", False) or "center").startswith("center") else "face",
+                                       bar_h=ni("bar_h"), s_h=r.num("s_h", False), hb=hb_, efp=r.num("efp", False) or 0.0,
+                                       surcharge=r.num("surcharge", False) or 0.0, efp_source=r.text("efp_source", False) or "",
+                                       braced=not (r.text("braced", False) or "").startswith("not"), cast_against_soil=(expo == "earth"),
+                                       cover_bot=r.num("cover_bot", False), dagg=r.num("dagg", False) or 0.75), "simple", {}
     if kind == "rafter_connector":
         pr, mdl, sp, src = r.text("product"), r.text("model"), r.text("species"), r.text("load_source")
         wd, pi, sl = r.text("width", False), r.num("pitch", False), r.num("slope", False) or 0.0

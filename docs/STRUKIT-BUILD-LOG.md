@@ -1480,3 +1480,19 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
 ## 2026-11-28 MST — 0.299.1 I-joist header nails shown as the catalog requires
 - A top-flange hanger on a DF/SCL I-joist header now lists its header nails as 0.148 x 1-1/2 in. (the table count; p. 206 note 4: all
   nails into an I-joist header are 0.148 x 1-1/2 in.) instead of the table's nail size for other headers.
+
+## 2026-11-28 — 0.300.0 Stem wall screen (foundation walls, part 1; Zach: go, two hours uninterrupted)
+- **New screen "Stem Wall"** (`stem_wall`, mark FW; `strukit/stemwall.py`, `ws_more.stem_wall_sheet`). The wall is checked
+  - on a continuous footing (the footing on its own sheet; the line loads at the base reported),
+  - bearing directly on soil with no footing (bearing under the wall bottom against the allowable from the soils source), or
+  - spanning between footings or piers with voids below: a continuous grade beam (up to five spans and overhangs, live load patterned):
+    flexure top and bottom (phi by Table 21.2.2), As,min (9.6.1.2 / 9.6.1.3), shear with or without stirrups (Table 22.5.5.1 with the
+    size effect, 22.5.8.5.3, 22.5.1.2, Av,min 9.6.3.1 / Table 9.6.3.4, spacing Table 9.7.6.2.2), clear spacing (25.2.1), crack control
+    (Table 24.3.2), depth for deflections (Table 9.3.1.1), lateral bracing (9.2.3.1), support reactions factored and service.
+  - Out of plane: unbalanced backfill (equivalent fluid pressure and surcharge from the soils source) on a wall braced at its top,
+    reinforced (22.2, Table 22.5.5.1(c)) or plain (14.5.2.1, Table 14.5.5.1, h less 2 in. against soil).
+  - Wall bars by Table 11.6.1 and 11.7.2.1; cover by Table 20.5.1.3.1, sides and bottom separately.
+- **Pictures:** section across the wall (backfill and grade, the slab bracing the top, the footing, soil or void form below, the bars
+  and stirrup); for the spanning wall an elevation over the piers with the void forms between and the loads; shear and moment diagrams.
+- **Validation:** no published stem wall or grade beam example is on file (logged); every check worked by hand in
+  `tests/test_stemwall.py`. Browser check: the screen loads and solves.
