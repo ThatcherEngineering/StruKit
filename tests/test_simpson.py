@@ -409,3 +409,32 @@ def test_ccq_caps_against_the_catalog_page():
     assert s["rows"][0][2] == 24065 / 2
     with pytest.raises(simpson.SimpsonError):
         simpson.column_cap("ECCQ", "ECCQ46SDS2.5", 9000, spliced=True, download2=7000)
+
+
+def test_column_base_rows_and_checks():
+    """CBSTQ / CBSQ (p. 85): both blocks of rows found in the page text (the A&B block prints the 6x6 model as CBSQT66Z-SDS2). CBSTQ44Z,
+    cracked, A&B: uplift 4,650; with F1 100 and F2 300 (note 5: 485, 1,270): 2,000 / 4,650 + 100 / 485 + 300 / 1,270 = 0.873. CBSQ88 SDC C-F
+    download 22,225; lateral on a CBSQ is refused."""
+    import re
+    t = _page_text(85)
+    j = lambda ps: r"\s+".join(re.escape(str(p)).replace(r"\ ", r"\s+") for p in ps)
+    for r in simpson.COLUMN_BASES:
+        for blk in (r[9], r[10]):
+            name = r"(?:CBSQT66Z|CBSTQ66Z)-SDS2" if r[0] == "CBSTQ66Z-SDS2" else re.escape(r[0])
+            pat = name + r"\s+" + j([r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], f"{blk[0]:,}", f"{blk[1]:,}", f"{r[11]:,}"])
+            assert re.search(pat, t), (r[0], blk)
+    h = simpson.column_base("4x4", "first that works", True, "A&B", uplift=2000, F1=100, F2=300)
+    assert h["row"][0] == "CBSTQ44Z-SDS2" and h["rows"][-1][1] == pytest.approx(2000 / 4650 + 100 / 485 + 300 / 1270)
+    assert simpson.column_base("8x8", "CBSQ88-SDS2", True, "C-F", download=18000)["rows"] == [("download", 18000, 22225)]
+    assert simpson.column_base("6x6", "first that works", False, "C-F", uplift=1000)["uplift_allow"] == 3830
+    with pytest.raises(simpson.SimpsonError):
+        simpson.column_base("8x8", "CBSQ88-SDS2", True, "A&B", F1=100)
+
+
+def test_column_base_screen(tmp_path):
+    from strukit import calcsheet
+    proj = dict(job="t", name="t", method="ASD")
+    v = dict(mark="CB1", post="4x4", model="first that works", cracked="yes", sdc="A&B", uplift="2000", F1="100", F2="300", load_source="deck post")
+    s = calc.build("column_base", v, proj)[0]
+    assert all(r.status == "OK" for r in s.rows)
+    calcsheet.simple_pdf(s, str(tmp_path / "cb.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")

@@ -1814,6 +1814,8 @@ def _block_picture(c, top, pic):
         return _framing_angle_picture(c, top, d)
     if name == "mpbz":
         return _mpbz_picture(c, top, d)
+    if name == "column_base":
+        return _column_base_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -5165,6 +5167,74 @@ def _mpbz_picture(c, top, d):
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawCentredString(LM + 230, ytop + 6, f"{d['model']} on a {d['post']} post; {d['screws']} SDS screws" + ("; reinforced footing" if d["reinforced"] else ""))
     return min(yc - hc * sc - 38, py - B * s2 / 2 - 36)
+
+
+def _column_base_picture(c, top, d):
+    """Cast-in column base (CBSTQ / CBSQ), to scale. Left: elevation looking at a strap: the concrete cut short (stippled) with the strap's
+    embedded part dashed D below the top, the base plate on the 1 in. standoff, the post with its grain broken off, the strap face on up
+    the post with its SDS screw heads. Right: section through the post across the straps: the straps cut on both faces, the screws dashed
+    into the post, the embedded legs dashed in the concrete, the side cover. W1, W2, D, H, the standoff and the cover dimensioned; loads."""
+    W1, W2, D, H = d["W1"], d["W2"], d["D"], d["H"]
+    pb, pd = _post_dims(d["post"])
+    cov = d["cover"]
+    t = 0.135                                               # 10 ga strap (7 ga 0.179 for CBSQ), p. 85
+    if "CBSQ8" in d["model"]:
+        t = 0.179
+    hc, hp = D + 4.0, H + 7.0
+    sc = min(6.0, 150.0 / (hc + 1 + hp), 120.0 / (max(pb, pd) + 2 * cov + 2))
+    T = max(t * sc, 1.0)
+    ytop = top - 40
+    yc = ytop - (hp + 1.0) * sc
+    yp = yc + 1.0 * sc
+    for vx, wpost, view in ((LM + 110, W2, 1), (LM + 320, W1, 2)):
+        B = wpost + 2 * cov + 2 * t
+        memberart._concrete(c, vx - B * sc / 2, yc - hc * sc, B * sc, hc * sc, seed=31 + view)
+        memberart._break_h(c, vx - B * sc / 2, vx + B * sc / 2, yc - hc * sc - 1)
+        _steel_strip(c, vx - wpost * sc / 2, yp - T, wpost * sc, T, cut=(view == 2))   # base plate on the standoff
+        c.saveState(); c.translate(vx - wpost * sc / 2, yp); c.rotate(90)
+        memberart.wood_elevation(c, 0, -wpost * sc, hp * sc - 1.0 * sc, wpost * sc, seed=4 + view); c.restoreState()
+        memberart._break_h(c, vx - wpost * sc / 2, vx + wpost * sc / 2, yc + hp * sc - 1)
+        if view == 1:
+            sw = 2.25 if "44Z" in d["model"] else 3.0          # strap width, p. 85 (Material)
+            sw = min(sw, wpost - 0.2)
+            _steel_strip(c, vx - sw * sc / 2, yc, sw * sc, H * sc)                         # the strap, continuous from the concrete
+            c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.setDash(2, 1.4)
+            c.rect(vx - sw * sc / 2, yc - D * sc, sw * sc, D * sc, fill=0, stroke=1); c.setDash()
+            n_ = int(d["screws"].split(")")[0].strip("(")) // 2
+            pts = [(vx + (sw * sc * 0.22 if k % 2 == 0 else -sw * sc * 0.22), yp + (H - 1.0) * sc * (0.12 + 0.76 * (k // 2) / max((n_ + 1) // 2 - 1, 1))) for k in range(n_)]
+            _bolt_heads(c, pts, 0.32 * sc)
+            memberart._dim_h(c, vx - wpost * sc / 2, vx + wpost * sc / 2, yc - hc * sc - 12, f"W2 {_mixed(W2)}", FR, ext_from=yc - hc * sc)
+            memberart._dim_v(c, yc - D * sc, yc, vx - B * sc / 2 - 8, f"D {_mixed(D)}", FR, ext_from=vx - sw * sc / 2)
+            memberart._dim_v(c, yc, yc + H * sc, vx + B * sc / 2 + 8, f"H {_mixed(H)}", FR, ext_from=vx + sw * sc / 2)
+            _small(c, vx, yc - hc * sc - 30, "elevation at a strap, to scale (in.); embedded part dashed")
+        else:
+            for sg in (-1, 1):
+                xs_ = vx + sg * wpost * sc / 2 + (0 if sg > 0 else -T)
+                _steel_strip(c, xs_, yc, T, H * sc, cut=True)
+                c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.setDash(2, 1.4)
+                c.line(xs_ + T / 2, yp, xs_ + T / 2, yc - D * sc); c.setDash()
+                c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.7); c.setDash(1.4, 1.0)
+                for k in range(3):
+                    yy = yp + (H - 1.0) * sc * (0.2 + 0.3 * k)
+                    c.line(vx + sg * wpost * sc / 2, yy, vx + sg * (wpost / 2 - 2.0) * sc, yy)
+                c.setDash()
+            memberart._dim_h(c, vx - wpost * sc / 2, vx + wpost * sc / 2, yc - hc * sc - 12, f"W1 {_mixed(W1)}", FR, ext_from=yc - hc * sc)
+            memberart._dim_h(c, vx + wpost * sc / 2 + T, vx + B * sc / 2, yc - hc * sc - 24, f"{cov:g} min.", FR, ext_from=yc - hc * sc - 12)
+            memberart._dim_v(c, yc, yp, vx - B * sc / 2 - 6, "1 standoff", FR, ext_from=vx - wpost * sc / 2 - T)
+            _small(c, vx, yc - hc * sc - 42, "section through the post across the straps, to scale (in.)")
+            c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9); c.setFont(FR, 6.5)
+            ypt = yc + hp * sc + 4
+            if d.get("download"):
+                _arrow(c, vx, ypt + 22, vx, ypt, head=3); c.drawString(vx + 5, ypt + 10, f"download {d['download']:,.0f} lb")
+            if d.get("uplift"):
+                _arrow(c, vx, ypt, vx, ypt + 22, head=3); c.drawString(vx + 5, ypt + 10, f"uplift {d['uplift']:,.0f} lb")
+            lat = ", ".join(x for x in (f"F1 {d['F1']:,.0f} lb" if d.get("F1") else "", f"F2 {d['F2']:,.0f} lb" if d.get("F2") else "") if x)
+            if lat:
+                c.setFillColorRGB(*INK); c.drawString(vx + B * sc / 2 + 12, yc + H * sc * 0.6, f"lateral {lat}")
+                c.drawString(vx + B * sc / 2 + 12, yc + H * sc * 0.6 - 9, "directions as catalog p. 85")
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawCentredString(LM + 215, top - 8, f"{d['model']} on a {d['post']} post; {d['screws']} screws")
+    return yc - hc * sc - 50
 
 
 def _lumber_dims(label):

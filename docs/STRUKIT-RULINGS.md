@@ -555,3 +555,7 @@ Texts as they stood under "Open" when ruled:
 - Cracked concrete is the screen's first choice; uncracked is the engineer's selection with its basis.
 - The wood assembly's moment (160) is used for every combination (the table gives no (100) moment); the downloads use (100), or (160)
   when the engineer marks the download as from a wind or seismic combination.
+
+## 2026-11-27, cast-in column bases (0.288.0), applied (not ruled)
+- CBSTQ lateral F1 / F2 (catalog p. 85 note 5) combined with uplift or download by the unity equation (p. 23 note e, p. 289 Option 1, as
+  ruled 2026-11-27); download and uplift are separate combinations and are refused together.

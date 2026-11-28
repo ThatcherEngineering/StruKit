@@ -857,3 +857,54 @@ def mpbz(model, post, concrete, cracked, sdc, download=0.0, uplift=0.0, lateral=
 
 def page_of(series):
     return BC_PAGE if series == "BC" else (CCQ_PAGE if series in ("CCQ", "ECCQ") else COLUMN_CAP_PAGE)
+
+
+# ---------------------------------------------------------------- CBSTQ / CBSQ cast-in column bases (catalog pp. 84-85)
+# Catalog p. 85: model, post, base ga, strap, W1, W2, D, H (in.), SDS screws, uplift (uncracked, cracked) for wind and SDC A&B, the same for
+# SDC C-F, download (100), lb. (The p. 85 A&B block prints the 6x6 model as "CBSQT66Z-SDS2"; the C-F block "CBSTQ66Z-SDS2".)
+COLUMN_BASES = [
+    ("CBSTQ44Z-SDS2", "4x4", 12, '10 ga. x 2 1/4"', "3 9/16", "3 1/2", "7 1/8", "8 3/8", "(14) 1/4 x 2 SDS", (5390, 4650), (5390, 4070), 12840),
+    ("CBSTQ46Z-SDS2", "4x6", 12, '10 ga. x 3"', "3 9/16", "5 5/16", "7 13/16", "8 11/16", "(14) 1/4 x 2 SDS", (5390, 4650), (5390, 4070), 16850),
+    ("CBSTQ66Z-SDS2", "6x6", 12, '10 ga. x 3"', "5 1/2", "5 1/2", "6 7/8", "8 3/4", "(14) 1/4 x 2 SDS", (4375, 3060), (3830, 2680), 19335),
+    ("CBSQ86-SDS2", "6x8", 12, '7 ga. x 3"', "7 1/2", "5 3/8", "6 1/8", "8 11/16", "(12) 1/4 x 2 SDS", (3815, 2670), (3340, 2335), 20915),
+    ("CBSQ88-SDS2", "8x8", 12, '7 ga. x 3"', "7 1/2", "7 3/8", "6 1/8", "8 11/16", "(12) 1/4 x 2 SDS", (3815, 2670), (3340, 2335), 22225),
+]
+COLUMN_BASE_PAGE = 85
+CBSTQ_LATERAL = (485, 1270)              # p. 85 note 5: F1, F2 for all CBSTQ models, 3 in. minimum side cover
+
+
+def column_base(post, model, cracked, sdc, download=0.0, uplift=0.0, F1=0.0, F2=0.0):
+    """Cast-in column base CBSTQ / CBSQ, DF/SP, catalog p. 85 (ASD; no duration increase, note 1; f'c 2,500 psi or more, note 3). Uplift by
+    concrete cracked or uncracked and SDC; download (100); lateral F1 and F2 for the CBSTQ models only (note 5). More than one direction
+    loaded: the unity equation (p. 23 note e, p. 289 Option 1). model "first that works": the base for the post size."""
+    download, uplift, F1, F2 = (abs(x or 0.0) for x in (download, uplift, F1, F2))
+    if download and uplift:
+        raise SimpsonError("column base: download and uplift are separate load combinations; check them on separate sheets")
+    if not (download or uplift or F1 or F2):
+        raise SimpsonError("column base: give a load")
+    if sdc not in ("A&B", "C-F"):
+        raise SimpsonError("column base: seismic design category A&B (and wind) or C-F")
+    if model.strip().lower() in ("first that works", "lightest that works"):
+        r = next((x for x in COLUMN_BASES if x[1] == post), None)
+        if r is None:
+            raise SimpsonError(f"column base: made for 4x4, 4x6, 6x6, 6x8 and 8x8 posts (catalog p. {COLUMN_BASE_PAGE})")
+        picked = True
+    else:
+        r = next((x for x in COLUMN_BASES if x[0].lower() == model.strip().lower()), None)
+        if r is None:
+            raise SimpsonError(f"column base: {model} is not on catalog p. {COLUMN_BASE_PAGE}")
+        if post and r[1] != post:
+            raise SimpsonError(f"column base: {r[0]} is for a {r[1]} post")
+        picked = False
+    cbstq = r[0].startswith("CBSTQ")
+    if (F1 or F2) and not cbstq:
+        raise SimpsonError(f"column base: lateral values are given for the CBSTQ models only (catalog p. {COLUMN_BASE_PAGE} note 5)")
+    up_a = (r[9] if sdc == "A&B" else r[10])[1 if cracked else 0]
+    rows = []
+    for nm, dem, cap in (("download", download, r[11]), ("uplift", uplift, up_a), ("lateral F1", F1, CBSTQ_LATERAL[0]),
+                         ("lateral F2", F2, CBSTQ_LATERAL[1])):
+        if dem:
+            rows.append((nm, dem, cap))
+    if len(rows) > 1:
+        rows.append(("loads together, sum of load / allowable", sum(d / c for _, d, c in rows), 1.0))
+    return dict(row=r, rows=rows, picked=picked, cracked=cracked, sdc=sdc, cbstq=cbstq, uplift_allow=up_a)
