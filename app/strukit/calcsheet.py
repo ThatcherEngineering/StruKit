@@ -1808,6 +1808,8 @@ def _block_picture(c, top, pic):
         return _post_base_picture(c, top, d)
     if name == "column_cap":
         return _column_cap_picture(c, top, d)
+    if name == "strap":
+        return _strap_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -4846,6 +4848,81 @@ def _column_cap_picture(c, top, d):
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawCentredString(LM + 225, ytop + 22, d["model"] + (", beams spliced over the post" if d.get("spliced") else ""))
     return yb - T - hp * sc - 36
+
+
+def _strap_picture(c, top, d):
+    """Strap tie in tension, to scale. Left: elevation looking at the strap face on two wood members end to end (with the clear span
+    between them for a coiled strap), each broken off at its far end, the strap over both with its nails (or bolts) in each member, the
+    tension arrows; the strap length, or the end lengths and clear span, dimensioned. Right: section across the strap on the member: the
+    member in end grain, the strap at its thickness, a nail driven into the member (dashed in the wood)."""
+    W, ga = d["W"], d["ga"]
+    t = {10: 0.134, 12: 0.105, 14: 0.075, 16: 0.06, 18: 0.048, 20: 0.036, 22: 0.030}.get(ga, 0.06)
+    if d["coil"]:
+        e, cl = float(d["end"] or 12), float(d["clear"] or 0.0)
+        Ls = 2 * e + cl
+    else:
+        Ls, cl = d["L"], 0.0
+        e = Ls / 2
+    mem_d = max(5.5, W + 2.5)                                # member face shown (depth), depiction
+    extra = 6.0
+    total = Ls + 2 * extra
+    sc = min(8.0, (RM - LM - 210) / total)
+    x0 = LM + 30
+    ym = top - 30 - mem_d * sc / 2
+    yb = ym - mem_d * sc / 2
+    xa = x0 + extra * sc                                     # strap start
+    xm1 = xa + e * sc                                        # end of member 1 (the joint, or the start of the clear span)
+    xm2 = xm1 + cl * sc
+    memberart.wood_elevation(c, x0, yb, xm1 - x0, mem_d * sc, seed=5)
+    memberart.wood_elevation(c, xm2, yb, x0 + total * sc - xm2, mem_d * sc, seed=12)
+    _break_v(c, x0, yb - 2, yb + mem_d * sc + 2)
+    _break_v(c, x0 + total * sc, yb - 2, yb + mem_d * sc + 2)
+    c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setLineWidth(0.8)
+    c.line(xm1, yb, xm1, yb + mem_d * sc); c.line(xm2, yb, xm2, yb + mem_d * sc)
+    sw = W * sc
+    _steel_strip(c, xa, ym - sw / 2, Ls * sc, sw)
+    nh = d["n"] // 2
+    if d.get("bolts"):
+        _bolt_heads(c, [(xa + e * sc * (k + 0.5) / nh, ym) for k in range(nh)] + [(xm2 + e * sc * (k + 0.5) / nh, ym) for k in range(nh)], 0.5 * sc)
+    else:
+        c.setFillColorRGB(1, 1, 1); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.35)
+        rr = max(0.075 * sc, 0.7)
+        for xs_ in (xa, xm2):
+            for k in range(nh):                              # two staggered rows along the strap in each member
+                xq = xs_ + (k + 0.5) * (e - 1.0) * sc / nh + 0.5 * sc
+                yq = ym + (sw * 0.22 if k % 2 == 0 else -sw * 0.22) if W >= 1.2 else ym
+                c.circle(xq, yq, rr, fill=1, stroke=1)
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9); c.setFont(FR, 6.5)
+    _arrow(c, x0 + 2 * sc, ym + mem_d * sc / 2 + 8, x0 - 8, ym + mem_d * sc / 2 + 8, head=3)
+    _arrow(c, x0 + total * sc - 2 * sc, ym + mem_d * sc / 2 + 8, x0 + total * sc + 8, ym + mem_d * sc / 2 + 8, head=3)
+    c.drawCentredString(x0 + total * sc / 2, ym + mem_d * sc / 2 + 6, f"T = {d['tension']:,.0f} lb")
+    if d["coil"]:
+        memberart._dim_h(c, xa, xm1, yb - 12, f"end {e:g}", FR, ext_from=yb)
+        if cl > 0:
+            memberart._dim_h(c, xm1, xm2, yb - 12, f"clear {cl:g}", FR, ext_from=yb)
+        memberart._dim_h(c, xm2, xm2 + e * sc, yb - 12, f"end {e:g}", FR, ext_from=yb)
+        memberart._dim_h(c, xa, xa + Ls * sc, yb - 28, f"cut length {Ls:g}", FR, ext_from=yb - 12)
+    else:
+        memberart._dim_h(c, xa, xa + Ls * sc, yb - 12, f"L {_mixed(Ls)}", FR, ext_from=ym - sw / 2)
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawCentredString(x0 + total * sc / 2, ym + mem_d * sc / 2 + 18, f"{d['model']}, {ga} ga, {_mixed(W)} in. wide; {d['fast']}")
+    _small(c, x0 + total * sc / 2, yb - 44, "elevation, strap face on, to scale (in.); half the fasteners in each member")
+    # section across the strap
+    sx = RM - 70
+    bsec, dsec = 1.5 * 2, mem_d                               # member shown 3 in. thick (depiction)
+    s2 = min(9.0, 70.0 / dsec)
+    memberart.wood_section(c, sx, ym, bsec * s2, dsec * s2, bsec, dsec)
+    T = max(t * s2, 1.0)
+    _steel_strip(c, sx - bsec * s2 / 2 - T, ym - W * s2 / 2, T, W * s2, cut=True)
+    c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6)
+    if d.get("bolts"):
+        memberart.bolt_side(c, sx - bsec * s2 / 2 - T, ym, sx + bsec * s2 / 2, ym, 0.5 * s2)
+    else:
+        c.line(sx - bsec * s2 / 2 - T - 1.2, ym, sx - bsec * s2 / 2 - T, ym)     # nail head
+        c.setDash(1.4, 1.0); c.line(sx - bsec * s2 / 2 - T, ym, sx - bsec * s2 / 2 + 2.5 * s2 * 0.6, ym); c.setDash()
+    memberart._dim_v(c, ym - W * s2 / 2, ym + W * s2 / 2, sx - bsec * s2 / 2 - T - 10, f"W {_mixed(W)}", FR, ext_from=sx - bsec * s2 / 2 - T)
+    _small(c, sx, yb - 44, "section across the strap")
+    return yb - 52
 
 
 def _lumber_dims(label):

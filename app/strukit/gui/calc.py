@@ -1390,6 +1390,18 @@ FORMS = {
                 F("F2", "Lateral F2, across the plate, ASD", unit="lb", required=False),
                 F("load_source", "Where the loads come from", "text", help="for example: rafter R1 uplift, wind C&C")],
         tables=[]),
+    "strap": dict(
+        title="Strap (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="ST",
+        fields=[F("kind", "Strap kind", "select", options=simpson.STRAP_KINDS, help="strap ties p. 291; MST p. 292; coiled CS / CMST p. 296"),
+                F("model", "Strap", "text", help="model as the catalog names it, for example LSTA24, MST48, CS16; or: first that works"),
+                F("species", "Species group", "select", options=["DF/SP", "SPF/HF"]),
+                F("tension", "Tension, ASD", unit="lb"),
+                F("fastening", "Fasteners (MST)", "select", options=["nails", "bolts"], required=False),
+                F("nail", "Nail diameter (coiled strap)", "select", options=["0.148", "0.162", "0.131"], required=False),
+                F("nails_per_end", "Nails in each member (coiled strap, fewer than the table)", required=False),
+                F("clear_span", "Clear span between the members (coiled strap)", unit="in", required=False, help="for the cut length"),
+                F("load_source", "Where the tension comes from", "text", help="for example: chord splice, hold-down H1")],
+        tables=[]),
     "post_base": dict(
         title="Post Base (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="PB",
         fields=[F("post", "Post", "select", options=simpson.post_base_posts(), help="nominal size (catalog p. 77)"),
@@ -3068,6 +3080,13 @@ def _build(kind, values, project):
                                             end_grain=bool(yes(r.text("end_grain", False))), edge=r.num("edge", False), end=r.num("end", False),
                                             spacing=r.num("spacing", False), steel=st_, steel_source=r.text("steel_source", False) or "",
                                             steel_side=r.text("side_kind", False) == "steel", bearing=brg), "simple", {}
+    if kind == "strap":
+        k_, mdl, sp, src = r.text("kind"), r.text("model"), r.text("species"), r.text("load_source")
+        T_ = r.num("tension")
+        fa, nl = r.text("fastening", False) or "nails", r.text("nail", False) or "0.148"
+        npe, cs = r.num("nails_per_end", False), r.num("clear_span", False)
+        r.done()
+        return ws_more.strap_sheet(mark, k_, mdl, sp, T_, fa, nl, npe, cs, src), "simple", {}
     if kind == "post_base":
         post, mdl, fa, src = r.text("post"), r.text("model"), r.text("fastening"), r.text("load_source")
         dl, up = r.num("download", False) or 0.0, r.num("uplift", False) or 0.0
