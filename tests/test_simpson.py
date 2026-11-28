@@ -237,3 +237,51 @@ def test_post_base_and_cap_screens(tmp_path):
         s = calc.build("column_cap", v, proj)[0]
         assert all(r.status == "OK" for r in s.rows), v["mark"]
         calcsheet.simple_pdf(s, str(tmp_path / f"{v['mark']}.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+
+
+def test_strap_rows_against_the_catalog_pages():
+    """Strap ties p. 291, MST p. 292 (lower table) and coiled straps p. 296: every row copied into simpson found in the page text."""
+    import re
+    j = lambda ps: r"\s+".join(re.escape(str(p)).replace(r"\ ", r"\s+") for p in ps)
+    t = _page_text(291)
+    for r in simpson.STRAPS:
+        assert re.search(re.escape(r[0]) + r"\s+(?:\d\d\s+)?" + j([r[2], r[3], r[4], f"{r[5]:,}", f"{r[6]:,}"]), t), r[0]
+    t = _page_text(292)
+    for r in simpson.MST:
+        assert re.search(j([r[0]]) + r"\s+(?:\d\d\s+)?" + j([r[2], r[3], r[4], r[5][0], r[5][1]] + [f"{v:,}" for v in r[6:10]]), t), r[0]
+    t = _page_text(296)
+    for r in simpson.COILS:
+        for o in r[3]:
+            pat = j([o[0], o[1], o[2], o[3]]) + r"\s+" + re.escape(f"{r[4]:,}")
+            assert re.search(pat, t), (r[0], o)
+
+
+def test_strap_checks():
+    """Catalog p. 296 note 2 worked example: CMSTC16, DF/SP, 40 nails total: 40 / 50 x 4,690 = 3,752 lb. Cut length (p. 288 note h):
+    2 x 20 + 18 = 58 in. Strap ties (p. 291): 1,200 lb DF/SP: LSTA9 740, LSTA12 925, LSTA15 1,110 fail, LSTA18 1,235 passes. MST37 bolted
+    SPF/HF 2,800 (p. 292). Bolts are refused on a strap tie; a coiled strap without the nail size is refused."""
+    h = simpson.strap("coiled strap", "CMSTC16", "DF/SP", 3000, nail="0.148", nails_per_end=20, clear_span=18)
+    assert h["allow"] == pytest.approx(3752.0) and h["cut"] == 58
+    assert simpson.strap("strap tie", "first that works", "DF/SP", 1200)["model"] == "LSTA18"
+    assert simpson.strap("MST", "MST37", "SPF/HF", 2500, "bolts")["allow"] == 2800
+    assert simpson.strap("coiled strap", "first that works", "SPF/HF", 2000, nail="0.131")["model"] == "CS14"
+    with pytest.raises(simpson.SimpsonError):
+        simpson.strap("strap tie", "LSTA18", "DF/SP", 1000, "bolts")
+    with pytest.raises(simpson.SimpsonError):
+        simpson.strap("coiled strap", "CMSTC16", "DF/SP", 1000, nail="0.131")
+    with pytest.raises(simpson.SimpsonError):
+        simpson.strap("strap tie", "first that works", "DF/SP", 9000)
+
+
+def test_strap_screen(tmp_path):
+    from strukit import calcsheet
+    proj = dict(job="t", name="t", method="ASD")
+    for v in (dict(mark="ST1", kind="strap tie", model="first that works", species="DF/SP", tension="1200", load_source="plate splice"),
+              dict(mark="ST2", kind="MST", model="MST37", species="SPF/HF", tension="2500", fastening="bolts", load_source="chord"),
+              dict(mark="ST3", kind="coiled strap", model="CMSTC16", species="DF/SP", tension="3000", nail="0.148", nails_per_end="20",
+                   clear_span="18", load_source="floor to floor")):
+        s = calc.build("strap", v, proj)[0]
+        assert all(r.status == "OK" for r in s.rows)
+        calcsheet.simple_pdf(s, str(tmp_path / f"{v['mark']}.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+    with pytest.raises(calc.Missing):
+        calc.build("strap", dict(v, tension=""), proj)

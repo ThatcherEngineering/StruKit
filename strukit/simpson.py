@@ -479,3 +479,149 @@ def column_cap(series, model, download=0.0, uplift=0.0, lateral=0.0, beam_width=
         dims = dict(W1=_in(r[2]), W2=_in(r[3]), L=_in(r[4][CAP_SERIES.index(series)]), H1=_in(r[5]), bolt=_in(r[6]),
                     beam_bolts=r[7][CAP_SERIES.index(series)], post_bolts=r[8])
     return dict(row=r, model=mdl, series=series, rows=rows, picked=picked, dims=dims, page=page)
+
+
+# ---------------------------------------------------------------- straps (catalog pp. 288-297)
+# Straight strap ties, catalog p. 291 (HRS, HTP, LSTA, LSTI, MSTA, MSTC, MSTI, ST), copied row by row; the tests find every row in the
+# page text. Columns: model, gauge, W, L (in.), fasteners (total, half in each member, p. 288 note d), DF/SP and SPF/HF allowable
+# tension (160), lb.
+STRAPS = [
+    ('ST2115', 20, '3/4', '16 5/16', '(10) 0.162 x 2 1/2', 660, 660),
+    ('LSTA9', 20, '1 1/4', '9', '(8) 0.148 x 2 1/2', 740, 635),
+    ('LSTA12', 20, '1 1/4', '12', '(10) 0.148 x 2 1/2', 925, 795),
+    ('LSTA15', 20, '1 1/4', '15', '(12) 0.148 x 2 1/2', 1110, 955),
+    ('LSTA18', 20, '1 1/4', '18', '(14) 0.148 x 2 1/2', 1235, 1115),
+    ('LSTA21', 20, '1 1/4', '21', '(16) 0.148 x 2 1/2', 1235, 1235),
+    ('LSTA24', 20, '1 1/4', '24', '(18) 0.148 x 2 1/2', 1235, 1235),
+    ('LSTA30', 18, '1 1/4', '30', '(22) 0.148 x 2 1/2', 1640, 1640),
+    ('LSTA36', 18, '1 1/4', '36', '(24) 0.148 x 2 1/2', 1640, 1640),
+    ('MSTA9', 18, '1 1/4', '9', '(8) 0.148 x 2 1/2', 750, 650),
+    ('MSTA12', 18, '1 1/4', '12', '(10) 0.148 x 2 1/2', 940, 810),
+    ('MSTA15', 18, '1 1/4', '15', '(12) 0.148 x 2 1/2', 1130, 970),
+    ('MSTA18', 18, '1 1/4', '18', '(14) 0.148 x 2 1/2', 1315, 1135),
+    ('MSTA21', 18, '1 1/4', '21', '(16) 0.148 x 2 1/2', 1505, 1295),
+    ('MSTA24', 18, '1 1/4', '24', '(18) 0.148 x 2 1/2', 1640, 1460),
+    ('MSTA30', 18, '1 1/4', '30', '(22) 0.148 x 2 1/2', 2050, 1825),
+    ('MSTA36', 18, '1 1/4', '36', '(26) 0.148 x 2 1/2', 2050, 2050),
+    ('MSTA49', 18, '1 1/4', '49', '(26) 0.148 x 2 1/2', 2020, 2020),
+    ('ST9', 16, '1 1/4', '9', '(8) 0.162 x 2 1/2', 885, 765),
+    ('ST12', 16, '1 1/4', '11 5/8', '(10) 0.162 x 2 1/2', 1105, 955),
+    ('ST18', 16, '1 1/4', '17 3/4', '(14) 0.162 x 2 1/2', 1420, 1335),
+    ('ST22', 16, '1 1/4', '21 5/8', '(18) 0.162 x 2 1/2', 1420, 1420),
+    ('HRS6', 12, '1 3/8', '6', '(6) 0.148 x 2 1/2', 605, 530),
+    ('HRS8', 12, '1 3/8', '8', '(10) 0.148 x 2 1/2', 1010, 880),
+    ('HRS12', 12, '1 3/8', '12', '(14) 0.148 x 2 1/2', 1415, 1230),
+    ('ST292', 20, '2 1/16', '9 5/16', '(12) 0.162 x 2 1/2', 1260, 1120),
+    ('ST2122', 20, '2 1/16', '12 13/16', '(16) 0.162 x 2 1/2', 1530, 1510),
+    ('ST2215', 20, '2 1/16', '16 5/16', '(20) 0.162 x 2 1/2', 1875, 1875),
+    ('ST6215', 16, '2 1/16', '16 5/16', '(20) 0.162 x 2 1/2', 2090, 1910),
+    ('ST6224', 16, '2 1/16', '23 5/16', '(28) 0.162 x 2 1/2', 2535, 2535),
+    ('ST6236', 14, '2 1/16', '33 13/16', '(40) 0.162 x 2 1/2', 3845, 3845),
+    ('MSTI26', 12, '2 1/16', '26', '(26) 0.148 x 1 1/2', 2745, 2380),
+    ('MSTI36', 12, '2 1/16', '36', '(36) 0.148 x 1 1/2', 3800, 3295),
+    ('MSTI48', 12, '2 1/16', '48', '(48) 0.148 x 1 1/2', 5070, 4390),
+    ('MSTI60', 12, '2 1/16', '60', '(60) 0.148 x 1 1/2', 5070, 5070),
+    ('MSTI72', 12, '2 1/16', '72', '(72) 0.148 x 1 1/2', 5070, 5070),
+    ('HTP37Z', 16, '3', '7', '(20) 0.148 x 1 1/2', 900, 690),
+    ('MSTC28', 16, '3', '28 1/4', '(36) 0.148 x 3 1/4', 3460, 2990),
+    ('MSTC40', 16, '3', '40 1/4', '(52) 0.148 x 3 1/4', 4735, 4315),
+    ('MSTC52', 16, '3', '52 1/4', '(62) 0.148 x 3 1/4', 4735, 4735),
+    ('MSTC66', 14, '3', '65 3/4', '(68) 0.148 x 3 1/4', 5850, 5850),
+    ('MSTC78', 14, '3', '77 3/4', '(76) 0.148 x 3 1/4', 5850, 5850),
+    ('HRS416Z', 12, '3 1/4', '16', '(16) 1/4 x 1 1/2 SDS', 2835, 2305),
+    ('LSTI49', 18, '3 3/4', '49', '(32) 0.148 x 1 1/2', 2970, 2560),
+    ('LSTI73', 18, '3 3/4', '73', '(48) 0.148 x 1 1/2', 4205, 3840),
+]
+STRAP_PAGE = 291
+# MST strap ties, catalog p. 292 (lower table): model, gauge, W, L, nails (total), bolts (qty, dia.), DF/SP nails, DF/SP bolts,
+# SPF/HF nails, SPF/HF bolts (160), lb. Bolts or nails, not both (note 2); parallel-to-grain loading, members at least 2-1/2 in. (note 3).
+MST = [
+    ("MST27", 12, "2 1/16", "27", "(30) 0.162 x 2 1/2", (4, "1/2"), 3700, 2165, 3210, 2000),
+    ("MST37", 12, "2 1/16", "37 1/2", "(42) 0.162 x 2 1/2", (6, "1/2"), 5070, 3030, 4495, 2800),
+    ("MST48", 12, "2 1/16", "48", "(50) 0.162 x 2 1/2", (8, "1/2"), 5310, 3675, 5190, 3395),
+    ("MST60", 10, "2 1/16", "60", "(68) 0.162 x 2 1/2", (10, "1/2"), 6730, 4490, 6475, 4150),
+    ("MST72", 10, "2 1/16", "72", "(68) 0.162 x 2 1/2", (10, "1/2"), 6730, 4490, 6475, 4150),
+]
+MST_PAGE = 292
+# Coiled straps CMST / CMSTC / CS, catalog p. 296: model, coil length (ft), gauge, then nail options: (DF/SP nails total, DF/SP end
+# length in., SPF/HF nails total, SPF/HF end length in.), allowable tension (160), lb (the same for both species groups).
+COILS = [
+    ("CMST12", "40", 12, [("(74) 0.162 x 2 1/2", 33, "(84) 0.162 x 2 1/2", 38), ("(86) 0.148 x 2 1/2", 39, "(98) 0.148 x 2 1/2", 44)], 9215),
+    ("CMST14", "52 1/2", 14, [("(56) 0.162 x 2 1/2", 26, "(66) 0.162 x 2 1/2", 30), ("(66) 0.148 x 2 1/2", 30, "(76) 0.148 x 2 1/2", 34)], 6475),
+    ("CMSTC16", "54", 16, [("(50) 0.148 x 3 1/4", 20, "(50) 0.148 x 3 1/4", 25)], 4690),
+    ("CS14", "100", 14, [("(26) 0.148 x 2 1/2", 15, "(30) 0.148 x 2 1/2", 16), ("(30) 0.131 x 2 1/2", 16, "(36) 0.131 x 2 1/2", 19)], 2490),
+    ("CS16", "150", 16, [("(20) 0.148 x 2 1/2", 11, "(22) 0.148 x 2 1/2", 13), ("(22) 0.131 x 2 1/2", 13, "(26) 0.131 x 2 1/2", 15)], 1705),
+    ("CS18", "200", 18, [("(16) 0.148 x 2 1/2", 9, "(18) 0.148 x 2 1/2", 11), ("(18) 0.131 x 2 1/2", 11, "(22) 0.131 x 2 1/2", 12)], 1370),
+    ("CS20", "250", 20, [("(12) 0.148 x 2 1/2", 7, "(14) 0.148 x 2 1/2", 9), ("(14) 0.131 x 2 1/2", 9, "(16) 0.131 x 2 1/2", 9)], 1030),
+    ("CS22", "300", 22, [("(10) 0.148 x 2 1/2", 6, "(12) 0.148 x 2 1/2", 7), ("(12) 0.131 x 2 1/2", 7, "(14) 0.131 x 2 1/2", 8)], 845),
+]
+COIL_PAGE = 296
+STRAP_NOTES_PAGE = 288
+STRAP_KINDS = ["strap tie", "MST", "coiled strap"]
+
+
+def _count(fast):
+    return int(fast.split(")")[0].strip("("))
+
+
+def strap_models(kind):
+    return [r[0] for r in {"strap tie": STRAPS, "MST": MST, "coiled strap": COILS}[kind]]
+
+
+def strap(kind, model, species, tension, fastening="nails", nail="0.148", nails_per_end=None, clear_span=None):
+    """Strap in tension, ASD (160, wind or earthquake; reduce where other loads govern, p. 288 note a), half the fasteners in each member
+    (note d). kind "strap tie": p. 291; "MST": p. 292, nails or bolts (note 2); "coiled strap": p. 296, nail option by diameter
+    (0.162 / 0.148 / 0.131), allowable x nails used / nails in the table for fewer nails (note 2), cut length = 2 x end length + clear
+    span (p. 288 note h). model "first that works": the first strap in the table order that passes."""
+    if species not in ("DF/SP", "SPF/HF"):
+        raise SimpsonError("strap: the species group is DF/SP or SPF/HF")
+    if not tension or tension <= 0:
+        raise SimpsonError("strap: give the tension")
+    sp = 0 if species == "DF/SP" else 1
+    bolts = fastening.strip().lower().startswith("bolt")
+    if kind not in STRAP_KINDS:
+        raise SimpsonError("strap: the kind is strap tie, MST or coiled strap")
+    if bolts and kind != "MST":
+        raise SimpsonError(f"strap: only the MST straps have bolted values (catalog p. {MST_PAGE})")
+
+    def one(r):
+        if kind == "strap tie":
+            return dict(model=r[0], ga=r[1], W=r[2], L=r[3], fast=r[4], allow=r[5 + sp], page=STRAP_PAGE, n=_count(r[4]))
+        if kind == "MST":
+            al = (r[7] if bolts else r[6]) if sp == 0 else (r[9] if bolts else r[8])
+            fast = f"({r[5][0]}) {r[5][1]} in. bolts" if bolts else r[4]
+            return dict(model=r[0], ga=r[1], W=r[2], L=r[3], fast=fast, allow=al, page=MST_PAGE, n=r[5][0] if bolts else _count(r[4]))
+        opt = next((o for o in r[3] if f" {nail} x" in o[2 * sp]), None)
+        if opt is None:
+            return None
+        n_tab = _count(opt[2 * sp])
+        n_used = n_tab if not nails_per_end else 2 * int(nails_per_end)
+        if n_used > n_tab:
+            n_used = n_tab                                    # more nails than the table: no increase (note 2 is a reduction)
+        al = r[4] * n_used / n_tab
+        end = opt[2 * sp + 1]
+        return dict(model=r[0], ga=r[2], W="1 1/4" if r[0].startswith("CS") else "3", L=None,                                     # p. 295 hole patterns
+                    fast=opt[2 * sp], allow=al, table_allow=r[4], n=n_used, n_tab=n_tab, end=end, page=COIL_PAGE,
+                    cut=(2 * end + clear_span) if clear_span is not None else None)
+
+    tab = {"strap tie": STRAPS, "MST": MST, "coiled strap": COILS}[kind]
+    if model.strip().lower() in ("first that works", "lightest that works"):
+        for r in tab:
+            s_ = one(r)
+            if s_ and tension <= s_["allow"] + 1e-9:
+                break
+        else:
+            pg = {"strap tie": STRAP_PAGE, "MST": MST_PAGE, "coiled strap": COIL_PAGE}[kind]
+            raise SimpsonError(f"strap: no {kind} on catalog p. {pg} carries {tension:,.0f} lb ({species}" + (", bolted)" if bolts else ")"))
+        picked = True
+    else:
+        r = next((x for x in tab if x[0].lower() == model.strip().lower()), None)
+        if r is None:
+            raise SimpsonError(f"strap: {model} is not in the {kind} table")
+        s_ = one(r)
+        if s_ is None:
+            raise SimpsonError(f"strap: {r[0]} has no {nail} in. nail option on catalog p. {COIL_PAGE}")
+        picked = False
+    s_.update(kind=kind, species=species, tension=tension, bolts=bolts, picked=picked,
+              rows=[("tension", tension, s_["allow"])])
+    return s_
