@@ -306,7 +306,7 @@ def test_framing_angle_checks():
     assert h["rows"][-1][1] == pytest.approx(300 / 650 + 200 / 670)
     l = simpson.framing_angle("LTP4", 7, "SD", "SPF/HF", "floor (100)", {"G": 400}, sheathing="1/2")
     assert l["rows"][0][2] == pytest.approx(670 * 0.64)
-    assert simpson.framing_angle("A35", 2, "", "DF/SP", "snow (115), floor value", {"E": 200})["rows"][0][2] == 295
+    assert simpson.framing_angle("A35", 2, "", "DF/SP", "snow (115)", {"E": 200})["rows"][0][2] == 295
     with pytest.raises(simpson.SimpsonError):
         simpson.framing_angle("A35", 2, "", "DF/SP", "floor (100)", {"F1": 100})
     with pytest.raises(simpson.SimpsonError):
@@ -327,3 +327,23 @@ def test_framing_angle_screen(tmp_path):
         s = calc.build("framing_angle", v, proj)[0]
         assert all(r.status == "OK" for r in s.rows)
         calcsheet.simple_pdf(s, str(tmp_path / f"{v['mark']}.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+
+
+def test_l_ls_ga_angles_against_the_catalog_page():
+    """L / LS / GA angles (p. 313): every row's eight loads found in order in the page text (the "F1, F2" rows print as "F1, F 2");
+    L50 DF/SP snow (115): F1 300 / 415 + F2 50 / 415 = 0.843; LS90 with 0.148 x 3 nails at (160): 1,040; GA2 SD screws SPF/HF F2 (160): 540;
+    an L angle must be entered as type 9."""
+    import re
+    t = _page_text(313)
+    for r in simpson.ANGLES_L:
+        d_ = r"F1,\s*F\s*2" if r[3] == "F1/F2" else re.escape(r[3])
+        assert re.search(d_ + r"\s+" + r"\s+".join(re.escape(f"{v:,}") for v in r[4] + r[5]), t), r
+    h = simpson.framing_angle("L50", 9, "nails", "DF/SP", "snow (115)", {"F1": 300, "F2": 50})
+    assert h["rows"][-1][1] == pytest.approx(300 / 415 + 50 / 415)
+    assert simpson.framing_angle("LS90", 9, "3 in. nails", "DF/SP", "wind or earthquake (160)", {"F1": 1000})["rows"][0][2] == 1040
+    assert simpson.framing_angle("GA2", 9, "sd", "SPF/HF", "wind or earthquake (160)", {"F2": 450})["rows"][0][2] == 540
+    assert simpson.framing_angle("L70", 9, "nails", "DF/SP", "floor (100)", {"F2": 400})["rows"][0] == ("F2", 400, 485)
+    with pytest.raises(simpson.SimpsonError):
+        simpson.framing_angle("L50", 4, "nails", "DF/SP", "floor (100)", {"F1": 100})
+    with pytest.raises(simpson.SimpsonError):
+        simpson.framing_angle("LS50", 9, "nails", "DF/SP", "floor (100)", {"F2": 100})        # LS: F1 only

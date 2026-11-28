@@ -4960,6 +4960,8 @@ def _framing_angle_picture(c, top, d):
             _break_v(c, vx + 9.0 * sc, yp + ph * sc - 2, yp + (ph + jd) * sc + 2)
             mw = 18.0
         lw, lh = (2.875, 2.5) if mdl == "A34" else (2.875, 3.0)   # leg widths 1 7/16 + 1 7/16; heights p. 309
+        if d.get("L"):                                      # L, LS, GA (p. 313): length L along the member, legs about 1-3/8 in.
+            lw, lh = (2.0, d["L"]) if mdl.startswith("GA") else (1.375, d["L"])
         lw = min(lw, mw)
         _steel_strip(c, vx - lw * sc / 2, yp + ph * sc, lw * sc, lh * sc)                   # leg on the member face, face on
         _steel_strip(c, vx - lw * sc / 2, yp + ph * sc, lw * sc, T, cut=True)                 # leg on the plate, edge on
@@ -4980,7 +4982,7 @@ def _framing_angle_picture(c, top, d):
         xf = sx + mb_ * sc / 2                              # the member face the angle is on
         c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(*memberart.STEEL_CUT); c.setLineWidth(0.4)
         c.rect(xf, yp + ph * sc, T, lh * sc, fill=1, stroke=1)                              # vertical leg, cut
-        c.rect(xf, yp + ph * sc, 1.44 * sc, T, fill=1, stroke=1)                            # leg on the plate, cut
+        c.rect(xf, yp + ph * sc, (1.375 if d.get("L") else 1.44) * sc, T, fill=1, stroke=1)   # leg on the plate, cut
         c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
         for k in range(2):
             yn_ = yp + ph * sc + lh * sc * (0.35 + 0.35 * k)
@@ -4991,7 +4993,7 @@ def _framing_angle_picture(c, top, d):
         ybot = yp - 22
         lab = [(yp + ph * sc / 2, sx - 6.0 * sc, "plate, 2x flat, broken off"),
                (yp + (ph + mh_ * 0.75) * sc, sx - mb_ * sc * 0.2, ("stud" if stud else "joist or blocking") + ", 2x"),
-               (yp + (ph + lh * 0.6) * sc, xf + T, f"{mdl}, 18 ga")]
+               (yp + (ph + lh * 0.6) * sc, xf + T, f"{mdl}, {d.get('ga', 18)} ga")]
     else:
         tp, rim = 1.5, 9.25
         sub = 0.75 if mdl == "LTP5" else 0.0
@@ -5015,7 +5017,7 @@ def _framing_angle_picture(c, top, d):
         c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4); c.setDash(3, 2)
         c.line(vx - pwid * sc / 2 - 6, yj, vx + pwid * sc / 2 + 6, yj); c.setDash()
         memberart._dim_h(c, vx - pwid * sc / 2, vx + pwid * sc / 2, yp - 10, f"{_mixed(pwid)}", FR, ext_from=y0)
-        memberart._dim_v(c, y0, y0 + phgt * sc, vx + pwid * sc / 2 + 10, f"{_mixed(phgt)}", FR, ext_from=vx + pwid * sc / 2)
+        memberart._dim_v(c, y0, y0 + phgt * sc, vx + 10 * sc + 10, f"{_mixed(phgt)}", FR, ext_from=vx + pwid * sc / 2)   # clear of the members
         _small(c, vx, yp - 26, "elevation of the wall face, to scale (in.)")
         # section
         for k in range(2):
@@ -5043,9 +5045,9 @@ def _framing_angle_picture(c, top, d):
     lds = ", ".join(f"{k} {v:,.0f} lb" for k, v in d["loads"].items())
     yl = min(last - 14, ybot + 30)
     c.drawString(tx, yl, f"loads: {lds}")
-    c.drawString(tx, yl - 9, f"directions as catalog p. 309, figure {cfg}")
+    c.drawString(tx, yl - 9, "directions as catalog p. 313, typical installations" if d.get("L") else f"directions as catalog p. 309, figure {cfg}")
     ybot = min(ybot, yl - 16)
-    c.drawCentredString(LM + 200, ytop + 6, f"{mdl}, connection type {cfg}; {d['fast']}")
+    c.drawCentredString(LM + 200, ytop + 6, (f"{mdl} angle, L {_mixed(d['L'])} in." if d.get("L") else f"{mdl}, connection type {cfg}") + f"; {d['fast']}")
     return ybot - 8
 
 

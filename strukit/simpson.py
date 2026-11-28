@@ -656,15 +656,41 @@ ANGLES = [
     ("LTP5", 8, '(12) #9 x 1 1/2" SD', "H", (730, 730, 730), (625, 625, 625)),
 ]
 ANGLE_PAGE, ANGLE_FIG_PAGE = 310, 309
+# L / LS / GA reinforcing and skewable angles, catalog p. 313, row by row: model, fasteners, L (in.), direction ("F1/F2": the value is for
+# either), DF/SP floor (100), snow (115), roof (125), wind or seismic (160); SPF/HF the same four, lb.
+ANGLES_L = [
+    ("GA1", "(4) 0.148 x 1 1/2", "2 3/4", "F1/F2", (235, 270, 290, 350), (200, 230, 250, 300)),
+    ("GA1", '(4) #9 x 1 1/2" SD', "2 3/4", "F1", (340, 375, 375, 375), (225, 260, 280, 325)),
+    ("GA1", '(4) #9 x 1 1/2" SD', "2 3/4", "F2", (340, 395, 430, 435), (225, 260, 280, 360)),
+    ("GA2", "(6) 0.148 x 1 1/2", "3 1/4", "F1/F2", (355, 405, 435, 550), (305, 350, 375, 475)),
+    ("GA2", '(6) #9 x 1 1/2" SD', "3 1/4", "F1", (515, 590, 640, 695), (335, 385, 420, 540)),
+    ("GA2", '(6) #9 x 1 1/2" SD', "3 1/4", "F2", (515, 590, 640, 820), (335, 385, 420, 540)),
+    ("L30", "(4) 0.148 x 1 1/2", "3", "F1", (245, 250, 250, 250), (210, 215, 215, 215)),
+    ("L30", "(4) 0.148 x 1 1/2", "3", "F2", (245, 275, 295, 370), (210, 235, 255, 320)),
+    ("L50", "(6) 0.148 x 1 1/2", "5", "F1", (365, 415, 445, 525), (315, 355, 385, 450)),
+    ("L50", "(6) 0.148 x 1 1/2", "5", "F2", (365, 415, 445, 555), (315, 355, 385, 475)),
+    ("L70", "(8) 0.148 x 1 1/2", "7", "F1/F2", (485, 550, 595, 740), (415, 475, 510, 635)),
+    ("L90", "(10) 0.148 x 1 1/2", "9", "F1/F2", (610, 690, 740, 925), (525, 595, 635, 795)),
+    ("LS30", "(6) 0.148 x 1 1/2", "3 3/8", "F1", (320, 320, 320, 320), (275, 275, 275, 275)),
+    ("LS30", "(6) 0.148 x 3", "3 3/8", "F1", (355, 395, 395, 395), (305, 340, 340, 340)),
+    ("LS50", "(8) 0.148 x 1 1/2", "4 7/8", "F1", (475, 540, 560, 560), (410, 465, 480, 480)),
+    ("LS50", "(8) 0.148 x 3", "4 7/8", "F1", (475, 540, 580, 730), (410, 465, 500, 630)),
+    ("LS70", "(10) 0.148 x 1 1/2", "6 3/8", "F1", (590, 645, 645, 645), (510, 555, 555, 555)),
+    ("LS70", "(10) 0.148 x 3", "6 3/8", "F1", (590, 675, 725, 915), (510, 580, 625, 785)),
+    ("LS90", "(12) 0.148 x 1 1/2", "7 7/8", "F1", (710, 805, 870, 890), (610, 690, 750, 765)),
+    ("LS90", "(12) 0.148 x 3", "7 7/8", "F1", (710, 805, 870, 1040), (610, 690, 750, 895)),
+]
+ANGLE_L_PAGE = 313
 ANGLE_CONFIGS = {1: "A34, joists to plate or beam (fig. 1)", 2: "A35, joist to plate, A leg (fig. 2)", 3: "A35, stud to plate, B leg (fig. 3)",
                  4: "A35, joist to beam or plate, flat (fig. 4)", 5: "A35, blocking to plate (fig. 5)", 6: "A35, to subfloor over sheathing (fig. 6)",
-                 7: "LTP4, top plates to rim or blocking (fig. 7)", 8: "LTP5, over the subfloor to rim or blocking (fig. 8)"}
-ANGLE_DURATIONS = {"floor (100)": 0, "snow (115), floor value": 0, "roof (125)": 1, "wind or earthquake (160)": 2}
+                 7: "LTP4, top plates to rim or blocking (fig. 7)", 8: "LTP5, over the subfloor to rim or blocking (fig. 8)",
+                 9: "L, LS or GA angle, as the typical installations (p. 313)"}
+ANGLE_DURATIONS = {"floor (100)": 0, "snow (115)": 0, "roof (125)": 1, "wind or earthquake (160)": 2}
 
 
 def angle_models():
     out = []
-    for r in ANGLES:
+    for r in ANGLES + ANGLES_L:
         if r[0] not in out:
             out.append(r[0])
     return out
@@ -682,17 +708,26 @@ def framing_angle(model, config, fasteners, species, duration, loads, sheathing=
     loads = {k: v for k, v in loads.items() if v}
     if not loads or min(loads.values()) < 0:
         raise SimpsonError("framing angle: give at least one load (zero or more)")
-    rows_m = [r for r in ANGLES if r[0] == model and r[1] == config]
+    lang = any(r[0] == model for r in ANGLES_L)
+    if lang:                                                # p. 313: rows as (model, 9, fasteners, direction, DF/SP, SPF/HF)
+        if config != 9:
+            raise SimpsonError(f"framing angle: {model} is an L, LS or GA angle (catalog p. {ANGLE_L_PAGE}); use type 9")
+        rows_m = [(r[0], 9, r[1], r[3], r[4], r[5]) for r in ANGLES_L if r[0] == model]
+    else:
+        rows_m = [r for r in ANGLES if r[0] == model and r[1] == config]
     if not rows_m:
         raise SimpsonError(f"framing angle: configuration {config} is not tabulated for {model} on catalog p. {ANGLE_PAGE}")
     fopts = []
     for r in rows_m:
         if r[2] not in fopts:
             fopts.append(r[2])
-    fast = next((f for f in fopts if fasteners.strip().lower() in f.lower()), None) if fasteners else fopts[0]
+    keys = {"nails": ("0.131 x 1 1/2", "0.148 x 1 1/2"), "3 in. nails": ("0.148 x 3",), "sd": ("sd",), "ph612i": ("ph612i",)}.get(
+        (fasteners or "nails").strip().lower(), ((fasteners or "").strip().lower(),))
+    fast = next((f for f in fopts if any(k.lower() in f.lower() for k in keys)), None)
     if fast is None:
         raise SimpsonError(f"framing angle: {model} in configuration {config} is tabulated with {' or '.join(fopts)}")
-    col = ANGLE_DURATIONS[duration]
+    col = ANGLE_DURATIONS[duration] if not lang else {"floor (100)": 0, "snow (115)": 1, "roof (125)": 2,
+                                                       "wind or earthquake (160)": 3}[duration]
     factor = 1.0
     if sheathing:
         if model not in ("LTP4", "LTP5"):
@@ -700,13 +735,14 @@ def framing_angle(model, config, fasteners, species, duration, loads, sheathing=
         factor = {"3/8": 0.72, "1/2": 0.64}[sheathing]
     rows, unity = [], 0.0
     for dname, dem in loads.items():
-        r = next((x for x in rows_m if x[2] == fast and x[3].lower() == dname.lower()), None)
+        r = next((x for x in rows_m if x[2] == fast and dname.lower() in x[3].lower().split("/")), None)
         if r is None:
             dirs = sorted({x[3] for x in rows_m if x[2] == fast})
             raise SimpsonError(f"framing angle: {model} in configuration {config} with {fast} has no {dname} value (directions: {', '.join(dirs)})")
         cap = (r[4] if species == "DF/SP" else r[5])[col] * factor
-        rows.append((r[3], dem, cap)); unity += dem / cap
+        rows.append((dname if "/" in r[3] else r[3], dem, cap)); unity += dem / cap
     if len(rows) > 1:
         rows.append(("loads together, sum of load / allowable", unity, 1.0))
     return dict(model=model, config=config, fast=fast, species=species, duration=duration, factor=factor, rows=rows,
-                directions=sorted({x[3] for x in rows_m if x[2] == fast}))
+                directions=sorted({d_ for x in rows_m if x[2] == fast for d_ in x[3].split("/")}),
+                page=ANGLE_L_PAGE if lang else ANGLE_PAGE, L=next((x[2] for x in ANGLES_L if x[0] == model), None) if lang else None)

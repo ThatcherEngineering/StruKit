@@ -1392,9 +1392,9 @@ FORMS = {
         tables=[]),
     "framing_angle": dict(
         title="Framing Angle / Plate (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="FA",
-        fields=[F("model", "Connector", "select", options=simpson.angle_models(), help="A34, A35 framing angles; LTP4, LTP5 lateral tie plates (catalog p. 310)"),
-                F("config", "Type of connection", "select", options=[f"{k}: {v}" for k, v in simpson.ANGLE_CONFIGS.items()], help="the numbered figures on catalog p. 309"),
-                F("fasteners", "Fasteners", "select", options=["nails", "SD screws", "PH612I screws"]),
+        fields=[F("model", "Connector", "select", options=simpson.angle_models(), help="A34, A35 framing angles, LTP4, LTP5 lateral tie plates (p. 310); L, LS, GA angles (p. 313)"),
+                F("config", "Type of connection", "select", options=[f"{k}: {v}" for k, v in simpson.ANGLE_CONFIGS.items()], help="the numbered figures on catalog p. 309; type 9 for L, LS, GA"),
+                F("fasteners", "Fasteners", "select", options=["nails", "0.148 x 3 nails", "SD screws", "PH612I screws"]),
                 F("species", "Species group", "select", options=["DF/SP", "SPF/HF"]),
                 F("duration", "Load duration", "select", options=list(simpson.ANGLE_DURATIONS)),
                 F("dir1", "Direction of load 1", "select", options=["F1", "F2", "Uplift", "A1", "E", "C1", "A2", "C2", "D", "G", "H"], help="as the figure for the connection type"),
@@ -3103,7 +3103,7 @@ def _build(kind, values, project):
         loads = {d1: l1}
         if d2 and l2:
             loads[d2] = loads.get(d2, 0) + l2
-        fmap = {"nails": "0.131", "SD screws": "SD", "PH612I screws": "PH612I"}
+        fmap = {"nails": "nails", "0.148 x 3 nails": "3 in. nails", "SD screws": "sd", "PH612I screws": "ph612i"}
         return ws_more.framing_angle_sheet(mark, mdl, int(str(cf).split(":")[0]), fmap.get(fa, fa), sp, du, loads,
                                            None if sh in (None, "", "none") else sh, src), "simple", {}
     if kind == "strap":
