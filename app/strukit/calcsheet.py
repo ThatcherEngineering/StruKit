@@ -5,6 +5,7 @@ titles in title case, every check with demand, capacity, D/C, result and code re
 the governing equations with intermediate values, assumptions stated. No revision logs
 on the page. The PE stamp goes on the package cover only.
 """
+import re
 import datetime
 import math
 import os
@@ -1816,6 +1817,8 @@ def _block_picture(c, top, pic):
         return _mpbz_picture(c, top, d)
     if name == "column_base":
         return _column_base_picture(c, top, d)
+    if name == "corner_cap":
+        return _corner_cap_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -4967,6 +4970,11 @@ def _framing_angle_picture(c, top, d):
     if not ltp:
         pw, ph = 3.5, 1.5                                   # 2x plate laid flat
         jb, jd = 1.5, 7.25                                  # 2x joist or stud
+        heavy = mdl.startswith("HL")                         # HL: members 3-1/2 or 5-1/8 in. thick (p. 315 notes 4, 5)
+        aang = mdl in ("A21", "A23", "A33", "A44")
+        if heavy:
+            jb, jd = (3.5 if mdl[2] in "35" else 5.125), 9.25
+            pw, ph = 5.5, 3.5
         stud = cfg == 3
         yp = ytop - (jd + ph + 1.0) * sc                    # plate bottom
         # ---- view 1: plate in end grain, member on it in elevation
@@ -4984,12 +4992,23 @@ def _framing_angle_picture(c, top, d):
         lw, lh = (2.875, 2.5) if mdl == "A34" else (2.875, 3.0)   # leg widths 1 7/16 + 1 7/16; heights p. 309
         if d.get("L"):                                      # L, LS, GA (p. 313): length L along the member, legs about 1-3/8 in.
             lw, lh = (2.0, d["L"]) if mdl.startswith("GA") else (1.375, d["L"])
+        if heavy or aang:                                   # A, HL (pp. 314-315): width L along the member, leg W1 up the member
+            lw, lh = d["L"], d["leg"]
         lw = min(lw, mw)
         _steel_strip(c, vx - lw * sc / 2, yp + ph * sc, lw * sc, lh * sc)                   # leg on the member face, face on
         _steel_strip(c, vx - lw * sc / 2, yp + ph * sc, lw * sc, T, cut=True)                 # leg on the plate, edge on
-        n_ = int(d["fast"].split(")")[0].strip("("))
-        _nail_heads(c, vx - lw * sc / 2, yp + ph * sc + T, lw * sc, lh * sc - T, max(n_ // 2, 2))
-        _small(c, vx, yp - 16, "elevation along the plate, to scale (in.)" if not stud else "elevation along the wall, plate cut, to scale (in.)")
+        n_ = int(re.search(r"\((\d+)\)", d["fast"]).group(1)) * (2 if d["fast"].startswith("base") else 1)
+        if d.get("bolts"):                                  # HL: half the bolts in the leg on the member, in one or two rows
+            nb = d["bolts"][0] // 2
+            cols_ = (nb + 1) // 2 if nb > 2 else nb
+            rows_ = 2 if nb > 2 else 1
+            pts = [(vx - lw * sc / 2 + lw * sc * (k % cols_ + 0.5) / cols_, yp + ph * sc + lh * sc * ((k // cols_ + 1) / (rows_ + 1) * 0.8 + 0.2))
+                   for k in range(nb)]
+            _bolt_heads(c, pts, 0.5 * sc if d["bolts"][1] == "1/2" else 0.75 * sc)
+        else:
+            _nail_heads(c, vx - lw * sc / 2, yp + ph * sc + T, lw * sc, lh * sc - T, max(n_ // 2, 2))
+        _small(c, vx, yp - 16, "elevation, the angle face on, to scale (in.)" if (heavy or aang) else
+               ("elevation along the plate, to scale (in.)" if not stud else "elevation along the wall, plate cut, to scale (in.)"))
         # ---- view 2: member in end grain on the plate in elevation
         memberart.wood_elevation(c, sx - 9.0 * sc, yp, 18.0 * sc, ph * sc, seed=9)
         _break_v(c, sx - 9.0 * sc, yp - 2, yp + ph * sc + 2); _break_v(c, sx + 9.0 * sc, yp - 2, yp + ph * sc + 2)
@@ -5004,17 +5023,23 @@ def _framing_angle_picture(c, top, d):
         xf = sx + mb_ * sc / 2                              # the member face the angle is on
         c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setFillColorRGB(*memberart.STEEL_CUT); c.setLineWidth(0.4)
         c.rect(xf, yp + ph * sc, T, lh * sc, fill=1, stroke=1)                              # vertical leg, cut
-        c.rect(xf, yp + ph * sc, (1.375 if d.get("L") else 1.44) * sc, T, fill=1, stroke=1)   # leg on the plate, cut
-        c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
-        for k in range(2):
-            yn_ = yp + ph * sc + lh * sc * (0.35 + 0.35 * k)
-            c.line(xf + T, yn_, xf - 1.3 * sc, yn_)                                         # nails into the member
-        c.line(xf + 0.8 * sc, yp + ph * sc + T, xf + 0.8 * sc, yp + 0.2 * sc)              # nail into the plate
-        c.setDash()
-        _small(c, sx, yp - 16, "section along the joist, to scale (in.)" if not stud else "elevation of the wall face, angle cut, to scale (in.)")
+        c.rect(xf, yp + ph * sc, ((d["leg"] if (heavy or aang) else 1.375) if d.get("L") else 1.44) * sc, T, fill=1, stroke=1)   # leg on the plate, cut
+        if d.get("bolts"):                                  # HL: through bolts, one in each leg drawn
+            db_ = 0.5 * sc if d["bolts"][1] == "1/2" else 0.75 * sc
+            memberart.bolt_side(c, xf + T, yp + ph * sc + lh * sc * 0.6, sx - mb_ * sc / 2, yp + ph * sc + lh * sc * 0.6, db_)
+            memberart.bolt_side(c, xf + d["leg"] * sc * 0.55, yp + ph * sc + T, xf + d["leg"] * sc * 0.55, yp, db_)
+        if not d.get("bolts"):
+            c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
+            for k in range(2):
+                yn_ = yp + ph * sc + lh * sc * (0.35 + 0.35 * k)
+                c.line(xf + T, yn_, xf - 1.3 * sc, yn_)                                     # nails into the member
+            c.line(xf + 0.8 * sc, yp + ph * sc + T, xf + 0.8 * sc, yp + 0.2 * sc)          # nail into the plate
+            c.setDash()
+        _small(c, sx, yp - 16, "section through the angle, to scale (in.)" if (heavy or aang) else
+               ("section along the joist, to scale (in.)" if not stud else "elevation of the wall face, angle cut, to scale (in.)"))
         ybot = yp - 22
-        lab = [(yp + ph * sc / 2, sx - 6.0 * sc, "plate, 2x flat, broken off"),
-               (yp + (ph + mh_ * 0.75) * sc, sx - mb_ * sc * 0.2, ("stud" if stud else "joist or blocking") + ", 2x"),
+        lab = [(yp + ph * sc / 2, sx - 6.0 * sc, "supporting member, broken off" if (heavy or aang) else "plate, 2x flat, broken off"),
+               (yp + (ph + mh_ * 0.75) * sc, sx - mb_ * sc * 0.2, "supported member" if (heavy or aang) else (("stud" if stud else "joist or blocking") + ", 2x")),
                (yp + (ph + lh * 0.6) * sc, xf + T, f"{mdl}, {d.get('ga', 18)} ga")]
     else:
         tp, rim = 1.5, 9.25
@@ -5067,7 +5092,8 @@ def _framing_angle_picture(c, top, d):
     lds = ", ".join(f"{k} {v:,.0f} lb" for k, v in d["loads"].items())
     yl = min(last - 14, ybot + 30)
     c.drawString(tx, yl, f"loads: {lds}")
-    c.drawString(tx, yl - 9, "directions as catalog p. 313, typical installations" if d.get("L") else f"directions as catalog p. 309, figure {cfg}")
+    pg_ = 315 if mdl.startswith("HL") else (314 if mdl in ("A21", "A23", "A33", "A44") else 313)
+    c.drawString(tx, yl - 9, f"directions as catalog p. {pg_}, installations shown" if d.get("L") else f"directions as catalog p. 309, figure {cfg}")
     ybot = min(ybot, yl - 16)
     c.drawCentredString(LM + 200, ytop + 6, (f"{mdl} angle, L {_mixed(d['L'])} in." if d.get("L") else f"{mdl}, connection type {cfg}") + f"; {d['fast']}")
     return ybot - 8
@@ -5264,6 +5290,81 @@ def _column_base_picture(c, top, d):
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
     c.drawCentredString(LM + 215, top - 8, f"{d['model']} on a {d['post']} post; {d['screws']}")
     return yc - hc * sc - 50
+
+
+def _corner_cap_picture(c, top, d):
+    """Corner post cap (RTC44 / LCE4), to scale. Left: plan looking down on the corner: the two beams (mitered at 45 degrees, or the side
+    beam butting the main beam for a square cut) with their grain, the post under them dashed, the cap wrapping the outside corner with its
+    nails. Right: elevation of the outside face of the main beam: the beam with its grain broken off, the post below broken off, the cap face
+    on across the joint with its nails; L and the post width dimensioned; the uplift listed."""
+    import math as _m
+    bw, bd, pw = 3.5, 7.25, 3.5
+    t = 0.075 if not d["lce"] else 0.036
+    sc = 7.0
+    T = max(t * sc, 1.0)
+    # ---- plan: corner at (x0, y0), main beam to +x, side beam to -y
+    x0, y0 = LM + 70, top - 30
+    Lb = 12.0
+    mitered = d["mitered"]
+    def beam_rect(xa, ya, w, h, seed, along_x):
+        c.saveState()
+        if along_x:
+            memberart.wood_elevation(c, xa, ya, w, h, seed=seed)
+        else:
+            c.translate(xa, ya); c.rotate(90); memberart.wood_elevation(c, 0, -w, h, w, seed=seed)
+        c.restoreState()
+    c.saveState()
+    if mitered:                                              # clip each beam on the 45 degree miter line
+        pth = c.beginPath(); pth.moveTo(x0, y0); pth.lineTo(x0 + Lb * sc, y0); pth.lineTo(x0 + Lb * sc, y0 - bw * sc); pth.lineTo(x0 + bw * sc, y0 - bw * sc); pth.close()
+        c.clipPath(pth, stroke=0, fill=0)
+    beam_rect(x0 if not mitered else x0, y0 - bw * sc, Lb * sc, bw * sc, 4, True)
+    c.restoreState()
+    c.saveState()
+    if mitered:
+        pth = c.beginPath(); pth.moveTo(x0, y0); pth.lineTo(x0 + bw * sc, y0 - bw * sc); pth.lineTo(x0 + bw * sc, y0 - Lb * sc); pth.lineTo(x0, y0 - Lb * sc); pth.close()
+        c.clipPath(pth, stroke=0, fill=0)
+        beam_rect(x0, y0 - Lb * sc, bw * sc, Lb * sc, 7, False)
+    else:
+        beam_rect(x0, y0 - Lb * sc, bw * sc, (Lb - bw) * sc, 7, False)
+    c.restoreState()
+    c.setStrokeColorRGB(*memberart.WOOD_LINE); c.setLineWidth(0.7)
+    if mitered:
+        c.line(x0, y0, x0 + bw * sc, y0 - bw * sc)
+    else:
+        c.line(x0, y0 - bw * sc, x0 + bw * sc, y0 - bw * sc)
+    _break_v(c, x0 + Lb * sc, y0 - bw * sc - 2, y0 + 2)
+    memberart._break_h(c, x0 - 1, x0 + bw * sc + 1, y0 - Lb * sc)
+    c.setStrokeColorRGB(*GREY); c.setLineWidth(0.5); c.setDash(2, 1.4)
+    c.rect(x0, y0 - pw * sc, pw * sc, pw * sc, fill=0, stroke=1); c.setDash()                 # the post under the corner
+    c.setFillColorRGB(*memberart.STEEL_CUT); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+    Lc = d["L"]
+    c.rect(x0 - T, y0, Lc * sc + T, T, fill=1, stroke=1)                                    # leg on the outer face of the main beam
+    c.rect(x0 - T, y0 - Lc * sc, T, Lc * sc + T, fill=1, stroke=1)                          # leg on the outer face of the side beam
+    c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
+    for k in range(3):
+        xx = x0 + Lc * sc * (0.2 + 0.3 * k); c.line(xx, y0 + T, xx, y0 - 2.2 * sc)
+        yy = y0 - Lc * sc * (0.2 + 0.3 * k); c.line(x0 - T, yy, x0 + 2.2 * sc, yy)
+    c.setDash()
+    memberart._dim_h(c, x0, x0 + Lc * sc, y0 + 12, f"L {_mixed(Lc)}", FR, ext_from=y0 + T)
+    _small(c, x0 + 40, y0 - Lb * sc - 16, "plan at the corner, to scale (in.); post dashed")
+    # ---- elevation of the main beam's outer face
+    ex, ey = LM + 260, top - 30 - bd * sc                    # beam bottom
+    memberart.wood_elevation(c, ex, ey, Lb * sc, bd * sc, seed=4)
+    _break_v(c, ex + Lb * sc, ey - 2, ey + bd * sc + 2)
+    c.saveState(); c.translate(ex, ey - 8.0 * sc); c.rotate(90)
+    memberart.wood_elevation(c, 0, -pw * sc, 8.0 * sc, pw * sc, seed=6); c.restoreState()
+    memberart._break_h(c, ex, ex + pw * sc, ey - 8.0 * sc - 1)
+    _steel_strip(c, ex, ey - 2.0 * sc, Lc * sc, 2.0 * sc + min(3.5, bd - 1) * sc)
+    _nail_heads(c, ex, ey + 0.3 * sc, Lc * sc, min(3.5, bd - 1) * sc - 0.3 * sc, 6)
+    _nail_heads(c, ex, ey - 2.0 * sc, pw * sc, 1.8 * sc, 2)
+    memberart._dim_h(c, ex, ex + pw * sc, ey - 8.0 * sc - 12, f"post {_mixed(pw)}", FR, ext_from=ey - 8.0 * sc)
+    _small(c, ex + Lb * sc / 2, ey - 8.0 * sc - 30, "elevation of the outside face of the main beam, to scale (in.)")
+    c.setFillColorRGB(*LOADC); c.setFont(FR, 6.5)
+    c.drawString(ex + Lb * sc + 12, ey + bd * sc * 0.7, f"uplift, main beam {d['up_main']:,.0f} lb")
+    c.drawString(ex + Lb * sc + 12, ey + bd * sc * 0.7 - 9, f"uplift, side beam {d['up_side']:,.0f} lb")
+    c.setFillColorRGB(*INK)
+    c.drawCentredString(LM + 230, top - 8, f"{d['model']}; beams {d['fast']} nails" + ("; installed in pairs" if d["lce"] else ""))
+    return min(y0 - Lb * sc - 24, ey - 8.0 * sc - 38)
 
 
 def _lumber_dims(label):

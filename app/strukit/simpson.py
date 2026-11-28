@@ -423,6 +423,32 @@ AC_CAPS = [
     ("LPC6Z", "5 9/16", "5 9/16", "5 1/2", "5 1/2", "2 1/2", "2 1/4", "(8) 0.148 x 3", "(8) 0.148 x 3", 920, 885, 16),
 ]
 AC_PAGE = 95
+# RTC44 and LCE4 corner post caps, catalog p. 95 (lower table): model, W, L (in.), beam nails, post nails, DF/SP uplift side beam, main
+# beam, post; SPF/HF the same three (160), lb. The beams' combined uplift not over the post value (note 3); LCE4 in pairs (note 4).
+RTC_CAPS = [
+    ("RTC44 (mitered corner)", "3 9/16", "4 3/4", "(19) 0.162 x 3 1/2", "(10) 0.162 x 3 1/2", (900, 900, 1800), (775, 775, 1550)),
+    ("RTC44 (square cut)", "3 9/16", "4 3/4", "(19) 0.162 x 3 1/2", "(10) 0.162 x 3 1/2", (925, 1230, 1760), (795, 1060, 1515)),
+    ("LCE4 (mitered corner)", "5 3/8", "5 3/8", "(14) 0.162 x 3 1/2", "(10) 0.162 x 3 1/2", (445, 445, 885), (380, 380, 760)),
+]
+
+
+def corner_cap(model, species, uplift_main, uplift_side):
+    """Corner post cap RTC44 / LCE4 (catalog p. 95 lower table), uplift (160) on each beam, and their sum against the post value (note 3)."""
+    r = next((x for x in RTC_CAPS if x[0].lower() == model.strip().lower()), None)
+    if r is None:
+        raise SimpsonError("corner cap: " + ", ".join(x[0] for x in RTC_CAPS) + f" (catalog p. {AC_PAGE})")
+    if species not in ("DF/SP", "SPF/HF"):
+        raise SimpsonError("corner cap: the species group is DF/SP or SPF/HF")
+    if not (uplift_main or uplift_side) or min(uplift_main or 0, uplift_side or 0) < 0:
+        raise SimpsonError("corner cap: give the uplift of the main or side beam")
+    al = r[5] if species == "DF/SP" else r[6]
+    rows = []
+    if uplift_side:
+        rows.append(("uplift, side beam", uplift_side, al[0]))
+    if uplift_main:
+        rows.append(("uplift, main beam", uplift_main, al[1]))
+    rows.append(("uplift, both beams, at the post (note 3)", (uplift_main or 0) + (uplift_side or 0), al[2]))
+    return dict(row=r, rows=rows, allow=al)
 CAP_SERIES = ["CC", "ECC", "ECCU", "BC", "CCQ", "ECCQ", "AC"]
 _SLOT = {"CC": 0, "ECC": 1, "ECCU": 2, "CCQ": 0, "ECCQ": 2}
 
@@ -769,10 +795,59 @@ ANGLE_DURATIONS = {"floor (100)": 0, "snow (115)": 0, "roof (125)": 1, "wind or 
 
 def angle_models():
     out = []
-    for r in ANGLES + ANGLES_L:
+    for r in ANGLES + ANGLES_L + ANGLES_A + ANGLES_HL:
         if r[0] not in out:
             out.append(r[0])
     return out
+
+
+# A angles, catalog p. 314 (the rated ones; A66, A88, A24, A311 have no table loads): model, W1, W2, L (in.), fasteners base, post, DF/SP F1,
+# F2 (160), lb. SPF/HF x 0.86 (note 2); F1 both ways needs connectors on both sides (note 3).
+ANGLES_A = [
+    ("A21", "2", "1 1/2", "1 3/8", "(2) 0.148 x 1 1/2", "(2) 0.148 x 1 1/2", 330, 150),
+    ("A23", "2", "1 1/2", "2 3/4", "(4) 0.148 x 1 1/2", "(4) 0.148 x 1 1/2", 680, 535),
+    ("A33", "3", "3", "1 1/2", "(4) 0.148 x 3", "(4) 0.148 x 3", 765, 340),
+    ("A44", "4 9/16", "4 3/8", "1 1/2", "(4) 0.148 x 3", "(4) 0.148 x 3", 775, 290),
+]
+ANGLE_A_PAGE = 314
+# HL heavy angles, catalog p. 315: model, gauge, W1 = W2, L, bolts (qty, dia.), DF/SP uplift, F1 (160), lb; rows "double" for the HL5x / HL7x.
+# SPF/HF x 0.85 (note 2); members at least 3-1/2 in. (HL3x, HL5x) or 5-1/8 in. (HL4x, HL7x) thick (notes 4, 5); one connector (note 6).
+ANGLES_HL = [
+    ("HL33", 7, "3 1/4", "2 1/2", (2, "1/2"), 740, 1040), ("HL35", 7, "3 1/4", "5", (4, "1/2"), 740, 1310),
+    ("HL37", 7, "3 1/4", "7 1/2", (6, "1/2"), 740, 1310), ("HL43", 3, "4 1/4", "3", (2, "3/4"), 1275, 1445),
+    ("HL46", 3, "4 1/4", "6", (4, "3/4"), 1275, 1680), ("HL49", 3, "4 1/4", "9", (6, "3/4"), 1275, 1680),
+    ("HL53", 7, "5 3/4", "2 1/2", (4, "1/2"), 740, 1310), ("HL55", 7, "5 3/4", "5", (8, "1/2"), 740, 1310),
+    ("HL57", 7, "5 3/4", "7 1/2", (12, "1/2"), 740, 1310), ("HL73", 3, "7 1/4", "3", (4, "3/4"), 2445, 2885),
+    ("HL76", 3, "7 1/4", "6", (8, "3/4"), 2445, 4310), ("HL79", 3, "7 1/4", "9", (12, "3/4"), 2445, 4310),
+]
+ANGLE_HL_PAGE = 315
+ANGLE_CONFIGS.update({10: "A angle, as the installations shown (p. 314)", 11: "HL heavy angle, as the installation shown (p. 315)"})
+
+
+def _angle_a_hl(model, config, species, duration, loads):
+    a = next((r for r in ANGLES_A if r[0] == model), None)
+    hl = next((r for r in ANGLES_HL if r[0] == model), None)
+    want = 10 if a else 11
+    pg = ANGLE_A_PAGE if a else ANGLE_HL_PAGE
+    if config != want:
+        raise SimpsonError(f"framing angle: {model} is {'an A' if a else 'an HL'} angle (catalog p. {pg}); use type {want}")
+    if duration != "wind or earthquake (160)":
+        raise SimpsonError(f"framing angle: the {model} table (catalog p. {pg}) gives (160) loads only, for wind or earthquake")
+    f = 1.0 if species == "DF/SP" else (0.86 if a else 0.85)
+    al = {"F1": a[6], "F2": a[7]} if a else {"Uplift": hl[5], "F1": hl[6]}
+    rows, unity = [], 0.0
+    for dname, dem in loads.items():
+        key = next((k for k in al if k.lower() == dname.lower()), None)
+        if key is None:
+            raise SimpsonError(f"framing angle: {model} has no {dname} value (directions: {', '.join(al)})")
+        cap = al[key] * f
+        rows.append((key, dem, cap)); unity += dem / cap
+    if len(rows) > 1:
+        rows.append(("loads together, sum of load / allowable", unity, 1.0))
+    fast = (f"base {a[4]}; post {a[5]}" if a else f'({hl[4][0]}) {hl[4][1]}" dia. bolts')
+    return dict(model=model, config=config, fast=fast, species=species, duration=duration, factor=f, rows=rows, directions=list(al), page=pg,
+                L=_in(a[3]) if a else _in(hl[3]), leg=_in(a[1]) if a else _in(hl[2]), bolts=hl[4] if hl else None,
+                ga=(18 if model in ("A21", "A23") else 12) if a else hl[1])
 
 
 def framing_angle(model, config, fasteners, species, duration, loads, sheathing=None):
@@ -787,6 +862,10 @@ def framing_angle(model, config, fasteners, species, duration, loads, sheathing=
     loads = {k: v for k, v in loads.items() if v}
     if not loads or min(loads.values()) < 0:
         raise SimpsonError("framing angle: give at least one load (zero or more)")
+    if any(r[0] == model for r in ANGLES_A + ANGLES_HL):
+        if sheathing:
+            raise SimpsonError("framing angle: the over-sheathing factors of note 3 are for LTP4 and LTP5")
+        return _angle_a_hl(model, config, species, duration, loads)
     lang = any(r[0] == model for r in ANGLES_L)
     if lang:                                                # p. 313: rows as (model, 9, fasteners, direction, DF/SP, SPF/HF)
         if config != 9:
