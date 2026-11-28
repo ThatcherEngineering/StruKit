@@ -1821,6 +1821,8 @@ def _block_picture(c, top, pic):
         return _corner_cap_picture(c, top, d)
     if name == "rafter_connector":
         return _rafter_connector_picture(c, top, d)
+    if name == "stem_wall":
+        return _stem_wall_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -6215,6 +6217,114 @@ def _rafter_connector_picture(c, top, d):
     c.drawString(xe - 14 * sc, ye + 10, f"per hip: download {d['download']:,.0f} lb" + (f", uplift {d['uplift']:,.0f} lb" if d["uplift"] else ""))
     _small(c, xe + 20, yc - 12 * sc - 14, "elevation along a hip, to scale (member depths for the picture)")
     return yc - 12 * sc - 22
+
+
+def _stem_wall_picture(c, top, d):
+    """Section across the stem wall, to scale: the wall stippled with its bars (vertical bar, horizontal bars in section, the grade beam
+    bars and stirrup where it spans), what is under it (the continuous footing, the soil it bears on, or a void form over the soil),
+    the backfill on one side to its height and the grade on the other, the slab bracing the top. Where the wall spans between
+    footings or piers, an elevation: the wall over the piers with the void forms between them, the loads above, the spans dimensioned."""
+    M = memberart
+    t, H = d["t"], d["H"]
+    mode = d["mode"]
+    below = {"footing": 12.0, "soil": 10.0, "spans": 14.0}[mode]
+    sc = min(170.0 / (H + below + 8.0), 9.0, 150.0 / (t + 30.0))
+    xw, yb = LM + 120, top - 18 - (H + 6.0) * sc                    # wall's left face (backfill side), bottom of the wall
+    yt = yb + H * sc
+    hb = (d.get("hb") or 0.0) * 12.0
+    side = 14.0                                                     # soil drawn beside the wall, in.
+    # under the wall
+    if mode == "footing":
+        fw, fh = t + 16.0, 10.0
+        M._soil(c, xw - side * sc, yb - (fh + 6) * sc, (t + 2 * side) * sc, 6 * sc, native=True)
+        M._concrete(c, xw - (fw - t) / 2 * sc, yb - fh * sc, fw * sc, fh * sc, seed=4)
+        c.setFont(FR, 6.5); c.setFillColorRGB(*INK); c.drawString(xw + (t + (fw - t) / 2) * sc + 4, yb - fh * sc / 2 - 2, "continuous footing (its own sheet)")
+    elif mode == "soil":
+        M._soil(c, xw - side * sc, yb - 10 * sc, (t + 2 * side) * sc, 10 * sc, native=True)
+    else:
+        vh = 4.0
+        M._soil(c, xw - side * sc, yb - (vh + 10) * sc, (t + 2 * side) * sc, 10 * sc, native=True)
+        c.setFillColorRGB(0.96, 0.93, 0.86); c.setStrokeColorRGB(0.55, 0.45, 0.30); c.setLineWidth(0.5)
+        c.rect(xw, yb - vh * sc, t * sc, vh * sc, fill=1, stroke=1)                      # the void form
+        c.setLineWidth(0.3)
+        c.line(xw, yb - vh * sc, xw + t * sc, yb); c.line(xw, yb, xw + t * sc, yb - vh * sc)
+        c.setFont(FR, 6.5); c.setFillColorRGB(*INK); c.drawString(xw + t * sc + side * sc + 6, yb - vh * sc / 2 - 2, "void form, no soil support")
+    # soil beside the wall: backfill to its height on the left, grade on the right
+    gl = max(hb, 6.0) if hb else 6.0
+    M._soil(c, xw - side * sc, yb - (0 if mode != "spans" else 4.0 * sc), side * sc, (gl * sc) + (0 if mode != "spans" else 4.0 * sc))
+    M._grade(c, xw - side * sc, xw, yb + gl * sc)
+    gr = 6.0
+    M._soil(c, xw + t * sc, yb - (0 if mode != "spans" else 4.0 * sc), side * sc, gr * sc + (0 if mode != "spans" else 4.0 * sc))
+    if hb:
+        ys_ = yt - 4.0 * sc
+        c.setFillColorRGB(0.85, 0.85, 0.83); c.setStrokeColorRGB(*M.CONC_LINE); c.setLineWidth(0.5)
+        c.rect(xw + t * sc, ys_, side * sc, 4.0 * sc, fill=1, stroke=1)                    # the slab bracing the top
+        c.setFont(FR, 6.5); c.setFillColorRGB(*INK); c.drawString(xw + (t + side) * sc + 4, ys_ + 2, "floor or slab, braces the top")
+    else:
+        M._grade(c, xw + t * sc, xw + (t + side) * sc, yb + gr * sc)
+    # the wall
+    M._concrete(c, xw, yb, t * sc, H * sc, seed=9)
+    c.setStrokeColorRGB(0.20, 0.22, 0.25); c.setFillColorRGB(0.20, 0.22, 0.25)
+    cov = d["cover"]
+    if not d["plain"]:
+        from .stemwall import BAR_DIA
+        dv = BAR_DIA[d["bar_v"]]
+        xv = xw + (t / 2 if d["v_at"] == "center" else t - cov - dv / 2) * sc
+        c.setLineWidth(max(dv * sc, 1.0)); c.line(xv, yb + cov * sc, xv, yt - cov * sc)              # vertical bar
+        dh = BAR_DIA[d["bar_h"]]
+        yy = yb + cov * sc + 2.0 * sc
+        while yy < yt - cov * sc:
+            c.circle(xv + (dv / 2 + dh / 2) * sc * (-1 if d["v_at"] == "center" else -1), yy, max(dh * sc / 2, 1.0), fill=1, stroke=0)
+            yy += d["s_h"] * sc
+    if mode == "spans":
+        from .stemwall import BAR_DIA
+        db_, dt_ = BAR_DIA[d["bar_bot"]], BAR_DIA[d["bar_top"]]
+        if d["st"]:
+            c.setStrokeColorRGB(0.35, 0.37, 0.40); c.setLineWidth(0.8)
+            c.rect(xw + cov * sc, yb + cov * sc, (t - 2 * cov) * sc, (H - 2 * cov) * sc, fill=0, stroke=1)
+        c.setFillColorRGB(0.15, 0.16, 0.18)
+        for n_, dd_, yy_ in ((d["n_bot"], db_, yb + (cov + db_ / 2) * sc + (0.5 * sc if d["st"] else 0)),
+                             (d["n_top"], dt_, yt - (cov + dt_ / 2) * sc - (0.5 * sc if d["st"] else 0))):
+            xs_ = [xw + t * sc / 2] if n_ == 1 else [xw + (cov + dd_ / 2) * sc + k * (t - 2 * cov - dd_) * sc / (n_ - 1) for k in range(n_)]
+            for xx in xs_:
+                c.circle(xx, yy_, max(dd_ * sc / 2, 1.2), fill=1, stroke=0)
+    c.setStrokeColorRGB(*INK); c.setLineWidth(0.5)
+    M._dim_h(c, xw, xw + t * sc, yt + 10, f"{t:g} in", FR, ext_from=yt)
+    M._dim_v(c, yb, yt, xw - side * sc - 12, f"{H:g} in", FR, ext_from=xw - side * sc)
+    if hb:
+        M._dim_v(c, yb, yb + hb * sc, xw - side * sc - 50, f"{hb / 12:g} ft backfill", FR, ext_from=xw - side * sc)
+    yl = yb - (below + 6) * sc - 10
+    _small(c, xw + t * sc / 2, yl, "section across the wall, to scale")
+    if mode != "spans":
+        return yl - 8
+    # elevation over the supports
+    tot, sup = d["total"], d["supports"]
+    x0, x1 = LM + 300, RM - 10
+    s2 = (x1 - x0) / tot
+    hh = max(min(H / 12.0 * s2, 50.0), 16.0)
+    lh = _beam_loads_height(d.get("loads"))
+    ye = top - 30 - lh - hh
+    if lh:
+        _beam_loads(c, x0, x1, ye + hh, tot, d["loads"])
+    M._concrete(c, x0, ye, x1 - x0, hh, seed=13)
+    pw, ph = 18.0, 14.0
+    for sx in sup:
+        xx = x0 + sx * s2
+        M._concrete(c, xx - pw / 2, ye - ph, pw, ph, seed=int(sx) + 3)                  # pad or pier under the wall
+    c.setStrokeColorRGB(0.55, 0.45, 0.30); c.setLineWidth(0.4)
+    edges = [x0] + [x0 + sx * s2 for sx in sup] + [x1]
+    for xa, xb in zip(edges[:-1], edges[1:]):                                            # void forms between the supports
+        a_, b_ = xa + (pw / 2 if xa > x0 else 0), xb - (pw / 2 if xb < x1 else 0)
+        if b_ - a_ > 4:
+            c.setFillColorRGB(0.96, 0.93, 0.86); c.rect(a_, ye - 6, b_ - a_, 6, fill=1, stroke=1)
+            c.line(a_, ye - 6, b_, ye); c.line(a_, ye, b_, ye - 6)
+    M._grade(c, x0 - 6, x1 + 6, ye - ph)
+    marks = [x0 + sx * s2 for sx in sup]
+    vals = list(sup)
+    for (xa, xb), (va, vb) in zip(zip(marks[:-1], marks[1:]), zip(vals[:-1], vals[1:])):
+        M._dim_h(c, xa, xb, ye - ph - 12, f"{vb - va:g} ft", FR, ext_from=ye - ph)
+    _small(c, (x0 + x1) / 2, ye - ph - 30, "elevation: the wall over the footings or piers, void forms between; loads in plf and lb")
+    return min(yl, ye - ph - 36) - 8
 
 
 def _sheathed_segment(c, x0, y0, b, h, sc, seed=1):
