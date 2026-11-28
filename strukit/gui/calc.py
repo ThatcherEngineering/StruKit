@@ -1453,16 +1453,17 @@ FORMS = {
         tables=[]),
     "column_cap": dict(
         title="Column / Post Cap (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="CP",
-        fields=[F("series", "Cap series", "select", options=simpson.CAP_SERIES, help="CC, ECC, ECCU column caps (p. 101); CCQ, ECCQ with SDS screws (p. 99); BC post caps (p. 93)"),
-                F("model", "Cap", "text", help="model as the catalog names it, for example CC66, ECCU44, BC6; or: first that works"),
+        fields=[F("series", "Cap series", "select", options=simpson.CAP_SERIES, help="CC, ECC, ECCU column caps (p. 101); CCQ, ECCQ with SDS screws (p. 99); BC post caps (p. 93); AC, ACHZ, LPCZ, LCE post caps (p. 95)"),
+                F("model", "Cap", "text", help="model as the catalog names it, for example CC66, ECCU44, CCQ66SDS2.5, BC6, AC6 (max. nailing), ACH4Z (SD screws), ACH4Z end (nails); or: first that works"),
                 F("beam_width", "Beam width (actual)", unit="in", required=False, help="needed to choose a cap"),
                 F("post_width", "Post width across the beam (actual)", unit="in", required=False, help="needed to choose a cap"),
                 F("beam_depth", "Beam depth (actual)", unit="in", required=False, help="CC, ECC, ECCU: at least H1 (p. 101 note 7)"),
                 F("download", "Download, ASD", unit="lb", required=False),
                 F("uplift", "Uplift, ASD", unit="lb", required=False),
-                F("lateral", "Lateral, ASD (BC only)", unit="lb", required=False),
+                F("lateral", "Lateral, ASD (BC, AC)", unit="lb", required=False),
                 F("spliced", "Beams spliced over the post (CC, CCQ)", "select", options=["no", "yes"], required=False),
                 F("download2", "Download of the second spliced beam, ASD", unit="lb", required=False),
+                F("one_side", "AC / ACHZ / LCE on one side only", "select", options=["no", "yes"], required=False, help="x 0.4 (catalog p. 95 note 2)"),
                 F("load_source", "Where the loads come from", "text", help="for example: beam B2 reaction")],
         tables=[]),
     "bolted_connection": dict(
@@ -3174,7 +3175,7 @@ def _build(kind, values, project):
             r.miss.append("Give the download, uplift or lateral load")
         r.done()
         return ws_more.column_cap_sheet(mark, ser, mdl, dl, up, lat, r.num("beam_width", False), r.num("post_width", False),
-                                        r.num("beam_depth", False), spl, dl2, src), "simple", {}
+                                        r.num("beam_depth", False), spl, dl2, src, bool(yes(r.text("one_side", False)))), "simple", {}
     if kind == "hurricane_tie":
         mdl, sp, src = r.text("model"), r.text("species"), r.text("load_source")
         up, f1, f2 = r.num("uplift", False) or 0.0, r.num("F1", False) or 0.0, r.num("F2", False) or 0.0

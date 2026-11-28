@@ -438,3 +438,21 @@ def test_column_base_screen(tmp_path):
     s = calc.build("column_base", v, proj)[0]
     assert all(r.status == "OK" for r in s.rows)
     calcsheet.simple_pdf(s, str(tmp_path / "cb.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+
+
+def test_ac_post_caps():
+    """AC / ACHZ / LPCZ / LCE (p. 95): each row's fasteners and loads found in the page text. A 3-1/2 in. beam on a 3-1/2 in. post with
+    uplift 2,000 and lateral 1,000: AC4 min / max and ACH4Z with nails fail the unity equation (1,745/1,610 ... 4,045/1,765: 2,000/4,045 +
+    1,000/1,765 = 1.06), ACH4Z with SD screws passes (0.725); the end-of-beam rows are not picked. AC6 max nailing one side only: 2,815 x 0.4
+    = 1,126 (note 2). No download in the table; one side refused for an LPCZ."""
+    import re
+    t = _page_text(95)
+    for r in simpson.AC_CAPS:
+        assert re.search(r"\s+".join(re.escape(x).replace(r"\ ", r"\s+") for x in (r[7], r[8], f"{r[9]:,}", f"{r[10]:,}")), t), r[0]
+    h = simpson.column_cap("AC", "first that works", uplift=2000, lateral=1000, beam_width=3.5, post_width=3.5)
+    assert h["label"] == "ACH4Z (SD screws)" and h["rows"][-1][1] == pytest.approx(2000 / 5895 + 1000 / 2595)
+    assert simpson.column_cap("AC", "AC6 (max. nailing)", uplift=600, one_side=True)["rows"][0][2] == pytest.approx(1126)
+    with pytest.raises(simpson.SimpsonError):
+        simpson.column_cap("AC", "AC6 (max. nailing)", download=600)
+    with pytest.raises(simpson.SimpsonError):
+        simpson.column_cap("AC", "LPC4Z", uplift=100, one_side=True)

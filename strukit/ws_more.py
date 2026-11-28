@@ -6762,24 +6762,29 @@ def post_base_sheet(mark, post, model, download, uplift, fastening, load_source)
     return sheet
 
 
-def column_cap_sheet(mark, series, model, download, uplift, lateral, beam_width, post_width, beam_depth, spliced, download2, load_source):
+def column_cap_sheet(mark, series, model, download, uplift, lateral, beam_width, post_width, beam_depth, spliced, download2, load_source,
+                     one_side=False):
     """Simpson Strong-Tie column or post cap (simpson.column_cap): CC / ECC / ECCU catalog C-C-2026 p. 101, BC p. 93; ASD, DF/SP."""
     from . import simpson
     if not (load_source or "").strip():
         raise WorksheetError(f"{mark}: where the cap loads come from is blank")
     try:
-        h = simpson.column_cap(series, model, download, uplift, lateral, beam_width, post_width, beam_depth, spliced, download2)
+        h = simpson.column_cap(series, model, download, uplift, lateral, beam_width, post_width, beam_depth, spliced, download2, one_side)
     except simpson.SimpsonError as e:
         raise WorksheetError(f"{mark}: {e}")
-    r, dm, bc = h["row"], h["dims"], series == "BC"
+    r, dm, bc = h["row"], h["dims"], series in ("BC", "AC")
+    capga = (r[11] if series == "AC" else 18) if bc else None
     src = f"{simpson.SOURCE}, p. {h['page']}"
     L = footing_line
     steps = ([L("cap chosen", h["model"], "", src, "the first cap in the catalog table for the beam and post widths that carries the loads")] if h["picked"] else [])
     if bc:
         fast = f"beam flanges {r[7]}; post flanges {r[8]}"
-        steps += [L(f"{h['model']}, 18 ga", f"W1 {r[1]}, W2 {r[2]}, H1 {r[5]}, H2 {r[6]}", "in", src, ""),
-                  L("fasteners", fast, "", src, ""),
-                  L("allowable uplift, lateral", f"{r[9]:,}, {r[10]:,}", "lb", src, "(160), wind or earthquake, note 1")]
+        steps += [L(f"{h['label']}, {capga} ga", (f"W1 {r[1]}, W2 {r[2]}, H1 {r[5]}, H2 {r[6]}" if series == "BC" else f"W {r[1]}, L {r[3]}"), "in",
+                    src if series == "BC" else f"{simpson.SOURCE}, pp. 94-95", "installed in pairs" if series == "AC" else ""),
+                  L("fasteners", fast + (" (for the pair)" if series == "AC" else ""), "", src, ""),
+                  L("allowable uplift, lateral", f"{r[9]:,}, {r[10]:,}", "lb", src, "(160), wind or earthquake, note 1" + ("; lateral parallel to the beam, note 3" if series == "AC" else ""))]
+        if one_side:
+            steps.append(L("one side only", f"x 0.4: uplift {r[9] * 0.4:,.0f}, lateral {r[10] * 0.4:,.0f}", "lb", src, "note 2"))
     else:
         ga = 7 if COLUMN_CAP_7GA(r[0]) else 3
         if r[6]:
@@ -6806,7 +6811,8 @@ def column_cap_sheet(mark, series, model, download, uplift, lateral, beam_width,
     ld = ", ".join(x for x in ((f"download {download:,.0f} lb" + (f" and {download2:,.0f} lb (spliced beams)" if spliced else "")) if download else "",
                                f"uplift {uplift:,.0f} lb" if uplift else "", f"lateral {lateral:,.0f} lb" if lateral else "") if x)
     kind_txt = {"CC": "column cap", "ECC": "end column cap", "ECCU": "end column cap rated for uplift", "BC": "post cap",
-                "CCQ": "column cap, SDS screws", "ECCQ": "end column cap, SDS screws"}[series]
+                "CCQ": "column cap, SDS screws", "ECCQ": "end column cap, SDS screws",
+                "AC": "post cap" + (", one side only" if one_side else ", installed in pairs")}[series]
     info = [("Cap", f"Simpson Strong-Tie {h['model']}, {kind_txt}; DF/SP"), ("Fasteners", fast),
             ("Beam and post", ", ".join(x for x in (f"beam {beam_width:g} in. wide" if beam_width else "", f"{beam_depth:g} in. deep" if beam_depth else "",
                                                     f"post {post_width:g} in. across the beam" if post_width else "") if x) or "as the cap model"),
@@ -6825,10 +6831,11 @@ def column_cap_sheet(mark, series, model, download, uplift, lateral, beam_width,
                         ["the beam and the post themselves (bearing, the post's own allowable load)",
                          "eccentricity in the post from spliced beams (p. 73 note l)" if spliced else "the load path below the post"], picture=None)
     sheet.blocks.append(dict(title="Cap", head="Cap", picture=("column_cap", dict(
-        model=h["model"], series=series, dims=dm, beam_width=beam_width or _cap_default_width(dm["W1"]),
+        model=h["model"], series=("BC" if bc else series), dims=dm, beam_width=beam_width or _cap_default_width(dm["W1"]),
         post_width=post_width or _cap_default_width(dm["W2"]), beam_depth=beam_depth or max(dm["H1"] + 1.5, 7.25),
         spliced=bool(spliced), download=download or 0, uplift=uplift or 0, lateral=lateral or 0,
-        bolt_txt=((f"{r[6]} in. bolts" if r[6] else "1/4 x 2-1/2 in. SDS screws") if not bc else ""), ga=(18 if bc else (7 if COLUMN_CAP_7GA(r[0]) else 3))))))
+        noplate=series == "AC", one_side=bool(one_side), fast_txt=(("SD10212 screws" if "SD" in r[7] else "nails " + r[7].split(") ")[1]) if bc else ""),
+        bolt_txt=((f"{r[6]} in. bolts" if r[6] else "1/4 x 2-1/2 in. SDS screws") if not bc else ""), ga=(capga if bc else (7 if COLUMN_CAP_7GA(r[0]) else 3))))))
     sheet.cap = h
     return sheet
 
