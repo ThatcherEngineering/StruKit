@@ -4759,7 +4759,7 @@ def _column_cap_picture(c, top, d):
     t = {3: 0.239, 7: 0.179, 18: 0.048}.get(d["ga"], 0.1)
     Lc = dm["L"]
     H1 = dm["H1"]
-    H2 = dm.get("H2") or (H1 if bc else 8.5)                # CC post straps 1-1/2 + 3 + 4 in. long (p. 100 figure)
+    H2 = dm.get("H2") or (H1 if bc else 8.5)                # CC post straps 1-1/2 + 3 + 4 in. long (p. 100 figure); CCQ similar (p. 98)
     hp = H2 + 6.0
     sc = min(6.5, 150.0 / (bd + hp + 2), 110.0 / (Lc + 12))
     T = max(t * sc, 1.0)
@@ -4768,7 +4768,7 @@ def _column_cap_picture(c, top, d):
     # ---------------- elevation along the beam
     vx = LM + 120
     beam_len = Lc + 10.0
-    end = ser in ("ECC", "ECCU")
+    end = ser in ("ECC", "ECCU", "ECCQ")
     if end:
         beam_len = Lc + 6.0
     x0 = vx - beam_len * sc / 2
@@ -4793,11 +4793,18 @@ def _column_cap_picture(c, top, d):
     _steel_strip(c, xc0, yb - T, Lc * sc, T)
     sw_b = Lc if bc else Lc
     _steel_strip(c, xc0, yb, sw_b * sc, H1 * sc)
-    psw = min(pl, (2.75 if dm.get("bolt", 0) < 0.7 else 3.0) if not bc else pl * 0.7)   # post strap 2-3/4 in. (5/8 in. bolts), 3 in. (3/4), p. 100
+    sds = (not bc) and dm.get("bolt") is None               # CCQ / ECCQ: 1/4 x 2-1/2 in. SDS screws (p. 99)
+    psw = min(pl, (2.75 if (dm.get("bolt") or 0) < 0.7 else 3.0) if not bc else pl * 0.7)   # post strap 2-3/4 in. (5/8 in. bolts), 3 in. (3/4), p. 100
     _steel_strip(c, pxc - psw * sc / 2, yb - T - H2 * sc, psw * sc, H2 * sc)
     if bc:
         _nail_heads(c, xc0, yb, sw_b * sc, H1 * sc, 6)
         _nail_heads(c, pxc - psw * sc / 2, yb - T - H2 * sc, psw * sc, H2 * sc, 4)
+    elif sds:                                               # SDS screw heads, half the screws on each face, in staggered rows
+        nb_, npost = dm["beam_bolts"] // 2, dm["post_bolts"] // 2
+        pts = [(xc0 + Lc * sc * (0.12 + 0.76 * (k // 2) / max((nb_ + 1) // 2 - 1, 1)), yb + H1 * sc * (0.3 if k % 2 == 0 else 0.7)) for k in range(nb_)]
+        _bolt_heads(c, pts, 0.32 * sc)
+        pts = [(pxc + (psw * sc * 0.22 if k % 2 == 0 else -psw * sc * 0.22), yb - T - H2 * sc * (0.12 + 0.76 * (k // 2) / max((npost + 1) // 2 - 1, 1))) for k in range(npost)]
+        _bolt_heads(c, pts, 0.32 * sc)
     else:
         nb = dm["beam_bolts"]
         cols = 1 if nb <= 2 else 2
@@ -4832,6 +4839,14 @@ def _column_cap_picture(c, top, d):
                 yn_ = yb + H1 * sc * (0.35 + 0.3 * k); c.line(sx + sg * W1 * sc / 2, yn_, sx + sg * (W1 / 2 - 2.0) * sc, yn_)
                 yn_ = yb - T - H2 * sc * (0.35 + 0.3 * k); c.line(sx + sg * W2 * sc / 2, yn_, sx + sg * (W2 / 2 - 2.0) * sc, yn_)
         c.setDash()
+    elif sds:                                               # SDS screws from each face, 2-1/2 in. long, dashed in the wood
+        for sg in (-1, 1):
+            for (yy, ww) in ((yb + H1 * sc * 0.5, W1), (yb - T - H2 * sc * 0.5, W2)):
+                xh = sx + sg * (ww * sc / 2 + T)
+                c.setFillColorRGB(0.42, 0.47, 0.54); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+                c.rect(xh if sg > 0 else xh - 0.25 * sc, yy - 0.25 * sc, 0.25 * sc, 0.5 * sc, fill=1, stroke=1)
+                c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.7); c.setDash(1.4, 1.0)
+                c.line(xh, yy, xh - sg * min(2.5, ww / 2 - 0.2) * sc, yy); c.setDash()
     else:
         db = dm["bolt"] * sc
         memberart.bolt_side(c, sx - W1 * sc / 2 - T, yb + H1 * sc * 0.5, sx + W1 * sc / 2 + T, yb + H1 * sc * 0.5, db)

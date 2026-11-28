@@ -6782,11 +6782,14 @@ def column_cap_sheet(mark, series, model, download, uplift, lateral, beam_width,
                   L("allowable uplift, lateral", f"{r[9]:,}, {r[10]:,}", "lb", src, "(160), wind or earthquake, note 1")]
     else:
         ga = 7 if COLUMN_CAP_7GA(r[0]) else 3
-        fast = f"({dm['beam_bolts']}) {r[6]} in. bolts through the beam, ({dm['post_bolts']}) through the post; ASTM A307 Grade A or better (note 9)"
-        down_a, up_a = {"CC": (r[10], r[9]), "ECC": (r[11], None), "ECCU": (r[13], r[12])}[series]
-        steps += [L(f"{h['model']}, {ga} ga", f"W1 {r[2]}, W2 {r[3]}, L {r[4][simpson.CAP_SERIES.index(series)]}, H1 {r[5]}", "in", src,
+        if r[6]:
+            fast = f"({dm['beam_bolts']}) {r[6]} in. bolts through the beam, ({dm['post_bolts']}) through the post; ASTM A307 Grade A or better (note 9)"
+        else:
+            fast = f"({dm['beam_bolts']}) 1/4 x 2-1/2 in. Strong-Drive SDS screws into the beam, ({dm['post_bolts']}) into the post"
+        down_a, up_a = {0: (r[10], r[9]), 1: (r[11], None), 2: (r[13], r[12])}[simpson._SLOT[series]]
+        steps += [L(f"{h['model']}, {ga} ga", f"W1 {r[2]}, W2 {r[3]}, L {r[4][simpson._SLOT[series]]}, H {r[5]}", "in", src,
                     f"beam width {r[1]} in."),
-                  L("bolts", fast, "", src, ""),
+                  L("bolts" if r[6] else "screws", fast, "", src, ""),
                   L("allowable download", f"{down_a:,}", "lb", src, "(100); reduced where the post governs, note 2"),
                   L("allowable uplift", "none in the table" if up_a is None else f"{up_a:,}", "lb" if up_a else "", src, "(160), wind or earthquake, note 1")]
         if spliced:
@@ -6802,7 +6805,8 @@ def column_cap_sheet(mark, series, model, download, uplift, lateral, beam_width,
             rows.append(Row(f"cap {n}", "ASD", d, c, "lb", src if "splice" not in n else f"{simpson.SOURCE}, p. {simpson.BASES_NOTES_PAGE}, note l", ""))
     ld = ", ".join(x for x in ((f"download {download:,.0f} lb" + (f" and {download2:,.0f} lb (spliced beams)" if spliced else "")) if download else "",
                                f"uplift {uplift:,.0f} lb" if uplift else "", f"lateral {lateral:,.0f} lb" if lateral else "") if x)
-    kind_txt = {"CC": "column cap", "ECC": "end column cap", "ECCU": "end column cap rated for uplift", "BC": "post cap"}[series]
+    kind_txt = {"CC": "column cap", "ECC": "end column cap", "ECCU": "end column cap rated for uplift", "BC": "post cap",
+                "CCQ": "column cap, SDS screws", "ECCQ": "end column cap, SDS screws"}[series]
     info = [("Cap", f"Simpson Strong-Tie {h['model']}, {kind_txt}; DF/SP"), ("Fasteners", fast),
             ("Beam and post", ", ".join(x for x in (f"beam {beam_width:g} in. wide" if beam_width else "", f"{beam_depth:g} in. deep" if beam_depth else "",
                                                     f"post {post_width:g} in. across the beam" if post_width else "") if x) or "as the cap model"),
@@ -6810,8 +6814,8 @@ def column_cap_sheet(mark, series, model, download, uplift, lateral, beam_width,
     assume = ["Allowable stress design for the loads shown; uplift and lateral values are for wind or earthquake.",
               "Douglas Fir-Larch or Southern Pine beam and post (the table is for DF/SP); fasteners in the wide face of SCL members (p. 73 note i)."]
     if not bc:
-        assume.append(f"The post is at least as wide as the beam it supports; column sides in the plane of the beam sides (p. {simpson.BASES_NOTES_PAGE} note j, p. 101 note 5).")
-        assume.append("The beam is continuous over the cap." if (series == "CC" and not spliced) else
+        assume.append(f"The post is at least as wide as the beam it supports; column sides in the plane of the beam sides (p. {simpson.BASES_NOTES_PAGE} note j, p. {h['page']} note 5).")
+        assume.append("The beam is continuous over the cap." if (series in ("CC", "CCQ") and not spliced) else
                       ("The beams are spliced at the centreline of the post; tension between them is carried by other means (note 4)." if spliced
                        else "One beam ends on the cap."))
     else:
@@ -6824,12 +6828,20 @@ def column_cap_sheet(mark, series, model, download, uplift, lateral, beam_width,
         model=h["model"], series=series, dims=dm, beam_width=beam_width or _cap_default_width(dm["W1"]),
         post_width=post_width or _cap_default_width(dm["W2"]), beam_depth=beam_depth or max(dm["H1"] + 1.5, 7.25),
         spliced=bool(spliced), download=download or 0, uplift=uplift or 0, lateral=lateral or 0,
-        bolt_txt=(f"{r[6]} in. bolts" if not bc else ""), ga=(18 if bc else (7 if COLUMN_CAP_7GA(r[0]) else 3))))))
+        bolt_txt=((f"{r[6]} in. bolts" if r[6] else "1/4 x 2-1/2 in. SDS screws") if not bc else ""), ga=(18 if bc else (7 if COLUMN_CAP_7GA(r[0]) else 3))))))
     sheet.cap = h
     return sheet
 
 
 def COLUMN_CAP_7GA(model):
+    """(continued below) CCQ / ECCQ, catalog p. 98, Material: CCQ3, CCQ4, CCQ4.62, CCQ6 (and their ECCQ) 7 gauge; all others 3 gauge."""
+    m = model.replace(" ", "")
+    if m.startswith("CCQ"):
+        return m.startswith(("CCQ3", "CCQ4", "CCQ6"))
+    return _CC_7GA(model)
+
+
+def _CC_7GA(model):
     """Catalog p. 100, Material: CC 3 1/4, CC44, CC46, CC48, CC 4.62, CC64, CC66, CC68, CC6-7 1/8 (and the ECC of those) are 7 gauge;
     all others 3 gauge."""
     m = model.replace(" ", "")

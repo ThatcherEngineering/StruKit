@@ -390,3 +390,22 @@ def test_mpbz_screen(tmp_path):
     calcsheet.simple_pdf(s, str(tmp_path / "mb.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
     with pytest.raises(calc.Missing):
         calc.build("mpbz", dict(v, download="", lateral="", moment=""), proj)
+
+
+def test_ccq_caps_against_the_catalog_page():
+    """CCQ / ECCQ (p. 99): each row's beam width, W1, W2, L, H, screws and four loads found in the page text. CCQ66SDS2.5 is the first
+    CCQ for a 5-1/2 in. beam on a 5-1/2 in. post; ECCQ46 down 12,030, uplift 3,785; a CCQ at a splice takes half the table download."""
+    import re
+    t = _page_text(99)
+    j = lambda ps: r"\s+".join(re.escape(str(p)).replace(r"\ ", r"\s+") for p in ps)
+    for r in simpson.CCQ_CAPS:
+        pat = j([r[0], r[1], r[2], r[3], r[4][0], r[4][1], r[5], r[7][0], r[7][1], r[8], f"{r[9]:,}", f"{r[10]:,}", f"{r[12]:,}", f"{r[13]:,}"])
+        assert re.search(pat, t), r[0]
+    h = simpson.column_cap("CCQ", "first that works", 25000, 6000, beam_width=5.5, post_width=5.5, beam_depth=11.25)
+    assert h["model"] == "CCQ66SDS2.5" and h["rows"][:2] == [("download", 25000, 30250), ("uplift", 6000, 6785)]
+    e = simpson.column_cap("ECCQ", "ECCQ46SDS2.5", 9000, 2500, beam_depth=9.25)
+    assert e["rows"][:2] == [("download", 9000, 12030), ("uplift", 2500, 3785)] and e["dims"]["beam_bolts"] == 14
+    s = simpson.column_cap("CCQ", "CCQ46SDS2.5", 9000, spliced=True, download2=7000)
+    assert s["rows"][0][2] == 24065 / 2
+    with pytest.raises(simpson.SimpsonError):
+        simpson.column_cap("ECCQ", "ECCQ46SDS2.5", 9000, spliced=True, download2=7000)

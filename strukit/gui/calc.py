@@ -1441,7 +1441,7 @@ FORMS = {
         tables=[]),
     "column_cap": dict(
         title="Column / Post Cap (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="CP",
-        fields=[F("series", "Cap series", "select", options=simpson.CAP_SERIES, help="CC, ECC, ECCU column caps (p. 101); BC post caps (p. 93)"),
+        fields=[F("series", "Cap series", "select", options=simpson.CAP_SERIES, help="CC, ECC, ECCU column caps (p. 101); CCQ, ECCQ with SDS screws (p. 99); BC post caps (p. 93)"),
                 F("model", "Cap", "text", help="model as the catalog names it, for example CC66, ECCU44, BC6; or: first that works"),
                 F("beam_width", "Beam width (actual)", unit="in", required=False, help="needed to choose a cap"),
                 F("post_width", "Post width across the beam (actual)", unit="in", required=False, help="needed to choose a cap"),
@@ -1449,7 +1449,7 @@ FORMS = {
                 F("download", "Download, ASD", unit="lb", required=False),
                 F("uplift", "Uplift, ASD", unit="lb", required=False),
                 F("lateral", "Lateral, ASD (BC only)", unit="lb", required=False),
-                F("spliced", "Beams spliced over the post (CC)", "select", options=["no", "yes"], required=False),
+                F("spliced", "Beams spliced over the post (CC, CCQ)", "select", options=["no", "yes"], required=False),
                 F("download2", "Download of the second spliced beam, ASD", unit="lb", required=False),
                 F("load_source", "Where the loads come from", "text", help="for example: beam B2 reaction")],
         tables=[]),
