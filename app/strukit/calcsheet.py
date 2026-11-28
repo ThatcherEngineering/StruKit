@@ -5178,52 +5178,78 @@ def _column_base_picture(c, top, d):
     the post with its SDS screw heads. Right: section through the post across the straps: the straps cut on both faces, the screws dashed
     into the post, the embedded legs dashed in the concrete, the side cover. W1, W2, D, H, the standoff and the cover dimensioned; loads."""
     W1, W2, D, H = d["W1"], d["W2"], d["D"], d["H"]
-    pb, pd = _post_dims(d["post"])
+    pb, pd = W1, W2
+    so = float(d.get("standoff", 1.0))                      # 1 in. standoff (CBSTQ, PBST), flush (CB, PB), pipe clearance (EPB)
+    pipe = d.get("kind") == "pipe"
     cov = d["cover"]
     t = 0.135                                               # 10 ga strap (7 ga 0.179 for CBSQ), p. 85
-    if "CBSQ8" in d["model"]:
-        t = 0.179
+    if "CBSQ8" in d["model"] or d["model"].startswith("CB") and not d["model"].startswith("CBS"):
+        t = 0.179 if d["model"][2] in "456" else 0.239       # CB straps 7 ga, CB7x and larger 3 ga (p. 86)
+    elif d["model"].startswith(("PB", "EPB")):
+        t = 0.105
     hc, hp = D + 4.0, H + 7.0
     sc = min(6.0, 150.0 / (hc + 1 + hp), 120.0 / (max(pb, pd) + 2 * cov + 2))
     T = max(t * sc, 1.0)
     ytop = top - 40
     yc = ytop - (hp + 1.0) * sc
-    yp = yc + 1.0 * sc
+    yp = yc + (so * sc if so else T)                       # post bottom: on the standoff, or on the base plate flush with the concrete
     for vx, wpost, view in ((LM + 110, W2, 1), (LM + 320, W1, 2)):
-        B = wpost + 2 * cov + 2 * t
+        B = (2 * cov + 1.0) if pipe else (wpost + 2 * cov + 2 * t)
         memberart._concrete(c, vx - B * sc / 2, yc - hc * sc, B * sc, hc * sc, seed=31 + view)
         memberart._break_h(c, vx - B * sc / 2, vx + B * sc / 2, yc - hc * sc - 1)
-        _steel_strip(c, vx - wpost * sc / 2, yp - T, wpost * sc, T, cut=(view == 2))   # base plate on the standoff
+        _steel_strip(c, vx - wpost * sc / 2, yp - T, wpost * sc, T, cut=(view == 2))   # base plate (on the standoff, flush, or the pipe's cup)
+        if pipe:                                            # the 1-5/16 in. OD pipe from the cup into the concrete, its embedded part dashed
+            pr = 1.3125 * sc
+            c.setFillColorRGB(*(memberart.STEEL_CUT if view == 2 else memberart.STEEL_FILL)); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.5)
+            c.rect(vx - pr / 2, yc, pr, yp - T - yc, fill=1, stroke=1)
+            c.setDash(2, 1.4); c.rect(vx - pr / 2, yc - D * sc, pr, D * sc, fill=0, stroke=1); c.setDash()
         c.saveState(); c.translate(vx - wpost * sc / 2, yp); c.rotate(90)
         memberart.wood_elevation(c, 0, -wpost * sc, hp * sc - 1.0 * sc, wpost * sc, seed=4 + view); c.restoreState()
         memberart._break_h(c, vx - wpost * sc / 2, vx + wpost * sc / 2, yc + hp * sc - 1)
         if view == 1:
-            sw = 2.25 if "44Z" in d["model"] else 3.0          # strap width, p. 85 (Material)
+            sw = 2.25 if "44Z" in d["model"] else (2.5 if d["model"].startswith(("CB4", "CB5", "CB6")) else 3.0)   # strap widths, pp. 85, 86 (depiction for CB, PB)
             sw = min(sw, wpost - 0.2)
-            _steel_strip(c, vx - sw * sc / 2, yc, sw * sc, H * sc)                         # the strap, continuous from the concrete
-            c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.setDash(2, 1.4)
-            c.rect(vx - sw * sc / 2, yc - D * sc, sw * sc, D * sc, fill=0, stroke=1); c.setDash()
-            n_ = int(d["screws"].split(")")[0].strip("(")) // 2
-            pts = [(vx + (sw * sc * 0.22 if k % 2 == 0 else -sw * sc * 0.22), yp + (H - 1.0) * sc * (0.12 + 0.76 * (k // 2) / max((n_ + 1) // 2 - 1, 1))) for k in range(n_)]
-            _bolt_heads(c, pts, 0.32 * sc)
+            ys0 = yp if pipe else yc
+            _steel_strip(c, vx - sw * sc / 2, ys0, sw * sc, (yp + H * sc - ys0) if pipe else H * sc)   # the strap, continuous from the concrete
+            if not pipe:
+                c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.setDash(2, 1.4)
+                c.rect(vx - sw * sc / 2, yc - D * sc, sw * sc, D * sc, fill=0, stroke=1); c.setDash()
+            if d.get("bolts"):
+                _bolt_heads(c, [(vx, yp + H * sc * 0.45), (vx, yp + H * sc * 0.78)], 0.6 * sc)
+            else:
+                n_ = int(d["screws"].split(")")[0].strip("(")) // 2
+                ytop_s = yc + H * sc
+                pts = [(vx + (sw * sc * 0.22 if k % 2 == 0 else -sw * sc * 0.22), yp + (ytop_s - yp) * (0.12 + 0.76 * (k // 2) / max((n_ + 1) // 2 - 1, 1))) for k in range(n_)]
+                _bolt_heads(c, pts, 0.32 * sc)
             memberart._dim_h(c, vx - wpost * sc / 2, vx + wpost * sc / 2, yc - hc * sc - 12, f"W2 {_mixed(W2)}", FR, ext_from=yc - hc * sc)
             memberart._dim_v(c, yc - D * sc, yc, vx - B * sc / 2 - 8, f"D {_mixed(D)}", FR, ext_from=vx - sw * sc / 2)
-            memberart._dim_v(c, yc, yc + H * sc, vx + B * sc / 2 + 8, f"H {_mixed(H)}", FR, ext_from=vx + sw * sc / 2)
+            memberart._dim_v(c, ys0, ys0 + H * sc if not pipe else yp + H * sc, vx + B * sc / 2 + 8, f"H {_mixed(H)}", FR, ext_from=vx + sw * sc / 2)
             _small(c, vx, yc - hc * sc - 30, "elevation at a strap, to scale (in.); embedded part dashed")
         else:
+            ys0 = yp - T if pipe else yc
+            ys1 = (yp + H * sc) if pipe else (yc + H * sc)
             for sg in (-1, 1):
                 xs_ = vx + sg * wpost * sc / 2 + (0 if sg > 0 else -T)
-                _steel_strip(c, xs_, yc, T, H * sc, cut=True)
-                c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.setDash(2, 1.4)
-                c.line(xs_ + T / 2, yp, xs_ + T / 2, yc - D * sc); c.setDash()
-                c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.7); c.setDash(1.4, 1.0)
-                for k in range(3):
-                    yy = yp + (H - 1.0) * sc * (0.2 + 0.3 * k)
-                    c.line(vx + sg * wpost * sc / 2, yy, vx + sg * (wpost / 2 - 2.0) * sc, yy)
-                c.setDash()
+                _steel_strip(c, xs_, ys0, T, ys1 - ys0, cut=True)
+                if not pipe:
+                    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.setDash(2, 1.4)
+                    c.line(xs_ + T / 2, yc, xs_ + T / 2, yc - D * sc); c.setDash()
+                if not d.get("bolts"):
+                    c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.7); c.setDash(1.4, 1.0)
+                    for k in range(3):
+                        yy = yp + (ys1 - yp) * (0.2 + 0.3 * k)
+                        c.line(vx + sg * wpost * sc / 2, yy, vx + sg * (wpost / 2 - 2.0) * sc, yy)
+                    c.setDash()
+            if d.get("bolts"):
+                for yy in (yp + H * sc * 0.45, yp + H * sc * 0.78):
+                    memberart.bolt_side(c, vx - wpost * sc / 2 - T, yy, vx + wpost * sc / 2 + T, yy, 0.5 * sc)
             memberart._dim_h(c, vx - wpost * sc / 2, vx + wpost * sc / 2, yc - hc * sc - 12, f"W1 {_mixed(W1)}", FR, ext_from=yc - hc * sc)
-            memberart._dim_h(c, vx + wpost * sc / 2 + T, vx + B * sc / 2, yc - hc * sc - 24, f"{cov:g} min.", FR, ext_from=yc - hc * sc - 12)
-            memberart._dim_v(c, yc, yp, vx - B * sc / 2 - 6, "1 standoff", FR, ext_from=vx - wpost * sc / 2 - T)
+            if pipe:                                         # EPB: concrete edge from the base centre line (p. 80 note 7)
+                memberart._dim_h(c, vx, vx + cov * sc, yc - hc * sc - 24, f"{cov:g} min. from the centre line", FR, ext_from=yc - hc * sc - 12)
+            else:
+                memberart._dim_h(c, vx + wpost * sc / 2 + T, vx + B * sc / 2, yc - hc * sc - 24, f"{cov:g} min.", FR, ext_from=yc - hc * sc - 12)
+            if so:
+                memberart._dim_v(c, yc, yp, vx - B * sc / 2 - 6, f"{so:g} " + ("clearance" if pipe else "standoff"), FR, ext_from=vx - wpost * sc / 2 - T)
             _small(c, vx, yc - hc * sc - 42, "section through the post across the straps, to scale (in.)")
             c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9); c.setFont(FR, 6.5)
             ypt = yc + hp * sc + 4
@@ -5234,9 +5260,9 @@ def _column_base_picture(c, top, d):
             lat = ", ".join(x for x in (f"F1 {d['F1']:,.0f} lb" if d.get("F1") else "", f"F2 {d['F2']:,.0f} lb" if d.get("F2") else "") if x)
             if lat:
                 c.setFillColorRGB(*INK); c.drawString(vx + B * sc / 2 + 12, yc + H * sc * 0.6, f"lateral {lat}")
-                c.drawString(vx + B * sc / 2 + 12, yc + H * sc * 0.6 - 9, "directions as catalog p. 85")
+                c.drawString(vx + B * sc / 2 + 12, yc + H * sc * 0.6 - 9, "directions as the catalog figure")
     c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
-    c.drawCentredString(LM + 215, top - 8, f"{d['model']} on a {d['post']} post; {d['screws']} screws")
+    c.drawCentredString(LM + 215, top - 8, f"{d['model']} on a {d['post']} post; {d['screws']}")
     return yc - hc * sc - 50
 
 

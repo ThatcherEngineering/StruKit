@@ -1417,15 +1417,17 @@ FORMS = {
                 F("load_source", "Where the tension comes from", "text", help="for example: chord splice, hold-down H1")],
         tables=[]),
     "column_base": dict(
-        title="Column Base, Cast In (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="CB",
-        fields=[F("post", "Post", "select", options=["4x4", "4x6", "6x6", "6x8", "8x8"]),
-                F("model", "Base", "select", options=["first that works"] + [r[0] for r in simpson.COLUMN_BASES], help="CBSTQ / CBSQ, catalog p. 85"),
+        title="Post / Column Base, Cast In (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="CB",
+        fields=[F("series", "Series", "select", options=simpson.CAST_SERIES, required=False, help="CBSTQ / CBSQ p. 85, CB p. 87, PB p. 82, PBST p. 83, EPB p. 80; blank = CBSTQ / CBSQ"),
+                F("post", "Post", "select", options=sorted({r["post"] for r in simpson.CAST_BASES}, key=lambda x: (x[0].isalpha(), x))),
+                F("model", "Base", "select", options=["first that works"] + [r["model"] for r in simpson.CAST_BASES], help="name the model for glulam and PSL columns (CB)"),
+                F("fastening", "Fasteners to the post", "select", options=["nails or screws", "bolts"], required=False, help="CB: bolts; PB66, PBST: either"),
                 F("cracked", "Concrete cracked", "select", options=["yes", "no"]),
                 F("sdc", "Wind / seismic design category", "select", options=["A&B", "C-F"], help="wind uses A&B (detached 1- and 2-family dwellings in SDC C may use A&B, note 6)"),
                 F("download", "Download, ASD", unit="lb", required=False),
                 F("uplift", "Uplift, ASD", unit="lb", required=False),
-                F("F1", "Lateral F1, ASD (CBSTQ)", unit="lb", required=False, help="directions as the catalog p. 85 figure"),
-                F("F2", "Lateral F2, ASD (CBSTQ)", unit="lb", required=False),
+                F("F1", "Lateral F1, ASD", unit="lb", required=False, help="directions as the catalog figure for the series"),
+                F("F2", "Lateral F2, ASD", unit="lb", required=False),
                 F("load_source", "Where the loads come from", "text", help="for example: post P2 reaction")],
         tables=[]),
     "mpbz": dict(
@@ -3148,7 +3150,9 @@ def _build(kind, values, project):
         if not (dl or up or f1 or f2):
             r.miss.append("Give a load")
         r.done()
-        return ws_more.column_base_sheet(mark, post, mdl, cr, sdc, dl, up, f1, f2, src), "simple", {}
+        ser = r.text("series", False) or "CBSTQ / CBSQ"
+        fa = r.text("fastening", False) or ("bolts" if ser == "CB" else "nails")
+        return ws_more.column_base_sheet(mark, post, mdl, cr, sdc, dl, up, f1, f2, src, ser, fa), "simple", {}
     if kind == "mpbz":
         post, mdl, con, src = r.text("post"), r.text("model"), r.text("concrete"), r.text("load_source")
         cr, sdc = bool(yes(r.text("cracked"))), r.text("sdc")
