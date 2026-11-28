@@ -347,3 +347,46 @@ def test_l_ls_ga_angles_against_the_catalog_page():
         simpson.framing_angle("L50", 4, "nails", "DF/SP", "floor (100)", {"F1": 100})
     with pytest.raises(simpson.SimpsonError):
         simpson.framing_angle("LS50", 9, "nails", "DF/SP", "floor (100)", {"F2": 100})        # LS: F1 only
+
+
+def test_mpbz_rows_against_the_catalog_page():
+    """MPBZ (p. 89): the four blocks (nonreinforced / reinforced x wind and SDC A&B / SDC C-F) in page order; each model's line carries its
+    six concrete values, the wood assembly download (100), (160), moment and the rotational stiffness in order."""
+    import re
+    t = _page_text(89)
+    lines = [l for l in t.splitlines() if re.search(r"MPB\d\dZ\s+\dx\d", l)]          # table rows (model, then the post size)
+    order = [("nonreinforced", "A&B"), ("nonreinforced", "C-F"), ("reinforced", "A&B"), ("reinforced", "C-F")]
+    assert len(lines) == 12
+    for i, key in enumerate(order):
+        for j, m in enumerate(("MPB44Z", "MPB66Z", "MPB88Z")):
+            vals = simpson.MPBZ[key][m] + simpson._MPB_WOOD[m]
+            pat = re.escape(m) + r".*?" + r"\s+".join(re.escape(f"{v:,}") for v in vals)
+            assert re.search(pat, lines[3 * i + j]), (key, m)
+
+
+def test_mpbz_checks():
+    """MPB66Z, reinforced, cracked, wind and SDC A&B (p. 89): moment allowable the lesser of concrete 3,190 and wood 3,730 (note 8);
+    download (160) 10,855; note 9: 3,000 / 10,855 + 1,600 / 3,190 + 500 / 2,405 = 0.986. MPB44Z nonreinforced uncracked SDC C-F: uplift
+    4,785, moment min(1,180, 1,520) = 1,180, lateral 1,535. Download and uplift together are refused."""
+    h = simpson.mpbz("first that works", "6x6", "reinforced", True, "A&B", download=3000, lateral=500, moment=1600, down_short=True)
+    assert h["model"] == "MPB66Z" and h["allow"]["moment"] == 3190 and h["allow"]["download"] == 10855
+    assert h["rows"][-1][1] == pytest.approx(3000 / 10855 + 1600 / 3190 + 500 / 2405)
+    g = simpson.mpbz("MPB44Z", "4x4", "nonreinforced", False, "C-F", uplift=1200, lateral=300, moment=400)
+    assert g["allow"]["uplift"] == 4785 and g["allow"]["moment"] == 1180 and g["allow"]["lateral"] == 1535
+    assert simpson.mpbz("MPB88Z", "8x8", "nonreinforced", False, "A&B", moment=4000)["allow"]["moment"] == 4160    # concrete 4,160 < wood 4,560
+    with pytest.raises(simpson.SimpsonError):
+        simpson.mpbz("MPB44Z", "4x4", "reinforced", True, "A&B", download=100, uplift=100)
+    with pytest.raises(simpson.SimpsonError):
+        simpson.mpbz("MPB44Z", "6x6", "reinforced", True, "A&B", moment=100)
+
+
+def test_mpbz_screen(tmp_path):
+    from strukit import calcsheet
+    proj = dict(job="t", name="t", method="ASD")
+    v = dict(mark="MB1", post="6x6", model="first that works", concrete="reinforced", cracked="yes", sdc="A&B", download="3000",
+             down_short="yes", lateral="500", moment="1600", load_source="carport post")
+    s = calc.build("mpbz", v, proj)[0]
+    assert all(r.status == "OK" for r in s.rows)
+    calcsheet.simple_pdf(s, str(tmp_path / "mb.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+    with pytest.raises(calc.Missing):
+        calc.build("mpbz", dict(v, download="", lateral="", moment=""), proj)

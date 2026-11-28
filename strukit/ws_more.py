@@ -6943,3 +6943,52 @@ def framing_angle_sheet(mark, model, config, fasteners, species, duration, loads
         L=simpson._in(h["L"]) if h.get("L") else None, ga=int(ga_)))))
     sheet.angle = h
     return sheet
+
+
+def mpbz_sheet(mark, model, post, concrete, cracked, sdc, download, uplift, lateral, moment, down_short, load_source):
+    """Simpson Strong-Tie MPBZ moment post base (simpson.mpbz): catalog C-C-2026 pp. 88-89, ASD, DF/SP."""
+    from . import simpson
+    if not (load_source or "").strip():
+        raise WorksheetError(f"{mark}: where the loads come from is blank")
+    try:
+        h = simpson.mpbz(model, post, concrete, cracked, sdc, download, uplift, lateral, moment, down_short)
+    except simpson.SimpsonError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    g, c_, w, al = h["geo"], h["conc"], h["wood"], h["allow"]
+    src = f"{simpson.SOURCE}, p. {simpson.MPBZ_PAGE}"
+    L = footing_line
+    k = 1 if cracked else 0
+    cc = f"{concrete} concrete, {'cracked' if cracked else 'uncracked'}, {'wind and SDC A&B' if sdc == 'A&B' else 'SDC C-F'}"
+    steps = ([L("base chosen", h["model"], "", src, f"the MPBZ for a {h['post']} post")] if h["picked"] else [])
+    steps += [L(f"{h['model']}, 12 ga", f"W1 = W2 {g[1]}, D {g[2]}, H {g[3]}", "in", src, f"{g[4]} SDS screws"),
+              L("concrete allowable", f"uplift {c_[k]:,}, lateral {c_[2 + k]:,}, M {c_[4 + k]:,}", "lb, ft-lb", src, cc),
+              L("wood assembly allowable, DF/SP", f"download {w[0]:,} (100), {w[1]:,} (160); M {w[2]:,} (160)", "lb, ft-lb", src, ""),
+              L("allowable used", f"download {al['download']:,}, uplift {al['uplift']:,}, lateral {al['lateral']:,}, M {al['moment']:,}", "lb, ft-lb",
+                src, "note 8: the lesser of the wood assembly and the concrete"),
+              L("rotational stiffness", f"{w[3]:,}", "in.-lb/rad", src, "for the frame analysis; the post's own bending deflection is added by the designer (note 4)")]
+    rows = []
+    for n, d, c in h["rows"]:
+        if n.startswith("loads together"):
+            rows.append(Row("loads together, (U or D) / allow + M / allow + V / allow", "ASD", d, c, "", src + ", note 9", ""))
+        else:
+            rows.append(Row(f"MPBZ {n}", "ASD", d, c, "ft-lb" if n == "moment" else "lb", src, ""))
+    ld = ", ".join(x for x in (f"download {download:,.0f} lb" + (" (wind or seismic)" if down_short else "") if download else "",
+                               f"uplift {uplift:,.0f} lb" if uplift else "", f"lateral F1 {lateral:,.0f} lb" if lateral else "",
+                               f"moment {moment:,.0f} ft-lb" if moment else "") if x)
+    info = [("Post base", f"Simpson Strong-Tie {h['model']} moment post base, 12 ga, cast in place; {h['post']} DF/SP post"),
+            ("Concrete", cc + f"; f'c at least 2,500 psi (note 3)"), ("Fasteners", f"{g[4]} Strong-Drive SDS Heavy-Duty Connector screws"),
+            ("Loads", f"{ld}, ASD ({load_source.strip()})")]
+    cov = h["cover"]
+    assume = ["Allowable stress design; the loads are not increased for load duration (note 1).",
+              f"Side cover at least {cov[0]} in. each way" + (f"; reinforced footing at least {cov[1]} in. square with {cov[2]} vertical bars at "
+                                                             f"{cov[3]} in. out to out and #4 ties at 3 in., square and diamond, as catalog pp. 88-89"
+                                                             if concrete == "reinforced" else "") + ".",
+              "The post is centred in the base; post shrinkage after installation not over 3 % (note 10)."]
+    sheet = SimpleSheet(mark, "Moment Post Base (Simpson Strong-Tie MPBZ)", "Connection", "ASD", info, [], [], "Allowable Loads", steps, rows,
+                        assume, ["the post itself (bending, shear, its allowable download)", "the footing size and reinforcement, and the soil (note 7)",
+                                 "the frame or post deflection, including the base rotation"], picture=None)
+    sheet.blocks.append(dict(title="Post Base", head="Post Base", picture=("mpbz", dict(
+        model=h["model"], post=h["post"], W=simpson._in(g[1]), D=simpson._in(g[2]), H=simpson._in(g[3]), screws=g[4],
+        reinforced=concrete == "reinforced", cover=cov, download=download, uplift=uplift, lateral=lateral, moment=moment))))
+    sheet.mpbz = h
+    return sheet

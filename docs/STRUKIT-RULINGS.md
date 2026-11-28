@@ -550,3 +550,8 @@ Texts as they stood under "Open" when ruled:
 - The A34 / A35 / LTP4 / LTP5 table (catalog p. 310) has floor (100), roof (125) and (160) columns, no snow (115): a snow load takes the
   floor (100) value (the lower of the two neighbouring columns; no interpolation).
 - Two directions loaded together: the unity equation (p. 23 note e sends every connector to p. 289; Option 1 as ruled 2026-11-27).
+
+## 2026-11-27, MPBZ moment post base (0.286.0), applied (not ruled)
+- Cracked concrete is the screen's first choice; uncracked is the engineer's selection with its basis.
+- The wood assembly's moment (160) is used for every combination (the table gives no (100) moment); the downloads use (100), or (160)
+  when the engineer marks the download as from a wind or seismic combination.
