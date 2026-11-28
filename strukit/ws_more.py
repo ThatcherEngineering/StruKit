@@ -6923,17 +6923,22 @@ def framing_angle_sheet(mark, model, config, fasteners, species, duration, loads
         raise WorksheetError(f"{mark}: {e}")
     src = f"{simpson.SOURCE}, p. {h['page']}"
     L = footing_line
-    lang = h["page"] == simpson.ANGLE_L_PAGE
+    lang = h["page"] in (simpson.ANGLE_L_PAGE, simpson.ANGLE_A_PAGE, simpson.ANGLE_HL_PAGE)
+    ahl = h["page"] in (simpson.ANGLE_A_PAGE, simpson.ANGLE_HL_PAGE)
     col_txt = duration if lang else {0: "floor (100)", 1: "roof (125)", 2: "(160)"}[simpson.ANGLE_DURATIONS[duration]]
     steps = [L(f"{model}, configuration {config}", simpson.ANGLE_CONFIGS[config].split(", ", 1)[1], "",
                f"{simpson.SOURCE}, p. {simpson.ANGLE_L_PAGE if lang else simpson.ANGLE_FIG_PAGE}",
                f"directions of load as the figure: {', '.join(h['directions'])}") if not lang else
-             L(f"{model}, L = {h['L']} in.", "reinforcing / skewable angle", "", src, f"directions of load as the typical installations: {', '.join(h['directions'])}"),
+             L(f"{model}, L = {h['L']:g} in.", {simpson.ANGLE_L_PAGE: "reinforcing / skewable angle", simpson.ANGLE_A_PAGE: "angle",
+                                               simpson.ANGLE_HL_PAGE: "heavy angle"}[h["page"]], "", src,
+               f"directions of load as the installations shown: {', '.join(h['directions'])}"),
              L("fasteners", h["fast"], "", src, "")]
     if duration.startswith("snow") and not lang:
         steps.append(L("load duration", "snow: the floor (100) column", "", src, "the table has no snow (115) column"))
-    if h["factor"] != 1.0:
+    if h["factor"] != 1.0 and not ahl:
         steps.append(L(f"over {sheathing} in. sheathing", f"x {h['factor']:.2f}", "", src, "note 3, with the tabulated fasteners"))
+    if ahl and h["factor"] != 1.0:
+        steps.append(L("SPF/HF lumber", f"x {h['factor']:.2f} the DF/SP values", "", src, "note 2"))
     rows = []
     for n, d, c in h["rows"]:
         if n.startswith("loads together"):
@@ -6942,16 +6947,21 @@ def framing_angle_sheet(mark, model, config, fasteners, species, duration, loads
             steps.append(L(f"allowable {n}, {species}, {col_txt}", f"{c:,.0f}", "lb", src, ""))
             rows.append(Row(f"{model} {n}", "ASD", d, c, "lb", src, ""))
     ld = ", ".join(f"{k} {v:,.0f} lb" for k, v in loads.items() if v)
-    ga_ = "20" if model.startswith("LTP") else ("16" if re.match(r"L\d", model) else "18")          # pp. 309, 313 (Material)
+    ga_ = str(h["ga"]) if h.get("ga") else ("20" if model.startswith("LTP") else ("16" if re.match(r"L\d", model) else "18"))   # pp. 309, 313-315 (Material)
     info = [("Connector", f"Simpson Strong-Tie {model}, {ga_} ga, one connector; {species}"),
             ("Connection", (f"type {config}: {simpson.ANGLE_CONFIGS[config].split(', ', 1)[1]} (catalog p. {simpson.ANGLE_FIG_PAGE})") if not lang
-             else f"as the typical installations, catalog p. {simpson.ANGLE_L_PAGE}"),
+             else f"as the installations shown, catalog p. {h['page']}"),
             ("Fasteners", h["fast"]), ("Loads", f"{ld}, ASD, {duration} ({load_source.strip()})")]
     assume = ["Allowable stress design; loads at the ASD level for the load duration shown.",
               "One connector (note 1); where angles are on both sides of a joist, the joist is at least 3 in. thick.",
               "Installed as the catalog figure for the configuration shows, with every specified fastener; A35 bent one time only."]
     if "F2" in loads and loads.get("F2"):
         assume.append(f"F2 in both directions needs connectors on both sides (note {4 if lang else 5}).")
+    if h["page"] == simpson.ANGLE_A_PAGE and loads.get("F1"):
+        assume.append("F1 in both directions needs connectors on both sides (p. 314 note 3).")
+    if h["page"] == simpson.ANGLE_HL_PAGE:
+        assume.append("Through bolts ASTM A307 Grade A or better (note 8), centred on members at least as wide as the angle (note 3); members "
+                      + ("3-1/2" if model[2] in "35" else "5-1/8") + " in. thick or more (notes 4, 5); one connector (note 6).")
     if lang and model.startswith(("L3", "L5", "L7", "L9", "LS")):
         assume.append("The joist is held against rotation (for example by solid blocking) where a single L or LS is used (p. 313).")
     sheet = SimpleSheet(mark, "Framing Angle / Plate (Simpson Strong-Tie)", "Connection", "ASD", info, [], [], "Allowable Loads", steps, rows,
@@ -6959,7 +6969,8 @@ def framing_angle_sheet(mark, model, config, fasteners, species, duration, loads
                                  "installation onto LSL (note 6)"], picture=None)
     sheet.blocks.append(dict(title="Connector", head="Connector", picture=("framing_angle", dict(
         model=model, config=config, loads={k: v for k, v in loads.items() if v}, fast=h["fast"], sheathing=sheathing,
-        L=simpson._in(h["L"]) if h.get("L") else None, ga=int(ga_)))))
+        L=(h["L"] if isinstance(h.get("L"), float) else simpson._in(h["L"])) if h.get("L") else None, ga=int(ga_), leg=h.get("leg"),
+        bolts=h.get("bolts")))))
     sheet.angle = h
     return sheet
 
@@ -7058,4 +7069,35 @@ def column_base_sheet(mark, post, model, cracked, sdc, download, uplift, F1, F2,
         screws=fast, cover=float(r["cover"]), standoff=r["standoff"], kind=r["kind"], bolts=h["bolts"], series=series,
         download=download, uplift=uplift, F1=F1, F2=F2))))
     sheet.cbase = h
+    return sheet
+
+
+def corner_cap_sheet(mark, model, species, uplift_main, uplift_side, load_source):
+    """Simpson Strong-Tie RTC44 / LCE4 corner post cap (simpson.corner_cap): catalog C-C-2026 pp. 94-95, ASD."""
+    from . import simpson
+    if not (load_source or "").strip():
+        raise WorksheetError(f"{mark}: where the loads come from is blank")
+    try:
+        h = simpson.corner_cap(model, species, uplift_main, uplift_side)
+    except simpson.SimpsonError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    r, al = h["row"], h["allow"]
+    src = f"{simpson.SOURCE}, p. {simpson.AC_PAGE}"
+    L = footing_line
+    lce = r[0].startswith("LCE")
+    steps = [L(f"{r[0]}, {'20' if lce else '14'} ga", f"W {r[1]}, L {r[2]}", "in", f"{simpson.SOURCE}, pp. 94-95", "installed in pairs" if lce else "one connector"),
+             L("fasteners", f"beams {r[3]}; post {r[4]}", "", src, "total"),
+             L(f"allowable uplift, {species}", f"side beam {al[0]:,}, main beam {al[1]:,}, post {al[2]:,}", "lb", src, "(160), wind or earthquake")]
+    rows = [Row(f"corner cap {n}", "ASD", d, c, "lb", src + (", note 3" if "both" in n else ""), "") for n, d, c in h["rows"]]
+    info = [("Cap", f"Simpson Strong-Tie {r[0]}, corner post cap; {species}"), ("Fasteners", f"beams {r[3]}; post {r[4]}"),
+            ("Loads", f"uplift main beam {uplift_main or 0:,.0f} lb, side beam {uplift_side or 0:,.0f} lb, ASD ({load_source.strip()})")]
+    assume = ["Allowable stress design for wind or earthquake (160).",
+              "The download is carried by the beams bearing on the post (p. 95 notes 1 and 2); bearing is checked on the beam and post sheets.",
+              "Installed as the catalog shows (" + ("in pairs, note 4" if lce else ("mitered corner" if "mitered" in r[0] else "square cut, the side beam on the main beam")) + ")."]
+    sheet = SimpleSheet(mark, "Corner Post Cap (Simpson Strong-Tie)", "Connection", "ASD", info, [], [], "Allowable Loads", steps, rows, assume,
+                        ["the beams and the post themselves", "lateral load (no table value)"], picture=None)
+    sheet.blocks.append(dict(title="Cap", head="Cap", picture=("corner_cap", dict(model=r[0], W=simpson._in(r[1]), L=simpson._in(r[2]),
+                                                                              mitered="mitered" in r[0], lce=lce, up_main=uplift_main or 0,
+                                                                              up_side=uplift_side or 0, fast=r[3]))))
+    sheet.cap = h
     return sheet

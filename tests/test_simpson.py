@@ -505,3 +505,56 @@ def test_cast_base_screen(tmp_path):
         s = calc.build("column_base", v, proj)[0]
         assert all(r.status == "OK" for r in s.rows), v["mark"]
         calcsheet.simple_pdf(s, str(tmp_path / f"{v['mark']}.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+
+
+def test_a_and_hl_angles():
+    """A angles (p. 314) and HL heavy angles (p. 315): each rated row found in the page text. A44 SPF/HF (note 2, x 0.86): F1 775 x 0.86 =
+    666.5, F2 290 x 0.86 = 249.4; HL55 DF/SP uplift 740 and F1 1,310 with the unity equation; only the (160) duration; A66 has no rating."""
+    import re
+    j = lambda ps: r"\s+".join(re.escape(str(p)).replace(r"\ ", r"\s+") for p in ps)
+    t = _page_text(314)
+    for r in simpson.ANGLES_A:
+        assert re.search(j([r[0], r[1], r[2], r[3], "—", r[4], "—", r[5], f"{r[6]:,}", f"{r[7]:,}"]), t), r[0]
+    t = _page_text(315)
+    for r in simpson.ANGLES_HL:
+        assert re.search(j([r[0], r[1], r[2], r[3]]) + r".*?" + j([r[4][0], r[4][1], f"{r[5]:,}", f"{r[6]:,}"]), t), r[0]
+    a = simpson.framing_angle("A44", 10, "nails", "SPF/HF", "wind or earthquake (160)", {"F1": 400, "F2": 80})
+    assert a["rows"][0][2] == pytest.approx(666.5) and a["rows"][1][2] == pytest.approx(249.4)
+    h = simpson.framing_angle("HL55", 11, "", "DF/SP", "wind or earthquake (160)", {"Uplift": 500, "F1": 400})
+    assert h["rows"][-1][1] == pytest.approx(500 / 740 + 400 / 1310) and h["bolts"] == (8, "1/2")
+    with pytest.raises(simpson.SimpsonError):
+        simpson.framing_angle("HL55", 11, "", "DF/SP", "floor (100)", {"F1": 100})
+    with pytest.raises(simpson.SimpsonError):
+        simpson.framing_angle("A66", 10, "", "DF/SP", "wind or earthquake (160)", {"F1": 100})
+    with pytest.raises(simpson.SimpsonError):
+        simpson.framing_angle("A44", 4, "", "DF/SP", "wind or earthquake (160)", {"F1": 100})
+
+
+def test_corner_caps():
+    """RTC44 / LCE4 (p. 95 lower table): rows found in the page text; RTC44 square cut SPF/HF: side 795, main 1,060, the two beams together
+    against the post 1,515 (note 3)."""
+    import re
+    t = _page_text(95)
+    for r in simpson.RTC_CAPS:
+        vals = [f"{v:,}" for v in r[5] + r[6]]
+        assert re.search(r"\s+".join(re.escape(x).replace(r"\ ", r"\s+") for x in (r[1], r[2], r[3], r[4], *vals)), t), r[0]
+    h = simpson.corner_cap("RTC44 (square cut)", "SPF/HF", 900, 400)
+    assert h["rows"] == [("uplift, side beam", 400, 795), ("uplift, main beam", 900, 1060), ("uplift, both beams, at the post (note 3)", 1300, 1515)]
+    with pytest.raises(simpson.SimpsonError):
+        simpson.corner_cap("RTC44", "DF/SP", 100, 0)
+
+
+def test_corner_cap_and_a_hl_screens(tmp_path):
+    from strukit import calcsheet
+    proj = dict(job="t", name="t", method="ASD")
+    s = calc.build("corner_cap", dict(mark="CC1", model="RTC44 (mitered corner)", species="DF/SP", uplift_main="600", uplift_side="500",
+                                      load_source="porch corner"), proj)[0]
+    assert all(r.status == "OK" for r in s.rows)
+    calcsheet.simple_pdf(s, str(tmp_path / "cc.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")
+    for v in (dict(mark="FA8", model="A44", config="10: A angle", fasteners="nails", species="SPF/HF", duration="wind or earthquake (160)",
+                   dir1="F1", load1="400", dir2="F2", load2="80", load_source="blocking"),
+              dict(mark="FA9", model="HL55", config="11: HL", fasteners="nails", species="DF/SP", duration="wind or earthquake (160)",
+                   dir1="Uplift", load1="500", dir2="F1", load2="400", load_source="beam to post")):
+        s = calc.build("framing_angle", v, proj)[0]
+        assert all(r.status == "OK" for r in s.rows), v["mark"]
+        calcsheet.simple_pdf(s, str(tmp_path / f"{v['mark']}.pdf"), "Job", "Simpson C-C-2026", "Nov 27, 2026")

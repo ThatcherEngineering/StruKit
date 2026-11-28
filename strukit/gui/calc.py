@@ -1416,6 +1416,14 @@ FORMS = {
                 F("clear_span", "Clear span between the members (coiled strap)", unit="in", required=False, help="for the cut length"),
                 F("load_source", "Where the tension comes from", "text", help="for example: chord splice, hold-down H1")],
         tables=[]),
+    "corner_cap": dict(
+        title="Corner Post Cap (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="CC",
+        fields=[F("model", "Cap", "select", options=[r[0] for r in simpson.RTC_CAPS], help="RTC44, LCE4 at a corner (catalog p. 95)"),
+                F("species", "Species group", "select", options=["DF/SP", "SPF/HF"]),
+                F("uplift_main", "Uplift of the main beam, ASD", unit="lb", required=False),
+                F("uplift_side", "Uplift of the side beam, ASD", unit="lb", required=False),
+                F("load_source", "Where the loads come from", "text", help="for example: porch corner, wind uplift")],
+        tables=[]),
     "column_base": dict(
         title="Post / Column Base, Cast In (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="CB",
         fields=[F("series", "Series", "select", options=simpson.CAST_SERIES, required=False, help="CBSTQ / CBSQ p. 85, CB p. 87, PB p. 82, PBST p. 83, EPB p. 80; blank = CBSTQ / CBSQ"),
@@ -3142,6 +3150,13 @@ def _build(kind, values, project):
         npe, cs = r.num("nails_per_end", False), r.num("clear_span", False)
         r.done()
         return ws_more.strap_sheet(mark, k_, mdl, sp, T_, fa, nl, npe, cs, src), "simple", {}
+    if kind == "corner_cap":
+        mdl, sp, src = r.text("model"), r.text("species"), r.text("load_source")
+        um, us = r.num("uplift_main", False) or 0.0, r.num("uplift_side", False) or 0.0
+        if not (um or us):
+            r.miss.append("Give an uplift")
+        r.done()
+        return ws_more.corner_cap_sheet(mark, mdl, sp, um, us, src), "simple", {}
     if kind == "column_base":
         post, mdl, src, sdc = r.text("post"), r.text("model"), r.text("load_source"), r.text("sdc")
         cr = bool(yes(r.text("cracked")))
