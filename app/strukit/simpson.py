@@ -662,7 +662,26 @@ COILS = [
 ]
 COIL_PAGE = 296
 STRAP_NOTES_PAGE = 288
-STRAP_KINDS = ["strap tie", "MST", "coiled strap"]
+STRAP_KINDS = ["strap tie", "MST", "coiled strap", "floor-to-floor"]
+# Floor-to-floor straps across a clear span (rim and floor framing between), catalog p. 292 upper table: model, clear span (in.), nails
+# (total, half above and half below the clear span), DF/SP, SPF/HF allowable tension (160), lb.
+FLOOR_TO_FLOOR = [
+    ("MSTA49", 18, "(26) 0.148 x 2 1/2", 2020, 2020), ("MSTA49", 16, "(26) 0.148 x 2 1/2", 2020, 2020),
+    ("MSTC28", 18, "(12) 0.148 x 3 1/4", 1150, 995), ("MSTC28", 16, "(16) 0.148 x 3 1/4", 1535, 1330),
+    ("MSTC40", 24, "(20) 0.148 x 3 1/4", 1920, 1660), ("MSTC40", 18, "(28) 0.148 x 3 1/4", 2690, 2325), ("MSTC40", 16, "(32) 0.148 x 3 1/4", 3070, 2655),
+    ("MSTC52", 24, "(36) 0.148 x 3 1/4", 3455, 2990), ("MSTC52", 18, "(44) 0.148 x 3 1/4", 4225, 3650), ("MSTC52", 16, "(48) 0.148 x 3 1/4", 4610, 3985),
+    ("MSTC66", 30, "(48) 0.148 x 3 1/4", 4775, 4130), ("MSTC66", 24, "(54) 0.148 x 3 1/4", 5375, 4645), ("MSTC66", 18, "(64) 0.148 x 3 1/4", 5850, 5505),
+    ("MSTC66", 16, "(68) 0.148 x 3 1/4", 5850, 5850),
+    ("MSTC78", 30, "(64) 0.148 x 3 1/4", 5850, 5505), ("MSTC78", 24, "(72) 0.148 x 3 1/4", 5850, 5850), ("MSTC78", 18, "(76) 0.148 x 3 1/4", 5850, 5850),
+    ("MST37", 24, "(14) 0.162 x 2 1/2", 1720, 1500), ("MST37", 18, "(20) 0.162 x 2 1/2", 2460, 2140), ("MST37", 16, "(22) 0.162 x 2 1/2", 2705, 2355),
+    ("MST48", 24, "(26) 0.162 x 2 1/2", 3210, 2780), ("MST48", 18, "(32) 0.162 x 2 1/2", 3950, 3425), ("MST48", 16, "(34) 0.162 x 2 1/2", 4200, 3640),
+    ("MST60", 30, "(34) 0.162 x 2 1/2", 4605, 3995), ("MST60", 24, "(40) 0.162 x 2 1/2", 5240, 4700), ("MST60", 18, "(46) 0.162 x 2 1/2", 6235, 5405),
+    ("MST72", 30, "(48) 0.162 x 2 1/2", 6505, 5640), ("MST72", 24, "(54) 0.162 x 2 1/2", 6730, 6345), ("MST72", 18, "(62) 0.162 x 2 1/2", 6730, 6475),
+]
+_STRAP_LEN = {"MSTA49": "49", "MSTC28": "28 1/4", "MSTC40": "40 1/4", "MSTC52": "52 1/4", "MSTC66": "65 3/4", "MSTC78": "77 3/4",
+              "MST37": "37 1/2", "MST48": "48", "MST60": "60", "MST72": "72"}
+_STRAP_W = {"MSTA49": "1 1/4", "MST37": "2 1/16", "MST48": "2 1/16", "MST60": "2 1/16", "MST72": "2 1/16"}
+_STRAP_GA = {"MSTA49": 18, "MSTC28": 16, "MSTC40": 16, "MSTC52": 16, "MSTC66": 14, "MSTC78": 14, "MST37": 12, "MST48": 12, "MST60": 10, "MST72": 10}
 
 
 def _count(fast):
@@ -686,6 +705,32 @@ def strap(kind, model, species, tension, fastening="nails", nail="0.148", nails_
     bolts = fastening.strip().lower().startswith("bolt")
     if kind not in STRAP_KINDS:
         raise SimpsonError("strap: the kind is strap tie, MST or coiled strap")
+    if kind == "floor-to-floor":
+        if clear_span is None or clear_span <= 0:
+            raise SimpsonError("strap: give the clear span between the nailed ends (floor-to-floor table, catalog p. 292)")
+        def ff(m):
+            rows_ = [r for r in FLOOR_TO_FLOOR if r[0] == m and r[1] >= clear_span - 1e-9]
+            return min(rows_, key=lambda r: r[1]) if rows_ else None
+        models_ = []
+        for r in FLOOR_TO_FLOOR:
+            if r[0] not in models_:
+                models_.append(r[0])
+        if model.strip().lower() in ("first that works", "lightest that works"):
+            r = next((ff(m) for m in models_ if ff(m) and tension <= ff(m)[3 + sp] + 1e-9), None)
+            if r is None:
+                raise SimpsonError(f"strap: no floor-to-floor strap on catalog p. {MST_PAGE} carries {tension:,.0f} lb over a {clear_span:g} in. clear span")
+            picked = True
+        else:
+            m = model.strip().upper()
+            if m not in models_:
+                raise SimpsonError(f"strap: {model} is not in the floor-to-floor table (catalog p. {MST_PAGE})")
+            r = ff(m)
+            if r is None:
+                raise SimpsonError(f"strap: {m} is tabulated for clear spans up to {max(x[1] for x in FLOOR_TO_FLOOR if x[0] == m)} in. (catalog p. {MST_PAGE})")
+            picked = False
+        return dict(model=r[0], ga=_STRAP_GA[r[0]], W=_STRAP_W.get(r[0], "3"), L=_STRAP_LEN[r[0]], fast=r[2], allow=r[3 + sp], page=MST_PAGE,
+                    n=_count(r[2]), kind=kind, species=species, tension=tension, bolts=False, picked=picked, table_span=r[1], clear=clear_span,
+                    rows=[("tension", tension, r[3 + sp])])
     if bolts and kind != "MST":
         raise SimpsonError(f"strap: only the MST straps have bolted values (catalog p. {MST_PAGE})")
 
