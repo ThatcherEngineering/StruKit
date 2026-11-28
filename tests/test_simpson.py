@@ -804,3 +804,48 @@ def test_skewed_and_sloped_hanger_choice():
     s = ws_more.ewp_hanger_sheet("JH", "sloped / skewed (LSSR/LSU)", "I-joist", "2 to 2 1/16", "DF/SP", "lightest that works", 1300, "roof (125)",
                                  300, None, "R3", skew=30, slope=20, depth=11.875)
     assert s.hanger["allow_down"] == 1580 and any("web stiffeners" in a.lower() for a in s.assumptions)
+
+
+def test_vpa_and_hip_ridge_rows_against_the_catalog_pages():
+    """Every VPA row (p. 181) and HRC / HHRC row (p. 180), copied by hand into simpson.VPA and simpson.HIP_RIDGE, found on one line of its
+    page's text: model, dimensions, fasteners and loads in order."""
+    import re
+    norm = lambda t: re.sub(r"(\d),(\d{3})\b", r"\1\2", t.replace("⁄", "/").replace('"', ""))
+    t181, t180 = norm(_page_text(181)), norm(_page_text(180))
+    for v in simpson.VPA:
+        pat = r"\s+".join([re.escape(v[0]), re.escape(v[2]), re.escape(v[3]), re.escape(v[4]), re.escape(v[5])] + [str(x) for x in v[6:]])
+        assert re.search(pat, t181), v[0]
+    h = simpson.HIP_RIDGE[0]
+    assert re.search(r"HRC1\.81\s+1 13/16\s+1 3/4\s+\(16\) 0\.148 x 1 1/2\s+\(2\) 0\.148 x 1 1/2\s+370\s+975\s+1105\s+1185\s+320\s+840\s+950\s+1020", t180)
+    for h in simpson.HIP_RIDGE[1:]:
+        pat = (re.escape(h[0]) + r".*?" + re.escape(h[4]) + r"\s+" + re.escape(h[5]) + r"\s+" + re.escape(h[6]).replace(r"\ SD", r" SD") + r"\s+"
+               + re.escape(h[7]) + r"\s+" + r"\s+".join(str(x) for x in (h[9][0], h[9][1], h[10][0], h[10][1])))
+        assert re.search(pat, t180), h[0]
+
+
+def test_vpa_and_hip_ridge_by_hand():
+    """VPA2 (p. 181), DF/SP: uplift 255, download 1,105, F1 345, F2 300 lb. Uplift 120 with F1 80 and F2 50: 120/255 + 80/345 + 50/300 =
+    0.4706 + 0.2319 + 0.1667 = 0.869; download 600 with the same laterals: 0.5430 + 0.2319 + 0.1667 = 0.942. SPF/HF uses 220 / 950 / 295 / 260.
+    Pitch outside 3:12 to 12:12 refused. HRC1.81 DF/SP per hip: snow 1,105 lb; HHRC: one download value; 1,500 lb per hip with 400 lb
+    uplift: HRC1.81 (1,185 roof) is short, HHRC4/1.81 (3,110) is first."""
+    A = pytest.approx
+    h = simpson.vpa("1 1/2", "first that works", "DF/SP", uplift=120, download=600, F1=80, F2=50, pitch=6)
+    rows = {n: (d, c) for n, d, c in h["rows"]}
+    assert h["row"][0] == "VPA2" and rows["uplift with lateral, U/Ua + F1/F1a + F2/F2a"][0] == A(120 / 255 + 80 / 345 + 50 / 300)
+    assert rows["download with lateral, D/Da + F1/F1a + F2/F2a"][0] == A(600 / 1105 + 80 / 345 + 50 / 300)
+    s = simpson.vpa("3 1/2", "VPA4", "SPF/HF", uplift=100, pitch=12)
+    assert s["allow"] == dict(uplift=220, download=1070, F1=295, F2=260) and len(s["rows"]) == 1
+    with pytest.raises(simpson.SimpsonError, match="3:12 to 12:12"):
+        simpson.vpa("3 1/2", "VPA4", "DF/SP", uplift=100, pitch=2)
+    with pytest.raises(simpson.SimpsonError, match="not the VPA"):
+        simpson.vpa("3 1/2", "VPA2", "DF/SP", uplift=100, pitch=6)
+    assert simpson.hip_ridge("HRC1.81", "DF/SP", 1000, 0, "snow (115)", 30)["allow_down"] == 1105
+    assert simpson.hip_ridge("HRC1.81", "SPF/HF", 0, 300, "floor (100)", 0)["allow_up"] == 320
+    h = simpson.hip_ridge("first that works", "DF/SP", 1500, 400, "roof (125)", 20)
+    assert h["row"][0] == "HHRC4/1.81" and h["allow_down"] == 3110 and h["allow_up"] == 1490
+    assert simpson.hip_ridge("HHRC44", "SPF/HF", 2000, 0, "floor (100)")["allow_down"] == 2315
+    with pytest.raises(simpson.SimpsonError, match="0 to 45"):
+        simpson.hip_ridge("HRC1.81", "DF/SP", 500, 0, "floor (100)", 50)
+    from strukit import ws_more
+    sh = ws_more.rafter_connector_sheet("RC", "VPA rafter to top plate", "first that works", "DF/SP", "1 1/2", 6, 0, 600, None, 120, 80, 50, "R2")
+    assert sh.ok

@@ -612,3 +612,8 @@ Texts as they stood under "Open" when ruled:
   first schedule listed that carries the loads is used and printed.
 - "Lightest that works" for SUR/SUL and LSSR/LSU takes the first listed for the member size (these pages give no order of recommended
   selection).
+
+## 2026-11-28, VPA and HRC / HHRC connectors (0.299.0), applied (not ruled)
+- VPA (p. 181): the lateral loads F1 and F2 are taken with the uplift and, separately, with the download; each case combined by the unity
+  equation (p. 23 note e, p. 289 Option 1, as ruled for ties and angles).
+- HHRC (p. 180): the catalog gives the 45 degree downward slope for the HRC series; the HHRC is held to the same 45 degrees.

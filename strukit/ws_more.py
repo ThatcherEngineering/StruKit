@@ -7254,3 +7254,66 @@ def ewp_hanger_sheet(mark, kind, member, joist, header, model, download, duratio
                                                                                         skew=skew, slope=slope))))
     sheet.hanger = h
     return sheet
+
+
+def rafter_connector_sheet(mark, product, model, species, width, pitch, slope, download, duration, uplift, F1, F2, load_source):
+    """Simpson Strong-Tie VPA variable-pitch connector, rafter to top plate (catalog C-C-2026 p. 181), or HRC / HHRC hip-ridge connector
+    (p. 180); ASD."""
+    from . import simpson
+    from .calcsheet import _mixed
+    if not (load_source or "").strip():
+        raise WorksheetError(f"{mark}: where the connector loads come from is blank")
+    L = footing_line
+    vpa = product.startswith("VPA")
+    try:
+        h = (simpson.vpa(width, model, species, uplift, download, F1, F2, pitch) if vpa else
+             simpson.hip_ridge(model, species, download, uplift, duration, slope))
+    except simpson.SimpsonError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    r = h["row"]
+    if vpa:
+        src = f"{simpson.SOURCE}, p. {simpson.VPA_PAGE}"
+        a = h["allow"]
+        steps = ([L("connector", r[0], "", src, f"the VPA listed for a {r[1]} in. rafter")] if h["picked"] else [])
+        steps += [L(f"{r[0]}, 18 ga", f"W {r[2]}, B {r[3]}", "in", src, f"carrying member {r[4]}; carried member {r[5]}"),
+                  L(f"allowable loads, {species}", f"uplift {a['uplift']:,}, download {a['download']:,}, F1 {a['F1']:,}, F2 {a['F2']:,}", "lb", src,
+                    "uplift and lateral (160), wind or earthquake; loads not increased for load duration (note 2)")]
+        rows = [Row(f"VPA {n}", "ASD", d, c, "" if "/" in n else "lb", src + (", p. 289 (unity equation)" if "/" in n else ""), "") for n, d, c in h["rows"]]
+        info = [("Connector", f"Simpson Strong-Tie {r[0]} variable-pitch connector, 18 ga, rafter to top plate; {species}"),
+                ("Rafter", f"{r[1]} in. wide; roof pitch {pitch:g}:12"),
+                ("Fasteners", f"carrying member (plates) {r[4]}; carried member (rafter) {r[5]}"),
+                ("Loads", f"uplift {uplift or 0:,.0f} lb, download {download or 0:,.0f} lb, F1 {F1 or 0:,.0f} lb (along the plate), "
+                          f"F2 {F2 or 0:,.0f} lb (across the plate), ASD ({load_source.strip()})")]
+        assume = ["Allowable stress design; the loads are at the ASD level.",
+                  "Installed as the catalog's four-step sequence shows, every specified nail; the A and B flanges bent to the roof pitch (p. 181).",
+                  "Lateral loads are taken with the uplift and with the download, each combined by the catalog's unity equation (p. 289, Option 1)."]
+        notc = ["the rafter and the plates themselves", "the load path below the plates"]
+        title = "Rafter Connector, Variable Pitch (Simpson Strong-Tie)"
+        pic = ("rafter_connector", dict(kind="vpa", model=r[0], W=simpson._in(r[2]), B=simpson._in(r[3]), pitch=pitch, uplift=uplift or 0,
+                                        download=download or 0, F1=F1 or 0, F2=F2 or 0, width=simpson._in(r[1].split(" –")[0])))
+    else:
+        src = f"{simpson.SOURCE}, p. {simpson.HRC_PAGE}"
+        steps = ([L("connector chosen", r[0], "", src, "the first in the table that carries the loads per hip")] if h["picked"] else [])
+        steps += [L(f"{r[0]}, {r[1]} ga", f"W1 {r[4]} (ridge), W2 {r[5]} (hip)", "in", src, f"ridge {r[6]}; each hip {r[7]}; {r[8]}"),
+                  L(f"allowable download per hip, {species}", h["allow_down"], "lb", src,
+                    duration if not h["hhrc"] else "one value for 100 / 115 / 125 load duration"),
+                  L(f"allowable uplift per hip, {species}", h["allow_up"], "lb", src, "(160), wind or earthquake; reduce where other loads govern")]
+        rows = [Row(f"connector {n}", "ASD", d, c, "lb", src, "") for n, d, c in h["rows"]]
+        info = [("Connector", f"Simpson Strong-Tie {r[0]} hip-ridge connector, {r[1]} ga; {species}"),
+                ("Members", f"ridge {r[3]}, hips {r[2]} ({r[8]}); hips sloped down {slope or 0:g} degrees"),
+                ("Fasteners", f"ridge {r[6]}; each hip {r[7]}"),
+                ("Loads per hip", f"download {download or 0:,.0f} lb" + ("" if h["hhrc"] else f", {duration}") + f"; uplift {uplift or 0:,.0f} lb, ASD ({load_source.strip()})")]
+        assume = ["Allowable stress design; the loads are at the ASD level, per hip (the connector carries two hips, p. 180 note 1).",
+                  "Hip members double bevel-cut for full bearing; every specified fastener installed (p. 180)."]
+        if r[0].startswith("HRC"):
+            assume.append("Sloped down not more than 45 degrees, no reduction in loads (p. 180).")
+        else:
+            assume.append("Sloped down not more than 45 degrees, the limit the catalog gives for the HRC series.")
+        notc = ["the ridge and the hips themselves", "the ridge's own support"]
+        title = "Hip-Ridge Connector (Simpson Strong-Tie)"
+        pic = ("rafter_connector", dict(kind="hrc", model=r[0], W1=simpson._in(r[4]), W2=simpson._in(r[5]), slope=slope or 0, download=download or 0,
+                                        uplift=uplift or 0, hhrc=h["hhrc"]))
+    sheet = SimpleSheet(mark, title, "Connection", "ASD", info, [], [], "Allowable Loads", steps, rows, assume, notc, picture=None)
+    sheet.blocks.append(dict(title="Connector", head="Connector", picture=pic))
+    sheet.rafter_conn = h
+    return sheet

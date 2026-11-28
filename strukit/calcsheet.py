@@ -1819,6 +1819,8 @@ def _block_picture(c, top, pic):
         return _column_base_picture(c, top, d)
     if name == "corner_cap":
         return _corner_cap_picture(c, top, d)
+    if name == "rafter_connector":
+        return _rafter_connector_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -6095,6 +6097,124 @@ def _perforated_wall_picture(c, top, d):
            + (f"; anchor bolts {d['ab']['D']:g} in. at {d['ab']['s']:g} in." + ("" if d["ab"]["given"] else " (the spacing found)") + ", 12 in. from the plate ends"
               if d.get("ab") else "") + "; chord forces in lb")
     return y0 - 55
+
+
+def _rafter_connector_picture(c, top, d):
+    """VPA: a section across the wall at the rafter, to scale: the double top plate in end grain on the stud (broken), the rafter at its
+    pitch seated on the connector (seat under the rafter, side plates nailed to the rafter, the A flange nailed to the plate top and the B
+    flange to the plate face), loads drawn. HRC / HHRC: a plan at the end of the ridge with the two hips at 45 degrees in plan, the
+    connector across the ridge end with its wings on the hips, and an elevation with a hip sloping down from the ridge."""
+    import math as _m
+    M = memberart
+    if d["kind"] == "vpa":
+        sc = 6.5
+        x0, yp = LM + 150, top - 112                         # plate's outer face, top of the plate
+        pw, pt = 5.5, 3.0
+        memberart.wood_section(c, x0 + pw * sc / 2, yp - pt * sc / 4, pw * sc, pt * sc / 2, pw, pt / 2)
+        memberart.wood_section(c, x0 + pw * sc / 2, yp - pt * sc * 3 / 4, pw * sc, pt * sc / 2, pw, pt / 2)
+        c.saveState(); c.translate(x0, yp - pt * sc); c.rotate(-90)                                       # the stud below, broken
+        memberart.wood_elevation(c, 0, 0, 5.0 * sc, pw * sc); c.restoreState()
+        _break_h(c, x0, x0 + pw * sc, yp - pt * sc - 5.0 * sc)
+        a = _m.atan2(d["pitch"], 12.0)
+        dep = 7.25                                                                                       # rafter depth drawn (depiction)
+        tseat = 0.05 * sc + 0.6
+        xs0 = x0 - 6.0 * sc                                                                              # rafter runs from outside the wall up the roof
+        c.saveState(); c.translate(x0 + 0.6 * sc, yp + tseat); c.rotate(_m.degrees(a))
+        memberart.wood_elevation(c, 0, 0, 15.0 * sc, dep * sc)                                         # rafter end square cut at the connector
+        _break_v(c, 15.0 * sc, 0, dep * sc)
+        c.setFillColorRGB(*M.STEEL_CUT); c.setStrokeColorRGB(*M.STEEL_LINE); c.setLineWidth(0.4)
+        c.rect(0, -tseat, d["B"] * sc + 1.0 * sc, tseat, fill=1, stroke=1)                              # the seat under the rafter
+        c.setFillColorRGB(0.80, 0.84, 0.88)
+        pth = c.beginPath(); pth.moveTo(0, 0); pth.lineTo(3.0 * sc, 0); pth.lineTo(0, 2.6 * sc); pth.close(); c.drawPath(pth, fill=1, stroke=1)   # side plate
+        c.setFillColorRGB(1, 1, 1)
+        for k in range(2):
+            c.circle((0.6 + 0.7 * k) * sc, 0.7 * sc, 1.0, fill=1, stroke=1)
+        c.restoreState()
+        c.setFillColorRGB(*M.STEEL_CUT); c.setStrokeColorRGB(*M.STEEL_LINE); c.setLineWidth(0.4)
+        c.rect(x0 + 0.6 * sc, yp, d["B"] * sc, tseat, fill=1, stroke=1)                                 # A flange on the plate top
+        c.rect(x0 - tseat, yp - 2.6 * sc, tseat, 2.6 * sc + tseat, fill=1, stroke=1)                    # B flange on the plate face
+        c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
+        for k in range(2):
+            xn = x0 + (1.0 + 0.8 * k) * sc
+            c.line(xn, yp + tseat, xn, yp - 2.6 * sc)
+            yn = yp - (0.8 + 1.0 * k) * sc
+            c.line(x0 - tseat, yn, x0 + 2.8 * sc, yn)
+        c.setDash()
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.4); c.setDash(2, 1.5)
+        c.line(x0 + 0.6 * sc, yp + tseat, x0 + 12 * sc, yp + tseat); c.setDash()
+        R = 8 * sc
+        pth = c.beginPath(); pth.arc(x0 + 0.6 * sc - R, yp + tseat - R, x0 + 0.6 * sc + R, yp + tseat + R, startAng=0, extent=_m.degrees(a))
+        c.drawPath(pth, stroke=1, fill=0)
+        c.setFont(FR, 6.5); c.setFillColorRGB(*INK)
+        c.drawString(x0 + 0.6 * sc + R + 4, yp + tseat - 9, f"pitch {d['pitch']:g}:12")
+        c.setStrokeColorRGB(*GREY); c.setLineWidth(0.4)
+        lx = x0 - 70
+        for txt, (px, py), ly in (("A flange, nailed to the plate top", (x0 + 2.0 * sc, yp + tseat / 2), yp + 22),
+                                  ("B flange, nailed to the plate face", (x0 - tseat / 2, yp - 1.3 * sc), yp - 10),
+                                  ("double top plate", (x0 + 0.5 * sc, yp - 2.3 * sc), yp - 26)):
+            c.line(lx + 2, ly + 2, px, py); c.drawRightString(lx, ly, txt)
+        c.setFillColorRGB(*INK); c.drawString(LM + 20, top - 8, f"{d['model']}, 18 ga, rafter to top plate")
+        loads = [t for t in (f"uplift {d['uplift']:,.0f} lb" if d["uplift"] else "", f"download {d['download']:,.0f} lb" if d["download"] else "",
+                             f"F1 {d['F1']:,.0f} lb" if d["F1"] else "", f"F2 {d['F2']:,.0f} lb" if d["F2"] else "") if t]
+        c.setFillColorRGB(*LOADC); c.drawString(RM - 150, top - 30, "; ".join(loads[:2])); c.drawString(RM - 150, top - 40, "; ".join(loads[2:]))
+        yb = yp - pt * sc - 5.0 * sc - 14
+        _small(c, x0 + 60, yb, "section across the wall at the rafter, to scale (rafter depth for the picture)")
+        return yb - 8
+    # HRC / HHRC
+    sc = 5.0
+    W1, W2 = d["W1"], d["W2"]
+    xr, yc = LM + 150, top - 70                                    # the end of the ridge, plan
+    Lr = 18.0
+    c.saveState(); memberart.wood_elevation(c, xr - Lr * sc, yc - W1 / 2 * sc, Lr * sc, W1 * sc); c.restoreState()
+    _break_v(c, xr - Lr * sc, yc - W1 / 2 * sc, yc + W1 / 2 * sc)
+    for sg in (-1, 1):                                             # the hips at 45 degrees in plan, double bevel-cut against the ridge end
+        c.saveState()
+        pth = c.beginPath(); pth.rect(xr, yc - 200, 300, 400); c.clipPath(pth, stroke=0, fill=0)
+        c.translate(xr, yc); c.rotate(sg * 45)
+        memberart.wood_elevation(c, -W2 * sc, -W2 / 2 * sc, (12.0 + W2) * sc, W2 * sc)
+        _break_v(c, 12.0 * sc, -W2 / 2 * sc, W2 / 2 * sc)
+        c.restoreState()
+    c.setFillColorRGB(*M.STEEL_CUT); c.setStrokeColorRGB(*M.STEEL_LINE); c.setLineWidth(0.5)
+    t = max((0.105 if d["hhrc"] else 0.06) * sc, 1.0)
+    c.rect(xr, yc - W1 / 2 * sc - 1.0 * sc, t, W1 * sc + 2.0 * sc, fill=1, stroke=1)                  # across the ridge end
+    for sg in (-1, 1):
+        c.rect(xr - 4.0 * sc, yc + sg * W1 / 2 * sc + (0 if sg > 0 else -t), 4.0 * sc, t, fill=1, stroke=1)       # flanges on the ridge sides
+        c.saveState(); c.translate(xr, yc); c.rotate(sg * 45)
+        for s2 in (-1, 1):
+            c.rect(0.8 * sc, s2 * W2 / 2 * sc + (0 if s2 > 0 else -t), 3.5 * sc, t, fill=1, stroke=1)   # wings on the hip sides
+        c.restoreState()
+    c.setFont(FR, 6.5); c.setFillColorRGB(*INK)
+    c.drawRightString(xr - 6 * sc, yc + W1 / 2 * sc + 8, "ridge")
+    c.drawString(xr + 10 * sc, yc + 6 * sc, "hip"); c.drawString(xr + 10 * sc, yc - 6 * sc - 6, "hip")
+    c.drawCentredString((LM + RM) / 2, top - 8, f"{d['model']}, {'12' if d['hhrc'] else '16'} ga, hip-ridge connector")
+    _small(c, xr - 20, yc - 12 * sc - 14, "plan at the end of the ridge, to scale")
+    # elevation: a hip sloping down from the ridge end
+    xe, ye = RM - 200, top - 40
+    dr = 9.25
+    c.saveState(); memberart.wood_elevation(c, xe - 14 * sc, ye - dr * sc, 14 * sc, dr * sc); c.restoreState()
+    _break_v(c, xe - 14 * sc, ye - dr * sc, ye)
+    sl = _m.radians(d["slope"] or 0)
+    c.saveState()
+    pth = c.beginPath(); pth.rect(xe, ye - 300, 300, 400); c.clipPath(pth, stroke=0, fill=0)
+    c.translate(xe, ye - 0.5 * sc); c.rotate(-_m.degrees(sl))
+    memberart.wood_elevation(c, -4 * sc, -7.25 * sc, 20 * sc, 7.25 * sc)
+    _break_v(c, 16 * sc, -7.25 * sc, 0)
+    c.setFillColorRGB(0.80, 0.84, 0.88); c.setStrokeColorRGB(*M.STEEL_LINE); c.setLineWidth(0.4)
+    c.rect(0, -5.0 * sc, 3.5 * sc, 4.5 * sc, fill=1, stroke=1)                                       # the wing on the hip side
+    c.restoreState()
+    c.setFillColorRGB(*M.STEEL_CUT); c.setStrokeColorRGB(*M.STEEL_LINE)
+    c.rect(xe, ye - 6.0 * sc, t, 6.0 * sc, fill=1, stroke=1)                                          # across the ridge end
+    if d["slope"]:
+        c.setStrokeColorRGB(*INK); c.setLineWidth(0.4); c.setDash(2, 1.5)
+        c.line(xe, ye - 0.5 * sc, xe + 14 * sc, ye - 0.5 * sc); c.setDash()
+        R = 10 * sc
+        pth = c.beginPath(); pth.arc(xe - R, ye - 0.5 * sc - R, xe + R, ye - 0.5 * sc + R, startAng=-d["slope"], extent=d["slope"]); c.drawPath(pth, stroke=1, fill=0)
+        c.setFont(FR, 6.5); c.setFillColorRGB(*INK)
+        c.drawString(xe + R + 4, ye + 2, f"slope {d['slope']:g} degrees")
+    c.setFillColorRGB(*LOADC); c.setFont(FR, 6.5)
+    c.drawString(xe - 14 * sc, ye + 10, f"per hip: download {d['download']:,.0f} lb" + (f", uplift {d['uplift']:,.0f} lb" if d["uplift"] else ""))
+    _small(c, xe + 20, yc - 12 * sc - 14, "elevation along a hip, to scale (member depths for the picture)")
+    return yc - 12 * sc - 22
 
 
 def _sheathed_segment(c, x0, y0, b, h, sc, seed=1):

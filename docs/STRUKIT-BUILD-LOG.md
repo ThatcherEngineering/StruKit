@@ -1452,3 +1452,13 @@ Next: fill from the frame; flange plate and its bolts (tension yielding and rupt
   copied by hand; the choices and caps by hand. Browser check: the screen loads and solves both new types.
 - **Basic shear wall picture (SW1):** each segment now drawn as built, like the perforated wall: sheathing face with panel joints, framing
   behind dashed, end posts and a hold-down at each end (`calcsheet._sheathed_segment`).
+
+## 2026-11-28 MST — 0.299.0 Simpson VPA rafter connector and HRC / HHRC hip-ridge connectors (Simpson products, part 19; overnight)
+- **New screen "Rafter / Hip Connector (Simpson Strong-Tie)"** (`rafter_connector`, mark RC).
+- **VPA variable-pitch connector, rafter to top plate (p. 181):** seven models by rafter width; pitch 3:12 to 12:12; uplift, download,
+  F1 and F2 by species; loads not increased for duration (note 2); lateral loads combined with the uplift and with the download by the
+  unity equation (rulings file, applied, not ruled). Picture: section across the wall, double top plate in end grain on the stud, rafter at
+  its pitch on the seat, A and B flanges with their nails.
+- **HRC1.81 / HHRC hip-ridge connectors (p. 180):** loads per hip; HRC download by duration, HHRC one value; slope down to 45 degrees.
+  Picture: plan at the ridge end with the two hips at 45 degrees and the connector, elevation along a hip at its slope.
+- **Validation:** every row found on its page's text; the unity sums and choices by hand. Browser check: both products load and solve.
