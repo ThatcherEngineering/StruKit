@@ -6890,3 +6890,47 @@ def strap_sheet(mark, kind, model, species, tension, fastening, nail, nails_per_
         end=h.get("end"), clear=clear_span, tension=tension, coil=coil, fast=h["fast"]))))
     sheet.strap = h
     return sheet
+
+
+def framing_angle_sheet(mark, model, config, fasteners, species, duration, loads, sheathing, load_source):
+    """Simpson Strong-Tie framing angle or plate (simpson.framing_angle): catalog C-C-2026 p. 310, configurations p. 309, ASD."""
+    from . import simpson
+    if not (load_source or "").strip():
+        raise WorksheetError(f"{mark}: where the loads come from is blank")
+    try:
+        h = simpson.framing_angle(model, config, fasteners, species, duration, loads, sheathing)
+    except simpson.SimpsonError as e:
+        raise WorksheetError(f"{mark}: {e}")
+    src = f"{simpson.SOURCE}, p. {simpson.ANGLE_PAGE}"
+    L = footing_line
+    col_txt = {0: "floor (100)", 1: "roof (125)", 2: "(160)"}[simpson.ANGLE_DURATIONS[duration]]
+    steps = [L(f"{model}, configuration {config}", simpson.ANGLE_CONFIGS[config].split(", ", 1)[1], "", f"{simpson.SOURCE}, p. {simpson.ANGLE_FIG_PAGE}",
+               f"directions of load as the figure: {', '.join(h['directions'])}"),
+             L("fasteners", h["fast"], "", src, "")]
+    if duration.startswith("snow"):
+        steps.append(L("load duration", "snow: the floor (100) column", "", src, "the table has no snow (115) column"))
+    if h["factor"] != 1.0:
+        steps.append(L(f"over {sheathing} in. sheathing", f"x {h['factor']:.2f}", "", src, "note 3, with the tabulated fasteners"))
+    rows = []
+    for n, d, c in h["rows"]:
+        if n.startswith("loads together"):
+            rows.append(Row("loads together, sum of load / allowable", "ASD", d, c, "", f"{simpson.SOURCE}, p. 289 (unity equation; p. 23 note e)", ""))
+        else:
+            steps.append(L(f"allowable {n}, {species}, {col_txt}", f"{c:,.0f}", "lb", src, ""))
+            rows.append(Row(f"{model} {n}", "ASD", d, c, "lb", src, ""))
+    ld = ", ".join(f"{k} {v:,.0f} lb" for k, v in loads.items() if v)
+    info = [("Connector", f"Simpson Strong-Tie {model}, {'20' if model.startswith('LTP') else '18'} ga, one connector; {species}"),
+            ("Connection", f"type {config}: {simpson.ANGLE_CONFIGS[config].split(', ', 1)[1]} (catalog p. {simpson.ANGLE_FIG_PAGE})"),
+            ("Fasteners", h["fast"]), ("Loads", f"{ld}, ASD, {duration} ({load_source.strip()})")]
+    assume = ["Allowable stress design; loads at the ASD level for the load duration shown.",
+              "One connector (note 1); where angles are on both sides of a joist, the joist is at least 3 in. thick.",
+              "Installed as the catalog figure for the configuration shows, with every specified fastener; A35 bent one time only."]
+    if "F2" in loads and loads.get("F2"):
+        assume.append("F2 in both directions needs connectors on both sides (note 5).")
+    sheet = SimpleSheet(mark, "Framing Angle / Plate (Simpson Strong-Tie)", "Connection", "ASD", info, [], [], "Allowable Loads", steps, rows,
+                        assume, ["the members themselves; cross-grain tension or bending of the wood (note 2)",
+                                 "installation onto LSL (note 6)"], picture=None)
+    sheet.blocks.append(dict(title="Connector", head="Connector", picture=("framing_angle", dict(
+        model=model, config=config, loads={k: v for k, v in loads.items() if v}, fast=h["fast"], sheathing=sheathing))))
+    sheet.angle = h
+    return sheet
