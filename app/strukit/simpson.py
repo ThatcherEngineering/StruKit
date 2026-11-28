@@ -746,3 +746,67 @@ def framing_angle(model, config, fasteners, species, duration, loads, sheathing=
     return dict(model=model, config=config, fast=fast, species=species, duration=duration, factor=factor, rows=rows,
                 directions=sorted({d_ for x in rows_m if x[2] == fast for d_ in x[3].split("/")}),
                 page=ANGLE_L_PAGE if lang else ANGLE_PAGE, L=next((x[2] for x in ANGLES_L if x[0] == model), None) if lang else None)
+
+
+# ---------------------------------------------------------------- MPBZ moment post base (catalog pp. 88-89)
+# Catalog p. 89, row by row (tests find each row in the page text). Key: (concrete "nonreinforced" / "reinforced", "A&B" / "C-F").
+# Row: model, post, W1/W2, D, H (in.), SDS screws, concrete uplift (uncracked, cracked), lateral F1 (uncracked, cracked), moment M
+# (uncracked, cracked) (lb, ft-lb); wood assembly DF/SP download (100), download (160), moment (160); rotational stiffness (in.-lb/rad).
+_MPB_WOOD = {"MPB44Z": (6240, 6410, 1520, 1245000), "MPB66Z": (9360, 10855, 3730, 2405000), "MPB88Z": (15120, 17690, 4560, 5515000)}
+_MPB_GEO = {"MPB44Z": ("4x4", "3 9/16", "7 1/4", "7 1/4", '(16) 1/4" x 2 1/2"'), "MPB66Z": ("6x6", "5 9/16", "7 1/4", "7 1/4", '(24) 1/4" x 2 1/2"'),
+            "MPB88Z": ("8x8", "7 9/16", "7 1/4", "7 1/4", '(36) 1/4" x 3"')}
+MPBZ = {
+    ("nonreinforced", "A&B"): {"MPB44Z": (4900, 3820, 1750, 1225, 1350, 945), "MPB66Z": (5815, 5815, 3435, 2405, 2680, 1875),
+                               "MPB88Z": (11860, 9315, 7200, 5560, 4160, 2910)},
+    ("nonreinforced", "C-F"): {"MPB44Z": (4785, 3350, 1535, 1075, 1180, 830), "MPB66Z": (5815, 5815, 3015, 2110, 2055, 1645),
+                               "MPB88Z": (10155, 8165, 6965, 4875, 3470, 2550)},
+    ("reinforced", "A&B"): {"MPB44Z": (4900, 3820, 1750, 1225, 1520, 1520), "MPB66Z": (5815, 5815, 3435, 2405, 3730, 3190),
+                            "MPB88Z": (11860, 9315, 7200, 5560, 4560, 4560)},
+    ("reinforced", "C-F"): {"MPB44Z": (4785, 3350, 1535, 1075, 1520, 1520), "MPB66Z": (5815, 5815, 3015, 2110, 3350, 2795),
+                            "MPB88Z": (10155, 8165, 6965, 4875, 4560, 4560)},
+}
+MPBZ_PAGE = 89
+# Minimum side cover (in.) and the reinforced footing details, catalog p. 88: MPB44Z 4 in., 12 in. square, (4) #4 vertical at 8 in. out to
+# out; MPB66Z 5 in., 16 in. square, (4) #4 at 12 in.; MPB88Z (p. 89) 6 in., 20 in. square, (4) #5 at 16 in.; #4 ties at 3 in., square and diamond.
+MPBZ_COVER = {"MPB44Z": (4, 12, "(4) #4", 8), "MPB66Z": (5, 16, "(4) #4", 12), "MPB88Z": (6, 20, "(4) #5", 16)}
+
+
+def mpbz(model, post, concrete, cracked, sdc, download=0.0, uplift=0.0, lateral=0.0, moment=0.0, down_short=False):
+    """MPBZ moment post base, catalog p. 89 (ASD; loads not increased for duration, note 1; f'c 2,500 psi or more, note 3). Each
+    allowable is the lesser of the wood assembly and the concrete (note 8): download from the wood assembly ((100), or (160) for a wind or
+    seismic download), uplift and lateral from the concrete, moment the lesser of both. Loads together by note 9: (uplift / allowable
+    uplift, or download / allowable download) + moment / allowable moment + lateral / allowable lateral <= 1.0. model "first that works":
+    the base for the post size (one per size)."""
+    download, uplift, lateral, moment = (abs(x or 0.0) for x in (download, uplift, lateral, moment))
+    if download and uplift:
+        raise SimpsonError("MPBZ: download and uplift are separate load combinations; check them on separate sheets")
+    if not (download or uplift or lateral or moment):
+        raise SimpsonError("MPBZ: give a load")
+    key = (concrete, sdc)
+    if key not in MPBZ:
+        raise SimpsonError("MPBZ: concrete is nonreinforced or reinforced; seismic design category A&B (and wind) or C-F")
+    if model.strip().lower() in ("first that works", "lightest that works"):
+        model = next((m for m, g in _MPB_GEO.items() if g[0] == post), None)
+        if model is None:
+            raise SimpsonError(f"MPBZ: made for 4x4, 6x6 and 8x8 posts (catalog p. {MPBZ_PAGE})")
+        picked = True
+    else:
+        model = model.strip().upper()
+        if model not in _MPB_GEO:
+            raise SimpsonError(f"MPBZ: {model} is not on catalog p. {MPBZ_PAGE}")
+        if post and _MPB_GEO[model][0] != post:
+            raise SimpsonError(f"MPBZ: {model} is for a {_MPB_GEO[model][0]} post")
+        picked = False
+    c_ = MPBZ[key][model]
+    k = 1 if cracked else 0
+    w = _MPB_WOOD[model]
+    al = dict(uplift=c_[0 + k], lateral=c_[2 + k], moment=min(c_[4 + k], w[2]), download=w[1] if down_short else w[0])
+    rows, unity = [], 0.0
+    for nm, dem in (("download", download), ("uplift", uplift), ("moment", moment), ("lateral F1", lateral)):
+        if dem:
+            cap = al[nm.split()[0]]
+            rows.append((nm, dem, cap)); unity += dem / cap
+    if len(rows) > 1:
+        rows.append(("loads together (note 9)", unity, 1.0))
+    return dict(model=model, post=_MPB_GEO[model][0], geo=_MPB_GEO[model], conc=c_, wood=w, allow=al, rows=rows, picked=picked,
+                concrete=concrete, cracked=cracked, sdc=sdc, cover=MPBZ_COVER[model], moment_gov="wood" if w[2] <= c_[4 + k] else "concrete")

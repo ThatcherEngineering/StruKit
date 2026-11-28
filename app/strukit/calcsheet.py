@@ -1812,6 +1812,8 @@ def _block_picture(c, top, pic):
         return _strap_picture(c, top, d)
     if name == "framing_angle":
         return _framing_angle_picture(c, top, d)
+    if name == "mpbz":
+        return _mpbz_picture(c, top, d)
     if name == "perforated_wall":
         return _perforated_wall_picture(c, top, d)
     if name == "snow_drift":
@@ -5049,6 +5051,105 @@ def _framing_angle_picture(c, top, d):
     ybot = min(ybot, yl - 16)
     c.drawCentredString(LM + 200, ytop + 6, (f"{mdl} angle, L {_mixed(d['L'])} in." if d.get("L") else f"{mdl}, connection type {cfg}") + f"; {d['fast']}")
     return ybot - 8
+
+
+def _mpbz_picture(c, top, d):
+    """MPBZ moment post base, to scale. Left: section through the footing and the post: the concrete cut (stippled) with the base's lower
+    part embedded D below the top of the concrete, the 1 in. standoff, the sleeve's side walls cut (darker) around the post, the post above
+    with its grain broken off, the SDS screws with their heads through the sleeve into the post, the reinforced footing's ties and vertical
+    bars where used; D, H, the standoff and the side cover dimensioned; the loads at the base. Right: plan section through the post at the
+    sleeve: the post in end grain, the sleeve around it, the screws dashed into the post, the concrete around with its minimum cover and,
+    for a reinforced footing, the square and diamond ties and the four vertical bars."""
+    W, D, H = d["W"], d["D"], d["H"]
+    pb = W - 0.06                                           # post in the sleeve
+    cov, fsq = d["cover"][0], d["cover"][1]
+    t = 0.105                                               # 12 ga
+    B = max(fsq if d["reinforced"] else W + 2 * cov, W + 2 * cov)
+    hc = D + 5.0
+    hp = H + 8.0
+    sc = min(6.0, 150.0 / (hc + 1 + hp), 150.0 / (B + 4))
+    T = max(t * sc, 1.0)
+    cx = LM + 120
+    ytop = top - 14
+    yc = ytop - 30 - (hp + 1.0) * sc                        # top of the concrete (room for the load arrow above the post)
+    memberart._concrete(c, cx - B * sc / 2, yc - hc * sc, B * sc, hc * sc, seed=21)
+    memberart._break_h(c, cx - B * sc / 2, cx + B * sc / 2, yc - hc * sc - 1)
+    yp = yc + 1.0 * sc                                      # post bottom on the standoff tabs
+    # embedded part of the base (dashed in the concrete) and the sleeve walls above, cut
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.6); c.setDash(2, 1.4)
+    c.rect(cx - W * sc / 2, yc - D * sc, W * sc, D * sc, fill=0, stroke=1); c.setDash()
+    if d["reinforced"]:
+        c.setStrokeColorRGB(0.25, 0.25, 0.25); c.setLineWidth(0.9)
+        for k in range(int(min(D + 3, hc - 2) // 3)):          # #4 ties at 3 in.
+            y_ = yc - (1.5 + 3.0 * k) * sc
+            c.line(cx - (B / 2 - 2.0) * sc, y_, cx + (B / 2 - 2.0) * sc, y_)
+        c.setFillColorRGB(0.25, 0.25, 0.25)
+        for sg in (-1, 1):                                    # vertical bars at the corners
+            c.rect(cx + sg * d["cover"][3] / 2 * sc - 0.3 * sc, yc - (hc - 1) * sc, 0.6 * sc, (hc - 2.0) * sc, fill=1, stroke=0)
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+    c.setFillColorRGB(*memberart.STEEL_CUT)
+    for sg in (-1, 1):
+        x_ = cx + sg * W * sc / 2 + (0 if sg > 0 else -T)
+        c.rect(x_, yc - D * sc, T, (D + H) * sc, fill=1, stroke=1)
+    c.rect(cx - W * sc / 2, yc + 0.0, W * sc, T, fill=1, stroke=1)               # standoff tabs, top of the concrete
+    c.saveState(); c.translate(cx - pb * sc / 2, yp); c.rotate(90)
+    memberart.wood_elevation(c, 0, -pb * sc, hp * sc - 1.0 * sc, pb * sc, seed=5); c.restoreState()
+    memberart._break_h(c, cx - pb * sc / 2, cx + pb * sc / 2, yc + hp * sc - 1)
+    for sg in (-1, 1):                                       # SDS screws: heads on the sleeve, shanks dashed in the post
+        for k in range(3):
+            y_ = yp + (1.5 + (H - 2.5) * k / 2) * sc
+            xh = cx + sg * (W * sc / 2 + T)
+            c.setFillColorRGB(0.42, 0.47, 0.54); c.rect(xh - (0 if sg > 0 else 0.4 * sc) + (0 if sg < 0 else 0), y_ - 0.25 * sc, 0.4 * sc * sg if sg > 0 else 0.4 * sc, 0.5 * sc, fill=1, stroke=1)
+            c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
+            c.line(xh, y_, xh - sg * 2.3 * sc, y_); c.setDash(); c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4)
+    memberart._dim_v(c, yc - D * sc, yc, cx - B * sc / 2 - 10, f"D {_mixed(D)}", FR, ext_from=cx - W * sc / 2)
+    memberart._dim_v(c, yc, yc + H * sc, cx + B * sc / 2 + 10, f"H {_mixed(H)}", FR, ext_from=cx + W * sc / 2 + T)
+    memberart._dim_h(c, cx + W * sc / 2 + T, cx + B * sc / 2, yc - hc * sc - 12, f"{cov:g} min.", FR, ext_from=yc - hc * sc)
+    # loads
+    c.setStrokeColorRGB(*LOADC); c.setFillColorRGB(*LOADC); c.setLineWidth(0.9); c.setFont(FR, 6.5)
+    yl = yc + (H + 4.0) * sc
+    if d.get("lateral"):
+        _arrow(c, cx - pb * sc / 2 - 30, yl, cx - pb * sc / 2 - 2, yl, head=3)
+        c.drawRightString(cx - pb * sc / 2 - 32, yl - 2, f"F1 {d['lateral']:,.0f} lb")
+    if d.get("moment"):                                      # at the base, beside the sleeve
+        c.drawRightString(cx - W * sc / 2 - 8, yc + H * sc * 0.45, f"M {d['moment']:,.0f} ft-lb")
+        c.drawRightString(cx - W * sc / 2 - 8, yc + H * sc * 0.45 - 8, "at the base")
+    ypt = yc + hp * sc + 4                                   # above the broken-off post top
+    if d.get("download"):
+        _arrow(c, cx, ypt + 22, cx, ypt, head=3); c.drawString(cx + 5, ypt + 10, f"download {d['download']:,.0f} lb")
+    if d.get("uplift"):
+        _arrow(c, cx, ypt, cx, ypt + 22, head=3); c.drawString(cx + 5, ypt + 10, f"uplift {d['uplift']:,.0f} lb")
+    _small(c, cx, yc - hc * sc - 30, "section through the footing and post, to scale (in.); embedded base dashed")
+    # plan
+    px, py = LM + 345, yc - 10
+    s2 = min(6.0, 140.0 / (B + 2))
+    memberart._concrete(c, px - B * s2 / 2, py - B * s2 / 2, B * s2, B * s2, seed=23, fill=memberart.CONC_FILL)
+    memberart.wood_section(c, px, py, pb * s2, pb * s2, pb, pb)
+    T2 = max(t * s2, 1.0)
+    c.setStrokeColorRGB(*memberart.STEEL_LINE); c.setLineWidth(0.4); c.setFillColorRGB(*memberart.STEEL_CUT)
+    for sg in (-1, 1):
+        c.rect(px + sg * W * s2 / 2 + (0 if sg > 0 else -T2), py - W * s2 / 2 - T2, T2, W * s2 + 2 * T2, fill=1, stroke=1)
+        c.rect(px - W * s2 / 2 - T2, py + sg * W * s2 / 2 + (0 if sg > 0 else -T2), W * s2 + 2 * T2, T2, fill=1, stroke=1)
+    c.setStrokeColorRGB(0.25, 0.27, 0.30); c.setLineWidth(0.6); c.setDash(1.4, 1.0)
+    for sg in (-1, 1):
+        for k in (-1, 0, 1):
+            c.line(px + sg * W * s2 / 2, py + k * W * s2 / 4, px + sg * (W / 2 - 2.3) * s2, py + k * W * s2 / 4)
+    c.setDash()
+    if d["reinforced"]:
+        a_ = d["cover"][3] / 2 * s2
+        c.setStrokeColorRGB(0.25, 0.25, 0.25); c.setLineWidth(0.9)
+        c.rect(px - a_ - 1.5, py - a_ - 1.5, 2 * a_ + 3, 2 * a_ + 3, fill=0, stroke=1)          # square tie
+        dm = c.beginPath(); dm.moveTo(px, py + a_ + 4); dm.lineTo(px + a_ + 4, py); dm.lineTo(px, py - a_ - 4); dm.lineTo(px - a_ - 4, py); dm.close()
+        c.drawPath(dm, fill=0, stroke=1)                                                       # diamond tie
+        c.setFillColorRGB(0.25, 0.25, 0.25)
+        for sx_ in (-1, 1):
+            for sy_ in (-1, 1):
+                c.circle(px + sx_ * a_, py + sy_ * a_, 0.35 * s2, fill=1, stroke=0)
+    memberart._dim_h(c, px - B * s2 / 2, px + B * s2 / 2, py - B * s2 / 2 - 10, f"{_mixed(B)} min." if d["reinforced"] else f"{_mixed(B)} (cover {cov:g} each side)", FR, ext_from=py - B * s2 / 2)
+    _small(c, px, py - B * s2 / 2 - 28, "plan section at the sleeve, to scale (in.)")
+    c.setFillColorRGB(*INK); c.setFont(FR, 6.5)
+    c.drawCentredString(LM + 230, ytop + 6, f"{d['model']} on a {d['post']} post; {d['screws']} SDS screws" + ("; reinforced footing" if d["reinforced"] else ""))
+    return min(yc - hc * sc - 38, py - B * s2 / 2 - 36)
 
 
 def _lumber_dims(label):

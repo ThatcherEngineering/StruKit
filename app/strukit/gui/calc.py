@@ -1416,6 +1416,20 @@ FORMS = {
                 F("clear_span", "Clear span between the members (coiled strap)", unit="in", required=False, help="for the cut length"),
                 F("load_source", "Where the tension comes from", "text", help="for example: chord splice, hold-down H1")],
         tables=[]),
+    "mpbz": dict(
+        title="Moment Post Base (Simpson Strong-Tie MPBZ)", code="Simpson C-C-2026", mark="MB",
+        fields=[F("post", "Post", "select", options=["4x4", "6x6", "8x8"]),
+                F("model", "Base", "select", options=["first that works", "MPB44Z", "MPB66Z", "MPB88Z"], help="catalog p. 89"),
+                F("concrete", "Concrete", "select", options=["nonreinforced", "reinforced"], help="reinforced: the footing details of catalog pp. 88-89"),
+                F("cracked", "Concrete cracked", "select", options=["yes", "no"], help="cracked unless the designer shows it is not"),
+                F("sdc", "Wind / seismic design category", "select", options=["A&B", "C-F"], help="wind uses A&B (detached 1- and 2-family dwellings in SDC C may use A&B, note 6)"),
+                F("download", "Download, ASD", unit="lb", required=False),
+                F("down_short", "Download from a wind or seismic combination", "select", options=["no", "yes"], required=False),
+                F("uplift", "Uplift, ASD", unit="lb", required=False),
+                F("lateral", "Lateral F1, ASD", unit="lb", required=False),
+                F("moment", "Moment at the base, ASD", unit="ft-lb", required=False),
+                F("load_source", "Where the loads come from", "text", help="for example: carport post P1, wind combination")],
+        tables=[]),
     "post_base": dict(
         title="Post Base (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="PB",
         fields=[F("post", "Post", "select", options=simpson.post_base_posts(), help="nominal size (catalog p. 77)"),
@@ -3113,6 +3127,16 @@ def _build(kind, values, project):
         npe, cs = r.num("nails_per_end", False), r.num("clear_span", False)
         r.done()
         return ws_more.strap_sheet(mark, k_, mdl, sp, T_, fa, nl, npe, cs, src), "simple", {}
+    if kind == "mpbz":
+        post, mdl, con, src = r.text("post"), r.text("model"), r.text("concrete"), r.text("load_source")
+        cr, sdc = bool(yes(r.text("cracked"))), r.text("sdc")
+        dl, up = r.num("download", False) or 0.0, r.num("uplift", False) or 0.0
+        lat, mom = r.num("lateral", False) or 0.0, r.num("moment", False) or 0.0
+        ds = bool(yes(r.text("down_short", False)))
+        if not (dl or up or lat or mom):
+            r.miss.append("Give a load")
+        r.done()
+        return ws_more.mpbz_sheet(mark, mdl, post, con, cr, sdc, dl, up, lat, mom, ds, src), "simple", {}
     if kind == "post_base":
         post, mdl, fa, src = r.text("post"), r.text("model"), r.text("fastening"), r.text("load_source")
         dl, up = r.num("download", False) or 0.0, r.num("uplift", False) or 0.0
