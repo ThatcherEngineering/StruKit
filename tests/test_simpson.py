@@ -600,3 +600,21 @@ def test_heavy_straps():
         simpson.strap("heavy strap", "66T", "DF/SP", 100)
     with pytest.raises(simpson.SimpsonError):
         simpson.strap("strap tie", "LSTA18", "DF/SP", 100, F1=50)
+
+
+def test_top_flange_on_a_nailer():
+    """Nailer Table (p. 136): each BA / HB row found in the page text. A 2x10 on a 3x nailer, DF/SP, 2,500 lb down, 500 lb up, maximum joist
+    nailing: BA210 at 3,230 / 970 (the (100) download for every duration, note 4); on steel with PDPAT the uplift has no value; HB on a 4x nailer
+    in SPF/HF has no value."""
+    import re
+    t = _page_text(136)
+    for x in simpson.NAILER_ROWS:
+        f = lambda v: "—" if v is None else f"{v:,}"
+        pat = r"\s+".join(re.escape(p).replace(r"\ ", r"\s+") for p in (x[2], x[3], f(x[4][0]), f(x[4][1]), f(x[5][0]), f(x[5][1])))
+        assert re.search(pat, t), x
+    h = simpson.facemount("2x10", "DF/SP", "lightest that works", 2500, "roof (125)", 500, nailing="Max.", kind="topflange", nailer="3x")
+    assert h["row"]["model"].startswith("BA210") and h["rows"] == [("download", 2500, 3230), ("uplift", 500, 970)]
+    with pytest.raises(simpson.SimpsonError):
+        simpson.facemount("2x10", "DF/SP", "BA210", 1000, "floor (100)", 100, kind="topflange", nailer="steel (PDPAT)")
+    with pytest.raises(simpson.SimpsonError):
+        simpson.facemount("4x12", "SPF/HF", "HB412", 1000, "floor (100)", 0, kind="topflange", nailer="4x")

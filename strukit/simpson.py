@@ -66,14 +66,53 @@ def header_factor(row, two_by):
     return 1.0, "2x carrying member: the table header nails fit"
 
 
-def facemount(joist, species, model, download, duration, uplift=0.0, two_by=False, end_grain=False, nailing=None, kind="facemount"):
+# Top-flange hangers on a nailer, catalog p. 136 (Nailer Table), for the BA and HB hangers of the pp. 142-146 tables: family, nailer, header
+# fasteners, joist fasteners, DF/SP uplift (160), download (100); SPF/HF the same (None = "—", not rated). BA: (2) joist nails = the
+# minimum, (8) = the maximum nailing. Attachment of the nailer to its support by the designer (note 2); PDPAT on steel 1/4 to 3/4 in. thick,
+# Fy 36 ksi or more (note 3). JB and LB hangers are not in StruKit's top-flange tables and are not covered here.
+NAILER_PAGE = 136
+NAILERS = ["2x", "(2) 2x", "3x", "4x", "steel (PDPAT)"]
+NAILER_ROWS = [
+    ("BA", "2x", "(10) 0.148 x 1 1/2", "(2) 0.148 x 1 1/2", (255, 1970), (220, 1875)),
+    ("BA", "2x", "(10) 0.148 x 1 1/2", "(8) 0.148 x 1 1/2", (355, 1970), (305, 1875)),
+    ("BA", "(2) 2x", "(14) 0.148 x 3", "(2) 0.148 x 1 1/2", (255, 2695), (220, 2235)),
+    ("BA", "(2) 2x", "(14) 0.148 x 3", "(8) 0.148 x 1 1/2", (600, 2695), (600, 2235)),
+    ("BA", "3x", "(14) 0.162 x 2 1/2", "(2) 0.148 x 1 1/2", (255, 3230), (220, 2650)),
+    ("BA", "3x", "(14) 0.162 x 2 1/2", "(8) 0.148 x 1 1/2", (970, 3230), (835, 2650)),
+    ("BA", "4x", "(14) 0.162 x 3 1/2", "(2) 0.148 x 1 1/2", (255, 3230), (220, 2650)),
+    ("BA", "4x", "(14) 0.162 x 3 1/2", "(8) 0.148 x 1 1/2", (1170, 3230), (1005, 2650)),
+    ("BA", "steel (PDPAT)", "(6) PDPAT-62KP", "(2) 0.148 x 1 1/2", (None, 3695), (None, 3695)),
+    ("HB", "(2) 2x", "(18) 0.148 x 3", "(10) 0.148 x 1 1/2", (585, 3810), (505, 3000)),
+    ("HB", "3x", "(18) 0.162 x 2 1/2", "(10) 0.148 x 1 1/2", (885, 3810), (765, 3000)),
+    ("HB", "4x", "(22) 0.162 x 3 1/2", "(10) 0.148 x 1 1/2", (1465, 5200), (None, None)),
+]
+
+
+def _nailer_capacity(r, nailer, species, nailing):
+    fam = "BA" if r["model"].startswith("BA") else ("HB" if r["model"].startswith("HB") else None)
+    if fam is None:
+        return None
+    rows_ = [x for x in NAILER_ROWS if x[0] == fam and x[1] == nailer]
+    if not rows_:
+        return None
+    if fam == "BA" and len(rows_) > 1:
+        rows_ = [x for x in rows_ if x[3].startswith("(2)" if (nailing or "").lower().startswith("min") else "(8)")]
+    x = rows_[0]
+    up_, dn_ = x[4] if species == "DF/SP" else x[5]
+    return dict(nrow=x, up=up_, down=dn_)
+
+
+def facemount(joist, species, model, download, duration, uplift=0.0, two_by=False, end_grain=False, nailing=None, kind="facemount",
+              nailer=None):
     """Check (or choose, model = "lightest that works") a face-mount or top-flange hanger. Returns dict(row, allow_down, allow_up, factor,
     notes, rows [(check, demand, capacity)]). Top-flange hangers (catalog pp. 142-146): the carrying member must be solid sawn or SCL wide
     enough for the top flange and its nails; installations on a 2x nailer or welded to steel (p. 136) are not covered, nor end grain;
     a "—" uplift in the table is no uplift capacity; loads may not be increased for load duration (p. 136, note 4: the table's floor,
     snow and roof columns are used as printed)."""
+    if nailer and kind == "topflange":
+        return _topflange_on_nailer(joist, species, model, download, uplift, nailer, nailing)
     if kind == "topflange" and (two_by or end_grain):
-        raise SimpsonError("joist hanger: top-flange hangers on a 2x nailer or into end grain are not covered (catalog p. 136, nailer table)")
+        raise SimpsonError("joist hanger: a top-flange hanger on a nailer: name the nailer (catalog p. 136); into end grain: not covered")
     if species not in ("DF/SP", "SPF/HF"):
         raise SimpsonError("joist hanger: the species group is DF/SP or SPF/HF")
     if duration not in DURATIONS:
@@ -1263,3 +1302,42 @@ def cast_base(series, post, model, cracked, sdc, download=0.0, uplift=0.0, F1=0.
         picked = False
     rows, up_a, lat = c_
     return dict(base=r, rows=rows, picked=picked, cracked=cracked, sdc=sdc, uplift_allow=up_a, lat=lat, bolts=bolts)
+
+
+def _topflange_on_nailer(joist, species, model, download, uplift, nailer, nailing):
+    """BA or HB top-flange hanger on a wood nailer or welded-steel nailer with PDPAT fasteners (catalog p. 136 Nailer Table). The download
+    (100) is used for every load duration (loads may not be increased for duration, p. 136 note 4); uplift (160)."""
+    if nailer not in NAILERS:
+        raise SimpsonError("joist hanger: the nailer is " + ", ".join(NAILERS) + f" (catalog p. {NAILER_PAGE})")
+    if species not in ("DF/SP", "SPF/HF"):
+        raise SimpsonError("joist hanger: the species group is DF/SP or SPF/HF")
+    cands = [r for r in rows_of("topflange") if r["joist"] == joist and r["species"] == species and r["model"].startswith(("BA", "HB"))]
+    if not cands:
+        raise SimpsonError(f"joist hanger: no BA or HB top-flange hanger for a {joist} joist in the {species} tables (the nailer table covers BA and HB)")
+
+    def cap(r):
+        c_ = _nailer_capacity(r, nailer, species, nailing)
+        if c_ is None or c_["down"] is None:
+            return None
+        if uplift and c_["up"] is None:
+            return None
+        return c_
+
+    if model.strip().upper() == "LIGHTEST THAT WORKS":
+        row = next((r for r in cands if cap(r) and cap(r)["down"] >= download - 1e-9 and (cap(r)["up"] or 0) >= (uplift or 0) - 1e-9), None)
+        if row is None:
+            raise SimpsonError(f"joist hanger: no BA or HB hanger on a {nailer} nailer carries these loads ({species}, catalog p. {NAILER_PAGE})")
+        pick = True
+    else:
+        want = model.strip().upper().replace("(MAX.)", "").strip()
+        row = next((r for r in cands if r["model"].upper().replace("(MAX.)", "").strip() == want), None)
+        if row is None:
+            raise SimpsonError(f"joist hanger: {model} is not a BA or HB hanger listed for a {joist} joist (the nailer table covers BA and HB)")
+        pick = False
+    c_ = cap(row)
+    if c_ is None:
+        raise SimpsonError(f"joist hanger: {row['model']} on a {nailer} nailer has no {species} value" + (" for uplift" if uplift else "") + f" (catalog p. {NAILER_PAGE})")
+    rows = [("download", download, c_["down"])] + ([("uplift", uplift, c_["up"])] if uplift else [])
+    x = c_["nrow"]
+    return dict(row=row, allow_down=c_["down"], allow_up=c_["up"] or 0.0, factor=1.0, notes=[], rows=rows, picked=pick, col="floor",
+                kind="topflange", nailer=nailer, nailer_row=x)

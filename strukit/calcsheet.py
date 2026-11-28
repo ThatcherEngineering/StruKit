@@ -5488,7 +5488,14 @@ def _joist_hanger_picture(c, top, d):
     # side elevation
     x0, ytop = LM + 40, top - 20
     yb = ytop - hd * sc
-    memberart.wood_section(c, x0 + hb * sc / 2, yb + hd * sc / 2, hb * sc, hd * sc, hb, hd, plies=2 if d.get("two_by") else 1)
+    if d.get("nailer"):                                      # top flange on a nailer over a steel beam (catalog p. 136): the nailer cut in end grain,
+        tn = {"2x": 1.5, "(2) 2x": 3.0, "3x": 2.5, "4x": 3.5}.get(d["nailer"], 0.0)          # the W shape cut below it (depiction)
+        ds = hd - tn
+        memberart.steel_section(c, x0 + hb * sc / 2, yb + ds * sc / 2, hb * sc, ds * sc, ds, hb - 0.25, 0.44, 0.26)
+        if tn:
+            memberart.wood_section(c, x0 + hb * sc / 2, yb + (ds + tn / 2) * sc, hb * sc, tn * sc, hb, tn, plies=2 if d["nailer"] == "(2) 2x" else 1)
+    else:
+        memberart.wood_section(c, x0 + hb * sc / 2, yb + hd * sc / 2, hb * sc, hd * sc, hb, hd, plies=2 if d.get("two_by") else 1)
     jx0 = x0 + hb * sc + 0.0
     jy0 = yb + 1.0 * sc                                     # joist seated 1 in. above the header bottom (depiction)
     memberart.wood_elevation(c, jx0, jy0, (B + 9.0) * sc, jd * sc)

@@ -6641,13 +6641,14 @@ def add_anchor_bolts(mark, sheet, ab, panel, spacing, G, load, method, other=Non
     return sheet
 
 
-def joist_hanger_sheet(mark, joist, species, model, download, duration, uplift, two_by, end_grain, nailing, load_source, header_label="", kind="facemount"):
+def joist_hanger_sheet(mark, joist, species, model, download, duration, uplift, two_by, end_grain, nailing, load_source, header_label="", kind="facemount",
+                       nailer=None):
     """Simpson Strong-Tie face-mount or top-flange joist hanger, solid sawn lumber (simpson.facemount): catalog C-C-2026 allowable loads (ASD)."""
     from . import simpson
     if not (load_source or "").strip():
         raise WorksheetError(f"{mark}: where the hanger loads come from is blank")
     try:
-        h = simpson.facemount(joist, species, model, download, duration, uplift, two_by, end_grain, nailing, kind)
+        h = simpson.facemount(joist, species, model, download, duration, uplift, two_by, end_grain, nailing, kind, nailer)
     except simpson.SimpsonError as e:
         raise WorksheetError(f"{mark}: {e}")
     r = h["row"]
@@ -6659,9 +6660,18 @@ def joist_hanger_sheet(mark, joist, species, model, download, duration, uplift, 
                f"header {r['header']}; joist {r['joist_fast']}"),
              L(f"table download, {[k for k, v in simpson.DURATIONS.items() if v == h['col']][0]} load duration", r[h["col"]], "lb", src, f"{species} table"),
              L("table uplift (160)", r["uplift"], "lb", src, "wind or earthquake; no further increase (footnote 1, p. 118)")]
-    if h["factor"] != 1.0:
+    if h.get("nailer"):
+        x = h["nailer_row"]
+        nsrc = f"{simpson.SOURCE}, p. {simpson.NAILER_PAGE}"
+        steps = [steps[0],
+                 L(f"on a {h['nailer']} nailer", f"header {x[2]}; joist {x[3]}", "", nsrc, "Nailer Table"),
+                 L("allowable download (100)", h["allow_down"], "lb", nsrc, f"{species}; not increased for load duration (note 4, upper table)"),
+                 L("allowable uplift (160)", h["allow_up"] if x[4 if species == 'DF/SP' else 5][0] is not None else "none in the table", "lb", nsrc, "wind or earthquake")]
+        src = nsrc
+    elif h["factor"] != 1.0:
         steps.append(L("adjustment", h["factor"], "", src, "; ".join(h["notes"])))
-    steps += [L("allowable download", h["allow_down"], "lb", src, ""), L("allowable uplift", h["allow_up"], "lb", src, "")]
+    if not h.get("nailer"):
+        steps += [L("allowable download", h["allow_down"], "lb", src, ""), L("allowable uplift", h["allow_up"], "lb", src, "")]
     if h["picked"]:
         steps.insert(0, L("hanger chosen", r["model"], "", src, "the first model in the catalog table for this joist (lowest installed cost index first) that carries the loads"))
     rows = [Row(f"hanger {k}", "ASD", dem, cap, "lb", src, "") for k, dem, cap in h["rows"]]
@@ -6674,6 +6684,10 @@ def joist_hanger_sheet(mark, joist, species, model, download, duration, uplift, 
              + (f"; uplift {uplift:,.0f} lb" if uplift else "") + f" ({load_source.strip()})")]
     if top:
         info[0] = ("Joist", f"{joist}, {species}; carrying member solid sawn or SCL, wide enough for the top flange and its nails")
+    if h.get("nailer"):
+        x = h["nailer_row"]
+        info[0] = ("Joist", f"{joist}, {species}; the hanger on a {h['nailer']} nailer" + (" (PDPAT fasteners into the steel)" if "steel" in h["nailer"] else " fastened to its support by the designer"))
+        info[2] = ("Fasteners", f"header {x[2]}; joist {x[3]}")
     sheet = SimpleSheet(mark, "Joist Hanger (Simpson Strong-Tie, " + ("top flange)" if top else "face mount)"), "Connection", "ASD", info, [], [], "Allowable Loads", steps, rows,
                         ["Allowable stress design; the loads are at the ASD level.",
                          "Installed as the catalog requires: every specified fastener, nails driven at an angle through the joist into the header "
@@ -6683,6 +6697,7 @@ def joist_hanger_sheet(mark, joist, species, model, download, duration, uplift, 
                         picture=None)
     sheet.blocks.append(dict(title="Hanger", head="Hanger", picture=("joist_hanger", dict(W=r["W"], H=r["H"], B=r["B"], ga=r["ga"], model=r["model"], joist=joist,
                                                                                         two_by=two_by, header_label=header_label, TF=r.get("TF") if top else None,
+                                                                                        nailer=h.get("nailer"),
                                                                                         double="LUS" in r["model"] or "HUS" in r["model"] or "HGUS" in r["model"]))))
     sheet.hanger = h
     return sheet

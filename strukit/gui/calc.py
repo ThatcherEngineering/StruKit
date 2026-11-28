@@ -1379,6 +1379,7 @@ FORMS = {
                 F("uplift", "Uplift, ASD (wind or earthquake)", unit="lb", required=False),
                 F("carrying", "Carrying member", "select", options=["3x or larger, or a beam", "2x (header nails shortened)"], help="face mount; top flange: a beam wide enough for the flange"),
                 F("end_grain", "Nailed into the end grain of the carrying member", "select", options=["no", "yes"], required=False),
+                F("nailer", "Top flange on a nailer (BA, HB)", "select", options=["none"] + simpson.NAILERS, required=False, help="catalog p. 136 Nailer Table; blank = on the carrying member"),
                 F("load_source", "Where the loads come from", "text", help="for example: reaction of joist J1")],
         tables=[]),
     "hurricane_tie": dict(
@@ -3209,7 +3210,8 @@ def _build(kind, values, project):
         r.done()
         return ws_more.joist_hanger_sheet(mark, j, sp, mdl, dl, du, r.num("uplift", False) or 0.0, (car or "").startswith("2x"),
                                           (r.text("end_grain", False) or "").startswith("y"), r.text("nailing", False), src,
-                                          kind=simpson.KINDS.get(r.text("type", False) or "face mount", "facemount")), "simple", {}
+                                          kind=simpson.KINDS.get(r.text("type", False) or "face mount", "facemount"),
+                                          nailer=None if (r.text("nailer", False) or "none") == "none" else r.text("nailer", False)), "simple", {}
     if kind in ("bolted_connection", "lag_connection"):
         cb = combos(project, r.miss, "ASD")
         Dt = r.text("D")
