@@ -1531,3 +1531,107 @@ def ewp_hanger(kind, joist, header, model, download, duration, uplift=0.0, naili
                 spf_uplift=(header == "SPF/HF" and row.get("uplift") is not None), ij_factor=ijtxt[0], ij_text=ijtxt[1],
                 table_down=(row.get(header) if top else None), skew=skew, slope=slope, depth=depth,
                 uplift_190=(k == "ewp_skew" and thin_flange and not stiff_installed and not row["stiff"] and u_ is not None and u_ <= 190.0 and (row.get("uplift_spf") if header == "SPF/HF" else row.get("uplift")) > 190.0))
+
+
+# ---------------------------------------------------------------- VPA variable-pitch rafter connector (catalog p. 181) and
+# HRC / HHRC hip-ridge connectors (p. 180), copied row by row; the tests find every row on its page's text
+VPA_PAGE, HRC_PAGE = 181, 180
+# model, rafter width (actual), W, B, carrying-member nails, carried-member nails,
+# uplift (160) DF/SP, SPF/HF; download DF/SP, SPF/HF; lateral (160) F1, F2 DF/SP; F1, F2 SPF/HF
+VPA = [
+    ("VPA2", "1 1/2", "1 9/16", "2", "(8) 0.148 x 3", "(2) 0.148 x 1 1/2", 255, 220, 1105, 950, 345, 300, 295, 260),
+    ("VPA25", "1 3/4", "1 13/16", "2", "(8) 0.148 x 3", "(2) 0.148 x 1 1/2", 255, 220, 1105, 950, 345, 300, 295, 260),
+    ("VPA2.06", "2", "2 1/16", "2", "(9) 0.148 x 3", "(2) 0.148 x 1 1/2", 255, 220, 1245, 1070, 345, 300, 295, 260),
+    ("VPA2.1", "2 1/16", "2 1/8", "2", "(9) 0.148 x 3", "(2) 0.148 x 1 1/2", 255, 220, 1245, 1070, 345, 300, 295, 260),
+    ("VPA35", "2 1/4 – 2 5/16", "2 5/16", "2", "(9) 0.148 x 3", "(2) 0.148 x 1 1/2", 255, 220, 1245, 1070, 345, 300, 295, 260),
+    ("VPA3", "2 1/2 – 2 9/16", "2 9/16", "2", "(9) 0.148 x 3", "(2) 0.148 x 1 1/2", 255, 220, 1245, 1070, 345, 300, 295, 260),
+    ("VPA4", "3 1/2", "3 9/16", "2", "(11) 0.148 x 3", "(2) 0.148 x 1 1/2", 255, 220, 1245, 1070, 345, 300, 295, 260),
+]
+# model, gauge, hip, ridge, W1 (ridge), W2 (hip), ridge fasteners, fasteners each hip, member type,
+# DF/SP (uplift, download by duration floor / snow / roof or one value), SPF/HF (the same); loads per hip
+HIP_RIDGE = [
+    ("HRC1.81", 16, "1 3/4", "2x or 1 3/4 wide", "1 13/16", "1 13/16", "(16) 0.148 x 1 1/2", "(2) 0.148 x 1 1/2", "sawn lumber or SCL",
+     (370, (975, 1105, 1185)), (320, (840, 950, 1020))),
+    ("HHRC4/1.81", 12, "1 3/4", "4x", "3 5/8", "1 13/16", "(40) #10 x 2 1/2 SD", "(22) #10 x 1 1/2 SD", "SCL / sawn lumber", (1490, 3110), (1385, 2315)),
+    ("HHRC44", 12, "4x", "4x", "3 5/8", "3 5/8", "(40) #10 x 2 1/2 SD", "(22) #10 x 2 1/2 SD", "SCL / sawn lumber", (1970, 3110), (1635, 2315)),
+    ("HHRC5.25/3.25", 12, "3 1/8", "5 1/8", "5 1/4", "3 1/4", "(40) #10 x 2 1/2 SD", "(22) #10 x 2 1/2 SD", "SCL / glulam", (1970, 3110), (1635, 2315)),
+    ("HHRC5.37/3.12", 12, "2-2x", "5 1/4", "5 3/8", "3 1/8", "(40) #10 x 2 1/2 SD", "(22) #10 x 2 1/2 SD", "SCL / sawn lumber", (1970, 3110), (1635, 2315)),
+    ("HHRC5.37/3.56", 12, "3 1/2", "5 1/4", "5 3/8", "3 5/8", "(40) #10 x 2 1/2 SD", "(22) #10 x 2 1/2 SD", "SCL / sawn lumber / glulam", (1970, 3110), (1635, 2315)),
+]
+
+
+def vpa_widths():
+    return [v[1] for v in VPA]
+
+
+def vpa(width, model, species, uplift=0.0, download=0.0, F1=0.0, F2=0.0, pitch=None):
+    """VPA variable-pitch connector, rafter to top plate (catalog p. 181): pitch 3:12 to 12:12; loads may not be increased for duration
+    (note 2); uplift and lateral (160). Each direction against its value; directions loaded together by the unity equation (p. 23 note e,
+    p. 289 Option 1): the uplift case U/Ua + F1/F1a + F2/F2a and the download case D/Da + F1/F1a + F2/F2a, the lateral loads taken with
+    each. model "first that works": the model listed for the rafter width."""
+    if species not in ("DF/SP", "SPF/HF"):
+        raise SimpsonError("VPA: the species group is DF/SP or SPF/HF")
+    if pitch is None or not 3.0 - 1e-9 <= pitch <= 12.0 + 1e-9:
+        raise SimpsonError("VPA: the roof pitch must be 3:12 to 12:12 (catalog p. 181)")
+    loads = [max(x or 0.0, 0.0) for x in (uplift, download, F1, F2)]
+    if not any(loads):
+        raise SimpsonError("VPA: give the uplift, download or lateral loads")
+    row = next((v for v in VPA if v[1] == width), None)
+    if row is None:
+        raise SimpsonError("VPA: the rafter width is one of " + ", ".join(vpa_widths()))
+    if model.strip().lower() not in ("first that works", "lightest that works", "") and model.strip().upper() != row[0].upper():
+        raise SimpsonError(f"VPA: {model} is not the VPA for a {width} in. rafter ({row[0]}, catalog p. {VPA_PAGE})")
+    sp = species == "DF/SP"
+    U, D, f1, f2 = (row[6] if sp else row[7]), (row[8] if sp else row[9]), (row[10] if sp else row[12]), (row[11] if sp else row[13])
+    up, dn, l1, l2 = loads
+    rows = [(n, d, c) for n, d, c in (("uplift", up, U), ("download", dn, D), ("lateral F1 (along the plate)", l1, f1),
+                                     ("lateral F2 (across the plate)", l2, f2)) if d > 0]
+    lat = l1 / f1 + l2 / f2
+    if up > 0 and (l1 or l2):
+        rows.append(("uplift with lateral, U/Ua + F1/F1a + F2/F2a", up / U + lat, 1.0))
+    if dn > 0 and (l1 or l2):
+        rows.append(("download with lateral, D/Da + F1/F1a + F2/F2a", dn / D + lat, 1.0))
+    return dict(row=row, allow=dict(uplift=U, download=D, F1=f1, F2=f2), rows=rows, picked=model.strip().lower() in ("first that works", "lightest that works", ""))
+
+
+def hip_ridge_models():
+    return [h[0] for h in HIP_RIDGE]
+
+
+def hip_ridge(model, species, download=0.0, uplift=0.0, duration="floor (100)", slope=0.0):
+    """HRC / HHRC hip-ridge connector (catalog p. 180), loads per hip (the connector carries two hips, note 1). HRC1.81: download by load
+    duration (floor, snow, roof); HHRC: one download value (100 / 115 / 125). Uplift (160). The HRC may be sloped down to 45 degrees with
+    no reduction; the HHRC is held to the same 45 degrees. model "first that works": the first in the table order that carries the loads."""
+    if species not in ("DF/SP", "SPF/HF"):
+        raise SimpsonError("hip-ridge connector: the species group is DF/SP or SPF/HF")
+    if not 0.0 <= (slope or 0.0) <= 45.0 + 1e-9:
+        raise SimpsonError("hip-ridge connector: the hip slopes down 0 to 45 degrees (catalog p. 180)")
+    dn, up = max(download or 0.0, 0.0), max(uplift or 0.0, 0.0)
+    if not (dn or up):
+        raise SimpsonError("hip-ridge connector: give the download or uplift per hip")
+    dk = {"floor (100)": 0, "snow (115)": 1, "roof (125)": 2}.get(duration)
+
+    def cap(h):
+        u_, d_ = h[9] if species == "DF/SP" else h[10]
+        if isinstance(d_, tuple):
+            if dk is None:
+                raise SimpsonError("hip-ridge connector: choose the load duration of the download")
+            d_ = d_[dk]
+        return u_, d_
+
+    def ok(h):
+        u_, d_ = cap(h)
+        return dn <= d_ + 1e-9 and up <= u_ + 1e-9
+
+    pick = model.strip().lower() in ("first that works", "lightest that works")
+    if pick:
+        h = next((x for x in HIP_RIDGE if ok(x)), None)
+        if h is None:
+            raise SimpsonError(f"hip-ridge connector: none on p. {HRC_PAGE} carries these loads per hip")
+    else:
+        h = next((x for x in HIP_RIDGE if x[0].upper() == model.strip().upper()), None)
+        if h is None:
+            raise SimpsonError(f"hip-ridge connector: {model} is not on catalog p. {HRC_PAGE}")
+    u_, d_ = cap(h)
+    rows = [(n, d, c) for n, d, c in (("download per hip", dn, d_), ("uplift per hip", up, u_)) if d > 0]
+    return dict(row=h, allow_down=d_, allow_up=u_, rows=rows, picked=pick, hhrc=h[0].startswith("HHRC"))

@@ -1406,6 +1406,21 @@ FORMS = {
                 F("ij_mat", "I-joist header: flange material", "select", options=simpson.IJ_FLANGE_MAT, required=False, help="blank = DF / LVL / LSL"),
                 F("load_source", "Where the loads come from", "text", help="for example: reaction of I-joist J3")],
         tables=[]),
+    "rafter_connector": dict(
+        title="Rafter / Hip Connector (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="RC",
+        fields=[F("product", "Connector", "select", options=["VPA rafter to top plate", "HRC / HHRC hip to ridge"], help="VPA p. 181; HRC / HHRC p. 180"),
+                F("model", "Model", "select", options=["first that works"] + [v[0] for v in simpson.VPA] + simpson.hip_ridge_models()),
+                F("species", "Species group", "select", options=["DF/SP", "SPF/HF"]),
+                F("width", "Rafter width, actual (VPA)", "select", options=simpson.vpa_widths(), required=False),
+                F("pitch", "Roof pitch (VPA), rise in 12", unit="in.", required=False, help="3 to 12"),
+                F("slope", "Hip slope down (HRC / HHRC)", unit="deg", required=False, help="0 to 45"),
+                F("download", "Download, ASD (per hip for HRC / HHRC)", unit="lb", required=False),
+                F("duration", "Load duration of the download (HRC)", "select", options=["floor (100)", "snow (115)", "roof (125)"], required=False),
+                F("uplift", "Uplift, ASD (per hip for HRC / HHRC)", unit="lb", required=False),
+                F("F1", "Lateral F1, along the plate (VPA)", unit="lb", required=False),
+                F("F2", "Lateral F2, across the plate (VPA)", unit="lb", required=False),
+                F("load_source", "Where the loads come from", "text", help="for example: rafter R2 reactions")],
+        tables=[]),
     "hurricane_tie": dict(
         title="Hurricane Tie (Simpson Strong-Tie)", code="Simpson C-C-2026", mark="HT",
         fields=[F("model", "Tie", "select", options=["first that works"] + simpson.tie_models(), help="seismic and hurricane ties, wood to wood (catalog p. 300)"),
@@ -3231,6 +3246,20 @@ def _build(kind, values, project):
                                         r.text("ij_t", False) or "1 1/2 in. or more", r.text("ij_mat", False) or "DF / LVL / LSL",
                                         sk, sl, dp, (r.text("jflange", False) or "").startswith("less"), r.text("web_stiff", False) == "none",
                                         r.text("fasteners", False) or None, r.text("web_stiff", False) == "installed"), "simple", {}
+    if kind == "rafter_connector":
+        pr, mdl, sp, src = r.text("product"), r.text("model"), r.text("species"), r.text("load_source")
+        wd, pi, sl = r.text("width", False), r.num("pitch", False), r.num("slope", False) or 0.0
+        dl, du, up = r.num("download", False) or 0.0, r.text("duration", False) or "floor (100)", r.num("uplift", False) or 0.0
+        f1, f2 = r.num("F1", False) or 0.0, r.num("F2", False) or 0.0
+        vp = pr.startswith("VPA")
+        if vp and not wd:
+            r.miss.append("Rafter width")
+        if vp and pi is None:
+            r.miss.append("Roof pitch")
+        if not (dl or up or f1 or f2):
+            r.miss.append("Give a download, uplift or lateral load")
+        r.done()
+        return ws_more.rafter_connector_sheet(mark, pr, mdl, sp, wd, pi, sl, dl, du, up, f1, f2, src), "simple", {}
     if kind == "hurricane_tie":
         mdl, sp, src = r.text("model"), r.text("species"), r.text("load_source")
         up, f1, f2 = r.num("uplift", False) or 0.0, r.num("F1", False) or 0.0, r.num("F2", False) or 0.0
